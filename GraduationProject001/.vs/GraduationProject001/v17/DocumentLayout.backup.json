@@ -5,6 +5,9 @@
     {
       "AbsoluteMoniker": "D:0:0:{96D69978-7E03-4F51-9595-78D05F6EABF7}|GraduationProject001\\GraduationProject001.vcxproj|C:\\Users\\nohc2\\OneDrive\\Desktop\\WorkRoom\\Dev\\CollegeProjects\\PulseCity\\GraduationProject001\\GraduationProject001\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{96D69978-7E03-4F51-9595-78D05F6EABF7}|GraduationProject001\\GraduationProject001.vcxproj|solutionrelative:GraduationProject001\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{96D69978-7E03-4F51-9595-78D05F6EABF7}|GraduationProject001\\GraduationProject001.vcxproj|C:\\PROGRAM FILES (X86)\\WINDOWS KITS\\10\\INCLUDE\\10.0.22621.0\\UM\\D3DCOMMON.H||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
   "DocumentGroupContainers": [
@@ -13,7 +16,7 @@
       "VerticalTabListWidth": 256,
       "DocumentGroups": [
         {
-          "DockedWidth": 254,
+          "DockedWidth": 414,
           "SelectedChildIndex": 2,
           "Children": [
             {
@@ -32,7 +35,7 @@
               "RelativeDocumentMoniker": "GraduationProject001\\main.cpp",
               "ToolTip": "C:\\Users\\nohc2\\OneDrive\\Desktop\\WorkRoom\\Dev\\CollegeProjects\\PulseCity\\GraduationProject001\\GraduationProject001\\main.cpp",
               "RelativeToolTip": "GraduationProject001\\main.cpp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAwAgAAAAhAAAAAAAAAA==",
+              "ViewState": "AgIAAIkAAAAAnh8SEqAvwAwBAAA+AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2025-07-02T11:44:22.241Z",
               "EditorCaption": ""
@@ -40,8 +43,8 @@
           ]
         },
         {
-          "DockedWidth": 221,
-          "SelectedChildIndex": -1,
+          "DockedWidth": 94,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
@@ -50,6 +53,19 @@
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "d3dcommon.h",
+              "DocumentMoniker": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.22621.0\\um\\d3dcommon.h",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\..\\..\\..\\..\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.22621.0\\um\\d3dcommon.h",
+              "ToolTip": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.22621.0\\um\\d3dcommon.h",
+              "RelativeToolTip": "..\\..\\..\\..\\..\\..\\..\\..\\..\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.22621.0\\um\\d3dcommon.h",
+              "ViewState": "AgIAAF4AAAAAAAAAAAAiwF8AAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2025-07-02T12:54:08.019Z",
+              "EditorCaption": ""
             }
           ]
         }
