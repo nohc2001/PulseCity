@@ -1,0 +1,11 @@
+﻿  main.cpp
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(43,16): warning C4244: 'return': 'WPARAM'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(49,6): warning C4101: 'hdc' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(50,35): warning C4101: 'p11' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(50,44): warning C4101: 'center' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(48,14): warning C4101: 'ps' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(51,7): warning C4101: 'insrt' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(50,17): warning C4101: 'p10' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(50,26): warning C4101: 'p01' :참조되지 않은 지역 변수입니다.
+C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(50,8): warning C4101: 'p00' :참조되지 않은 지역 변수입니다.
+  GraduationProject001.vcxproj -> C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\x64\Debug\GraduationProject001.exe
