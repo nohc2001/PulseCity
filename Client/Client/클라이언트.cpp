@@ -12,7 +12,7 @@ int main()
 {
 	try
 	{
-		Socket s(SocketType::Tcp);		// 1
+		Socket s(SocketType::Tcp);	// 1
 		s.Bind(Endpoint::Any);		// 2
 		cout << "Connecting to server...\n";
 		s.Connect(Endpoint("127.0.0.1", 5959)); // 3 <===여기다가 실제 여러분들이 원하는 주소를 넣으십시오. 127.0.0.1은 로컬 기기를 뜻합니다.
