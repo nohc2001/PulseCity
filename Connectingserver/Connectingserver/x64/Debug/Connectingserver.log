@@ -1,0 +1,2 @@
+﻿  서버.cpp
+LINK : fatal error LNK1104: 'C:\Users\진성준\source\repos\Connectingserver\Connectingserver.obj' 파일을 열 수 없습니다.

@@ -1,0 +1,14 @@
+﻿  클라이언트.cpp
+C:\Users\진성준\Desktop\school\3-1\게임 엔진\PulseCity\Client\Client\클라이언트.cpp(26,30): warning C4267: '인수': 'size_t'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+클라이언트.obj : error LNK2019: "public: __cdecl Socket::Socket(enum SocketType)" (??0Socket@@QEAA@W4SocketType@@@Z)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: __cdecl Socket::~Socket(void)" (??1Socket@@QEAA@XZ)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: void __cdecl Socket::Bind(class Endpoint const &)" (?Bind@Socket@@QEAAXAEBVEndpoint@@@Z)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: void __cdecl Socket::Connect(class Endpoint const &)" (?Connect@Socket@@QEAAXAEBVEndpoint@@@Z)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: int __cdecl Socket::Send(char const *,int)" (?Send@Socket@@QEAAHPEBDH@Z)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: void __cdecl Socket::Close(void)" (?Close@Socket@@QEAAXXZ)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: int __cdecl Socket::Receive(void)" (?Receive@Socket@@QEAAHXZ)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > __cdecl GetLastErrorAsString(void)" (?GetLastErrorAsString@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: __cdecl Endpoint::Endpoint(char const *,int)" (??0Endpoint@@QEAA@PEBDH@Z)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2019: "public: __cdecl Endpoint::~Endpoint(void)" (??1Endpoint@@QEAA@XZ)main 함수에서 참조되는 확인할 수 없는 외부 기호
+클라이언트.obj : error LNK2001: 확인할 수 없는 외부 기호 "public: static class Endpoint Endpoint::Any" (?Any@Endpoint@@2V1@A)
+C:\Users\진성준\Desktop\school\3-1\게임 엔진\PulseCity\Client\x64\Debug\Client.exe : fatal error LNK1120: 11개의 확인할 수 없는 외부 참조입니다.
