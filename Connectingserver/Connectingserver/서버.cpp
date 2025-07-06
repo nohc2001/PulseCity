@@ -5,33 +5,6 @@
 
 using namespace std;
 
-void Receiver(Socket& recvmsg) {
-	while (true)
-	{
-		string receivedData;
-		cout << "Receiving data...\n";
-		int result = recvmsg.Receive();
-
-		if (result == 0)
-		{
-			cout << "Connection closed.\n";
-			break;
-		}
-		else if (result < 0)
-		{
-			cout << "Connect lost: " << GetLastErrorAsString() << endl;
-		}
-
-		cout << "Received: " << recvmsg.m_receiveBuffer << endl;
-	}
-}
-
-void Sender(Socket& sendmsg){
-	while (true) {
-		sendmsg.Send(sendmsg.m_receiveBuffer, strlen(sendmsg.m_receiveBuffer) + 1);
-	}
-}
-
 int main()
 {
 	try
@@ -50,11 +23,26 @@ int main()
 		auto a = tcpConnection.GetPeerAddr().ToString();
 		cout << "Socket from " << a << " is accepted.\n";
 		
-		thread Receiverthrd(Receiver, ref(tcpConnection));
-		thread Senderthrd(Sender, ref(tcpConnection));
+		while (true)
+		{
+			string receivedData;
+			cout << "Receiving data...\n";
+			int result = tcpConnection.Receive();
 
-		Receiverthrd.join();
-		Senderthrd.join();
+			if (result == 0)
+			{
+				cout << "Connection closed.\n";
+				break;
+			}
+			else if (result < 0)
+			{
+				cout << "Connect lost: " << GetLastErrorAsString() << endl;
+			}
+
+			cout << "Received: " << tcpConnection.m_receiveBuffer << endl;
+
+			tcpConnection.Send(tcpConnection.m_receiveBuffer, strlen(tcpConnection.m_receiveBuffer) + 1);
+		}
 
 		tcpConnection.Close();
 	}
