@@ -54,7 +54,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		}
 		else
 		{
-			DeltaFlow += f;
 			if (DeltaFlow >= 0.016) { // limiting fps.
 				game.DeltaTime = (float)DeltaFlow;
 				game.Render();
