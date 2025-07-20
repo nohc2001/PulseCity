@@ -1,4 +1,0 @@
-﻿  main.cpp
-C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(118,16): warning C4244: 'return': 'WPARAM'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\GraduationProject001\main.cpp(123,6): warning C4101: 'hdc' :참조되지 않은 지역 변수입니다.
-  GraduationProject001.vcxproj -> C:\Users\nohc2\OneDrive\Desktop\WorkRoom\Dev\CollegeProjects\PulseCity\GraduationProject001\x64\Debug\GraduationProject001.exe

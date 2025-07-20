@@ -13,6 +13,7 @@ int main()
 		listenSocket.Bind(Endpoint("0.0.0.0", 5959));		// 2
 		listenSocket.Listen();					// 3
 		cout << "Server started.\n";
+		cout << "Waiting for connection...\n";
 
 		// 4
 		Socket tcpConnection;
@@ -23,6 +24,10 @@ int main()
 		auto a = tcpConnection.GetPeerAddr().ToString();
 		cout << "Socket from " << a << " is accepted.\n";
 		
+		float x = 0.0f;
+		float z = 0.0f;
+		const float speed = 1.0f;
+
 		while (true)
 		{
 			string receivedData;
@@ -41,7 +46,28 @@ int main()
 
 			cout << "Received: " << tcpConnection.m_receiveBuffer << endl;
 
-			tcpConnection.Send(tcpConnection.m_receiveBuffer, strlen(tcpConnection.m_receiveBuffer) + 1);
+			char key = tcpConnection.m_receiveBuffer[0];
+
+			switch (key)
+			{
+			case 'W': z += speed; 
+				break;
+			case 'S': z -= speed; 
+				break;
+			case 'A': x -= speed; 
+				break;
+			case 'D': x += speed; 
+				break;
+			default: 
+				break;
+			}
+
+			// x, z 좌표를 클라이언트로 전송
+			char buffer[sizeof(float) * 2];
+			memcpy(buffer, &x, sizeof(float));
+			memcpy(buffer + sizeof(float), &z, sizeof(float));
+
+			tcpConnection.Send(buffer, sizeof(buffer));
 		}
 
 		tcpConnection.Close();

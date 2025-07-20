@@ -1,3 +1,0 @@
-﻿  서버.cpp
-C:\Users\진성준\Desktop\school\3-1\게임 엔진\PulseCity\Connectingserver\Connectingserver\서버.cpp(44,92): warning C4267: '인수': 'size_t'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-LINK : fatal error LNK1104: 'C:\Users\진성준\source\repos\Connectingserver\Connectingserver.obj' 파일을 열 수 없습니다.
