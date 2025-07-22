@@ -1,12 +1,25 @@
 ﻿#include "main.h"
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow) {
-	gd.screenWidth = GetSystemMetrics(SM_CXSCREEN);
-	gd.screenHeight = GetSystemMetrics(SM_CYSCREEN);
-	gd.ScreenRatio = (float)gd.screenHeight / (float)gd.screenWidth;
-	ResolutionStruct* ResolutionArr = gd.GetResolutionArr();
-	//question : is there any reason resolution must be setting already existed well known resolutions?
-	// most game do that _ but why??
+	DEVMODE devMode;
+	int modeNum = 0;
+
+	//get Screen Supported Resolutions.
+	while (EnumDisplaySettings(NULL, modeNum, &devMode)) {
+		ResolutionStruct rs;
+		rs.width = devMode.dmPelsWidth;
+		rs.height = devMode.dmPelsHeight;
+
+		auto iter = std::find_if(SupportingResolutions.begin(), SupportingResolutions.end(), [rs](ResolutionStruct& other) {
+			return rs.width == other.width && rs.height == other.height;
+			});
+		if (iter == SupportingResolutions.end() || SupportingResolutions.size() == 0) {
+			SupportingResolutions.push_back(rs);
+		}
+		modeNum++;
+	}
+	//solved : is there any reason resolution must be setting already existed well known resolutions?
+	// most game do that _ but why?? > resolution that screen support is limited.
 	
 	MSG Message;
 	WNDCLASSEX WndClass;
@@ -27,7 +40,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 
 	RegisterClassEx(&WndClass);
 
-	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, ResolutionArr[resolutionLevel].width, ResolutionArr[resolutionLevel].height, NULL, (HMENU)NULL, hInstance, NULL);
+	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, SupportingResolutions[resolutionLevel].width, SupportingResolutions[resolutionLevel].height, NULL, (HMENU)NULL, hInstance, NULL);
 	ShowWindow(hWnd, nCmdShow);
 	UpdateWindow(hWnd);
 
@@ -197,9 +210,8 @@ GlobalDeviceInit_InitMultisamplingVariable:
 			**)&pCommandList);
 	hResult = pCommandList->Close(); // why?
 
-	ResolutionStruct* ResolutionArr = gd.GetResolutionArr();
-	ClientFrameWidth = ResolutionArr[resolutionLevel].width;
-	ClientFrameHeight = ResolutionArr[resolutionLevel].height;
+	ClientFrameWidth = SupportingResolutions[resolutionLevel].width;
+	ClientFrameHeight = SupportingResolutions[resolutionLevel].height;
 
 	viewportArr[0].Viewport.TopLeftX = 0;
 	viewportArr[0].Viewport.TopLeftY = 0;
@@ -505,27 +517,12 @@ void GlobalDevice::SetFullScreenMode(bool isFullScreen)
 	}
 }
 
-ResolutionStruct* GlobalDevice::GetResolutionArr()
-{
-	if (fabsf(ScreenRatio - 0.75f) <= 0.01f) {
-		return (ResolutionStruct*)ResolutionArr_GA;
-	}
-	else if (fabsf(ScreenRatio - 0.5625f) <= 0.01f) {
-		return (ResolutionStruct*)ResolutionArr_HD;
-	}
-	else if (fabsf(ScreenRatio - 0.625f) <= 0.01f) {
-		return (ResolutionStruct*)ResolutionArr_WGA;
-	}
-	return nullptr;
-}
-
 void GlobalDevice::SetResolution(int resid, bool ClientSizeUpdate)
 {
 	WaitGPUComplete();
-	ResolutionStruct* ResolutionArr = GetResolutionArr();
 
-	ClientFrameWidth = ResolutionArr[resid].width;
-	ClientFrameHeight = ResolutionArr[resid].height;
+	ClientFrameWidth = SupportingResolutions[resid].width;
+	ClientFrameHeight = SupportingResolutions[resid].height;
 	if (ClientSizeUpdate) {
 		SetWindowPos(hWnd, NULL, 0, 0, ClientFrameWidth, ClientFrameHeight, SWP_NOMOVE | SWP_NOZORDER);
 	}

@@ -31,7 +31,7 @@ HINSTANCE g_hInst;
 HWND hWnd;
 LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
-int resolutionLevel = 3;
+int resolutionLevel = 8;
 
 #define QUERYPERFORMANCE_HZ 10000000//Hz
 static inline ui64 GetTicks()
@@ -46,63 +46,8 @@ struct ResolutionStruct {
 	ui32 height;
 };
 
-//ratio = 4 : 3
-constexpr ui32 ResolutionArr_GA[10][2] = {
-	{640, 480}, {800, 600}, {1024, 768}, {1152, 864},
-	{1400, 1050}, {1600, 1200}, {2048, 1536}, {3200, 2400},
-	{4096, 3072}, {6400, 4800}
-};
-enum class ResolutionName_GA {
-	VGA = 0,
-	SVGA = 1,
-	XGA = 2,
-	XGAplus = 3,
-	SXGAplus = 4,
-	UXGA = 5,
-	QXGA = 6,
-	QUXGA = 7,
-	HXGA = 8,
-	HUXGA = 9
-};
-
-//ratio = 16 : 9
-constexpr ui32 ResolutionArr_HD[12][2] = {
-	{640, 360}, {854, 480}, {960, 540}, {1280, 720}, {1600, 900},
-	{1920, 1080}, {2560, 1440}, {2880, 1620}, {3200, 1800}, {3840, 2160}, {5120, 2880}, {7680, 4320}
-};
-enum class ResolutionName_HD {
-	nHD = 0,
-	SD = 1,
-	qHD = 2,
-	HD = 3,
-	HDplus = 4,
-	FHD = 5,
-	QHD = 6,
-	QHDplus0 = 7,
-	QHDplus1 = 8,
-	UHD = 9,
-	UHDplus = 10,
-	FUHD = 11
-};
-
-//ratio = 16 : 10
-constexpr ui32 ResolutionArr_WGA[10][2] = {
-	{1280, 800}, {1440, 900}, {1680, 1050}, {1920, 1200},
-	{2560, 1600}, {2880, 1800}, {3072, 1920}, {3840, 2400},
-	{5120, 3200}, {7680, 4800}
-};
-enum class ResolutionName_WGA {
-	WXGA = 0,
-	WXGAplus = 1,
-	WSXGA = 2,
-	WUXGA = 3,
-	WQXGA0 = 4,
-	WQXGA1 = 5,
-	WQXGA2 = 6,
-	WQUXGA = 7,
-	WHXGA = 8,
-	WHUXGA = 9
-};
+//Supporting Resolutions
+std::vector<ResolutionStruct> SupportingResolutions;
 
 struct ViewportData {
 	D3D12_VIEWPORT Viewport;
@@ -133,7 +78,7 @@ struct GPUResource {
 
 // name completly later. ??
 struct GlobalDevice {
-	IDXGIFactory7* pFactory;// question 002 : why dxgi 6, but is type limit 7 ??
+	IDXGIFactory7* pFactory;// solved 002 : why dxgi 6, but is type limit 7 ??
 	IDXGISwapChain4* pSwapChain = nullptr;
 	ID3D12Device* pDevice;
 
@@ -168,10 +113,6 @@ struct GlobalDevice {
 	ui32 m_nMsaa4xQualityLevels = 0; //MSAA level
 	bool m_bMsaa4xEnable = false; //active MSAA
 
-	int screenWidth;
-	int screenHeight;
-	float ScreenRatio = 1; // 0.75 -> GA / 0.5625 -> HD / 0.625 -> WGA
-
 	void Init();
 	void Release();
 	void NewSwapChain();
@@ -194,7 +135,6 @@ struct GlobalDevice {
 
 	void SetFullScreenMode(bool isFullScreen);
 	void SetResolution(int resid, bool ClientSizeUpdate);
-	ResolutionStruct* GetResolutionArr();
 
 	static int PixelFormatToPixelSize(DXGI_FORMAT format);
 	GPUResource CreateCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat = DXGI_FORMAT_UNKNOWN);

@@ -1,0 +1,13 @@
+일단 동시성 테스트를 하려면
+0. 메뉴-확장>확장관리>검색 : concurrency. Microsoft의 concurrency 시각화 설치.
+	visual studio를 끄고 다시 켜야 적용됨.
+1. Release Mode
+2. 디버깅 하지 않고 실행
+3. 동시성 시각화 > 프로세스에 연결
+4. 그럼 성능을 측정하기 전에 3번을 할 대기 시간이 있어야 하기 때문에 메인 스레드에 대기시간을 주면 좋다.
+5. 동시성 측정을 하고 난 이후에는 100MB 이상의 파일이 특정한 경로에 남고, 이를 지울 수 없기 때문에,
+	해당 경로로 가서 지워줘야 한다.
+	경로 : 분석>Concurrency 시각화 > 고급설정 > 파일 에서 확인 가능.
+		변경해도 될듯?
+		C:\Users\<이름>\OneDrive\문서\Visual Studio 2022\ConcurrencyVisualizer
+		보통 이 경로에 있음.
