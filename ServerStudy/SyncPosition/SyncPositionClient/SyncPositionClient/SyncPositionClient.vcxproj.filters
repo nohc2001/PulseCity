@@ -68,7 +68,4 @@
       <Filter>Shaders</Filter>
     </FxCompile>
   </ItemGroup>
-  <ItemGroup>
-    <Text Include="Plan.txt" />
-  </ItemGroup>
 </Project>
