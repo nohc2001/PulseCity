@@ -1,0 +1,716 @@
+# Blender 4.0.2 MTL File: 'sto.blend'
+# www.blender.org
+
+newmtl 1blue
+Ns 250.000000
+Ka 0.581818 0.581818 0.581818
+Kd 0.000000 0.690329 0.717629
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl INT_DISPLAY
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/INT_Display.dds
+map_d texture/INT_Display.dds
+
+newmtl INT_DISPLAY_AT
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/INT_Display.dds
+map_d texture/INT_Display.dds
+
+newmtl Material_#221
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+
+newmtl Material_#7
+Ns 399.999969
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 2
+map_Kd texture/00181f70.dds
+map_d texture/00181f70.dds
+
+newmtl Material_#8
+Ns 10.000005
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/00181f70.dds
+map_d texture/00181f70.dds
+
+newmtl Plastic_gal
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy (3).dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy (3).dds
+
+newmtl Turbo_oilfeed_block_bllk
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+
+newmtl WHITE_EMIS
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.277486 0.718340
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl WHITE_EMIS.001
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl WHITE_EMIS.002
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.690329 0.717629
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl WHITE_EMIS.003
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl WHITE_EMIS.004
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 1.000000 1.000000 1.000000
+Ke 8.470927 10.000272 10.000272
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl airfilterxx
+Ns 549.999939
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/Untitled1x1.dds
+
+newmtl airfilterxxR
+Ns 549.999939
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/Untitled1x1.dds
+
+newmtl bar_stabe
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gris.dds
+map_d texture/gris.dds
+
+newmtl black
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/black2.dds
+map_d texture/black2.dds
+
+newmtl black.001
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/black2.dds
+map_d texture/black2.dds
+
+newmtl blue
+Ns 440.413177
+Ka 1.000000 1.000000 1.000000
+Kd 0.376139 0.376139 0.376139
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+newmtl blue.001
+Ns 440.413177
+Ka 1.000000 1.000000 1.000000
+Kd 0.376139 0.376139 0.376139
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+newmtl body2
+Ns 800.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/body2.dds
+map_d texture/body2.dds
+
+newmtl bouchon
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/rouge.dds
+map_d texture/rouge.dds
+
+newmtl cable
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/bleu.dds
+map_d texture/bleu.dds
+
+newmtl calipers
+Ns 192.681549
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.690329 0.717629
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl chevrolet_c10reward_2016engine_material.001
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/rgba4d4d4dff.dds
+map_d texture/rgba4d4d4dff.dds
+
+newmtl cloth
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/rm32-chim-33-h-fabric_1.jpg
+
+newmtl emiss
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 50.000000 50.000000 50.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/emi.jpg
+
+newmtl exhaustpipes
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/gradientor_2024_6_20_1_43_33.png
+
+newmtl fil
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/rouge.dds
+map_d texture/rouge.dds
+
+newmtl forged
+Ns 700.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/ForgedCarbonComposite.jpg
+
+newmtl intercooler_aluminum_housing
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+
+newmtl intercooler_aluminum_mesh
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/black 1 - Copy - Copy - Copy - Copy - Copy (2).dds
+map_d texture/black 1 - Copy - Copy - Copy - Copy - Copy (2).dds
+
+newmtl intercooler_rear_pipe_chrome
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+
+newmtl intercooler_rubber_x
+Ns 220.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/black 1 - Copy - Copy - Copy - Copy - Copy.dds
+map_d texture/black 1 - Copy - Copy - Copy - Copy - Copy.dds
+
+newmtl jaune
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/jaune.dds
+map_d texture/jaune.dds
+
+newmtl ledsiplayicon.001
+Ns 50.000011
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/ga3at-Recov27er5d-Recovered-4Recovered.dds
+map_d texture/ga3at-Recov27er5d-Recovered-4Recovered.dds
+
+newmtl ledsiplayicon.002
+Ns 50.000011
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/ga3at-Recov27er5d-Recovered-4Recovered.dds
+map_d texture/ga3at-Recov27er5d-Recovered-4Recovered.dds
+
+newmtl mat_alcantara
+Ns 200.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/mat_alcantara-_Base-Color_ (1).jpeg
+
+newmtl mat_black_interior
+Ns 800.000000
+Ka 0.477273 0.477273 0.477273
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/mat_black_interior (Base Color).png
+
+newmtl mat_carbonio
+Ns 114.326942
+Ka 1.000000 1.000000 1.000000
+Kd 0.010378 0.010378 0.010378
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Bump -bm 0.400000 texture/NormalMap (4).png
+
+newmtl mat_carbonio.001
+Ns 114.326942
+Ka 1.000000 1.000000 1.000000
+Kd 0.002653 0.000000 0.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Bump -bm 0.300000 texture/NormalMap (4).png
+
+newmtl mat_cooling_sistem.001
+Ns 200.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/black2.dds
+map_d texture/black2.dds
+
+newmtl mat_cuciture_bottoni_no_bake
+Ns 200.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/mat_cuciture_bottoni_no_bake.jpeg
+map_d texture/mat_cuciture_bottoni_no_bake.dds
+
+newmtl mat_dettagli_interni
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/mat_dettagli_interni(BaseColor).dds
+map_d texture/mat_dettagli_interni(BaseColor).dds
+
+newmtl mat_fanali
+Ns 793.718994
+Ka 0.659091 0.659091 0.659091
+Ks 1.000000 1.000000 1.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/mat_fanali(BaseColor).dds
+map_Ke texture/mat_fanali (Emissive).png
+
+newmtl mat_fanali.001
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/mat_fanali(BaseColor).dds
+map_Ke texture/mat_fanali (Emissive).png
+
+newmtl mat_fanali.002
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.050724 0.050724 0.050724
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl mat_plastica_lucida_e_azzurro
+Ns 200.000000
+Ka 0.790909 0.790909 0.790909
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/mat_plastica_lucida_e_azzurro (Base Color).png
+
+newmtl mat_plastica_nera
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/mat_plastica_nera (Base Color).png
+map_d texture/mat_plastica_nera (Base Color).png
+
+newmtl mat_plastica_nera.001
+Ns 100.000015
+Ka 0.554545 0.554545 0.554545
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/mat_plastica_nera (Base Color).png
+map_d texture/mat_plastica_nera (Base Color).png
+
+newmtl mat_vetro_car
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.102778 0.102778 0.102778
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 0.721117
+illum 6
+
+newmtl mat_wheels
+Ns 1000.000000
+Ka 0.331818 0.331818 0.331818
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd texture/mat_wheels (Base Color).dds
+
+newmtl matte_colors
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy - Copy - Copy - Copy - Copy.dds
+
+newmtl mirrors
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/Mirror.DDS
+map_d texture/Mirror.DDS
+
+newmtl misc
+Ns 300.000031
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/nodamage_lod0.dds
+map_d texture/nodamage_lod0.dds
+
+newmtl panels
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Ns texture/d0ad48c6-7ae0-4f74-a27a-98fccccccdc1.jpg
+map_refl texture/d0ad48c6-7ae0-4f74-a27a-98fccccccdc1.jpg
+
+newmtl plate
+Ns 576.218994
+Ka 1.000000 1.000000 1.000000
+Kd 0.501811 0.501811 0.501811
+Ks 1.000000 1.000000 1.000000
+Ke 0.030000 0.030000 0.050000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl rubber_trim
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/black2.dds
+map_d texture/black2.dds
+
+newmtl stars
+Ns 100.000015
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 7.317487 7.606867
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl tire_mat5
+Ns 22.499992
+Ka 0.886364 0.886364 0.886364
+Kd 0.003760 0.003760 0.003760
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Bump -bm 0.090000 texture/NormalMap (8).png
+
+newmtl turbo_exhaustSide
+Ns 10.000005
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy (3).dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy (3).dds
+
+newmtl turbo_exhaust_manifold
+Ns 10.000005
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/gray 1 - Copy - Copy - Copy - Copy (3).dds
+map_d texture/gray 1 - Copy - Copy - Copy - Copy (3).dds
+
+newmtl wheel_lip
+Ns 625.537231
+Ka 1.000000 1.000000 1.000000
+Kd 0.117998 0.117998 0.117998
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl wheel_lip.001
+Ns 625.537231
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.690329 0.717629
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl wheels_gold
+Ns 859.834778
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.617528 0.635382
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl windows_int
+Ns 200.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 3
+map_Kd texture/glass.dds
+map_d texture/glass.dds
+
+newmtl windows_tint
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.007386 0.007386 0.007386
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 0.790909
+illum 6
+
+newmtl Материал
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.005155 0.005155 0.005155
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl Материал.001
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl Материал.002
+Ns 1000.000000
+Ka 0.727273 0.727273 0.727273
+Kd 0.000000 0.690329 0.717629
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl Материал.003
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 3.451645 3.588145
+Ni 1.450000
+d 1.000000
+illum 2

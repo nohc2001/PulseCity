@@ -14,6 +14,13 @@ GraphicsStudy/GraduationProject021/.vs/
 GraphicsStudy/GraduationProject021/x64/
 GraphicsStudy/GraduationProject021/GraduationProject001/x64/
 
+GraphicsStudy/FBXStudy/FBX_Importer/.vs/
+GraphicsStudy/FBXStudy/FBX_Importer/x64/
+GraphicsStudy/FBXStudy/FBX_Importer/FBX_Importer/x64/
+
+GraphicsStudy/FBXStudy/FBXReader/.vs/
+GraphicsStudy/FBXStudy/FBXReader/x64/
+
 ServerStudy/ChatClient/.vs/
 ServerStudy/ChatClient/x64/
 ServerStudy/ChatClient/ChatClient/x64/
@@ -41,3 +48,7 @@ ServerStudy/SyncPosition/SyncPositionClient/SyncPositionClient/x64/
 ServerStudy/SyncPosition/SyncPositionServer/.vs/
 ServerStudy/SyncPosition/SyncPositionServer/x64/
 ServerStudy/SyncPosition/SyncPositionServer/SyncPositionServer/x64/
+
+Utill/VisualStudioProjectNameChanger/.vs/
+Utill/VisualStudioProjectNameChanger/x64/
+Utill/VisualStudioProjectNameChanger/VisualStudioProjectNameChanger/x64/

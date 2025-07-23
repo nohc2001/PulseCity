@@ -1,0 +1,237 @@
+디버깅은 PIX로!
+
+New IDEA
+1. 
+Texture에 그래프 데이터를 채워서 GPU에 전달. TexCoord 를 사용해 값 접근 가능. (UV.x+1, UV.y) ...
+	- 이거 쓸 수 는 있는데.. 음 분기가 갈리면 분리실행되기 때문에 효과적이지 않을듯.
+
+이 다음 뭐하지
+화면에 여러개의 카메라 투영을 렌더링할 수 있게 하기.
+디퍼드 렌더링
+-1. DDS 로도 텍스쳐 로딩 해보기
+0. 게임오브젝트 구조 만들기
+	- 망토, 머리, 천 같은 것들을 자연스럽게 움직이도록 해보기
+0. 피킹 만들어보기. > 역행렬..
+	- 굳이 콜라이더 사용 안하고 Mesh만 사용해서 충돌 감지 하면 될듯?
+1. 임포트
+	1. FBX 버텍스 움직이는 애니메이션 구현?
+		- 애니메이션
+			- 게임오브젝트 구조 - 자식 오브젝트 활용
+			- 키 프레임 애니메이션.
+			- 
+	2. GLB 임포트
+	3. 나의 최적화 모델 포멧 만들기. (bin) 
+3. 앰비언트 오쿨루션,텍스쳐 어드레싱
+4. 쉐도우 매핑 & 라이트 매핑 & 환경매핑(반사도) & 투명도/디더링
+5. 최적화
+	1. 공간분할
+		- 렌더 청크 거리 (그릴 오브젝트 줄이기) / 시뮬레이션 청크 거리
+		- 충돌검사
+			- 바운드 -> 삼각형 으로 가는 트리구조
+				- 무게중심을 기준으로 8등분.
+		- 물리엔진
+			- 물리계산
+		- 오쿨루션 컬링
+			- KD-Tree For Static Object. - 카메라와 가까운 node 찾고, 나아가기. (개인적으로 가능성을 봄.)
+				- 하나의 오브젝트에 최소바운드/ 최대바운드를 모두 미리 만들어놓고,
+				- 최대바운드의 8개의 점중 하나가 로지컬z버퍼에 포함이 안되있으면 draw.
+					- 투영하기 전에 포함여부를 판단하기 위해 로지컬 버퍼의 각칸은 각자의 투영 프러스텀을 가진다. 점이 그 안에 포함되기만 하면 투영을 시작한다.
+				- 그리게 된다면 최소바운드의 8개의 점을 폴리곤 데이터로 만들어서 로지컬 z버퍼의 투영.
+				- 로지컬z버퍼는 화면이 1600x900이면 32x18 청크 정도로 해상도를 낮추어서, 그 나눈 구간 하나당
+					2차원 선의 방정식이 모인 로직컬 계산을 하도록 한다.
+					- 한칸에서 모든 부분이 채워지면 아예 막아버려서 최대바운드가 모두 그 칸에 들어가는 물체를 걸러낸다.
+	2. 멀티스레드 렌더링
+		- core affinity / 처리량 측정후 분배 코드
+	3. CPU / GPU 비동기 처리
+		- 이전 프레임을 wait하기
+	4. GPU 최적화 책 보고 최적화 (시간 측정 후 보틀낵 찾고, 개선) 하는 프레임워크 만들기
+		- 디퍼드 렌더링
+		- 디더링
+	5. SIMD, BMI 활용
+	6. 밉맵 활용해서 원경의 디테일 줄이기
+		?
+7. 텍스트 출력
+	DirectX 기본 텍스트 출력
+	직접 폰트 데이터 가져와 버텍스 배열로 만드는 출력
+8. 음악
+	waveform
+9. ICB - ECS 넣자.. > 내부에서 코딩 가능 ㅇㅇ
+6. 레이트레이싱
+
+> 이거 다하고 게임 하나 만들고 레이트레이싱 바로 들어가장.
+> 네트워크 붙이기
+
+노드..
+
+vecarr<Mesh*> MeshVec;
+
+constexpr ui64 ComponentTypeMask = 0xFF00000000000000;
+constexpr ui64 ComponentPtrMask = 0x00FFFFFFFFFFFFFF;
+constexpr float rotcvt = (2PI / (float)short.max);
+
+ui8 ctable[256][256]; // 64KB // value 255 is null
+
+// 32byte
+struct Object
+{
+	vec3 pos; // 12
+	ui16 rot[3]; // 18 xR = rot[0] * rotcvt;
+	hfloat scale; // 20
+	Component* ComponentArr; // 28 - mesh, childobjs, colider, physic... // also aligin with type.
+	// [(a)component align type 1byte] [ptr 7 byte] // a : table of 
+	ui16 Capacity; // 30
+	ui16 Up; // 32
+
+	__forceinline template<typename T> T* GetComponent(){
+		int index = ctable[(ComponentArr & ComponentTypeMask) >> 56][T::type];
+		return (ComponentArr & ComponentPtrMask)[index].GetComponent();
+	}
+}
+
+typedef fmvecarr<Object>* TObjectPoolPtr;
+vecarr<TObjectPoolPtr> MeshVec;
+
+// 같은 컴포넌트 끼리 묶기
+
+enum class ComponentType{
+...
+	AComponent = 102,
+...
+};
+
+struct AComponent{
+	static constexpr ui8 type = ComponentType::AComponent; // evey component have this global constant.
+};
+
+struct Component{
+	Component(){}
+	~Component(){}
+
+	void* data; // 8byte  [1byte type][7byte addr]
+
+	__forceinline template<typename T> T* GetComponent(){
+		return (T*)(data & ComponentPtrMask);
+	}
+
+	__forceinline ComponentType gettype(){
+		return (data & ComponentTypeMask) >> 56;
+	}
+};
+
+{
+#include <iostream>
+
+using namespace std;
+
+struct AAA {
+	static constexpr int type = 102;
+};
+
+template <typename T> int getType() {
+	return T::type;
+}
+
+int main() {
+	cout << getType<AAA>() << endl;
+}
+
+// 이거 정상작동함.
+}
+
+완료 작업
+- 세팅
+- 공간 변환
+- obj 파일로 모델을 로드
+- stb_image로 텍스쳐 로드
+- 셰이더로 텍스쳐 전달
+- 라이팅 (디퓨즈, 스페큘러)
+- 디스크립터 풀, 디스크립터 할당자 사용 물체 여러개 그리기
+- 메모리 관리 모델 적용
+- 깊이 버퍼 적용 (앞뒤 개념)
+- 노멀 매핑 적용.
+
+
+Object설계
+Static	- Collision
+		- Light & Reflact
+		- Oculuder
+		- ...
+Enable
+Visible
+Tag
+Layer
+Chunk
+
+siz
+16byte
+32byte
+64byte
+
+//typedef GameObject[128] g128
+g128* arr;
+int* typearr;
+
+//4096 byte
+//if object can be placed many times, chunck manage them..
+union MGameObjectChunck {
+	MGameObject32 obj32[128];
+	MGameObject64 obj64[64];
+	MGameObject128 obj128[32];
+	MGameObject256 obj256[16];
+	MGameObject512 obj512[8];
+	MGameObject1024 obj1024[4];
+};
+
+ui64 MchunckType[512]; // if whole memory size is 2MB
+[ 4bit obj size (log2) ][ 12bit objecttype ][ 48bit chunck location (si16, si16, si16)]
+
+ui16 DynamicTour [512]; // dynamic chunck indexes;
+ui16 CollisionStaticTour [512]; // collision static chunck indexes..
+ui16 illuminationStaticTour [512]; // illumination static chunck indexes..
+... // multple static types..
+// 이게 필요할 일이 있을지는 모르겠음 . Static을 어떻게 처리하느냐에  문제인듯.
+// 있더라도 스테틱 당담 청크가 따로 있어야 함.
+GGameObject - General GameObject 32byte
+GGameObject 는 각 공간분할청크당 배열로 저장되며, 만약 같은 타입의 오브젝트가 일정 개수가 넘을 경우 MGameObject로 변환되어 저장된다.
+
+RangeArr<ui64, SpaceChunk*> SpaceChunckSeeker; // ui64 - si16 + si16 + si16 + ui16(extraflag)
+unordered_map<ui64, SpaceChunck*> SpaceChunckSeeker
+//x, y, z : -32,768 ~ 32,767
+
+하나의 청크는 그 청크와 인접된 청크들의 포인터를 가지고 있다.
+-> 때문에 오브젝트가 이동하게 되면, 그걸로 해당 청크포인터들을 찾아 오브젝트 데이터를 이동시킨다.
+	-> 청크마다 병렬로 스레드를 돌릴 수 있기 때문에, 다른 청크에 영향을 주는 코드는 SPINLOCK을 걸어야 한다.
+해당 청크는 청크안의 오브젝트들을 투어하는 ChunckObjTour 배열을 가지고 있어야 한다.
+
+이런 청크를 가지게 된다면, 플레이어가 향하는 방향에 따라 청크 렌더링을 생략할 수 있고,
+멀리 있는 청크를 LOD를 조정하여 렌더링할 수 있다.
+
+StaticCollider 처리
+StaticCollider를 위한 자료형을 따로 만들어야 함.
+바운드 영역에서의 xmax, xmin, ymax, ymin, zmax, zmin 6개의 터레인트리 자료구조.
+-> 이거 잘 될지 모르겠다.
+-> 문제는 바운드를 어떻게 정할지, 또 어떻게 위치에 따라 탐색할지
+-> 이거 잘하면 mesh collider로 쓸 수 있을지도..
+
+GameObject 내의 Component는 오브젝트와 데이터가 분리되어 있음.
+캐시히트를 높이기 위해 인접한 오브젝트끼리는 인접한 컴포넌트를 가지고 있다.
+
+음 ...
+빈프로젝트로
+일단 구조를 짜고 
+시간을 재보는 것이 
+제일 나을듯..
+
+> 충돌처리
+> 렌더링 접근
+> 차폐 물체.
+
+- 컴포넌트도 enable / disable 이 있어야 함. ???
+
+GameWorld 를 만들었음.
+Camera 변수에 따라서 보이는 청크들을 다르게 한다.
+	- fov, w, h, look, near/far 벡터에 따라 어떻게 탐색할 것인지..
+	8개의 점들이 뷰 프러스텀에 걸치지 않으면, 로드되지 않는다.
+	뷰 프러스텀은 노멀이 바깥에 위치하는 6개의 평면을 모두 앞뒤비교를 하면 된다.
+	접근은 모두 
+Camera 위치로부터의 거리에 따라서 활성화되는 청크를 다르게 한다. -> 이건 쉬움
