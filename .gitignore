@@ -20,6 +20,10 @@ GraphicsStudy/FBXStudy/FBX_Importer/FBX_Importer/x64/
 
 GraphicsStudy/FBXStudy/FBXReader/.vs/
 GraphicsStudy/FBXStudy/FBXReader/x64/
+GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.exe
+GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.exp
+GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.lib
+GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.pdb
 
 ServerStudy/ChatClient/.vs/
 ServerStudy/ChatClient/x64/
