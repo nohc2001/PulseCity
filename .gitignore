@@ -53,6 +53,22 @@ ServerStudy/SyncPosition/SyncPositionServer/.vs/
 ServerStudy/SyncPosition/SyncPositionServer/x64/
 ServerStudy/SyncPosition/SyncPositionServer/SyncPositionServer/x64/
 
+ServerStudy/EchoServer/Client/.vs/
+ServerStudy/EchoServer/Client/x64/
+ServerStudy/EchoServer/Client/Client/x64/
+
+ServerStudy/EchoServer/Connectingserver/.vs/
+ServerStudy/EchoServer/Connectingserver/x64/
+ServerStudy/EchoServer/Connectingserver/Connectingserver/x64/
+
 Utill/VisualStudioProjectNameChanger/.vs/
 Utill/VisualStudioProjectNameChanger/x64/
 Utill/VisualStudioProjectNameChanger/VisualStudioProjectNameChanger/x64/
+
+*.log
+*.pch
+*.obj
+*.ipch
+*.VC.db
+*.VC.opendb
+*.tlog

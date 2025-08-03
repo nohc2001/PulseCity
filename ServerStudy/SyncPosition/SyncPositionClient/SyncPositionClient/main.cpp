@@ -866,7 +866,7 @@ void Game::Update()
 	//if (pKeyBuffer['D'] & 0xF0) {
 	//	xmf3Shift.x += speed*game.DeltaTime;
 	//}
-	int result = ClientSocket->Receive();
+ 	int result = ClientSocket->Receive();
 	if (result > 0) {
 		float dat[World::max_participant][4] = { {} };
 

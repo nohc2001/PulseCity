@@ -132,28 +132,29 @@ void GameUpdate() {
 		}
 	}
 
-	if (StackTime > SendDelay) {
-		float SendData[World::max_participant][4] = { {} };
-		for (int i = 0; i < gameworld.participantCount; ++i) {
-			if (gameworld.Participants[i].Connected == false) {
-				SendData[i][0] = 0;
-				SendData[i][1] = 0;
-				SendData[i][2] = 0;
-				SendData[i][3] = 0;
-			}
-			else {
-				*(XMVECTOR*)&SendData[i] = gameworld.Participants[i].pos;
-				SendData[i][3] = 1;
-			}
+	//if(StackTime > SendDelay){
+	float SendData[World::max_participant][4] = { {} };
+	for (int i = 0; i < gameworld.participantCount; ++i) {
+		if (gameworld.Participants[i].Connected == false) {
+			SendData[i][0] = 0;
+			SendData[i][1] = 0;
+			SendData[i][2] = 0;
+			SendData[i][3] = 0;
 		}
-		if (gameworld.WorldUpdate) {
-			for (int i = 0; i < gameworld.participantCount; ++i) {
-				if (gameworld.Participants[i].Connected == false) continue;
-				gameworld.Participants[i].socket.Send((char*)SendData, sizeof(float) * 64);
-			}
+		else {
+			*(XMVECTOR*)&SendData[i] = gameworld.Participants[i].pos;
+			SendData[i][3] = 1;
 		}
-		StackTime = 0;
 	}
+	if (gameworld.WorldUpdate) {
+		for (int i = 0; i < gameworld.participantCount; ++i) {
+			if (gameworld.Participants[i].Connected == false) continue;
+			gameworld.Participants[i].socket.Send((char*)SendData, sizeof(float) * 64);
+		}
+	}
+	//}
+	//StackTime = 0;
+	
 
 	gameworld.WorldUpdate = false;
 }
@@ -172,6 +173,7 @@ int main() {
 	listenSocket.SetNonblocking();
 	vector<PollFD> readFds;
 	//??
+
 	listenSocket.Listen();	// 3
 	double DeltaFlow = 0;
 	constexpr double InvHZ = 1.0 / (double)QUERYPERFORMANCE_HZ;

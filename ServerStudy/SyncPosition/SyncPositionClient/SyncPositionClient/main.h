@@ -46,7 +46,7 @@ HINSTANCE g_hInst;
 HWND hWnd;
 LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
-int resolutionLevel = 0;
+int resolutionLevel = 1;
 Socket* ClientSocket = nullptr;
 
 #define QUERYPERFORMANCE_HZ 10000000//Hz

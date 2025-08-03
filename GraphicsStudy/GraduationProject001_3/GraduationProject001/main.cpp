@@ -1043,9 +1043,9 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			if (maxPos.x < pos.x) maxPos.x = pos.x;
 			if (maxPos.y < pos.y) maxPos.y = pos.y;
 			if (maxPos.z < pos.z) maxPos.z = pos.z;
-			if (minPos.x < pos.x) minPos.x = pos.x;
-			if (minPos.y < pos.y) minPos.y = pos.y;
-			if (minPos.z < pos.z) minPos.z = pos.z;
+			if (minPos.x > pos.x) minPos.x = pos.x;
+			if (minPos.y > pos.y) minPos.y = pos.y;
+			if (minPos.z > pos.z) minPos.z = pos.z;
 			temp_pos.push_back(pos);
 		}
 		else if (strcmp(rstr, "vt") == 0) {
