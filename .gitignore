@@ -25,6 +25,10 @@ GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.exp
 GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.lib
 GraphicsStudy/FBXStudy/FBXReader/FBXReader_x64_debug.pdb
 
+GraphicsStudy/GraduationProject004/.vs
+GraphicsStudy/GraduationProject004/x64
+GraphicsStudy/GraduationProject004/GraduationProject004/x64
+
 ServerStudy/ChatClient/.vs/
 ServerStudy/ChatClient/x64/
 ServerStudy/ChatClient/ChatClient/x64/
@@ -53,6 +57,14 @@ ServerStudy/SyncPosition/SyncPositionServer/.vs/
 ServerStudy/SyncPosition/SyncPositionServer/x64/
 ServerStudy/SyncPosition/SyncPositionServer/SyncPositionServer/x64/
 
+ServerStudy/SyncPositionIOCP/SyncPositionClientIOCP/.vs
+ServerStudy/SyncPositionIOCP/SyncPositionClientIOCP/x64
+ServerStudy/SyncPositionIOCP/SyncPositionClientIOCP/SyncPositionClientIOCP/x64
+
+ServerStudy/SyncPositionIOCP/SyncPositionSeverIOCP/.vs
+ServerStudy/SyncPositionIOCP/SyncPositionSeverIOCP/x64
+ServerStudy/SyncPositionIOCP/SyncPositionSeverIOCP/SyncPositionSeverIOCP/x64
+
 ServerStudy/EchoServer/Client/.vs/
 ServerStudy/EchoServer/Client/x64/
 ServerStudy/EchoServer/Client/Client/x64/
@@ -67,7 +79,6 @@ Utill/VisualStudioProjectNameChanger/VisualStudioProjectNameChanger/x64/
 
 *.log
 *.pch
-*.obj
 *.ipch
 *.VC.db
 *.VC.opendb
