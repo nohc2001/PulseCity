@@ -46,7 +46,7 @@ HINSTANCE g_hInst;
 HWND hWnd;
 LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
-int resolutionLevel = 1;
+int resolutionLevel = 0;
 Socket* ClientSocket = nullptr;
 
 #define QUERYPERFORMANCE_HZ 10000000//Hz
@@ -235,7 +235,6 @@ public:
 
 	virtual void ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const char* path);
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
-	void CreateWallMesh(float width, float height, float depth, XMFLOAT4 color);
 	BoundingOrientedBox GetOBB();
 };
 
@@ -254,7 +253,6 @@ struct World {
 class Game {
 	Shader* MyShader = nullptr;
 	Mesh* MyMesh = nullptr;
-	Mesh* FloorMesh = nullptr;
 
 	//XMMATRIX MyObjectWorldMat;
 	//XMVECTOR DestPos;

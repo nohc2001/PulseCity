@@ -1,6 +1,4 @@
 #pragma once
-
-#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -11,21 +9,10 @@
 #include <DirectXCollision.h>
 #include <DXGIDebug.h>
 #include <tchar.h>
-
 #include <vector>
 #include <fstream>
 
-#include <SDKDDKVer.h>
-#include <Ws2tcpip.h>
-#include <assert.h>
-#include <exception>
-#include <iostream>
-#include <sstream>
-#include <stdio.h>
-#include <winsock2.h>
-#include <cstdint>
-
-#include "NWLib/ImaysNet.h"
+#include "SpaceMath.h"
 
 using namespace DirectX;
 using namespace DirectX::PackedVector;
@@ -36,18 +23,40 @@ using namespace DirectX::PackedVector;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
-#define FRAME_BUFFER_WIDTH 1280
-#define FRAME_BUFFER_HEIGHT 720
-
 typedef unsigned int ui32;
 typedef unsigned long long ui64;
+
+struct ViewportData {
+	D3D12_VIEWPORT Viewport;
+	D3D12_RECT ScissorRect;
+	ui64 LayerFlag = 0; // layers that contained.
+	XMMATRIX ViewMatrix;
+	XMMATRIX ProjectMatrix;
+	vec4 Camera_Pos;
+
+	__forceinline XMVECTOR project(const vec4& vec_in_gamespace) {
+		return XMVector3Project(vec_in_gamespace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
+	}
+	__forceinline XMVECTOR unproject(const vec4& vec_in_screenspace) {
+		return XMVector3Unproject(vec_in_screenspace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
+	}
+
+	__forceinline void project_vecArr(vec4* invecArr_in_gamespace, vec4* outvecArr_in_screenspace, int count) {
+		XMVector3ProjectStream((XMFLOAT3*)invecArr_in_gamespace, 16, (XMFLOAT3*)outvecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
+	}
+	__forceinline XMVECTOR unproject_vecArr(vec4* outvecArr_in_screenspace, vec4* invecArr_in_gamespace, int count) {
+		XMVector3UnprojectStream((XMFLOAT3*)invecArr_in_gamespace, 16, (XMFLOAT3*)outvecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
+	}
+};
+
+#define FRAME_BUFFER_WIDTH 1280
+#define FRAME_BUFFER_HEIGHT 720
 
 HINSTANCE g_hInst;
 HWND hWnd;
 LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
-int resolutionLevel = 1;
-Socket* ClientSocket = nullptr;
+int resolutionLevel = 3;
 
 #define QUERYPERFORMANCE_HZ 10000000//Hz
 static inline ui64 GetTicks()
@@ -62,15 +71,62 @@ struct ResolutionStruct {
 	ui32 height;
 };
 
-//Supporting Resolutions
-std::vector<ResolutionStruct> SupportingResolutions;
+//ratio = 4 : 3
+constexpr ui32 ResolutionArr_GA[10][2] = {
+	{640, 480}, {800, 600}, {1024, 768}, {1152, 864},
+	{1400, 1050}, {1600, 1200}, {2048, 1536}, {3200, 2400},
+	{4096, 3072}, {6400, 4800}
+};
+enum class ResolutionName_GA {
+	VGA = 0,
+	SVGA = 1,
+	XGA = 2,
+	XGAplus = 3,
+	SXGAplus = 4,
+	UXGA = 5,
+	QXGA = 6,
+	QUXGA = 7,
+	HXGA = 8,
+	HUXGA = 9
+};
 
-struct ViewportData {
-	D3D12_VIEWPORT Viewport;
-	D3D12_RECT ScissorRect;
-	ui64 LayerFlag = 0; // layers that contained.
-	XMMATRIX ViewMatrix;
-	XMMATRIX ProjectMatrix;
+//ratio = 16 : 9
+constexpr ui32 ResolutionArr_HD[12][2] = {
+	{640, 360}, {854, 480}, {960, 540}, {1280, 720}, {1600, 900},
+	{1920, 1080}, {2560, 1440}, {2880, 1620}, {3200, 1800}, {3840, 2160}, {5120, 2880}, {7680, 4320}
+};
+enum class ResolutionName_HD {
+	nHD = 0,
+	SD = 1,
+	qHD = 2,
+	HD = 3,
+	HDplus = 4,
+	FHD = 5,
+	QHD = 6,
+	QHDplus0 = 7,
+	QHDplus1 = 8,
+	UHD = 9,
+	UHDplus = 10,
+	FUHD = 11
+};
+
+//ratio = 16 : 10
+constexpr ui32 ResolutionArr_WGA[10][2] = {
+	{1280, 800}, {1440, 900}, {1680, 1050}, {1920, 1200},
+	{2560, 1600}, {2880, 1800}, {3072, 1920}, {3840, 2400},
+	{5120, 3200}, {7680, 4800}
+};
+enum class ResolutionName_WGA {
+	WXGA = 0,
+	WXGAplus = 1,
+	WSXGA = 2,
+	WUXGA = 3,
+	WQXGA0 = 4,
+	WQXGA1 = 5,
+	WQXGA2 = 6,
+	WQUXGA = 7,
+	WHXGA = 8,
+	WHUXGA = 9
 };
 
 enum RenderingMod {
@@ -94,7 +150,7 @@ struct GPUResource {
 
 // name completly later. ??
 struct GlobalDevice {
-	IDXGIFactory7* pFactory;// solved 002 : why dxgi 6, but is type limit 7 ??
+	IDXGIFactory7* pFactory;// question 002 : why dxgi 6, but is type limit 7 ??
 	IDXGISwapChain4* pSwapChain = nullptr;
 	ID3D12Device* pDevice;
 
@@ -129,6 +185,10 @@ struct GlobalDevice {
 	ui32 m_nMsaa4xQualityLevels = 0; //MSAA level
 	bool m_bMsaa4xEnable = false; //active MSAA
 
+	int screenWidth;
+	int screenHeight;
+	float ScreenRatio = 1; // 0.75 -> GA / 0.5625 -> HD / 0.625 -> WGA
+
 	void Init();
 	void Release();
 	void NewSwapChain();
@@ -151,6 +211,7 @@ struct GlobalDevice {
 
 	void SetFullScreenMode(bool isFullScreen);
 	void SetResolution(int resid, bool ClientSizeUpdate);
+	ResolutionStruct* GetResolutionArr();
 
 	static int PixelFormatToPixelSize(DXGI_FORMAT format);
 	GPUResource CreateCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat = DXGI_FORMAT_UNKNOWN);
@@ -233,34 +294,84 @@ public:
 	Mesh();
 	virtual ~Mesh();
 
-	virtual void ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const char* path);
+	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color);
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
-	void CreateWallMesh(float width, float height, float depth, XMFLOAT4 color);
 	BoundingOrientedBox GetOBB();
+	void CreateGroundMesh(ID3D12GraphicsCommandList* pCommandList);
+	void CreateWallMesh(float width, float height, float depth, vec4 color);
 };
 
-struct PlayerData {
-	XMMATRIX WorldMat;
-	XMVECTOR DestPos;
-	bool Connected = false;
+struct OBB_vertexVector {
+	vec4 vertex[2][2][2] = { {{}} };
 };
 
+struct GameObject {
+	matrix m_worldMatrix;
+	Mesh* m_pMesh = nullptr;
+	Shader* m_pShader = nullptr;
 
-struct World {
-	static constexpr int max_participant = 16;
-	PlayerData players[max_participant] = {};
+	vec4 LVelocity;
+	vec4 tickLVelocity;
+	vec4 tickAVelocity;
+	vec4 LastQuerternion;
+
+	GameObject();
+	virtual ~GameObject();
+
+	virtual void Update(float delatTime);
+	virtual void Render();
+
+	void SetMesh(Mesh* pMesh);
+	void SetShader(Shader* pShader);
+	void SetWorldMatrix(const XMMATRIX& worldMatrix);
+
+	const XMMATRIX& GetWorldMatrix() const;
+
+	virtual BoundingOrientedBox GetOBB();
+	OBB_vertexVector GetOBBVertexs();
+
+	void LookAt(vec4 look, vec4 up = { 0, 1, 0, 0 });
+
+	static void CollisionMove(GameObject* obj1, GameObject* obj2);
+	virtual void OnCollision(GameObject* other);
+};
+
+class Player : public GameObject {
+	UCHAR* m_pKeyBuffer;
+	vec4 velocity;
+	vec4 accel;
+public:
+	bool isGround = false;
+	float JumpVelocity = 5;
+
+	Mesh* Gun;
+	matrix gunMatrix_thirdPersonView;
+	matrix gunMatrix_firstPersonView;
+
+	Player(UCHAR* pKeyBuffer) : m_pKeyBuffer(pKeyBuffer) {}
+
+	virtual void Update(float deltaTime) override;
+
+	virtual void Render();
+
+	virtual void OnCollision(GameObject* other) override;
+
+	virtual BoundingOrientedBox GetOBB();
 };
 
 class Game {
-	Shader* MyShader = nullptr;
-	Mesh* MyMesh = nullptr;
-	Mesh* FloorMesh = nullptr;
-
-	//XMMATRIX MyObjectWorldMat;
-	//XMVECTOR DestPos;
-
-	World gameworld;
+	Shader* MyShader;
+	std::vector<GameObject*> m_gameObjects; // GameObjets
+	Player* player;
+	
 public:
+	//inputs
+	bool isMouseReturn;
+	vec4 DeltaMousePos;
+	vec4 LastMousePos;
+
+	bool bFirstPersonVision = true;
+
 	float DeltaTime;
 	UCHAR pKeyBuffer[256];
 	Game(){}

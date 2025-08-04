@@ -53,7 +53,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 void func();
 void ChangeProjectName(wchar_t* str);
 
-TCHAR str[10][30] = { {} };
+TCHAR str[10][256] = { {} };
 int line = 0;
 int cnt = 0;
 RECT rt;
@@ -74,7 +74,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		}
 
-		if (cnt + 1 < 30) {
+		if (cnt + 1 < 256) {
 			if (str[line][cnt] == 0) {
 				str[line][cnt] = wParam; //--- 문자 저장
 				cnt++;
@@ -293,10 +293,12 @@ void ChangeProjectName(wchar_t* _str) {
 				}
 			}
 
+			int start = 0;
 			while (true) {
-				int index = FindVector(FileD, projstr.c_str(), 0);
+				int index = FindVector(FileD, projstr.c_str(), start);
 				if (index != -1) {
 					ReplaceVector(FileD, index, projstr.size(), cprojstr.c_str());
+					start = index + 1;
 				}
 				else {
 					break;

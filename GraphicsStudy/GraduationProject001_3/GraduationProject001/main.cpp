@@ -706,6 +706,12 @@ void Game::Init()
 	wallObject->SetWorldMatrix(XMMatrixTranslation(0.0f, 0.0f, 5.0f));
 	m_gameObjects.push_back(wallObject);
 
+	GameObject* wallObject2 = new GameObject();
+	wallObject2->SetMesh(MyWallMesh);
+	wallObject2->SetShader(MyShader);
+	wallObject2->SetWorldMatrix(XMMatrixTranslation(10.0f, 0.0f, 0.0f));
+	m_gameObjects.push_back(wallObject2);
+
 	gd.pCommandList->Close();
 	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
 	gd.pCommandQueue->ExecuteCommandLists(1, ppCommandLists);
@@ -810,7 +816,7 @@ void Game::Update()
 
 			BoundingOrientedBox obb1 = gbj1->GetOBB();
 			BoundingOrientedBox obb2 = gbj2->GetOBB();
-
+			
 			if (obb1.Intersects(obb2)) {
 				gbj1->OnCollision(gbj2);
 				gbj2->OnCollision(gbj1);
@@ -1105,6 +1111,9 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 	CenterPos.x = (maxPos.x + minPos.x) * 0.5f;
 	CenterPos.y = (maxPos.y + minPos.y) * 0.5f;
 	CenterPos.z = (maxPos.z + minPos.z) * 0.5f;
+	MAXpos.x = 0;
+	MAXpos.y = 0;
+	MAXpos.z = 0;
 	for (int i = 0; i < temp_vertices.size(); ++i) {
 		temp_vertices[i].position.x -= CenterPos.x;
 		temp_vertices[i].position.y -= CenterPos.y;

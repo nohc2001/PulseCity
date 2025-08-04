@@ -98,6 +98,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	return Message.wParam;
 }
 
+int wcount = 0;
 RECT rt;
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	HDC hdc;
@@ -111,6 +112,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if ((game.pKeyBuffer['W'] & 0xF0) == false) {
 				char input[3] = "WD";
+				wcount += 1;
 				ClientSocket->Send(input, 2);
 			}
 		}
@@ -744,16 +746,13 @@ void Game::Init()
 	MyShader->InitShader();
 
 	MyMesh = new Mesh();
-	MyMesh->ReadMeshFromFile_OBJ(gd.pCommandList, "Resources/Mesh/PlayerMesh.obj");
+	MyMesh->ReadMeshFromFile_OBJ(gd.pCommandList, "Resources/Mesh/ShieldMesh.obj");
 
 	for (int i = 0; i < World::max_participant; ++i) {
 		gameworld.players[i].WorldMat = XMMatrixIdentity();
 		gameworld.players[i].DestPos = XMVectorSet(0, 0, 0, 1);
 		gameworld.players[i].Connected = false;
 	}
-
-	FloorMesh = new Mesh();
-	FloorMesh->CreateWallMesh(10, 0.5f, 10, { 0.5, 0.5, 0.5, 1 });
 
 	gd.pCommandList->Close();
 	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
@@ -823,11 +822,6 @@ void Game::Render() {
 			MyMesh->Render(gd.pCommandList, 1);
 		}
 	}
-
-	XMMATRIX xmf4x4World = XMMatrixIdentity();
-	xmf4x4World.r[1].m128_f32[3] = -2.5f;
-	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &xmf4x4World, 0);
-	FloorMesh->Render(gd.pCommandList, 1);
 	
 	//render end ----------------------------------------------------------------
 
@@ -874,7 +868,7 @@ void Game::Update()
 	//if (pKeyBuffer['D'] & 0xF0) {
 	//	xmf3Shift.x += speed*game.DeltaTime;
 	//}
- 	int result = ClientSocket->Receive();
+	int result = ClientSocket->Receive();
 	if (result > 0) {
 		float dat[World::max_participant][4] = { {} };
 
@@ -1144,7 +1138,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			in >> uvIndex[0];
 			in >> blank;
 			in >> normalIndex[0];
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[0] - 1], {1, 1, 1, 1}, temp_normal[normalIndex[0] - 1]));
+			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[0]-1], Color::RandomColor(), temp_normal[normalIndex[0]-1]));
 
 			//in >> blank;
 			in >> vertexIndex[1];
@@ -1152,7 +1146,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			in >> uvIndex[1];
 			in >> blank;
 			in >> normalIndex[1];
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[1]-1], { 1, 1, 1, 1 }, temp_normal[normalIndex[1]-1]));
+			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[1]-1], Color::RandomColor(), temp_normal[normalIndex[1]-1]));
 
 			//in >> blank;
 			in >> vertexIndex[2];
@@ -1161,7 +1155,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			in >> blank;
 			in >> normalIndex[2];
 			//in >> blank;
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[2]-1], { 1, 1, 1, 1 }, temp_normal[normalIndex[2]-1]));
+			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[2]-1], Color::RandomColor(), temp_normal[normalIndex[2]-1]));
 
 			int n = temp_vertices.size() - 1;
 			TrianglePool.push_back(TriangleIndex(n - 2, n - 1, n));
@@ -1213,92 +1207,6 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 	VertexNum = temp_vertices.size();
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	/*MeshOBB = BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));*/
-}
-
-void Mesh::CreateWallMesh(float width, float height, float depth, XMFLOAT4 color)
-{
-	std::vector<Vertex> vertices;
-	std::vector<UINT> indices;
-	// Front
-	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), color, XMFLOAT3(0.0f, 0.0f, -1.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), color, XMFLOAT3(0.0f, 0.0f, -1.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, height, -depth), color, XMFLOAT3(0.0f, 0.0f, -1.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, height, -depth), color, XMFLOAT3(0.0f, 0.0f, -1.0f)));
-	// Back
-	vertices.push_back(Vertex(XMFLOAT3(-width, -height, depth), color, XMFLOAT3(0.0f, 0.0f, 1.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, -height, depth), color, XMFLOAT3(0.0f, 0.0f, 1.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, height, depth), color, XMFLOAT3(0.0f, 0.0f, 1.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, height, depth), color, XMFLOAT3(0.0f, 0.0f, 1.0f)));
-	// Top
-	vertices.push_back(Vertex(XMFLOAT3(-width, height, -depth), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, height, -depth), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, height, depth), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, height, depth), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
-	// Bottom
-	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), color, XMFLOAT3(0.0f, -1.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), color, XMFLOAT3(0.0f, -1.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, -height, depth), color, XMFLOAT3(0.0f, -1.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, -height, depth), color, XMFLOAT3(0.0f, -1.0f, 0.0f)));
-	// Left
-	vertices.push_back(Vertex(XMFLOAT3(-width, -height, depth), color, XMFLOAT3(-1.0f, 0.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), color, XMFLOAT3(-1.0f, 0.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, height, -depth), color, XMFLOAT3(-1.0f, 0.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(-width, height, depth), color, XMFLOAT3(-1.0f, 0.0f, 0.0f)));
-	// Right
-	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), color, XMFLOAT3(1.0f, 0.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, -height, depth), color, XMFLOAT3(1.0f, 0.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, height, depth), color, XMFLOAT3(1.0f, 0.0f, 0.0f)));
-	vertices.push_back(Vertex(XMFLOAT3(width, height, -depth), color, XMFLOAT3(1.0f, 0.0f, 0.0f)));
-
-	// index
-	// front
-	indices.push_back(0); indices.push_back(2); indices.push_back(1);
-	indices.push_back(2); indices.push_back(0); indices.push_back(3);
-	// back
-	indices.push_back(4); indices.push_back(5); indices.push_back(6);
-	indices.push_back(6); indices.push_back(7); indices.push_back(4);
-	// top
-	indices.push_back(8); indices.push_back(10); indices.push_back(9);
-	indices.push_back(10); indices.push_back(8); indices.push_back(11);
-	// bottom
-	indices.push_back(12); indices.push_back(13); indices.push_back(14);
-	indices.push_back(14); indices.push_back(15); indices.push_back(12);
-	// left
-	indices.push_back(16); indices.push_back(18); indices.push_back(17);
-	indices.push_back(18); indices.push_back(16); indices.push_back(19);
-	// right
-	indices.push_back(20); indices.push_back(22); indices.push_back(21);
-	indices.push_back(22); indices.push_back(20); indices.push_back(23);
-
-	// OBB
-	this->MAXpos = XMFLOAT3(width, height, depth);
-
-	int nVertices = vertices.size();
-	int nStride = sizeof(Vertex);
-
-	VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
-	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
-	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
-
-	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-
-	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
-	VertexBufferView.StrideInBytes = nStride;
-	VertexBufferView.SizeInBytes = nStride * nVertices;
-
-	IndexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
-	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
-	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &indices[0], &IndexUploadBuffer, &IndexBuffer, true);
-
-	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-
-	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
-	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
-	IndexBufferView.SizeInBytes = indices.size() * sizeof(UINT);
-
-	IndexNum = indices.size();
-	VertexNum = vertices.size();
-	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
 void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum)

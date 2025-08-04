@@ -121,8 +121,6 @@ int main()
 			//wait until there is i/o-able socket 
 			Poll(readfd.data(), (int)readfd.size(), 100);
 
-
-
 			int participantsCount = 0;
 
 			for (auto readfd : readfd) {
@@ -140,7 +138,7 @@ int main()
 
 						auto a = newparticipant->socket.GetPeerAddr().ToString();
 						cout << "Socket from " << a << " is accepted.\n";
-						
+
 						//add new participant
 						participants.push_back(newparticipant);
 						newparticipant->connected = true;
@@ -165,9 +163,9 @@ int main()
 						{
 							string receivedData;
 							cout << "Receiving data...\n";
-							
+
 							//result for participant
-							
+
 							if (ec == 0)
 							{
 								cout << "Connection closed.\n";
@@ -203,7 +201,7 @@ int main()
 							case 'U': Participant->inputdir = XMVectorZero();
 								break;
 								//if 'D' ,participant is moving
-							case 'D':  
+							case 'D':
 								break;
 
 							}
@@ -217,32 +215,30 @@ int main()
 						}
 
 
-						}
 					}
+				}
 				participantsCount++;
-				}
+			}
 
-				float dt = GetDeltaTime();
-				for (auto& P : participants) {
-					XMVECTOR delta = XMVectorScale(P->inputdir, P->speed * dt);
-					P->position = XMVectorAdd(P->position, delta);
-				}
+			float dt = GetDeltaTime();
+			for (auto& P : participants) {
+				XMVECTOR delta = XMVectorScale(P->inputdir, P->speed * dt);
+				P->position = XMVectorAdd(P->position, delta);
+			}
 
-				float worldBuf[16][4] = {};
-				for (size_t i = 0; i < participants.size(); ++i) {
-					auto& P = participants[i];
-					worldBuf[i][0] = XMVectorGetX(P->position);
-					worldBuf[i][1] = XMVectorGetY(P->position);
-					worldBuf[i][2] = XMVectorGetZ(P->position);
-					worldBuf[i][3] = P->connected ? 1.0f : 0.0f;
-				}
-				for (auto& P : participants) {
-					if (P->connected)
-						P->socket.Send((char*)worldBuf, sizeof(worldBuf));
-				}
+			float worldBuf[16][4] = {};
+			for (size_t i = 0; i < participants.size(); ++i) {
+				auto& P = participants[i];
+				worldBuf[i][0] = XMVectorGetX(P->position);
+				worldBuf[i][1] = XMVectorGetY(P->position);
+				worldBuf[i][2] = XMVectorGetZ(P->position);
+				worldBuf[i][3] = P->connected ? 1.0f : 0.0f;
+			}
+			for (auto& P : participants) {
+				if (P->connected)
+					P->socket.Send((char*)worldBuf, sizeof(worldBuf));
+			}
 		}
-
-			
 	}
 	catch (Exception& e)
 	{

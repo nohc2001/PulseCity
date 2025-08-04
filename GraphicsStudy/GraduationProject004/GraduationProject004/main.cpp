@@ -1,30 +1,12 @@
 ﻿#include "main.h"
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow) {
-	ClientSocket = new Socket(SocketType::Tcp);
-	ClientSocket->Bind(Endpoint::Any); // 2
-	ClientSocket->Connect(Endpoint("127.0.0.1", 1000));
-	ClientSocket->SetNonblocking();
-
-	DEVMODE devMode;
-	int modeNum = 0;
-
-	//get Screen Supported Resolutions.
-	while (EnumDisplaySettings(NULL, modeNum, &devMode)) {
-		ResolutionStruct rs;
-		rs.width = devMode.dmPelsWidth;
-		rs.height = devMode.dmPelsHeight;
-
-		auto iter = std::find_if(SupportingResolutions.begin(), SupportingResolutions.end(), [rs](ResolutionStruct& other) {
-			return rs.width == other.width && rs.height == other.height;
-			});
-		if (iter == SupportingResolutions.end() || SupportingResolutions.size() == 0) {
-			SupportingResolutions.push_back(rs);
-		}
-		modeNum++;
-	}
-	//solved : is there any reason resolution must be setting already existed well known resolutions?
-	// most game do that _ but why?? > resolution that screen support is limited.
+	gd.screenWidth = GetSystemMetrics(SM_CXSCREEN);
+	gd.screenHeight = GetSystemMetrics(SM_CYSCREEN);
+	gd.ScreenRatio = (float)gd.screenHeight / (float)gd.screenWidth;
+	ResolutionStruct* ResolutionArr = gd.GetResolutionArr();
+	//question : is there any reason resolution must be setting already existed well known resolutions?
+	// most game do that _ but why??
 	
 	MSG Message;
 	WNDCLASSEX WndClass;
@@ -45,7 +27,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 
 	RegisterClassEx(&WndClass);
 
-	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, SupportingResolutions[resolutionLevel].width, SupportingResolutions[resolutionLevel].height, NULL, (HMENU)NULL, hInstance, NULL);
+	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, ResolutionArr[resolutionLevel].width, ResolutionArr[resolutionLevel].height, NULL, (HMENU)NULL, hInstance, NULL);
 	ShowWindow(hWnd, nCmdShow);
 	UpdateWindow(hWnd);
 
@@ -94,7 +76,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		ft = et;
 	}
 
-	delete ClientSocket;
 	return Message.wParam;
 }
 
@@ -106,85 +87,51 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		GetClientRect(hWnd, &rt);
 		break;
 	case WM_KEYDOWN:
+		GetKeyboardState(game.pKeyBuffer);
 		switch (wParam) {
-		case 'W':
-		{
-			if ((game.pKeyBuffer['W'] & 0xF0) == false) {
-				char input[3] = "WD";
-				ClientSocket->Send(input, 2);
-			}
-		}
-			break;
-		case 'A':
-		{
-			if ((game.pKeyBuffer['A'] & 0xF0) == false) {
-				char input[3] = "AD";
-				ClientSocket->Send(input, 2);
-			}
-		}
-			break;
-		case 'S':
-		{
-			if ((game.pKeyBuffer['S'] & 0xF0) == false) {
-				char input[3] = "SD";
-				ClientSocket->Send(input, 2);
-			}
-		}
-			break;
-		case 'D':
-		{
-			if ((game.pKeyBuffer['D'] & 0xF0) == false) {
-				char input[3] = "DD";
-				ClientSocket->Send(input, 2);
-			}
-		}
-			break;
 		case VK_F9:
 		{
 			BOOL bFullScreenState = FALSE;
 			gd.pSwapChain->GetFullscreenState(&bFullScreenState, NULL);
 			gd.SetFullScreenMode(!bFullScreenState);
+			break;
+		}
+		case VK_F5:
+		{
+			game.bFirstPersonVision = !game.bFirstPersonVision;
+			break;
+		}
+		case VK_ESCAPE:
+		{
+			PostQuitMessage(0);
+			break;
 		}
 			break;
 		}
-		GetKeyboardState(game.pKeyBuffer);
 		break;
 	case WM_KEYUP:
-		switch (wParam) {
-		case 'W':
-		{
-			if ((game.pKeyBuffer['W'] & 0xF0)) {
-				char input[3] = "WU";
-				ClientSocket->Send(input, 2);
-			}
-		}
-		break;
-		case 'A':
-		{
-			if ((game.pKeyBuffer['A'] & 0xF0)) {
-				char input[3] = "AU";
-				ClientSocket->Send(input, 2);
-			}
-		}
-		break;
-		case 'S':
-		{
-			if ((game.pKeyBuffer['S'] & 0xF0)) {
-				char input[3] = "SU";
-				ClientSocket->Send(input, 2);
-			}
-		}
-		break;
-		case 'D':
-		{
-			if ((game.pKeyBuffer['D'] & 0xF0)) {
-				char input[3] = "DU";
-				ClientSocket->Send(input, 2);
-			}
-		}
-		break;
-		}
 		GetKeyboardState(game.pKeyBuffer);
+		break;
+	case WM_MOUSEMOVE:
+		if (game.isMouseReturn == false) {
+			game.DeltaMousePos.x += (float)LOWORD(lParam) - game.LastMousePos.x;
+			game.DeltaMousePos.y += (float)HIWORD(lParam) - game.LastMousePos.y;
+			if (game.DeltaMousePos.y > 100) {
+				game.DeltaMousePos.y = 100;
+			}
+			if (game.DeltaMousePos.y < -100) {
+				game.DeltaMousePos.y = -100;
+			}
+			game.LastMousePos.x = (float)LOWORD(lParam);
+			game.LastMousePos.y = (float)HIWORD(lParam);
+			SetCursorPos(gd.ClientFrameWidth / 2, gd.ClientFrameHeight / 2);
+			game.isMouseReturn = true;
+		}
+		else {
+			game.isMouseReturn = false;
+			game.LastMousePos.x = (float)LOWORD(lParam);
+			game.LastMousePos.y = (float)HIWORD(lParam);
+		}
 		break;
 	case WM_DESTROY:
 		gd.Release();
@@ -282,8 +229,9 @@ GlobalDeviceInit_InitMultisamplingVariable:
 			**)&pCommandList);
 	hResult = pCommandList->Close(); // why?
 
-	ClientFrameWidth = SupportingResolutions[resolutionLevel].width;
-	ClientFrameHeight = SupportingResolutions[resolutionLevel].height;
+	ResolutionStruct* ResolutionArr = gd.GetResolutionArr();
+	ClientFrameWidth = ResolutionArr[resolutionLevel].width;
+	ClientFrameHeight = ResolutionArr[resolutionLevel].height;
 
 	viewportArr[0].Viewport.TopLeftX = 0;
 	viewportArr[0].Viewport.TopLeftY = 0;
@@ -589,12 +537,27 @@ void GlobalDevice::SetFullScreenMode(bool isFullScreen)
 	}
 }
 
+ResolutionStruct* GlobalDevice::GetResolutionArr()
+{
+	if (fabsf(ScreenRatio - 0.75f) <= 0.01f) {
+		return (ResolutionStruct*)ResolutionArr_GA;
+	}
+	else if (fabsf(ScreenRatio - 0.5625f) <= 0.01f) {
+		return (ResolutionStruct*)ResolutionArr_HD;
+	}
+	else if (fabsf(ScreenRatio - 0.625f) <= 0.01f) {
+		return (ResolutionStruct*)ResolutionArr_WGA;
+	}
+	return nullptr;
+}
+
 void GlobalDevice::SetResolution(int resid, bool ClientSizeUpdate)
 {
 	WaitGPUComplete();
+	ResolutionStruct* ResolutionArr = GetResolutionArr();
 
-	ClientFrameWidth = SupportingResolutions[resid].width;
-	ClientFrameHeight = SupportingResolutions[resid].height;
+	ClientFrameWidth = ResolutionArr[resid].width;
+	ClientFrameHeight = ResolutionArr[resid].height;
 	if (ClientSizeUpdate) {
 		SetWindowPos(hWnd, NULL, 0, 0, ClientFrameWidth, ClientFrameHeight, SWP_NOMOVE | SWP_NOZORDER);
 	}
@@ -743,22 +706,57 @@ void Game::Init()
 	MyShader = new Shader();
 	MyShader->InitShader();
 
-	MyMesh = new Mesh();
-	MyMesh->ReadMeshFromFile_OBJ(gd.pCommandList, "Resources/Mesh/PlayerMesh.obj");
+	Mesh* MyMesh = new Mesh();
+	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", {1, 1, 1, 1});
 
-	for (int i = 0; i < World::max_participant; ++i) {
-		gameworld.players[i].WorldMat = XMMatrixIdentity();
-		gameworld.players[i].DestPos = XMVectorSet(0, 0, 0, 1);
-		gameworld.players[i].Connected = false;
-	}
+	Mesh* MyGroundMesh = new Mesh();
+	MyGroundMesh->CreateWallMesh(10.0f, 0.5f, 10.0f, {1, 1, 1, 1});
 
-	FloorMesh = new Mesh();
-	FloorMesh->CreateWallMesh(10, 0.5f, 10, { 0.5, 0.5, 0.5, 1 });
+	Mesh* MyWallMesh = new Mesh();
+	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f, {0, 0, 1, 1});
+
+	Player* MyPlayer = new Player(&pKeyBuffer[0]);
+	MyPlayer->SetMesh(MyMesh);
+	MyPlayer->SetShader(MyShader);
+	MyPlayer->SetWorldMatrix(XMMatrixTranslation(0.0f, 3.0f, 0.0f));
+	m_gameObjects.push_back(MyPlayer);
+	player = MyPlayer;
+	player->Gun = new Mesh();
+	player->Gun->ReadMeshFromFile_OBJ("Resources/Mesh/m1911pistol.obj", { 1, 1, 1, 1 });
+
+	player->gunMatrix_thirdPersonView.Id();
+	player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
+
+	GameObject* groundObject = new GameObject();
+	groundObject->SetMesh(MyGroundMesh);
+	groundObject->SetShader(MyShader);
+	groundObject->SetWorldMatrix(XMMatrixTranslation(0.0f, -1.0f, 0.0f));
+	m_gameObjects.push_back(groundObject);
+
+	GameObject* wallObject = new GameObject();
+	wallObject->SetMesh(MyWallMesh);
+	wallObject->SetShader(MyShader);
+	wallObject->SetWorldMatrix(XMMatrixTranslation(0.0f, 1.0f, 5.0f));
+	m_gameObjects.push_back(wallObject);
+
+	GameObject* wallObject2 = new GameObject();
+	wallObject2->SetMesh(MyWallMesh);
+	wallObject2->SetShader(MyShader);
+	wallObject2->SetWorldMatrix(XMMatrixMultiply(XMMatrixRotationY(45), XMMatrixTranslation(10.0f, 1.0f, 0.0f)));
+	m_gameObjects.push_back(wallObject2);
+
+	GameObject* wallObject3 = new GameObject();
+	wallObject3->SetMesh(MyWallMesh);
+	wallObject3->SetShader(MyShader);
+	wallObject3->SetWorldMatrix(XMMatrixMultiply(XMMatrixRotationZ(3.141592f / 6), XMMatrixTranslation(5.0f, 0.0f, -5.0f)));
+	m_gameObjects.push_back(wallObject3);
 
 	gd.pCommandList->Close();
 	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
 	gd.pCommandQueue->ExecuteCommandLists(1, ppCommandLists);
 	gd.WaitGPUComplete();
+
+	gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 }
 
 void Game::Render() {
@@ -796,15 +794,8 @@ void Game::Render() {
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 	gd.pCommandList->OMSetRenderTargets(1, &d3dRtvCPUDescriptorHandle, TRUE,
 		&d3dDsvCPUDescriptorHandle);
-
 	//render begin ----------------------------------------------------------------
 	MyShader->Add_RegisterShaderCommand(gd.pCommandList);
-
-	XMFLOAT3 Eye = { 0, 10, -10 };
-	XMFLOAT3 At = { 0, 0, 0 };
-	XMFLOAT3 Up = { 0, 1, 0 };
-	gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(XMLoadFloat3(&Eye), XMLoadFloat3(&At), XMLoadFloat3(&Up));
-	gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 
 	XMFLOAT4X4 xmf4x4Projection;
 	XMStoreFloat4x4(&xmf4x4Projection, XMMatrixTranspose(gd.viewportArr[0].ProjectMatrix));
@@ -814,21 +805,12 @@ void Game::Render() {
 	XMStoreFloat4x4(&xmf4x4View, XMMatrixTranspose(gd.viewportArr[0].ViewMatrix));
 	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 16);
 
-	for (int i = 0; i < World::max_participant; ++i) {
-		if (gameworld.players[i].Connected) {
-			XMFLOAT4X4 xmf4x4World;
-			XMStoreFloat4x4(&xmf4x4World, XMMatrixTranspose(gameworld.players[i].WorldMat));
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &xmf4x4World, 0);
+	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 32);
 
-			MyMesh->Render(gd.pCommandList, 1);
-		}
+	for (auto& gbj : m_gameObjects) {
+		gbj->Render();
 	}
 
-	XMMATRIX xmf4x4World = XMMatrixIdentity();
-	xmf4x4World.r[1].m128_f32[3] = -2.5f;
-	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &xmf4x4World, 0);
-	FloorMesh->Render(gd.pCommandList, 1);
-	
 	//render end ----------------------------------------------------------------
 
 	//RenderTarget State Changing Command [RenderTarget -> Present] + wait untill finish rendering
@@ -858,41 +840,58 @@ void Game::Render() {
 
 void Game::Update()
 {
-	/*XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);*/
+	//CameraUpdate
+	XMVECTOR vEye = player->m_worldMatrix.pos;
+	vec4 peye = player->m_worldMatrix.pos;
+	vec4 pat = player->m_worldMatrix.pos;
 
-	//server calculate..
-	//constexpr float speed = 3;
-	//if (pKeyBuffer['W'] & 0xF0) {
-	//	xmf3Shift.z += speed*game.DeltaTime; // Must Use DeltaTime
-	//}
-	//if (pKeyBuffer['S'] & 0xF0) {
-	//	xmf3Shift.z -= speed*game.DeltaTime;
-	//}
-	//if (pKeyBuffer['A'] & 0xF0) {
-	//	xmf3Shift.x -= speed*game.DeltaTime;
-	//}
-	//if (pKeyBuffer['D'] & 0xF0) {
-	//	xmf3Shift.x += speed*game.DeltaTime;
-	//}
- 	int result = ClientSocket->Receive();
-	if (result > 0) {
-		float dat[World::max_participant][4] = { {} };
+	const float rate = 0.01f;
 
-		memcpy_s((char*)dat, sizeof(float)*(World::max_participant*4), ClientSocket->m_receiveBuffer, sizeof(float) * (World::max_participant * 4));
+	XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(rate * game.DeltaMousePos.y, rate * game.DeltaMousePos.x, 0);
+	vec4 clook = {0, 0, 1, 1};
+	vec4 plook;
+	clook = XMVector3Rotate(clook, quaternion);
 
-		for (int i = 0; i < World::max_participant; ++i) {
-			gameworld.players[i].DestPos = XMVectorSet(dat[i][0], dat[i][1], dat[i][2], 1);
-			if (dat[i][3] > 0.5f) gameworld.players[i].Connected = true;
-			else gameworld.players[i].Connected = false;
-		}
+	plook = clook;
+	plook.y = 0;
+	plook.len3 = 1;
+	player->m_worldMatrix.LookAt(plook);
+
+	if (bFirstPersonVision) {
+		peye += 1.0f * player->m_worldMatrix.up;
+		pat += 1.0f * player->m_worldMatrix.up;
+		pat += 10 * clook;
+	}
+	else {
+		peye -= 3 * clook;
+		pat += 10 * clook;
+		peye += 0.5f * player->m_worldMatrix.up;
+		peye += 0.5f * player->m_worldMatrix.right;
 	}
 
-	//Interpolation
-	float pow = 10 * DeltaTime;
-	for (int i = 0; i < World::max_participant; ++i) {
-		if (gameworld.players[i].Connected) {
-			gameworld.players[i].WorldMat.r[3] = (1.0f - pow) * gameworld.players[i].WorldMat.r[3] + pow * gameworld.players[i].DestPos;
+	XMFLOAT3 Up = { 0, 1, 0 };
+	gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
+	gd.viewportArr[0].Camera_Pos = peye;
+
+	for (auto& gbj : m_gameObjects) {
+		gbj->Update(DeltaTime);
+	}
+
+	// Collision......
+	
+	for (int i = 0; i < m_gameObjects.size(); ++i) {
+		GameObject* gbj1 = m_gameObjects[i];
+
+		for (int j = i + 1; j < m_gameObjects.size(); ++j) {
+			GameObject* gbj2 = m_gameObjects[j];
+			GameObject::CollisionMove(gbj1, gbj2);
 		}
+
+		gbj1->m_worldMatrix.trQ(gbj1->tickAVelocity);
+		gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
+		gbj1->tickLVelocity = XMVectorZero();
+		gbj1->LastQuerternion = gbj1->m_worldMatrix.getQ();
+		gbj1->tickAVelocity = 0;
 	}
 }
 
@@ -911,12 +910,12 @@ void Shader::CreateRootSignature()
 {
 	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
 
-	D3D12_ROOT_PARAMETER1 rootParam[2] = {};
+	D3D12_ROOT_PARAMETER1 rootParam[3] = {};
 
 	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-	rootParam[0].Constants.Num32BitValues = 32;
-	rootParam[0].Constants.ShaderRegister = 0; // b0 : Camera Matrix (Projection, View)
+	rootParam[0].Constants.Num32BitValues = 36;
+	rootParam[0].Constants.ShaderRegister = 0; // b0 : Camera Matrix (Projection, View) + Camera Positon
 	rootParam[0].Constants.RegisterSpace = 0;
 
 	rootParam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -925,18 +924,23 @@ void Shader::CreateRootSignature()
 	rootParam[1].Constants.ShaderRegister = 1; // b1 : Transform Matrix
 	rootParam[1].Constants.RegisterSpace = 0;
 
+	rootParam[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParam[2].Descriptor.ShaderRegister = 2; // b2
+	rootParam[2].Descriptor.RegisterSpace = 0;
+
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-	rootSigDesc1.NumParameters = 2;
+	rootSigDesc1.NumParameters = 3;
 	rootSigDesc1.pParameters = rootParam;
 	rootSigDesc1.NumStaticSamplers = 0; // question002 : what is static samplers?
 	rootSigDesc1.pStaticSamplers = NULL; //
 	rootSigDesc1.Flags = d3dRootSignatureFlags;
+
 	ID3DBlob* pd3dSignatureBlob = NULL;
 	ID3DBlob* pd3dErrorBlob = NULL;
 	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
@@ -946,6 +950,8 @@ void Shader::CreateRootSignature()
 	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
 		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
 			**)&pRootSignature);
+	if (pd3dErrorBlob) pd3dErrorBlob->Release();
+	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
 }
 
 void Shader::CreatePipelineState()
@@ -1091,7 +1097,7 @@ Mesh::~Mesh()
 {
 }
 
-void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const char* path) {
+void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color) {
 	std::vector< Vertex > temp_vertices;
 	std::vector< TriangleIndex > TrianglePool;
 	XMFLOAT3 maxPos = { 0, 0, 0 };
@@ -1101,7 +1107,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 	std::vector< XMFLOAT3 > temp_pos;
 	std::vector< XMFLOAT2 > temp_uv;
 	std::vector< XMFLOAT3 > temp_normal;
-	while (in.eof() == false) {
+	while (in.eof() == false && (in.is_open() && in.fail() == false)) {
 		char rstr[128] = {};
 		in >> rstr;
 		if (strcmp(rstr, "v") == 0) {
@@ -1113,9 +1119,9 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			if (maxPos.x < pos.x) maxPos.x = pos.x;
 			if (maxPos.y < pos.y) maxPos.y = pos.y;
 			if (maxPos.z < pos.z) maxPos.z = pos.z;
-			if (minPos.x < pos.x) minPos.x = pos.x;
-			if (minPos.y < pos.y) minPos.y = pos.y;
-			if (minPos.z < pos.z) minPos.z = pos.z;
+			if (minPos.x > pos.x) minPos.x = pos.x;
+			if (minPos.y > pos.y) minPos.y = pos.y;
+			if (minPos.z > pos.z) minPos.z = pos.z;
 			temp_pos.push_back(pos);
 		}
 		else if (strcmp(rstr, "vt") == 0) {
@@ -1144,7 +1150,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			in >> uvIndex[0];
 			in >> blank;
 			in >> normalIndex[0];
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[0] - 1], {1, 1, 1, 1}, temp_normal[normalIndex[0] - 1]));
+			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[0]-1], color, temp_normal[normalIndex[0]-1]));
 
 			//in >> blank;
 			in >> vertexIndex[1];
@@ -1152,7 +1158,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			in >> uvIndex[1];
 			in >> blank;
 			in >> normalIndex[1];
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[1]-1], { 1, 1, 1, 1 }, temp_normal[normalIndex[1]-1]));
+			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[1]-1], color, temp_normal[normalIndex[1]-1]));
 
 			//in >> blank;
 			in >> vertexIndex[2];
@@ -1161,7 +1167,7 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 			in >> blank;
 			in >> normalIndex[2];
 			//in >> blank;
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[2]-1], { 1, 1, 1, 1 }, temp_normal[normalIndex[2]-1]));
+			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[2]-1], color, temp_normal[normalIndex[2]-1]));
 
 			int n = temp_vertices.size() - 1;
 			TrianglePool.push_back(TriangleIndex(n - 2, n - 1, n));
@@ -1175,6 +1181,9 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 	CenterPos.x = (maxPos.x + minPos.x) * 0.5f;
 	CenterPos.y = (maxPos.y + minPos.y) * 0.5f;
 	CenterPos.z = (maxPos.z + minPos.z) * 0.5f;
+	MAXpos.x = 0;
+	MAXpos.y = 0;
+	MAXpos.z = 0;
 	for (int i = 0; i < temp_vertices.size(); ++i) {
 		temp_vertices[i].position.x -= CenterPos.x;
 		temp_vertices[i].position.y -= CenterPos.y;
@@ -1193,18 +1202,18 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 
 	// error.. why vertex buffer and index buffer do not input? 
 	// maybe.. State Error.
-	VertexBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
-	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
-	gd.UploadToCommitedGPUBuffer(pCommandList, &temp_vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
-	VertexBuffer.AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
+	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &temp_vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
 	VertexBufferView.StrideInBytes = m_nStride;
 	VertexBufferView.SizeInBytes = m_nStride * m_nVertices;
 	
-	IndexBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * TrianglePool.size(), 1);
-	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * TrianglePool.size(), 1);
-	gd.UploadToCommitedGPUBuffer(pCommandList, &TrianglePool[0], &IndexUploadBuffer, &IndexBuffer, true);
-	IndexBuffer.AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+	IndexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * TrianglePool.size(), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * TrianglePool.size(), 1);
+	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &TrianglePool[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
 	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
 	IndexBufferView.SizeInBytes = sizeof(TriangleIndex) * TrianglePool.size();
@@ -1215,7 +1224,76 @@ void Mesh::ReadMeshFromFile_OBJ(ID3D12GraphicsCommandList* pCommandList, const c
 	/*MeshOBB = BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));*/
 }
 
-void Mesh::CreateWallMesh(float width, float height, float depth, XMFLOAT4 color)
+void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum)
+{
+	// question : what is StartSlot parameter??
+	ui32 SlotNum = 0;
+	pCommandList->IASetVertexBuffers(SlotNum, 1, &VertexBufferView);
+	pCommandList->IASetPrimitiveTopology(topology);
+	if (IndexBuffer.resource)
+	{
+		pCommandList->IASetIndexBuffer(&IndexBufferView);
+		pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
+	}
+	else
+	{
+		ui32 VertexOffset = 0;
+		pCommandList->DrawInstanced(VertexNum, instanceNum, VertexOffset, 0);
+	}
+
+}
+
+BoundingOrientedBox Mesh::GetOBB()
+{
+	return BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));
+}
+
+void Mesh::CreateGroundMesh(ID3D12GraphicsCommandList* pCommandList)
+{
+	std::vector<Vertex> vertices;
+	vertices.push_back(Vertex(XMFLOAT3(-10.0f, 0.0f, -10.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)));
+	vertices.push_back(Vertex(XMFLOAT3(10.0f, 0.0f, -10.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)));
+	vertices.push_back(Vertex(XMFLOAT3(10.0f, 0.0f, 10.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)));
+	vertices.push_back(Vertex(XMFLOAT3(-10.0f, 0.0f, 10.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)));
+
+	std::vector<UINT> indices;
+	indices.push_back(0); 
+	indices.push_back(1);
+	indices.push_back(2);
+
+	indices.push_back(2);
+	indices.push_back(3);
+	indices.push_back(0);
+
+	int nVertices = vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(pCommandList, &vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(pCommandList, &indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = indices.size() * sizeof(UINT);
+
+	IndexNum = indices.size();
+	VertexNum = vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void Mesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 {
 	std::vector<Vertex> vertices;
 	std::vector<UINT> indices;
@@ -1301,33 +1379,6 @@ void Mesh::CreateWallMesh(float width, float height, float depth, XMFLOAT4 color
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
-void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum)
-{
-	// question : what is StartSlot parameter??
-	ui32 SlotNum = 0;
-	pCommandList->IASetVertexBuffers(SlotNum, 1, &VertexBufferView);
-	pCommandList->IASetPrimitiveTopology(topology);
-	if (IndexBuffer.resource)
-	{
-		pCommandList->IASetIndexBuffer(&IndexBufferView);
-		pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
-	}
-	else
-	{
-		ui32 VertexOffset = 0;
-		pCommandList->DrawInstanced(VertexNum, instanceNum, VertexOffset, 0);
-	}
-	//question : when normal is different, vertex is also different. 
-	// so most cases, every vertex is unique and index are not duplicated.
-	// I think, Rendering that input vertex buffer directly are faster than Rendering with index buffer.
-	// then why we use index buffer? is there any advantage that we don't know??
-}
-
-BoundingOrientedBox Mesh::GetOBB()
-{
-	return BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));
-}
-
 void GPUResource::AddResourceBarrierTransitoinToCommand(ID3D12GraphicsCommandList* cmd, D3D12_RESOURCE_STATES afterState)
 {
 	if (CurrentState_InCommandWriteLine != afterState) {
@@ -1347,4 +1398,357 @@ D3D12_RESOURCE_BARRIER GPUResource::GetResourceBarrierTransition(D3D12_RESOURCE_
 	d3dResourceBarrier.Transition.StateAfter = afterState;
 	d3dResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 	return d3dResourceBarrier;
+}
+
+GameObject::GameObject()
+{
+	tickLVelocity = vec4(0, 0, 0, 0);
+	tickAVelocity = vec4(0, 0, 0, 0);
+	LastQuerternion = vec4(0, 0, 0, 0);
+}
+
+GameObject::~GameObject()
+{
+}
+
+void GameObject::Update(float delatTime)
+{
+}
+
+void GameObject::Render()
+{
+	if (!m_pMesh || !m_pShader) {
+		return;
+	}
+
+	XMFLOAT4X4 xmf4x4World;
+	XMStoreFloat4x4(&xmf4x4World, DirectX::XMMatrixTranspose(m_worldMatrix));
+
+	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &xmf4x4World, 0);
+	m_pMesh->Render(gd.pCommandList, 1);
+}
+
+void GameObject::SetMesh(Mesh* pMesh)
+{
+	m_pMesh = pMesh;
+}
+
+void GameObject::SetShader(Shader* pShader)
+{
+	m_pShader = pShader;
+}
+
+void GameObject::SetWorldMatrix(const XMMATRIX& worldMatrix)
+{
+	m_worldMatrix = worldMatrix;
+}
+
+const XMMATRIX& GameObject::GetWorldMatrix() const
+{
+	return m_worldMatrix;
+}
+
+BoundingOrientedBox GameObject::GetOBB()
+{
+	BoundingOrientedBox obb_local = m_pMesh->GetOBB();
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, m_worldMatrix);
+	return obb_world;
+}
+
+OBB_vertexVector GameObject::GetOBBVertexs()
+{
+	OBB_vertexVector ovv;
+	BoundingOrientedBox obb = GetOBB();
+	vec4 xm = -obb.Extents.x * m_worldMatrix.right;
+	vec4 xp = obb.Extents.x * m_worldMatrix.right;
+	vec4 ym = -obb.Extents.y * m_worldMatrix.up;
+	vec4 yp = obb.Extents.y * m_worldMatrix.up;
+	vec4 zm = -obb.Extents.z * m_worldMatrix.look;
+	vec4 zp = obb.Extents.z * m_worldMatrix.look;
+
+	ovv.vertex[0][0][0] = xm + ym + zm + m_worldMatrix.pos;
+	ovv.vertex[0][0][1] = xm + ym + zp + m_worldMatrix.pos;
+	ovv.vertex[0][1][0] = xm + yp + zm + m_worldMatrix.pos;
+	ovv.vertex[0][1][1] = xm + yp + zp + m_worldMatrix.pos;
+	ovv.vertex[1][0][0] = xp + ym + zm + m_worldMatrix.pos;
+	ovv.vertex[1][0][1] = xp + ym + zp + m_worldMatrix.pos;
+	ovv.vertex[1][1][0] = xp + yp + zm + m_worldMatrix.pos;
+	ovv.vertex[1][1][1] = xp + yp + zp + m_worldMatrix.pos;
+	return ovv;
+}
+
+void GameObject::LookAt(vec4 look, vec4 up)
+{
+	m_worldMatrix.LookAt(look, up);
+}
+
+void GameObject::CollisionMove(GameObject* gbj1, GameObject* gbj2)
+{
+	constexpr float epsillon = 0.01f;
+
+	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());/*
+	bool bia = XMColorEqual(gbj1->tickAVelocity, XMVectorZero());*/
+	bool bj = XMColorEqual(gbj2->tickLVelocity, XMVectorZero());/*
+	bool bja = XMColorEqual(gbj2->tickAVelocity, XMVectorZero());*/
+
+	GameObject* movObj = nullptr;
+	GameObject* colObj = nullptr;
+	BoundingOrientedBox obb1 = gbj1->GetOBB();
+	BoundingOrientedBox obb2 = gbj2->GetOBB();
+	//float len = vec4(gbj1->m_worldMatrix.pos - gbj2->m_worldMatrix.pos).len3;
+	//float distance = vec4(obb1.Extents).len3 + vec4(obb2.Extents).len3;
+	//if (len < distance) {
+	//Collision_By_Rotations:
+	//	if (!bia && bja) {
+	//		movObj = gbj1;
+	//		colObj = gbj2;
+	//		goto Collision_byRotation_static_vs_dynamic;
+	//	}
+	//	else if (bia && !bja) {
+	//		movObj = gbj2;
+	//		colObj = gbj1;
+	//		goto Collision_byRotation_static_vs_dynamic;
+	//	}
+	//	else if (!bia && !bja) {
+	//		goto Collision_By_Move;
+	//	}
+	//	else {
+	//		goto Collision_By_Move;
+	//	}
+	//Collision_byRotation_static_vs_dynamic:
+	//	OBB_vertexVector ovv = movObj->GetOBBVertexs();
+	//	movObj->m_worldMatrix.trQ(movObj->tickAVelocity);
+	//	obb1 = movObj->GetOBB();
+	//	OBB_vertexVector ovv_later = movObj->GetOBBVertexs();
+	//	movObj->m_worldMatrix.trQinv(movObj->tickAVelocity);
+	//	matrix imat = colObj->m_worldMatrix.RTInverse;
+	//	obb2 = colObj->GetOBB();
+	//	vec4 RayPos;
+	//	vec4 RayDir;
+	//	for (int xi = 0; xi < 2; ++xi) {
+	//		for (int yi = 0; yi < 2; ++yi) {
+	//			for (int zi = 0; zi < 2; ++zi) {
+	//				ovv_later.vertex[xi][yi][zi] *= imat;
+	//				if (obb2.Contains(ovv_later.vertex[xi][yi][zi])) {
+	//					ovv.vertex[xi][yi][zi] *= imat;
+	//					RayPos = ovv.vertex[xi][yi][zi];
+	//					RayDir = ovv_later.vertex[xi][yi][zi] - ovv.vertex[xi][yi][zi];
+	//					if (fabsf(RayDir.x) > epsillon) {
+	//						float Ex = obb2.Extents.x * (RayDir.x / fabsf(RayDir.x));
+	//						float A = (Ex - RayPos.x) / RayDir.x;
+	//						vec4 colpos = vec4(RayPos.x + RayDir.x, RayDir.y * A + RayPos.y, RayDir.z * A + RayPos.z);
+	//						vec4 bound; bound.f3 = obb2.Extents;
+	//						if (colpos.is_in_bound(bound)) {
+	//							movObj->tickLVelocity.x += colpos.x - Ex;
+	//							goto Collision_By_Move;
+	//						}
+	//					}
+	//					if (fabsf(RayDir.y) > epsillon) {
+	//						float Ex = obb2.Extents.y * (RayDir.y / fabsf(RayDir.y));
+	//						float A = (Ex - RayPos.y) / RayDir.y;
+	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayPos.y + RayDir.y, RayDir.z * A + RayPos.z);
+	//						vec4 bound; bound.f3 = obb2.Extents;
+	//						if (colpos.is_in_bound(bound)) {
+	//							movObj->tickLVelocity.y += colpos.y - Ex;
+	//							goto Collision_By_Move;
+	//						}
+	//					}
+	//					if (fabsf(RayDir.z) > epsillon) {
+	//						float Ex = obb2.Extents.z * (RayDir.z / fabsf(RayDir.z));
+	//						float A = (Ex - RayPos.z) / RayDir.z;
+	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayDir.y * A + RayPos.y, RayPos.z + RayDir.z);
+	//						vec4 bound; bound.f3 = obb2.Extents;
+	//						if (colpos.is_in_bound(bound)) {
+	//							movObj->tickLVelocity.z += colpos.z - Ex;
+	//							goto Collision_By_Move;
+	//						}
+	//					}
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
+
+Collision_By_Move:
+	//if (bia) {
+	//	gbj1->m_worldMatrix.trQ(gbj1->tickAVelocity);
+	//}
+	//if (bja) {
+	//	gbj2->m_worldMatrix.trQ(gbj2->tickAVelocity);
+	//}
+
+	if (!bi && bj) {
+		// i : moving GameObject
+		// j : Collision Check GameObject
+		movObj = gbj1;
+		colObj = gbj2;
+		goto Collision_By_Move_static_vs_dynamic;
+	}
+	else if (bi && !bj) {
+		// i : Collision Check GameObject
+		// j : moving GameObject
+		movObj = gbj2;
+		colObj = gbj1;
+		goto Collision_By_Move_static_vs_dynamic;
+	}
+	else if (!bi && !bj) {
+		// i : moving GameObject
+		// j : moving GameObject
+
+		float mul = 1.0f;
+		float rate = 0.5f;
+		float maxLen = XMVector3Length(gbj1->tickLVelocity).m128_f32[0];
+		float temp = XMVector3Length(gbj2->tickLVelocity).m128_f32[0];
+		if (maxLen < temp) maxLen = temp;
+
+	CMP_INTERSECT:
+		XMVECTOR v1 = mul * gbj1->tickLVelocity;
+		XMVECTOR v2 = mul * gbj2->tickLVelocity;
+		gbj1->m_worldMatrix.pos += v1;
+		obb1 = gbj1->GetOBB();
+		gbj1->m_worldMatrix.pos -= v1;
+		gbj2->m_worldMatrix.pos += v2;
+		obb2 = gbj2->GetOBB();
+		gbj2->m_worldMatrix.pos -= v2;
+		if (obb1.Intersects(obb2)) {
+			mul -= rate;
+			rate *= 0.5f;
+			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
+		}
+		else {
+			mul += rate;
+			rate *= 0.5f;
+			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
+		}
+
+		gbj1->tickLVelocity = v1;
+		gbj2->tickLVelocity = v2;
+
+		return;
+	}
+	else {
+		//no move
+		return;
+	}
+
+Collision_By_Move_static_vs_dynamic:
+	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	obb1 = movObj->GetOBB();
+	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	obb2 = colObj->GetOBB();
+
+	if (obb1.Intersects(obb2)) {
+		movObj->OnCollision(colObj);
+		colObj->OnCollision(movObj);
+
+		XMMATRIX basemat = colObj->m_worldMatrix;
+		XMMATRIX invmat = colObj->m_worldMatrix.RTInverse;
+		invmat.r[3] = XMVectorSet(0, 0, 0, 1);
+		XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
+		movObj->tickLVelocity = XMVectorZero();
+
+		XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
+		movObj->tickLVelocity += MoveVector;
+		movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+		obb1 = movObj->GetOBB();
+		movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+		if (obb1.Intersects(obb2)) {
+			movObj->tickLVelocity -= MoveVector;
+		}
+
+		MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
+		movObj->tickLVelocity += MoveVector;
+		movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+		obb1 = movObj->GetOBB();
+		movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+		if (obb1.Intersects(obb2)) {
+			movObj->tickLVelocity -= MoveVector;
+		}
+
+		MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
+		movObj->tickLVelocity += MoveVector;
+		movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+		obb1 = movObj->GetOBB();
+		movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+		if (obb1.Intersects(obb2)) {
+			movObj->tickLVelocity -= MoveVector;
+		}
+	}
+
+	//if (bia) {
+	//	gbj1->m_worldMatrix.trQinv(gbj1->tickAVelocity);
+	//}
+	//if (bja) {
+	//	gbj2->m_worldMatrix.trQinv(gbj2->tickAVelocity);
+	//}
+}
+
+void GameObject::OnCollision(GameObject* other)
+{
+	//GameObject Collision...
+}
+
+void Player::Update(float deltaTime)
+{
+	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
+	constexpr float speed = 3.0f;
+
+	LVelocity.y -= 9.81f * deltaTime;
+	if (isGround) {
+		if (m_pKeyBuffer[VK_SPACE] & 0xF0) {
+			LVelocity.y = JumpVelocity;
+			isGround = false;
+		}
+	}
+	tickLVelocity = LVelocity * deltaTime;
+
+	if (m_pKeyBuffer['W'] & 0xF0) {
+		tickLVelocity += speed * m_worldMatrix.look * game.DeltaTime;
+	}
+	if (m_pKeyBuffer['S'] & 0xF0) {
+		tickLVelocity -= speed * m_worldMatrix.look * game.DeltaTime;
+	}
+	if (m_pKeyBuffer['A'] & 0xF0) {
+		tickLVelocity -= speed * m_worldMatrix.right * game.DeltaTime;
+	}
+	if (m_pKeyBuffer['D'] & 0xF0) {
+		tickLVelocity += speed * m_worldMatrix.right * game.DeltaTime;
+	}
+}
+
+void Player::Render()
+{
+	if (game.bFirstPersonVision == false) {
+		GameObject::Render();
+
+		matrix gunmat = gunMatrix_thirdPersonView;
+		gunmat *= m_worldMatrix;
+		gunmat.LookAt(m_worldMatrix.look);
+		gunmat.transpose();
+
+		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
+		Gun->Render(gd.pCommandList, 1);
+	}
+}
+
+void Player::OnCollision(GameObject* other)
+{
+	float belowDist = 0;
+	bool belowhit = other->GetOBB().Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
+	if (belowhit) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+BoundingOrientedBox Player::GetOBB()
+{
+	BoundingOrientedBox obb_local = m_pMesh->GetOBB();
+	obb_local.Extents.x = obb_local.Extents.z;
+	BoundingOrientedBox obb_world;
+	matrix id = XMMatrixIdentity();
+	id.pos = m_worldMatrix.pos;
+	obb_local.Transform(obb_world, id);
+	return obb_world;
 }
