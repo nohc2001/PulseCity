@@ -61,9 +61,9 @@ ServerStudy/SyncPositionIOCP/SyncPositionClientIOCP/.vs
 ServerStudy/SyncPositionIOCP/SyncPositionClientIOCP/x64
 ServerStudy/SyncPositionIOCP/SyncPositionClientIOCP/SyncPositionClientIOCP/x64
 
-ServerStudy/SyncPositionIOCP/SyncPositionSeverIOCP/.vs
-ServerStudy/SyncPositionIOCP/SyncPositionSeverIOCP/x64
-ServerStudy/SyncPositionIOCP/SyncPositionSeverIOCP/SyncPositionSeverIOCP/x64
+ServerStudy/SyncPositionIOCP/SyncPositionServerIOCP/.vs
+ServerStudy/SyncPositionIOCP/SyncPositionServerIOCP/x64
+ServerStudy/SyncPositionIOCP/SyncPositionServerIOCP/SyncPositionSeverIOCP/x64
 
 ServerStudy/EchoServer/Client/.vs/
 ServerStudy/EchoServer/Client/x64/
