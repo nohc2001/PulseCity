@@ -466,7 +466,6 @@ void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, const CONSTANT_BUFFER
 	// cpu측 코드에서는 cpu descriptor handle에만 write가능
 	pD3DDeivce->CopyDescriptorsSimple(1, cbvDest, pCB->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-
 	// cpu측 코드에서는 cpu descriptor handle에만 write가능
 	CD3DX12_CPU_DESCRIPTOR_HANDLE srvDest0(cpuDescriptorTable, pmat->DiffuseIndex, srvDescriptorSize);
 	if (pmat->DiffuseTexture != nullptr)

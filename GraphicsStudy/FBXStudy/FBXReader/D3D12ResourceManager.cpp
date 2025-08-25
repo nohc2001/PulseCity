@@ -310,6 +310,7 @@ void CD3D12ResourceManager::UpdateTextureForWrite(ID3D12Resource* pDestTexResour
 	Fence();
 	WaitForFenceValue();
 }
+
 BOOL CD3D12ResourceManager::CreateTexture(ID3D12Resource** ppOutResource, UINT Width,
 	UINT Height, DXGI_FORMAT format, const BYTE* pInitImage) {
 	ID3D12Resource* pTexResource = nullptr;
@@ -351,11 +352,11 @@ BOOL CD3D12ResourceManager::CreateTexture(ID3D12Resource** ppOutResource, UINT W
 		CD3DX12_RANGE writeRange(0, 0);
 
 		UINT64 uploadBufferSize = GetRequiredIntermediateSize(pTexResource, 0, 1);
-
+		D3D12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 		if (FAILED(m_pD3DDevice->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
 			D3D12_HEAP_FLAG_NONE,
-			&CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize),
+			&uploadDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
 			IID_PPV_ARGS(&pUploadBuffer))))

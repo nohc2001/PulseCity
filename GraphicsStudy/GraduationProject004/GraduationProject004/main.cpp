@@ -1736,7 +1736,7 @@ void Player::OnCollision(GameObject* other)
 {
 	float belowDist = 0;
 	bool belowhit = other->GetOBB().Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
-	if (belowhit) {
+	if (belowhit && belowDist < 3) {
 		LVelocity.y = 0;
 		isGround = true;
 	}

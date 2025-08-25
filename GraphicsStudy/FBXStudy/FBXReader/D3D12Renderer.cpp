@@ -34,6 +34,7 @@ void* CD3D12Renderer::AllocTextureDesc(const char* path)
 
 			pTexHandle = (TEXTURE_HANDLE*)fm->_New(sizeof(TEXTURE_HANDLE), true);
 			pTexHandle->pTexResource = m_pTexture;
+			
 			pTexHandle->srv = srv;
 			bResult = TRUE;
 		}
