@@ -77,6 +77,14 @@ ServerStudy/EchoServer/Connectingserver/.vs/
 ServerStudy/EchoServer/Connectingserver/x64/
 ServerStudy/EchoServer/Connectingserver/Connectingserver/x64/
 
+ServerStudy/SyncFPS/SyncFPSClient/.vs/
+ServerStudy/SyncFPS/SyncFPSClient/x64/
+ServerStudy/SyncFPS/SyncFPSClient/SyncFPSClient/x64/
+
+ServerStudy/SyncFPS/SyncFPSServer/.vs/
+ServerStudy/SyncFPS/SyncFPSServer/x64/
+ServerStudy/SyncFPS/SyncFPSServer/SyncFPSServer/x64/
+
 Utill/VisualStudioProjectNameChanger/.vs/
 Utill/VisualStudioProjectNameChanger/x64/
 Utill/VisualStudioProjectNameChanger/VisualStudioProjectNameChanger/x64/
