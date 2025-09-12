@@ -113,7 +113,7 @@
   * UI에 필요한 정보 보내주기 (HP, 장탄수, KD 개수, 플레이어의 이름....)
 3. 중점연구과제를 고민해 보자.
  - 기술 : 수업시간에 실습하지 않은 새로운 테크닉 구현 (4학년 학생 1년동안 고생하면 구현할 수준의 난이도, 기존에 존재하는 테크닉을 새로 구현하는 것도 상관 없음)
-   예) 클라이언트 : 멀티쓰레드 최적화, 모바일 최적화, 물리엔진 연동, MOD연동 시스템, VULKAN사용, C++이외의 다른 언어 사용 (예:Go, RUST. Python은 너무 쉬워서 제외), RayTracing구현 ... 3D Sound
+   예) 클라이언트 : 멀티쓰레드 최적화, 모바일 최적화, 물리엔진 연동, MOD 연동 시스템, VULKAN사용, C++이외의 다른 언어 사용 (예:Go, RUST. Python은 너무 쉬워서 제외), RayTracing구현 ... 3D Sound
        * 자동생성 Level of Detail, Cascaded Shadow Map 
    예) 서버 : 동접 5000(MMO 기준),  다른 언어 사용 (Go, Elixir, RUST...), RIO사용, ioUring 사용, Seamless Zone 구현, 물리엔진 연동, AI NPC 구현
  - 양 : 스테이지, 퀘스트, 맵, 스킬, 몬스터 같은 것을 정말 많은 종류 구현해서 풍성한 컨텐츠 제작
@@ -123,5 +123,28 @@
 5. 작업일지 작성
  - 매주 학과에서 나줘준 포맷에 맟추서 작업일지를 작성해서 Git에 올린다.
   
+
+2025-09-11
+--------------
+1. 진행상황
+ - 멀티플레이어 동기화가 된다
+  * 가끔가다 안된다.
+ - 클라이언트 실행시 CRASH 발생확률이 매우 높다.
+ - UI 구현
+  * Open Source (https://github.com/kv01/ttf-parser) => 최적화와 큭수효과를 잘 구현하면 중점연구과제로 가능하지 않은가?????
+  * HP BAR, KD Count, 총알
+ - 사망시 제거/Respawn
+2. ToDo
+ - Texture가 들어있는 3D 파일 로딩
+  * 파일 포맷 (텍스쳐와 애니메이션이 같이들어가야 한다.) : OBJ (X, no animation), FBX, GLTF, Custom Format (Unity Script로 제작한 포맷, 이용희 교수님 수업시간에 사용예정)
+  * Parser : FBXSDK(너무느리다), ASSIMP (좋다), Unity Custom Parser (쓰기 쉽다),  GLTF Parser Open Source
+ - 서버
+  * 동기화 버그 수정
+  * NPC가 맞았을 때 플레이어 쫒아오기
+  * NPC A* 길찾기
+3. 다음미팅
+ - 9월 25일 오후 4시 30분
+4. 기업형 종합설계 => 지도교수가 서류를 만들어서 전달 예정
+  https://www.tukorea.ac.kr/tukorea/1096/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGdHVrb3JlYSUyRjEwNyUyRjE0MzEwNSUyRmFydGNsVmlldy5kbyUzRg%3D%3D
+ - 기업과제 : 고성능 한글 TEXT 출력 : 한글 TTF의 Polygon Rendering
  
-  
