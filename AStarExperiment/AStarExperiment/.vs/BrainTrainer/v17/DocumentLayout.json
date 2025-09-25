@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\\uC9C4\uC131\uC900\\Downloads\\AStarExperiment\\AStarExperiment\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{EF9956D5-01C0-49D5-BBBD-B31A55F00B37}|BrainTrainer\\BrainTrainer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Downloads\\AStarExperiment\\AStarExperiment\\BrainTrainer\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{EF9956D5-01C0-49D5-BBBD-B31A55F00B37}|BrainTrainer\\BrainTrainer.vcxproj|solutionrelative:BrainTrainer\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "main.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Downloads\\AStarExperiment\\AStarExperiment\\BrainTrainer\\main.cpp",
+              "RelativeDocumentMoniker": "BrainTrainer\\main.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Downloads\\AStarExperiment\\AStarExperiment\\BrainTrainer\\main.cpp",
+              "RelativeToolTip": "BrainTrainer\\main.cpp",
+              "ViewState": "AgIAAD8BAAAAAAAAAAAYwFABAAAuAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-09-24T09:21:58.656Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
