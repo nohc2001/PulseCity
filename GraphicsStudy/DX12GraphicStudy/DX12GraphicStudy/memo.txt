@@ -1,0 +1,195 @@
+Shader Visible Descriptor Heap이 아닌 경우에는 GPU에서 볼 수 없기 때문에
+Descriptor의 GPU HANDLE이 존재하지 않는다.
+오직 CPU Descritpor HANDLE 만 존재하고 얻을 수 있다.
+
+////////////////
+
+XMVector4TransformStream : 행렬변환을 VECTOR 배열에 대해 모두 적용시키는 연산. 아마 일반적인 반복문보다 빠르게 수행할 것이다.
+
+XMVector4AngleBetweenVectors : 두 벡터 사이의 각도를 구한다.
+XMVector4AngleBetweenNormals : 두 단위벡터 사이의 각도를 구한다 (더 빠름)
+
+XMVector4Orthogonal : 어떤 벡터의 수직인 벡터를 반환한다. (무슨기준으로 수직벡터를 결정하는지는 모름.) -> 코드를 봐야 할 듯.
+
+XMVector4RefractV : 굴절벡터 계산하는 함수
+
+XMVector4ClampLength : 벡터 길이의 최대와 최소를 받아 변환된 벡터를 반환합니다. -> 길이가 범위 안에 없으면 범위안으로 넣는 작업 하는듯.
+
+XMVector4ReciprocalLength : 벡터 길이의 역수를 반환합니다.
+
+XMVector4LengthSq : 벡터길이의 제곱을 반환합니다. 이게 더 빠름. sqrt연산을 안해도 됨.
+
+XMVector4IsInfinite : 벡터의 요소중 하나라도 무한이면 true.
+XMVector4IsNaN : 벡터의 요소중 하나라도 Nan 이면 true
+
+XMVector4InBounds : 
+//bound vector = {a, b, c, d} // xmin : -a, xmax : a ...
+해당 바운드안에 위치벡터가 위치하는지.
+
+XMVector3UnprojectStream
+XMVector3Unproject : 이 둘은 화면 공간의 벡터를 
+개체공간(게임공간)상의 벡터로 변환하는 작업을 한다.
+Stream이 붙이면 여러개를 빠르게 처리 가능하다.
+
+XMVector3ProjectStream
+XMVector3Project : 개체공간의 벡터를 화면공간의 벡터로 변환한다.
+
+XMVector3TransformNormalStream
+XMVector3TransformNormal
+: 위치이동을 지원하지 않는 변환함수로, w 값을 0으로 채운다.
+
+XMVector3TransformCoordStream
+XMVector3TransformCoord
+: 위치 이동을 지원하는 변환함수로, w값을 1로 채운다.
+
+XMVector3InverseRotate
+XMVector3Rotate : 이건 쿼터니언으로 회전시키고, 역회전이나 복원하는 것.
+
+XMVector3ComponentsFromNormal
+	: 노멀벡터를 활용해 하나의 벡터를 두가지 벡터로 나누는데,
+		노멀벡터와 같은 방향의 벡터하나와,
+		해당 노멀을 가지는 평면 위의 벡터 하나로 나눈다.
+
+XMVector3LinePointDistance
+	: 선분과 점 사이의 거리를 얻는다.
+
+XMVector3AngleBetweenVectors : 두 벡터사이의 라디안 각도
+XMVector3AngleBetweenNormals : 두 단위벡터 사이의 라디안 각도
+
+XMVector3Orthogonal
+
+XMVectorBaryCentricV
+XMVectorBaryCentric
+XMVectorCatmullRomV
+XMVectorHermiteV
+XMVectorLerpV
+
+XMVectorSin/Cos/Tan/aSin, aCos, aTan
+
+XMVectorModAngles
+XMVectorMod
+XMVectorAbs
+XMVectorPow
+XMVectorLog
+XMVectorExp
+
+XMVectorReciprocalSqrt
+XMVectorSqrt
+
+XMVectorNegativeMultiplySubtract
+XMVectorAddAngles
+
+XMVectorNegate
+XMVectorAnd, Or, Xor, Nor, Int
+
+XMVectorSaturate
+XMVectorClamp
+XMVectorCeiling
+XMVectorFloor
+XMVectorTruncate
+XMVectorRound
+
+XMVectorMax
+XMVectorMin
+
+XMVectorInsert
+
+XMVectorReplicate
+
+///////////////
+
+XMQuaternionBaryCentric;
+XMQuaternionMultiply;
+XMQuaternionConjugate;
+XMQuaternionSlerpV;
+XMQuaternionDot;
+XMQuaternionEqual;
+XMQuaternionExp;
+XMQuaternionIdentity;
+XMQuaternionIsInfinite;
+XMQuaternionInverse;
+XMQuaternionIsIdentity;
+XMQuaternionLength;
+XMQuaternionNormalize;
+XMQuaternionLn;
+XMQuaternionSquad;
+XMQuaternionRotationAxis;
+XMQuaternionRotationMatrix;
+XMQuaternionRotationNormal;
+
+XMPlaneDot;
+XMPlaneNormalize;
+XMPlaneDotCoord;
+XMPlaneDotNormal;
+XMPlaneFromPointNormal;
+XMPlaneFromPoints;
+XMPlaneIntersectLine;
+XMPlaneIntersectPlane;
+XMPlaneIntersectPlane;
+XMPlaneTransform;
+XMPlaneIsInfinite;
+XMPlaneIsNaN;
+
+
+/////////////
+여기에서 부터 셰도우 매핑을 하기 위한 메모의 시작이다.
+기본적으로 DirectX Sample의 예제 D3D12Multithreading의 셰도우 맵핑을 따라한다.
+
+일단 필요한 것은
+셰도우 매핑을 위한 셰이더 클래스일 것이다.
+이는 하나의 버택스 셰이더를 가지고, 픽셀셰이더는 없다.
+Root 변수로 MVP 행렬들이 필요하고, 이를 통해 물체들을 그려야 한다.
+(SpotLight의 ViewFrustum안에 위치한 것들을 대상으로 그린다.)
+
+이를 하기 위해 GPU동기화 작동을 두번 해서 렌더링 해야 하는지 의문이다.
+물론 텍스쳐를 하나가 읽고, 하나가 쓰기 때문에, 리소스가 변하지만, 
+결국 GPU안에서 있는 리소스이기 때문에, 만약 커맨드 리스트가 순서대로 동작한다면
+Resource Barrier 를 할뿐, 그것때문에 동기화를 할 필요는 없지 않을까 생각했다.
+
+또한 렌더링한 뎁스 스텐실을 어떻게 텍스쳐로 뽑아올 수 있는지도 생각해봐야 한다.
+셰도우 맵 텍스쳐를 일단 만들고, 물체를 렌더링 하기 전에 D3D12_RESOURCE_STATE_DEPTH_WRITE에서 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE로 바꾼다.
+또한 셰도우 맵 렌더링을 할때를 위해 Depth Stencil View를 만든 텍스쳐를 통해 만든다.
+그런데 이 view가 어떻게 셰도우 맵 렌더링 할때 전달되는가??
+CommandList->ClearDepthStencilView 의 매개변수에 DepthStencilView의 CPU HANDLE을 매개변수로 받는 부분이 있다.
+
+>> 셰도우 매핑을 만들다 여기에 디퓨즈 셰이더가 디폴트로 설정되지 않은 것을 보았다.
+라이팅 처리를 할때, PBR이 아니더라도, 적어도 Phong Material이 있는 것이 디폴트 메쉬로 작용했으면 좋겠다.
+그리고 버택스에 color도 제외시켜야 될것 같다. 굳이 색상을 정하려고 하면
+
+ColorMesh
+{position, color}
+
+LightMesh
+{positon, color, normal}
+
+LightUVMesh
+{pos, normal, uv}
+
+LightMovableMesh
+{pos, normal, uv, 
+boneID0, weight0, 
+boneID1, weight1, 
+boneID2, weight2, 
+boneID3, weight3 }
+
+다시 생각해보니, 렌더링 파이프라인에 따라 Root도 달라지고, Mesh종류도 달라지는데, 
+하나의 Shader class로 처리하려 했던 것이 문제가 아닌가 싶다.
+모든 Shader class에서는, 렌더링용 PSO와, 셰도우 매핑용 PSO를 따로 두어야 하는것 아닌가? 싶다.
+문제는 그렇게 되면, 셰도우 매핑을 사용해 렌더링하지 않는 경우의 셰이더도 따로 만들어야 한다.
+왜냐하면, Root변수 하나가 / 혹은 여러개 가 들어가기 때문이다. (Light정보 + Light당 그림자 맵)
+그럼 하나의 셰이더에 3개의 PSO가 있을 수 있게 하자.
+1. 그림자 표현을 안하고 렌더링하는 PSO
+2. 그림자 표현을 하고 렌더링하는 PSO
+3. 그림자 맵을 만들기 위한 PSO
+
+그럼 새로운 클래스를 만들지 않고도 그림자 맵을 구현이 가능하고, 기존의 렌더링도 할 수 있게 된다.
+
+CreateRootSignature_withShadow : 기존의 Root에 셰도우 맵이 들어갈 RootDescriptorTable을 하나 더 할당한다.
+CreatePipelineState_withShadow : 기존의 파이프라인의 루트 시그니처를 pRootSignature_withShadow로 바꾼다.
+CreatePipelineState_RenderShadowMap : 기존의 파이프라인의 픽셀 셰이더를 비우고, 
+gPipelineStateDesc.NumRenderTargets = 1;
+gPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+gPipelineStateDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+gPipelineStateDesc.SampleDesc.Count = 1;
+다음과 같이 Set한다.
+>>나중에 여러 셰이더에서 이 방법이 안정적으로 통해게 되면, DRY 원칙으로 반복적 코드를 최소화 하자.
