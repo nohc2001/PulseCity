@@ -146,7 +146,7 @@
  - 9월 25일 오후 4시 30분
 4. 기업형 종합설계 => 지도교수가 서류를 만들어서 전달 예정
   https://www.tukorea.ac.kr/tukorea/1096/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGdHVrb3JlYSUyRjEwNyUyRjE0MzEwNSUyRmFydGNsVmlldy5kbyUzRg%3D%3D
- - 기업과제 : 고성능 한글 TEXT 출력 : 한글 TTF의 Polygon Rendering
+ - 기업과제 : 고성능 한글 TEXT 출력 : 한글 TTF의 Polygon Rendering    => 실무 노훈철
  
 2025-09-25
 --------------
@@ -165,3 +165,22 @@
  - 기획 : 직업별 특징 (9개 직업 : 샷건, 머신건, 방패/권총, 쌍권총, 라이플, 스나이퍼, 해커, 메딕, 드론병)
 4. 다음미팅
  - 10월 16일 오후 4시 30분
+
+2025-10-16
+-------------
+1. 진행상황
+ - ASSIMP를 사용한 GLTF 파일 로딩
+  * 텍스쳐 로딩 : PBR 적용 (Diffuse, Roughness, Metallic, Ambient-Occlusion, Normal) ,  vertex+tangent+bitangent
+  * 가능하면 GLB대신 GLTF + BIN를 사용하자.
+ - 인벤토리,아이템
+ -기획 : 직업 기획
+2. ToDo
+ - 그림자 넣기
+ - 길찾기 넣기
+ - 자동차 넣기
+ - Unity에서 맵을 구성하고, 정보를 뽑아내서  클라이언트에 전달
+  * 클라이언트는 그리는데 사용
+ - 화염탱커
+  * 장탄수 100, 발사속도 1초 발,  온도게이지 추가
+3. 다음 미팅
+ - 11월 6일 목요일 오후 4시 30분
