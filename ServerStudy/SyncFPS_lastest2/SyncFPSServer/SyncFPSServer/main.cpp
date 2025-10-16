@@ -1220,8 +1220,6 @@ void GameObjectType::AddClientOffset_ptr(GameObjectType gotype, char* obj, char*
 
 void Monster::Update(float deltaTime)
 {
-	
-
 	if (isDead) {
 		respawntimer += deltaTime;
 		if (respawntimer > 1.0f) {

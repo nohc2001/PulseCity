@@ -211,6 +211,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 		}
 		break;
+		case 'E':
+		{
+			game.isInventoryOpen = !game.isInventoryOpen;
+		}
+		break;
 		case VK_F9:
 		{
 			BOOL bFullScreenState = FALSE;
@@ -476,7 +481,7 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	//why cannot be shader visible in Saver DescriptorHeap?
 	//answer : CreateConstantBufferView, CreateShaderResourceView -> only CPU Descriptor Working. so Shader Invisible.
 
-	ShaderVisibleDescPool.Initialize(128);
+	ShaderVisibleDescPool.Initialize(4096);
 }
 
 void GlobalDevice::Release()
@@ -1248,6 +1253,7 @@ void Game::SetLight()
 //non using
 void Game::Init()
 {
+	DropedItems.reserve(4096);
 	NpcHPBars.Init(32);
 	DefaultTexture.CreateTexture_fromFile("Resources/DefaultTexture.png");
 	GunTexture.CreateTexture_fromFile("Resources/m1911pistol_diffuse0.png");
@@ -1260,6 +1266,13 @@ void Game::Init()
 	gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
+
+	Mesh* ItemMesh = new UVMesh();
+	ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
+	ItemTable.push_back(Item(0, vec4(0, 0, 0, 0), nullptr, nullptr, L"")); // blank space in inventory.
+	ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &gd.GlobalTextureArr[(int)gd.GlobalTexture::GT_Monster], L"[빨간 탄알집]"));
+	ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &gd.GlobalTextureArr[(int)gd.GlobalTexture::GT_WallTex], L"[녹색 탄알집]"));
+	ItemTable.push_back(Item(3, vec4(0, 0, 1, 1), ItemMesh, &DefaultTexture, L"[하얀 탄알집]")); // test items. red, green, blue bullet mags.
 
 	SetLight();
 
@@ -1484,6 +1497,22 @@ void Game::Render() {
 		m_gameObjects[i]->Render();
 	}
 
+	// already droped items. (non move..)
+	static float itemRotate = 0;
+	itemRotate += DeltaTime;
+	matrix mat;
+	mat.trQ(vec4::getQ(vec4(0, itemRotate, 0, 0)));
+	for (int i = 0; i < DropedItems.size(); ++i) {
+		if (DropedItems[i].itemDrop.id != 0) {
+			mat.pos = DropedItems[i].pos;
+			mat.pos.w = 1;
+			matrix rmat = XMMatrixTranspose(mat);
+			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &rmat, 0);
+			MyDiffuseTextureShader->SetTextureCommand(ItemTable[DropedItems[i].itemDrop.id].tex);
+			ItemTable[DropedItems[i].itemDrop.id].MeshInInventory->Render(gd.pCommandList, 1);
+		}
+	}
+
 	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);
 	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
 	for (int i = 0; i < bulletRays.size; ++i) {
@@ -1504,7 +1533,6 @@ void Game::Render() {
 
 	gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-
 	//((Shader*)MyShader)->Add_RegisterShaderCommand(gd.pCommandList);
 
 	float hhpp = 0;
@@ -1545,6 +1573,131 @@ void Game::Render() {
 	rt = Rate * vec4(-1650, 750, -1000, 500);
 	std::wstring playerName = L"Player: Leo";
 	RenderText(playerName.c_str(), playerName.length(), rt, 30);
+
+	// ----------Inventory------------
+	if (isInventoryOpen) {
+		matrix orthoMatrix = XMMatrixOrthographicOffCenterLH(0.0f, (float)gd.ClientFrameWidth, (float)gd.ClientFrameHeight, 0.0f, 0.01f, 1.0f);
+		matrix uiViewMat = orthoMatrix;
+		uiViewMat.transpose();
+		((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.pCommandList);
+		MyScreenCharactorShader->SetTextureCommand(&DefaultTexture);
+		/*gd.pCommandList->SetPipelineState(MyOnlyColorShader->pUiPipelineState);*/
+		//gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &uiViewMat, 0);
+
+		const int gridColumns = 5;
+		const int gridRows = 5;
+		const float slotSize = Rate * 150.0f;
+		const float itemPadding = Rate * 20.0f;
+		const float slotPadding = Rate * 10.0f;
+
+		const float actualItemSize = slotSize - (itemPadding * 2);
+
+		float invWidth = (gridColumns * slotSize) + ((gridColumns + 1) * slotPadding);
+		float invHeight = (gridRows * slotSize) + ((gridRows + 1) * slotPadding);
+		float invPosX = 0;
+		float invPosY = 0;
+
+		vec4 bgColor = { 0.2f, 0.2f, 0.2f, 0.8f };
+		float CB[11] = { invPosX - invWidth ,invPosY - invHeight , invPosX + invWidth ,invPosY + invHeight, bgColor.r, bgColor.g, bgColor.b, bgColor.a, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.5f};
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 11, CB, 0);
+		TextMesh->Render(gd.pCommandList, 1);
+
+		vec4 slotColor = { 0.15f, 0.15f, 0.15f, 0.9f };
+		//Mesh* slotMesh = GetOrCreateColoredQuadMesh(slotColor);
+
+		float startSlotX = invPosX - invWidth + slotPadding + slotSize;
+		float startSlotY = invPosY - invHeight + slotPadding + slotSize;
+
+		for (int row = 0; row < gridRows; ++row) {
+			for (int col = 0; col < gridColumns; ++col) {
+				float slotCurrentX = startSlotX + col * (2 * (slotSize + slotPadding));
+				float slotCurrentY = startSlotY + row * (2 * (slotSize + slotPadding));
+
+				float CB2[11] = { slotCurrentX - slotSize ,slotCurrentY - slotSize , slotCurrentX + slotSize ,slotCurrentY + slotSize, slotColor.r, slotColor.g, slotColor.b, slotColor.a, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.05f };
+				gd.pCommandList->SetGraphicsRoot32BitConstants(0, 11, CB2, 0);
+				TextMesh->Render(gd.pCommandList, 1);
+			}
+		}
+
+		float startItemX = invPosX - Rate * 140.0f;
+		float startItemY = invPosY - Rate * 130.0f;
+
+		matrix viewMat2 = DirectX::XMMatrixLookAtLH(vec4(0, 0, 0), vec4(0, 0, 1), vec4(0, 1, 0));
+		viewMat2 *= gd.viewportArr[0].ProjectMatrix;
+		gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+		((Shader*)MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.pCommandList);
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
+		gd.pCommandList->SetGraphicsRootConstantBufferView(2, LightCBResource.resource->GetGPUVirtualAddress());
+
+		for (int i = 0; i < player->Inventory.size(); ++i) {
+			if (i >= gridColumns * gridRows)
+				break;
+			
+			ItemStack& currentStack = player->Inventory[i];
+			ItemID currentItemID = currentStack.id;
+			if (currentItemID == 0) continue;
+
+			if (currentItemID >= ItemTable.size())
+				continue;
+
+			Item& itemInfo = ItemTable[currentItemID];
+
+			//Mesh* itemMesh = GetOrCreateColoredQuadMesh(itemInfo.color);
+
+			int column = i % gridColumns;
+			int row = i / gridColumns;
+
+			float itemCurrentX = startItemX + column * (2 * (slotSize + slotPadding));
+			float itemCurrentY = startItemY + row * (2 * (slotSize + slotPadding));
+
+			/*vec4 v = gd.viewportArr[0].unproject(vec4(gd.ClientFrameWidth/2, gd.ClientFrameHeight/2, 0, 1));
+			v *= 5;
+			v += gd.viewportArr[0].Camera_Pos;*/
+
+			/*vec4 unproj = gd.viewportArr[0].unproject(vec4(-0.5f, 0.5f, 0, 1));*/
+			matrix itemMat;
+			itemMat.pos = gd.viewportArr[0].Camera_Pos;
+			//caminvMat.look.x *= -1;
+			itemMat.pos += viewMat.look * 7;
+			constexpr float xmul = 1.35f;
+			constexpr float ymul = 0.825f;
+			itemMat.pos += viewMat.right * (-2.7f + xmul * column);
+			itemMat.pos += viewMat.up * (1.65f - ymul * row);
+			itemMat.pos.w = 1;
+
+			itemMat.transpose();
+			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &itemMat, 0);
+			MyDiffuseTextureShader->SetTextureCommand(ItemTable[currentItemID].tex);
+			ItemTable[currentItemID].MeshInInventory->Render(gd.pCommandList, 1);
+			//RenderUIObject(itemMesh, itemMat);
+		}
+
+		gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+		((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.pCommandList);
+
+		int i = 0;
+		float top = startSlotY + (gridRows-1) * (2 * (slotSize + slotPadding));
+		for (int row = 0; row < gridRows; ++row) {
+			for (int col = 0; col < gridColumns; ++col) {
+				if (player->Inventory[i].id == 0) {
+					i++; continue;
+				}
+
+				float slotCurrentX = startSlotX + col * (2 * (slotSize + slotPadding));
+				float slotCurrentY = top - row * (2 * (slotSize + slotPadding));
+
+				ItemStack& currentStack = player->Inventory[i];
+				std::wstring countStr = L"x" + std::to_wstring(currentStack.ItemCount);
+				vec4 textRect = { slotCurrentX - slotSize ,slotCurrentY - slotSize , slotCurrentX + slotSize ,slotCurrentY + slotSize };
+				float fontSize = 20.0f;
+				RenderText(countStr.c_str(), countStr.length(), textRect, fontSize, 0.01f);
+				i++;
+			}
+		}
+	}
 
 	//static float stackT = 0;
 	//stackT += game.DeltaTime;
@@ -1979,6 +2132,14 @@ int Game::Receiving(char* ptr, int totallen)
 			player->HPBarMesh = Mesh::meshmap["HPBar"];
 			player->HPMatrix.pos = vec4(-1, 1, 1, 1);
 			player->HPMatrix.LookAt(vec4(-1, 0, 0));
+
+			player->Inventory = vector<ItemStack>();
+			player->Inventory.reserve(36);
+			player->Inventory.resize(36);
+			for (int i = 0; i < 36; ++i) {
+				player->Inventory[i].id = 0;
+				player->Inventory[i].ItemCount = 0;
+			}
 		}
 
 		game.isPreparedGo = true;
@@ -2058,6 +2219,56 @@ int Game::Receiving(char* ptr, int totallen)
 		if (ready_to_read) goto PACK_READ;
 	}
 	break;
+	case ServerInfoType::ItemDrop:
+	{
+		int newindex = 0;
+		ItemLoot il;
+		newindex = *(int*)&ptr[offset];
+		offset += sizeof(int);
+		il = *(ItemLoot*)&ptr[offset];
+		offset += sizeof(ItemLoot);
+
+		if (newindex >= game.DropedItems.size()) {
+			while (newindex >= game.DropedItems.size()) {
+				ItemLoot til;
+				til.pos = 0;
+				til.itemDrop.id = 0;
+				til.itemDrop.ItemCount = 0;
+				game.DropedItems.push_back(til);
+			}
+			game.DropedItems[newindex] = il;
+		}
+		else {
+			game.DropedItems[newindex] = il;
+		}
+		return offset;
+	}
+		break;
+	case ServerInfoType::ItemDropRemove:
+	{
+		int dindex = 0;
+		ItemLoot il;
+		dindex = *(int*)&ptr[offset];
+		offset += sizeof(int);
+		game.DropedItems[dindex].itemDrop.id = 0;
+		game.DropedItems[dindex].itemDrop.ItemCount = 0;
+		game.DropedItems[dindex].pos = vec4(0, 0, 0, 0);
+		return offset;
+	}
+		break;
+	case ServerInfoType::InventoryItemSync:
+	{
+		int inventoryindex = 0;
+		ItemStack il;
+		il = *(ItemStack*)&ptr[offset];
+		offset += sizeof(ItemStack);
+		inventoryindex = *(int*)&ptr[offset];
+		offset += sizeof(int);
+		game.player->Inventory[inventoryindex].id = il.id;
+		game.player->Inventory[inventoryindex].ItemCount = il.ItemCount;
+		return offset;
+	}
+		break;
 	}
 	return offset;
 
@@ -2128,7 +2339,7 @@ void Game::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
 }
 
 //this function must call after ScreenCharactorShader register in pipeline.
-void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz)
+void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth)
 {
 	//fontsize = 100 -> 0.1x | 10 -> 0.01x
 	vec4 pos = vec4(Rect.x, Rect.y, 0, 0);
@@ -2167,11 +2378,11 @@ void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz)
 
 		//set root variables
 		vec4 textRt = vec4(pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul);
-		float tConst[6] = { pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul , gd.ClientFrameWidth , gd.ClientFrameHeight };
+		float tConst[11] = { pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul, 1, 1, 1, 1, gd.ClientFrameWidth , gd.ClientFrameHeight, depth };
 		/*gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &textRt, 0);
 		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameWidth, 4);
 		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameHeight, 5);*/
-		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 6, &tConst, 0);
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 10, &tConst, 0);
 		MyScreenCharactorShader->SetTextureCommand(texture);
 
 		//Render Text
@@ -2552,7 +2763,6 @@ void OnlyColorShader::CreatePipelineState()
 	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
-
 
 Mesh::Mesh()
 {
@@ -4486,7 +4696,7 @@ void ScreenCharactorShader::CreateRootSignature()
 
 	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-	rootParam[0].Constants.Num32BitValues = 6; // rect(4) + screenWidht, screenHeight
+	rootParam[0].Constants.Num32BitValues = 11; // rect(4) + mulcolor(4) + screenWidht, screenHeight, depth
 	rootParam[0].Constants.ShaderRegister = 0; // b0
 	rootParam[0].Constants.RegisterSpace = 0;
 

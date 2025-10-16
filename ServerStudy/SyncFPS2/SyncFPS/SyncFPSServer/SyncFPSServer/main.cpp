@@ -88,6 +88,12 @@ int main() {
 						p->m_worldMatrix.pos.f3.y = 5;
 						p->MeshIndex = Mesh::GetMeshIndex("Player");
 						p->mesh = *Mesh::meshmap["Player"];
+						p->Inventory.reserve(36);
+						p->Inventory.resize(36);
+						for (int i = 0; i < 36; ++i) {
+							p->Inventory[i].id = 0;
+							p->Inventory[i].ItemCount = 0;
+						}
 
 						int objindex = gameworld.NewPlayer(p, clientindex);
 						gameworld.clients[clientindex].pObjData = p;
@@ -573,6 +579,44 @@ void Player::Update(float deltaTime)
 
 	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &DeltaMousePos, 8);
 	gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
+
+	BoundingOrientedBox obb = GetOBB();
+	for (int i = 0; i < gameworld.DropedItems.size; ++i) {
+		if (gameworld.DropedItems.isnull(i)) continue;
+		vec4 p = gameworld.DropedItems[i].pos;
+		p.w = 0;
+		if (obb.Contains(p)) {
+			bool isexist = false;
+			bool beat = false;
+			int firstBlackIndex = -1;
+			for (int k = 0; k < Inventory.size(); ++k) {
+				if (Inventory[k].id == 0 && firstBlackIndex == -1) {
+					firstBlackIndex = k;
+				}
+				if (Inventory[k].id == gameworld.DropedItems[i].itemDrop.id)
+				{
+					Inventory[k].ItemCount += gameworld.DropedItems[i].itemDrop.ItemCount;
+					isexist = true;
+					beat = true;
+					firstBlackIndex = k;
+					break;
+				}
+			}
+			if (isexist == false && firstBlackIndex != -1) {
+				Inventory[firstBlackIndex] = gameworld.DropedItems[i].itemDrop;
+				beat = true;
+			}
+			
+			if (beat) {
+				int datacap = gameworld.Sending_InventoryItemSync(Inventory[firstBlackIndex], firstBlackIndex);
+				gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
+				gameworld.DropedItems.Free(i);
+				datacap = gameworld.Sending_ItemRemove(i);
+				gameworld.SendToAllClient(datacap);
+				break;
+			}
+		}
+	}
 }
 
 void Player::OnCollision(GameObject* other)
@@ -653,6 +697,12 @@ void Player::Respawn() {
 }
 
 void World::Init() {
+	ItemTable.push_back(Item(0)); // blank space in inventory.
+	ItemTable.push_back(Item(1));
+	ItemTable.push_back(Item(2));
+	ItemTable.push_back(Item(3)); // test items. red, green, blue bullet mags.
+
+	DropedItems.Init(4096);
 	pack_factory.Clear();
 	clients.Init(32);
 	gameObjects.Init(128);
@@ -1192,6 +1242,35 @@ int World::Sending_DeleteGameObject(int objindex)
 	return datacap;
 }
 
+int World::Sending_ItemDrop(int dropindex, ItemLoot lootdata)
+{
+	SendingType st = SendingType::ItemDrop;
+	int datacap = 2 + sizeof(int) + sizeof(ItemLoot);
+	memcpy(tempbuffer.data, &st, 2);
+	memcpy(tempbuffer.data + 2, &dropindex, sizeof(int));
+	memcpy(tempbuffer.data + 6, &lootdata, sizeof(ItemLoot));
+	return datacap;
+}
+
+int World::Sending_ItemRemove(int dropindex)
+{
+	SendingType st = SendingType::ItemDropRemove;
+	int datacap = 2 + sizeof(int);
+	memcpy(tempbuffer.data, &st, 2);
+	memcpy(tempbuffer.data + 2, &dropindex, sizeof(int));
+	return datacap;
+}
+
+int World::Sending_InventoryItemSync(ItemStack lootdata, int inventoryIndex)
+{
+	SendingType st = SendingType::InventoryItemSync;
+	int datacap = 2 + sizeof(ItemStack) + sizeof(int);
+	memcpy(tempbuffer.data, &st, 2);
+	memcpy(tempbuffer.data + 2, &lootdata, sizeof(ItemStack));
+	memcpy(tempbuffer.data + 2 + sizeof(ItemStack), &inventoryIndex, sizeof(int));
+	return datacap;
+}
+
 //void World::DestroyObject(int objindex)
 //{
 //	if (gameObjects.isnull(objindex)) return;
@@ -1205,7 +1284,6 @@ int World::Sending_DeleteGameObject(int objindex)
 //int World::
 
 //should i separate player delete and gameobject delete?
-
 
 void World::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance)
 {
@@ -1254,8 +1332,6 @@ void GameObjectType::AddClientOffset_ptr(GameObjectType gotype, char* obj, char*
 
 void Monster::Update(float deltaTime)
 {
-	
-
 	if (isDead) {
 		respawntimer += deltaTime;
 		if (respawntimer > 1.0f) {
@@ -1404,27 +1480,13 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter)
 
 	if (HP <= 0) {
 		isDead = true;
+		vec4 prevpos = m_worldMatrix.pos;
 		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
-		//int objindex = gameworld.NewObject(this, GameObjectType::_Monster);
-
-		//gameworld.monsterDeathCheck += 1;
-		/*int datacap = gameworld.Sending_DeleteGameObject(gameworld.currentIndex);
-		gameworld.SendToAllClient(datacap);
-
-		gameworld.gameObjects.Free(gameworld.currentIndex);
-		delete this;*/
 
 		int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &isDead, sizeof(bool));
 		gameworld.SendToAllClient(datacap);
 
-		// what??
-		//// when monster is dead, player's killcount +1
-		//if (Target == nullptr || *Target == nullptr) return;
-		//(*Target)->KillCount += 1;
-		//datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, *Target, GameObjectType::_Player, &((*Target)->KillCount), sizeof(int));
-		//gameworld.SendToAllClient(datacap);
-
-		//// when monster is dead, player's killcount +1
+		// when monster is dead, player's killcount +1
 		void* vptr = *(void**)shooter;
 		if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 			Player* p = (Player*)shooter;
@@ -1433,16 +1495,17 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter)
 			gameworld.clients[p->clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
 		}
 
-		/*(*Target)->KillCount += 1;
-		datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, *Target, GameObjectType::_Player, &((*Target)->KillCount), sizeof(int));
-		gameworld.SendToAllClient(datacap);*/
-
-
-		//free monster memory
-		//Destory Object.
+		//when monster is dead, loot random items;
+		ItemLoot il = {};
+		il.itemDrop.id = 1 + (rand() % (ItemTable.size()-1));
+		il.itemDrop.ItemCount = 1 + rand() % 5;
+		il.pos = prevpos;
+		int newindex = gameworld.DropedItems.Alloc();
+		gameworld.DropedItems[newindex] = il;
+		datacap = gameworld.Sending_ItemDrop(newindex, il);
+		gameworld.SendToAllClient(datacap);
 	}
 }
-
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
 {

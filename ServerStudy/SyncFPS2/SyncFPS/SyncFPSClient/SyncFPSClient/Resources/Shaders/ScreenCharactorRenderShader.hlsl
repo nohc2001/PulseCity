@@ -1,8 +1,11 @@
 cbuffer LocationInfo : register(b0)
 {
     float4 rect;
+    float4 mulcolor;
     float ScreenWidth;
     float ScreenHeight;
+    float depth;
+    // 0 -> rect / 1 -> mesh render (depth fix)
     //uint cbuf1[4]; //= { 0, 2, 2, 0};
     //uint cbuf2[4]; //= { 1, 1, 3, 3};
     //float cbuf3[4]; //= { 0, 1, 1, 0};
@@ -36,32 +39,32 @@ float Sigmoid(float x)
 VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
-    output.color = input.color;
+    output.color = input.color * mulcolor;
     float2 screenSize = float2(ScreenWidth, ScreenHeight);
     float4 rt = rect;
     if (input.vertexId == 0)
     {
         output.uv = float2(0, 0);
         float2 ndcPos = (float2(rt.x, rt.y) / screenSize);
-        output.position = float4(ndcPos, 0.01, 1.0);
+        output.position = float4(ndcPos, depth, 1.0);
     }
     else if (input.vertexId == 1)
     {
         output.uv = float2(1, 0);
         float2 ndcPos = (float2(rt.z, rt.y) / screenSize);
-        output.position = float4(ndcPos, 0.01, 1.0);
+        output.position = float4(ndcPos, depth, 1.0);
     }
     else if (input.vertexId == 2)
     {
         output.uv = float2(1, 1);
         float2 ndcPos = (float2(rt.z, rt.w) / screenSize);
-        output.position = float4(ndcPos, 0.01, 1.0);
+        output.position = float4(ndcPos, depth, 1.0);
     }
     else if (input.vertexId == 3)
     {
         output.uv = float2(0, 1);
         float2 ndcPos = (float2(rt.x, rt.w) / screenSize);
-        output.position = float4(ndcPos, 0.01, 1.0);
+        output.position = float4(ndcPos, depth, 1.0);
     }
     return output;
 }
@@ -69,7 +72,7 @@ VS_OUTPUT VSMain(VS_INPUT input)
  //«»ºø ºŒ¿Ã¥ı∏¶ ¡§¿««—¥Ÿ.
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {   
-    float4 diffuseTexColor = texDiffuse.Sample(StaticSampler, input.uv);
+    float4 diffuseTexColor = input.color * texDiffuse.Sample(StaticSampler, input.uv);
     //if (diffuseTexColor.a == 0)
     //    discard;
     return diffuseTexColor;

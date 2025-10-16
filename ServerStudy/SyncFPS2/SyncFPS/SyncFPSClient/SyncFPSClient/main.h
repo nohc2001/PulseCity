@@ -96,6 +96,9 @@ union ServerInfoType {
 		AllocPlayerIndexes = 5, // [st] [client Index] [Object Index]
 		DeleteGameObject = 6, // [st] [obj index] // yet error..
 		PACK = 7, PACK_END = 8, // [st] [pack order index] [~ data ~] (siz = 8196)
+		ItemDrop = 9, // [st] [dropindex] [lootdata]
+		ItemDropRemove = 10, //[st] [dropindex]
+		InventoryItemSync = 11, //[st] [item stack data] [inventory index]
 	};
 	short n;
 	char two_byte[2];
@@ -528,12 +531,15 @@ public:
 
 class OnlyColorShader : Shader {
 public:
+	ID3D12PipelineState* pUiPipelineState;
+
 	OnlyColorShader();
 	virtual ~OnlyColorShader();
 
 	virtual void InitShader();
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
+	void CreateUiPipelineState();
 };
 
 class DiffuseTextureShader : Shader {
@@ -712,6 +718,38 @@ struct GameObject {
 	void PositionInterpolation(float deltaTime);
 };
 
+struct Item
+{
+	// server, client
+	int id;
+	// only client
+	vec4 color;
+	Mesh* MeshInInventory;
+	GPUResource* tex;
+	const wchar_t* description;
+
+	Item(int i, vec4 c, Mesh* m, GPUResource* t, const wchar_t* d) :
+		id{ i }, color{ c }, MeshInInventory{ m }, tex{t}, description {
+		d
+	}
+	{
+
+	}
+};
+
+typedef int ItemID;
+struct ItemStack {
+	ItemID id;
+	int ItemCount;
+};
+
+struct ItemLoot {
+	ItemStack itemDrop;
+	vec4 pos;
+};
+
+vector<Item> ItemTable;
+
 UCHAR* m_pKeyBuffer;
 class Player : public GameObject {
 public:
@@ -740,6 +778,8 @@ public:
 
 	Mesh* HPBarMesh;
 	matrix HPMatrix;
+
+	vector<ItemStack> Inventory;
 
 	Player() : HP{ 100 } {}
 
@@ -896,6 +936,7 @@ public:
 	UVMesh* TextMesh;
 
 	std::vector<GameObject*> m_gameObjects; // GameObjets
+	vector<ItemLoot> DropedItems;
 	Player* player;
 
 	vecset<BulletRay> bulletRays;
@@ -926,6 +967,7 @@ public:
 	float preparedFlow = 0;
 
 	DataPackFactory pack_factory;
+	bool isInventoryOpen = false;
 
 	Game() {}
 	~Game() {}
@@ -937,7 +979,7 @@ public:
 
 	void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance);
 
-	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz);
+	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
 };
 Game game;
 Socket* ClientSocket = nullptr;

@@ -92,6 +92,9 @@ union SendingType {
 		AllocPlayerIndexes = 5, // [st] [client Index] [Object Index]
 		DeleteGameObject = 6, // [st] [obj index]
 		PACK = 7, PACK_END = 8, // [st] [pack order index] [~ data ~] (siz = 8196)
+		ItemDrop = 9, // [st] [dropindex] [lootdata]
+		ItemDropRemove = 10, //[st] [dropindex]
+		InventoryItemSync = 11, //[st] [lootdata] [inventory index]
 	};
 	short n;
 	char two_byte[2];
@@ -181,6 +184,30 @@ template <int n> struct BitBoolArr {
 	}
 };
 
+struct Item
+{
+	// server, client
+	int id;
+	// only client
+	//vec4 color;
+	//Mesh* MeshInInventory;
+
+	Item(int i) : id{ i } {}
+};
+
+typedef int ItemID;
+struct ItemStack {
+	ItemID id;
+	int ItemCount;
+};
+
+struct ItemLoot {
+	ItemStack itemDrop;
+	vec4 pos;
+};
+
+vector<Item> ItemTable;
+
 struct Player : public GameObject {
 	static constexpr float ShootDelay = 0.5f;
 	float ShootFlow = 0;
@@ -206,6 +233,8 @@ struct Player : public GameObject {
 
 	matrix ViewMatrix;
 	bool bFirstPersonVision = true;
+
+	vector<ItemStack> Inventory;
 
 	Player() : HP(100.0f) {}
 
@@ -425,6 +454,7 @@ public:
 struct World {
 	vecset<ClientData> clients; // players
 	vecset<GameObject*> gameObjects;
+	vecset<ItemLoot> DropedItems;
 
 	twoPage tempbuffer;
 	DataPackFactory pack_factory;
@@ -463,6 +493,10 @@ struct World {
 	void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance);
 	__forceinline int Sending_AllocPlayerIndex(int clientindex, int objindex);
 	__forceinline int Sending_DeleteGameObject(int objindex);
+	__forceinline int Sending_ItemDrop(int dropindex, ItemLoot lootdata);
+	__forceinline int Sending_ItemRemove(int dropindex);
+	__forceinline int Sending_InventoryItemSync(ItemStack lootdata, int inventoryIndex);
+
 	__forceinline void SendToAllClient(int datacap) {
 		for (int i = 0; i < clients.size; ++i) {
 			if (clients.isnull(i)) continue;
@@ -524,6 +558,12 @@ struct World {
 				pack_factory.push_data(datacap, tempbuffer.data);
 				//clients[new_client_index].socket.Send((char*)tempbuffer.data, datacap);
 			}
+		}
+
+		for (int i = 0; i < DropedItems.size; ++i) {
+			if (DropedItems.isnull(i)) continue;
+			int datacap = Sending_ItemDrop(i, DropedItems[i]);
+			pack_factory.push_data(datacap, tempbuffer.data);
 		}
 	}
 
