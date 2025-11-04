@@ -1,1 +1,0 @@
-modify from ImaysNet (NW lib of The Book <게임 서버 프로그래밍 교과서 : 배현직 지음 : 길벗 출판사>.)
