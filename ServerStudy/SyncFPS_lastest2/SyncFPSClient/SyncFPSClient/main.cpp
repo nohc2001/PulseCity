@@ -1315,7 +1315,7 @@ void Game::Init()
 	Mesh::meshmap.insert(pair<string, Mesh*>("Monster001", MyMonsterMesh));
 
 	Mesh* GunMesh = (Mesh*)new UVMesh();
-	GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/m1911pistol.obj", { 1, 1, 1, 1 });
+	GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/minigun.obj", { 1, 1, 1, 1 });
 	Mesh::meshmap.insert(pair<string, Mesh*>("Gun001", GunMesh));
 
 	Mesh* HPBarMesh = new Mesh();
@@ -3663,7 +3663,8 @@ void Player::ClientUpdate(float deltaTime)
 		LVelocity = 0;
 	}
 
-	ShootFlow += deltaTime;
+	// 권총 반동 로직
+	/*ShootFlow += deltaTime;
 	if (ShootFlow >= ShootDelay) ShootFlow = ShootDelay;
 	float shootrate = powf(ShootFlow / ShootDelay, 5);
 	gunMatrix_firstPersonView.pos.z = 0.3f + 0.2f * shootrate;
@@ -3671,7 +3672,16 @@ void Player::ClientUpdate(float deltaTime)
 
 	if (0 <= shootrate && shootrate <= 1) {
 		gunMatrix_firstPersonView.LookAt(vec4(0, RotHeight - RotHeight * shootrate, 5) - gunMatrix_firstPersonView.pos);
-	}
+	}*/
+	// 머신건 반동 로직
+	ShootFlow += deltaTime;
+	if (ShootFlow >= ShootDelay) ShootFlow = ShootDelay;
+
+	float shootrate = powf(ShootFlow / ShootDelay, 3);
+
+	float recoilAmount = 1.0f - shootrate;
+
+	gunMatrix_firstPersonView.pos.z = 0.3f + 0.2f * recoilAmount;
 
 	/*recoilFlow += deltaTime;
 	if (recoilFlow < recoilDelay) {
@@ -4444,8 +4454,8 @@ void UVMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
 	std::vector< XMFLOAT3 > temp_pos;
 	std::vector< XMFLOAT2 > temp_uv;
 	std::vector< XMFLOAT3 > temp_normal;
-	while (in.eof() == false && (in.is_open() && in.fail() == false)) {
-		char rstr[128] = {};
+	char rstr[128] = {};
+	while (in.eof() == false && in.fail() == false) {
 		in >> rstr;
 		if (strcmp(rstr, "v") == 0) {
 			//좌표
@@ -4466,7 +4476,6 @@ void UVMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
 			XMFLOAT3 uv;
 			in >> uv.x;
 			in >> uv.y;
-			in >> uv.z;
 			uv.y = 1.0f - uv.y;
 			temp_uv.push_back(XMFLOAT2(uv.x, uv.y));
 		}
@@ -4478,41 +4487,66 @@ void UVMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
 			in >> normal.z;
 			temp_normal.push_back(normal);
 		}
-		else if (strcmp(rstr, "f") == 0) {
+		else {
+			in.ignore(1024, '\n');
+		}
+	}
+
+	in.close();
+
+
+	in.open(path);
+
+	if (!in.is_open()) {
+		return;
+	}
+
+	while (in.eof() == false && in.fail() == false) {
+		in >> rstr;
+		if (strcmp(rstr, "f") == 0) {
 			std::string vertex1, vertex2, vertex3;
 			unsigned int vertexIndex[3], uvIndex[3], normalIndex[3];
 			char blank;
 
-			in >> vertexIndex[0];
-			in >> blank;
-			in >> uvIndex[0];
-			in >> blank;
+			in >> vertexIndex[0]; in >> blank;
+			in >> uvIndex[0];	  in >> blank;
 			in >> normalIndex[0];
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[0] - 1], color, temp_normal[normalIndex[0] - 1], temp_uv[uvIndex[0] - 1]));
+			temp_vertices.push_back(Vertex(
+				temp_pos[vertexIndex[0] - 1],
+				color,
+				temp_normal[normalIndex[0] - 1],
+				temp_uv[uvIndex[0] - 1]
+			));
 
-			//in >> blank;
-			in >> vertexIndex[1];
-			in >> blank;
-			in >> uvIndex[1];
-			in >> blank;
+			in >> vertexIndex[1]; in >> blank;
+			in >> uvIndex[1];	  in >> blank;
 			in >> normalIndex[1];
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[1] - 1], color, temp_normal[normalIndex[1] - 1], temp_uv[uvIndex[1] - 1]));
+			temp_vertices.push_back(Vertex(
+				temp_pos[vertexIndex[1] - 1],
+				color,
+				temp_normal[normalIndex[1] - 1],
+				temp_uv[uvIndex[1] - 1]
+			));
 
-			//in >> blank;
-			in >> vertexIndex[2];
-			in >> blank;
-			in >> uvIndex[2];
-			in >> blank;
+			in >> vertexIndex[2]; in >> blank;
+			in >> uvIndex[2];	  in >> blank;
 			in >> normalIndex[2];
-			//in >> blank;
-			temp_vertices.push_back(Vertex(temp_pos[vertexIndex[2] - 1], color, temp_normal[normalIndex[2] - 1], temp_uv[uvIndex[2] - 1]));
+			temp_vertices.push_back(Vertex(
+				temp_pos[vertexIndex[2] - 1],
+				color,
+				temp_normal[normalIndex[2] - 1],
+				temp_uv[uvIndex[2] - 1]
+			));
 
 			int n = temp_vertices.size() - 1;
 			TrianglePool.push_back(TriangleIndex(n - 2, n - 1, n));
 		}
+		else {
+			in.ignore(1024, '\n');
+		}
 	}
-	// For each vertex of each triangle
 
+	// Pass 2
 	in.close();
 
 	XMFLOAT3 CenterPos;
