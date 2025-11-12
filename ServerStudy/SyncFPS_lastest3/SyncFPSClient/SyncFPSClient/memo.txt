@@ -1,0 +1,127 @@
+XMVector4TransformStream : 행렬변환을 VECTOR 배열에 대해 모두 적용시키는 연산. 아마 일반적인 반복문보다 빠르게 수행할 것이다.
+
+XMVector4AngleBetweenVectors : 두 벡터 사이의 각도를 구한다.
+XMVector4AngleBetweenNormals : 두 단위벡터 사이의 각도를 구한다 (더 빠름)
+
+XMVector4Orthogonal : 어떤 벡터의 수직인 벡터를 반환한다. (무슨기준으로 수직벡터를 결정하는지는 모름.) -> 코드를 봐야 할 듯.
+
+XMVector4RefractV : 굴절벡터 계산하는 함수
+
+XMVector4ClampLength : 벡터 길이의 최대와 최소를 받아 변환된 벡터를 반환합니다. -> 길이가 범위 안에 없으면 범위안으로 넣는 작업 하는듯.
+
+XMVector4ReciprocalLength : 벡터 길이의 역수를 반환합니다.
+
+XMVector4LengthSq : 벡터길이의 제곱을 반환합니다. 이게 더 빠름. sqrt연산을 안해도 됨.
+
+XMVector4IsInfinite : 벡터의 요소중 하나라도 무한이면 true.
+XMVector4IsNaN : 벡터의 요소중 하나라도 Nan 이면 true
+
+XMVector4InBounds : 
+//bound vector = {a, b, c, d} // xmin : -a, xmax : a ...
+해당 바운드안에 위치벡터가 위치하는지.
+
+XMVector3UnprojectStream
+XMVector3Unproject : 이 둘은 화면 공간의 벡터를 
+개체공간(게임공간)상의 벡터로 변환하는 작업을 한다.
+Stream이 붙이면 여러개를 빠르게 처리 가능하다.
+
+XMVector3ProjectStream
+XMVector3Project : 개체공간의 벡터를 화면공간의 벡터로 변환한다.
+
+XMVector3TransformNormalStream
+XMVector3TransformNormal
+: 위치이동을 지원하지 않는 변환함수로, w 값을 0으로 채운다.
+
+XMVector3TransformCoordStream
+XMVector3TransformCoord
+: 위치 이동을 지원하는 변환함수로, w값을 1로 채운다.
+
+XMVector3InverseRotate
+XMVector3Rotate : 이건 쿼터니언으로 회전시키고, 역회전이나 복원하는 것.
+
+XMVector3ComponentsFromNormal
+	: 노멀벡터를 활용해 하나의 벡터를 두가지 벡터로 나누는데,
+		노멀벡터와 같은 방향의 벡터하나와,
+		해당 노멀을 가지는 평면 위의 벡터 하나로 나눈다.
+
+XMVector3LinePointDistance
+	: 선분과 점 사이의 거리를 얻는다.
+
+XMVector3AngleBetweenVectors : 두 벡터사이의 라디안 각도
+XMVector3AngleBetweenNormals : 두 단위벡터 사이의 라디안 각도
+
+XMVector3Orthogonal
+
+XMVectorBaryCentricV
+XMVectorBaryCentric
+XMVectorCatmullRomV
+XMVectorHermiteV
+XMVectorLerpV
+
+XMVectorSin/Cos/Tan/aSin, aCos, aTan
+
+XMVectorModAngles
+XMVectorMod
+XMVectorAbs
+XMVectorPow
+XMVectorLog
+XMVectorExp
+
+XMVectorReciprocalSqrt
+XMVectorSqrt
+
+XMVectorNegativeMultiplySubtract
+XMVectorAddAngles
+
+XMVectorNegate
+XMVectorAnd, Or, Xor, Nor, Int
+
+XMVectorSaturate
+XMVectorClamp
+XMVectorCeiling
+XMVectorFloor
+XMVectorTruncate
+XMVectorRound
+
+XMVectorMax
+XMVectorMin
+
+XMVectorInsert
+
+XMVectorReplicate
+
+
+
+///////////////
+
+XMQuaternionBaryCentric;
+XMQuaternionMultiply;
+XMQuaternionConjugate;
+XMQuaternionSlerpV;
+XMQuaternionDot;
+XMQuaternionEqual;
+XMQuaternionExp;
+XMQuaternionIdentity;
+XMQuaternionIsInfinite;
+XMQuaternionInverse;
+XMQuaternionIsIdentity;
+XMQuaternionLength;
+XMQuaternionNormalize;
+XMQuaternionLn;
+XMQuaternionSquad;
+XMQuaternionRotationAxis;
+XMQuaternionRotationMatrix;
+XMQuaternionRotationNormal;
+
+XMPlaneDot;
+XMPlaneNormalize;
+XMPlaneDotCoord;
+XMPlaneDotNormal;
+XMPlaneFromPointNormal;
+XMPlaneFromPoints;
+XMPlaneIntersectLine;
+XMPlaneIntersectPlane;
+XMPlaneIntersectPlane;
+XMPlaneTransform;
+XMPlaneIsInfinite;
+XMPlaneIsNaN;
