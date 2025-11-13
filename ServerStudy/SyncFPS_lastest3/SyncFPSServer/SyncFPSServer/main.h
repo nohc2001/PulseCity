@@ -163,11 +163,11 @@ struct World {
 	__forceinline int Sending_NewRay(vec4 rayStart, vec4 rayDirection, float rayDistance);
 	__forceinline int Sending_SetMeshInGameObject(int objindex, string str);
 	void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance);
-	__forceinline int Sending_AllocPlayerIndex(int clientindex, int objindex);
-	__forceinline int Sending_DeleteGameObject(int objindex);
-	__forceinline int Sending_ItemDrop(int dropindex, ItemLoot lootdata);
-	__forceinline int Sending_ItemRemove(int dropindex);
-	__forceinline int Sending_InventoryItemSync(ItemStack lootdata, int inventoryIndex);
+	int Sending_AllocPlayerIndex(int clientindex, int objindex);
+	int Sending_DeleteGameObject(int objindex);
+	int Sending_ItemDrop(int dropindex, ItemLoot lootdata);
+	int Sending_ItemRemove(int dropindex);
+	int Sending_InventoryItemSync(ItemStack lootdata, int inventoryIndex);
 
 	__forceinline void SendToAllClient(int datacap) {
 		for (int i = 0; i < clients.size; ++i) {
