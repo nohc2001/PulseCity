@@ -130,7 +130,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="GameObject.cpp" />
+    <ClCompile Include="GameObjectType.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Monster.cpp" />
+    <ClCompile Include="Player.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GameObject.h" />
@@ -146,10 +150,10 @@
     <ClInclude Include="NWLib\Semaphore.h" />
     <ClInclude Include="NWLib\Socket.h" />
     <ClInclude Include="NWLib\SocketInit.h" />
-    <ClInclude Include="NWLib\stdafx.h" />
     <ClInclude Include="NWLib\targetver.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="SpaceMath.h" />
+    <ClInclude Include="stdafx.h" />
     <ClInclude Include="vecset.h" />
   </ItemGroup>
   <ItemGroup>

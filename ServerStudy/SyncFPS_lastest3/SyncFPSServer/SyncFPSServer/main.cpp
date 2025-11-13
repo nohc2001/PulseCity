@@ -1,13 +1,9 @@
+#include "stdafx.h"
 #include "main.h"
-
-unordered_map<type_offset_pair, short, hash<type_offset_pair>> GameObjectType::GetClientOffset;
-unordered_map<void*, GameObjectType> GameObjectType::VptrToTypeTable;
-vector<string> Mesh::MeshNameArr;
-unordered_map<string, Mesh*> Mesh::meshmap;
 
 World gameworld;
 float DeltaTime = 0;
-AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
+vector<Item> ItemTable;
 
 int main() {
 	PrintOffset();
@@ -156,569 +152,6 @@ int main() {
 		st = ft;
 	}
 	return 0;
-}
-
-void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
-{
-	XMFLOAT3 maxPos = { 0, 0, 0 };
-	XMFLOAT3 minPos = { 0, 0, 0 };
-	std::ifstream in{ path };
-
-	while (in.eof() == false && (in.is_open() && in.fail() == false)) {
-		char rstr[128] = {};
-		in >> rstr;
-		if (strcmp(rstr, "v") == 0) {
-			//좌표
-			XMFLOAT3 pos;
-			in >> pos.x;
-			in >> pos.y;
-			in >> pos.z;
-			if (maxPos.x < pos.x) maxPos.x = pos.x;
-			if (maxPos.y < pos.y) maxPos.y = pos.y;
-			if (maxPos.z < pos.z) maxPos.z = pos.z;
-			if (minPos.x > pos.x) minPos.x = pos.x;
-			if (minPos.y > pos.y) minPos.y = pos.y;
-			if (minPos.z > pos.z) minPos.z = pos.z;
-		}
-	}
-	// For each vertex of each triangle
-	in.close();
-
-	XMFLOAT3 CenterPos;
-	if (centering) {
-		CenterPos.x = (maxPos.x + minPos.x) * 0.5f;
-		CenterPos.y = (maxPos.y + minPos.y) * 0.5f;
-		CenterPos.z = (maxPos.z + minPos.z) * 0.5f;
-	}
-	else {
-		CenterPos.x = 0;
-		CenterPos.y = 0;
-		CenterPos.z = 0;
-	}
-	MAXpos.x = (maxPos.x - minPos.x) * 0.5f;
-	MAXpos.y = (maxPos.y - minPos.y) * 0.5f;
-	MAXpos.z = (maxPos.z - minPos.z) * 0.5f;
-	MAXpos *= 0.01f;
-}
-
-BoundingOrientedBox Mesh::GetOBB()
-{
-	return BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos.f3, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));
-}
-
-void Mesh::CreateWallMesh(float width, float height, float depth)
-{
-	MAXpos = XMFLOAT3(width, height, depth);
-}
-
-int Mesh::GetMeshIndex(string meshName)
-{
-	for (int i = 0; i < MeshNameArr.size(); ++i) {
-		if (MeshNameArr[i] == meshName) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-int Mesh::AddMeshName(string meshName)
-{
-	int r = MeshNameArr.size();
-	MeshNameArr.push_back(meshName);
-	return r;
-}
-
-GameObject::GameObject()
-{
-	isExist = false;
-	m_worldMatrix.Id();
-	mesh.MAXpos = 0;
-	LVelocity = 0;
-	tickLVelocity = 0;
-}
-
-GameObject::~GameObject()
-{
-}
-
-void GameObject::Update(float deltaTime)
-{
-}
-
-void GameObject::Event()
-{
-}
-
-BoundingOrientedBox GameObject::GetOBB()
-{
-	BoundingOrientedBox obb_local = mesh.GetOBB();
-	BoundingOrientedBox obb_world;
-	obb_local.Transform(obb_world, m_worldMatrix);
-	return obb_world;
-}
-
-void GameObject::CollisionMove(GameObject* gbj1, GameObject* gbj2)
-{
-	constexpr float epsillon = 0.01f;
-
-	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());
-	bool bj = XMColorEqual(gbj2->tickLVelocity, XMVectorZero());
-
-	GameObject* movObj = nullptr;
-	GameObject* colObj = nullptr;
-	BoundingOrientedBox obb1 = gbj1->GetOBB();
-	BoundingOrientedBox obb2 = gbj2->GetOBB();
-
-Collision_By_Move:
-
-	if (!bi && bj) {
-		// i : moving GameObject
-		// j : Collision Check GameObject
-		movObj = gbj1;
-		colObj = gbj2;
-		goto Collision_By_Move_static_vs_dynamic;
-	}
-	else if (bi && !bj) {
-		// i : Collision Check GameObject
-		// j : moving GameObject
-		movObj = gbj2;
-		colObj = gbj1;
-		goto Collision_By_Move_static_vs_dynamic;
-	}
-	else if (!bi && !bj) {
-		// i : moving GameObject
-		// j : moving GameObject
-		gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
-		obb1 = gbj1->GetOBB();
-		gbj1->m_worldMatrix.pos -= gbj1->tickLVelocity;
-		gbj2->m_worldMatrix.pos += gbj2->tickLVelocity;
-		obb2 = gbj2->GetOBB();
-		gbj2->m_worldMatrix.pos -= gbj2->tickLVelocity;
-
-		if (obb1.Intersects(obb2)) {
-			gbj1->OnCollision(gbj2);
-			gbj2->OnCollision(gbj1);
-
-			float mul = 0.5f;
-			float rate = 0.25f;
-			float maxLen = XMVector3Length(gbj1->tickLVelocity).m128_f32[0];
-			float temp = XMVector3Length(gbj2->tickLVelocity).m128_f32[0];
-			if (maxLen < temp) maxLen = temp;
-
-		CMP_INTERSECT:
-			vec4 v1 = mul * gbj1->tickLVelocity;
-			vec4 v2 = mul * gbj2->tickLVelocity;
-			gbj1->m_worldMatrix.pos += v1;
-			obb1 = gbj1->GetOBB();
-			gbj1->m_worldMatrix.pos -= v1;
-			gbj2->m_worldMatrix.pos += v2;
-			obb2 = gbj2->GetOBB();
-			gbj2->m_worldMatrix.pos -= v2;
-			bool isMoveForward = false;
-			if (obb1.Intersects(obb2)) {
-				mul -= rate;
-				rate *= 0.5f;
-				if (maxLen * rate > epsillon) goto CMP_INTERSECT;
-			}
-			else {
-				isMoveForward = true;
-				mul += rate;
-				rate *= 0.5f;
-				if (maxLen * rate > epsillon) goto CMP_INTERSECT;
-			}
-
-			if (isMoveForward == false) {
-				v1 = 0;
-				v2 = 0;
-			}
-
-			vec4 preMove1 = v1;
-			vec4 postMove1 = gbj1->tickLVelocity - v1;
-			gbj1->tickLVelocity = postMove1;
-
-			vec4 preMove2 = v2;
-			vec4 postMove2 = gbj2->tickLVelocity - v2;
-			gbj2->tickLVelocity = postMove2;
-
-			gbj2->m_worldMatrix.pos += preMove2;
-			obb2 = gbj2->GetOBB();
-			gbj2->m_worldMatrix.pos -= preMove2;
-
-			CollisionMove_DivideBaseline_rest(gbj1, gbj2, obb2, preMove1);
-			gbj1->tickLVelocity += preMove1;
-
-			gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
-			obb1 = gbj1->GetOBB();
-			gbj1->m_worldMatrix.pos -= gbj1->tickLVelocity;
-
-			CollisionMove_DivideBaseline_rest(gbj2, gbj1, obb1, preMove2);
-			gbj2->tickLVelocity += preMove2;
-		}
-		return;
-	}
-	else {
-		//no move
-		return;
-	}
-
-Collision_By_Move_static_vs_dynamic:
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	obb2 = colObj->GetOBB();
-
-	if (obb1.Intersects(obb2)) {
-		movObj->OnCollision(colObj);
-		colObj->OnCollision(movObj);
-
-		CollisionMove_DivideBaseline(movObj, colObj, obb2);
-	}
-}
-
-void GameObject::CollisionMove_DivideBaseline(GameObject* movObj, GameObject* colObj, BoundingOrientedBox colOBB)
-{
-	XMMATRIX basemat = colObj->m_worldMatrix;
-	XMMATRIX invmat = colObj->m_worldMatrix.RTInverse;
-	invmat.r[3] = XMVectorSet(0, 0, 0, 1);
-	XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
-	movObj->tickLVelocity = XMVectorZero();
-
-	XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
-	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	BoundingOrientedBox obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	if (obb1.Intersects(colOBB)) {
-		movObj->tickLVelocity -= MoveVector;
-	}
-
-	MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
-	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	if (obb1.Intersects(colOBB)) {
-		movObj->tickLVelocity -= MoveVector;
-	}
-
-	MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
-	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	if (obb1.Intersects(colOBB)) {
-		movObj->tickLVelocity -= MoveVector;
-	}
-}
-
-void GameObject::CollisionMove_DivideBaseline_rest(GameObject* movObj, GameObject* colObj, BoundingOrientedBox colOBB, vec4 preMove)
-{
-	movObj->m_worldMatrix.pos += preMove;
-
-	XMMATRIX basemat = colObj->m_worldMatrix;
-	XMMATRIX invmat = colObj->m_worldMatrix.RTInverse;
-	invmat.r[3] = XMVectorSet(0, 0, 0, 1);
-	XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
-	movObj->tickLVelocity = XMVectorZero();
-
-	XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
-	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	BoundingOrientedBox obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	if (obb1.Intersects(colOBB)) {
-		movObj->tickLVelocity -= MoveVector;
-	}
-
-	MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
-	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	if (obb1.Intersects(colOBB)) {
-		movObj->tickLVelocity -= MoveVector;
-	}
-
-	MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
-	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
-	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
-	if (obb1.Intersects(colOBB)) {
-		movObj->tickLVelocity -= MoveVector;
-	}
-
-	movObj->m_worldMatrix.pos -= preMove;
-}
-
-void GameObject::OnCollision(GameObject* other)
-{
-}
-
-void GameObject::OnCollisionRayWithBullet(GameObject* shooter)
-{
-}
-
-void Player::Update(float deltaTime)
-{
-	ShootFlow += deltaTime;
-	if (ShootFlow >= ShootDelay) ShootFlow = ShootDelay;
-	float shootrate = powf(ShootFlow / ShootDelay, 5);
-	constexpr float RotHeight = ShootDelay * 10;
-
-	recoilFlow += deltaTime;
-	if (recoilFlow < recoilDelay) {
-		float power = 5;
-		float delta_rate = (power / recoilDelay) * pow(1 - recoilFlow / recoilDelay, (power - 1));
-		float f = recoilVelocity * deltaTime * delta_rate;
-		DeltaMousePos.y -= f;
-	}
-
-	if (collideCount == 0) isGround = false;
-	collideCount = 0;
-
-	if (isGround == false) {
-		LVelocity.y -= 9.8f * deltaTime;
-	}
-
-	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
-	constexpr float speed = 3.0f;
-
-	if (isGround) {
-		if (InputBuffer[InputID::KeyboardSpace]) {
-			LVelocity.y = JumpVelocity;
-			isGround = false;
-		}
-	}
-	tickLVelocity = LVelocity * deltaTime;
-
-	if (InputBuffer[InputID::KeyboardW] == true) {
-		tickLVelocity += speed * m_worldMatrix.look * deltaTime;
-	}
-	if (InputBuffer[InputID::KeyboardS] == true) {
-		tickLVelocity -= speed * m_worldMatrix.look * deltaTime;
-	}
-	if (InputBuffer[InputID::KeyboardA] == true) {
-		tickLVelocity -= speed * m_worldMatrix.right * deltaTime;
-	}
-	if (InputBuffer[InputID::KeyboardD] == true) {
-		tickLVelocity += speed * m_worldMatrix.right * deltaTime;
-	}
-
-	//if (InputBuffer[InputID::MouseLbutton] == true) {
-	//	if (ShootFlow >= ShootDelay) {
-	//		if (bFirstPersonVision) {
-	//			matrix shootmat = ViewMatrix.RTInverse;
-	//			gameworld.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look, shootmat.look, 50.0f);
-	//		}
-	//		else {
-	//			matrix shootmat = ViewMatrix.RTInverse;
-	//			gameworld.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look * 3, shootmat.look, 50.0f);
-	//		}
-	//		ShootFlow = 0;
-	//		recoilFlow = 0;
-	//	}
-	//}
-
-	//CameraUpdate
-	XMVECTOR vEye = m_worldMatrix.pos;
-	vec4 peye = m_worldMatrix.pos;
-	vec4 pat = m_worldMatrix.pos;
-
-	const float rate = 0.005f;
-
-	XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(rate * DeltaMousePos.y, rate * DeltaMousePos.x, 0);
-	vec4 clook = { 0, 0, 1, 0 };
-	vec4 plook;
-	clook = XMVector3Rotate(clook, quaternion);
-
-	plook = clook;
-	plook.y = 0;
-	plook.len3 = 1;
-	plook.w = 0;
-	m_worldMatrix.SetLook(plook);
-
-	if (bFirstPersonVision) {
-		peye += 1.0f * m_worldMatrix.up;
-		pat += 1.0f * m_worldMatrix.up;
-		pat += 10 * clook;
-	}
-	else {
-		peye -= 3 * clook;
-		pat += 10 * clook;
-		peye += 0.5f * m_worldMatrix.up;
-		peye += 0.5f * m_worldMatrix.right;
-	}
-
-	XMFLOAT3 Up = { 0, 1, 0 };
-	peye.w = 0;
-	pat.w = 0;
-	ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
-
-	if (InputBuffer[InputID::MouseLbutton] == true) {
-		if (ShootFlow >= ShootDelay && bullets > 0 && HeatGauge <= MaxHeatGauge) {
-			bullets -= 1;
-			HeatGauge += 2;
-			//send  bullets and Heat to client
-			int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets, 4);
-			gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-
-			datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge, 4);
-			gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-			//cout << bullets << " bullets remain." << endl;
-
-			matrix shootmat = ViewMatrix.RTInverse;
-			gameworld.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look * 3, shootmat.look, 50.0f);
-			ShootFlow = 0;
-			recoilFlow = 0;
-			datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Player, &ShootFlow, 8);
-			gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-
-			if (bullets <= 0) {
-				ShootFlow = -3;
-				bullets = 100;
-			}
-		}
-
-	}
-
-	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &DeltaMousePos, 8);
-	gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-
-	BoundingOrientedBox obb = GetOBB();
-	for (int i = 0; i < gameworld.DropedItems.size; ++i) {
-		if (gameworld.DropedItems.isnull(i)) continue;
-		vec4 p = gameworld.DropedItems[i].pos;
-		p.w = 0;
-		if (obb.Contains(p)) {
-			bool isexist = false;
-			bool beat = false;
-			int firstBlackIndex = -1;
-			for (int k = 0; k < Inventory.size(); ++k) {
-				if (Inventory[k].id == 0 && firstBlackIndex == -1) {
-					firstBlackIndex = k;
-				}
-				if (Inventory[k].id == gameworld.DropedItems[i].itemDrop.id)
-				{
-					Inventory[k].ItemCount += gameworld.DropedItems[i].itemDrop.ItemCount;
-					isexist = true;
-					beat = true;
-					firstBlackIndex = k;
-					break;
-				}
-			}
-			if (isexist == false && firstBlackIndex != -1) {
-				Inventory[firstBlackIndex] = gameworld.DropedItems[i].itemDrop;
-				beat = true;
-			}
-
-			if (beat) {
-				int datacap = gameworld.Sending_InventoryItemSync(Inventory[firstBlackIndex], firstBlackIndex);
-				gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-				gameworld.DropedItems.Free(i);
-				datacap = gameworld.Sending_ItemRemove(i);
-				gameworld.SendToAllClient(datacap);
-				break;
-			}
-		}
-	}
-
-	//히트 게이지 지속 감소 (발사 안할시)
-
-	if (HeatGauge > 0.0f) {
-		float decayRate = 5.0f; // 초당 감소량
-		HeatGauge -= decayRate * deltaTime;
-		if (HeatGauge < 0.0f) HeatGauge = 0.0f;
-	}
-
-	static float heatSendTimer = 0.0f;
-	heatSendTimer += deltaTime;
-
-	if (heatSendTimer > 0.2f) { // 0.2초마다 서버 → 클라 전송
-		heatSendTimer = 0.0f;
-
-		int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex,this, GameObjectType::_Player, &HeatGauge, sizeof(HeatGauge));
-
-		gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-	}
-
-}
-
-void Player::OnCollision(GameObject* other)
-{
-	collideCount += 1;
-	float belowDist = 0;
-	BoundingOrientedBox otherOBB = other->GetOBB();
-
-	bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
-
-	if (belowhit && belowDist < mesh.GetOBB().Extents.y + 1.0f) {
-		LVelocity.y = 0;
-		isGround = true;
-	}
-}
-
-BoundingOrientedBox Player::GetOBB()
-{
-	BoundingOrientedBox obb_local = mesh.GetOBB();
-	obb_local.Extents.x = obb_local.Extents.z;
-	BoundingOrientedBox obb_world;
-	matrix id = XMMatrixIdentity();
-	id.pos = m_worldMatrix.pos;
-	obb_local.Transform(obb_world, id);
-	return obb_world;
-}
-
-BoundingOrientedBox Player::GetBottomOBB(const BoundingOrientedBox& obb)
-{
-	constexpr float margin = 0.1f;
-	BoundingOrientedBox robb;
-	robb.Center = obb.Center;
-	robb.Center.y -= obb.Extents.y;
-	robb.Extents = obb.Extents;
-	robb.Extents.y = 0.4f;
-	robb.Extents.x -= margin;
-	robb.Extents.z -= margin;
-	robb.Orientation = obb.Orientation;
-	return robb;
-}
-
-void Player::TakeDamage(float damage)
-{
-	HP -= damage;
-
-	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP, 4);
-	gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-
-	if (HP <= 0) {
-		isExist = false;
-
-		DeathCount += 1;
-		int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &DeathCount, 4);
-		gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-
-		Respawn();
-	}
-}
-
-void Player::OnCollisionRayWithBullet(GameObject* shooter)
-{
-	TakeDamage(2);
-}
-
-void Player::Respawn() {
-	HP = 100;
-	isExist = true;
-
-	m_worldMatrix.Id();
-	m_worldMatrix.pos.y = 2;
-	//player position send
-
-	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &isExist, 1);
-	gameworld.SendToAllClient(datacap);
-
-	datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP, 4);
-	gameworld.SendToAllClient(datacap);
 }
 
 void World::Init() {
@@ -1378,374 +811,102 @@ void World::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, f
 	gameworld.SendToAllClient(datacap);
 }
 
-void GameObjectType::STATICINIT()
-{
-	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<GameObject>(), GameObjectType::_GameObject));
-	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<Player>(), GameObjectType::_Player));
-	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<Monster>(), GameObjectType::_Monster));
-}
-
-void GameObjectType::AddClientOffset_ptr(GameObjectType gotype, char* obj, char* member, int clientOffset)
-{
-	AddClientOffset(gotype, (short)(member - obj), (short)clientOffset);
-}
-
-void Monster::Update(float deltaTime)
-{
-
-
-	if (isDead) {
-		respawntimer += deltaTime;
-		if (respawntimer > 1.0f) {
-			Respawn();
-			respawntimer = 0;
-		}
-	}
-	else {
-
-		if (collideCount == 0) isGround = false;
-		collideCount = 0;
-
-		if (isGround == false) {
-			LVelocity.y -= 9.81f * deltaTime;
-		}
-		tickLVelocity = LVelocity * deltaTime;
-
-		vec4 monsterPos = m_worldMatrix.pos;
-		monsterPos.w = 0;
-
-		if (Target == nullptr || (Target != nullptr && *Target == nullptr)) {
-			int limitseek = 4;
-			if (gameworld.clients.size == 0) {
-				Target = nullptr;
-				return;
-			}
-
-		SEEK_TARGET_LOOP:
-			for (int i = targetSeekIndex; i < gameworld.clients.size; ++i) {
-				limitseek -= 1;
-				if (limitseek == 0) {
-					return;
-				}
-				if (gameworld.clients.isnull(i)) continue;
-				Target = (Player**)&gameworld.gameObjects[gameworld.clients[i].objindex];
-				break;
-			}
-			if (limitseek != 0 && (Target == nullptr || *Target == nullptr)) {
-				targetSeekIndex = 0;
-				goto SEEK_TARGET_LOOP;
-			}
-		}
-
-		vec4 playerPos = (*Target)->m_worldMatrix.pos;
-		playerPos.w = 0;
-
-		vec4 toPlayer = playerPos - monsterPos;
-		toPlayer.y = 0.0f;
-		float distanceToPlayer = toPlayer.len3;
-
-		if (distanceToPlayer <= m_chaseRange) {
-			m_targetPos = playerPos;
-			m_isMove = true;
-
-			toPlayer.len3 = 1.0f;
-			tickLVelocity += toPlayer * m_speed * deltaTime;
-			m_worldMatrix.SetLook(toPlayer);
-
-			if (distanceToPlayer < 2.0f) {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-			}
-
-			m_fireTimer += deltaTime;
-			if (m_fireTimer >= m_fireDelay) {
-				m_fireTimer = 0.0f;
-
-				vec4 rayStart = monsterPos + (m_worldMatrix.look * 0.5f);
-				rayStart.y += 0.7f;
-				vec4 rayDirection = playerPos - rayStart;
-
-				float InverseAccurcy = distanceToPlayer / 6;
-				rayDirection.x += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
-				rayDirection.y += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
-				rayDirection.z += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
-				rayDirection.len3 = 1.0f;
-
-				gameworld.FireRaycast(this, rayStart, rayDirection, m_chaseRange);
-			}
-		}
-		else {
-			if (!m_isMove) {
-				float randomAngle = ((float)rand() / RAND_MAX) * 2.0f * XM_PI;
-				float randomRadius = ((float)rand() / RAND_MAX) * m_patrolRange;
-
-				m_targetPos.x = m_homePos.x + randomRadius * cos(randomAngle);
-				m_targetPos.z = m_homePos.z + randomRadius * sin(randomAngle);
-				m_targetPos.y = m_homePos.y;
-
-				m_isMove = true;
-				m_patrolTimer = 0.0f;
-			}
-
-			m_patrolTimer += deltaTime;
-
-			if (m_patrolTimer >= 5.0f) {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-				m_isMove = false;
-				return;
-			}
-
-			vec4 currentPos = m_worldMatrix.pos;
-			currentPos.w = 0;
-			vec4 direction = m_targetPos - currentPos;
-			direction.y = 0.0f;
-			float distance = direction.len3;
-
-			if (distance > 1.0f) {
-				direction.len3 = 1.0f;
-				tickLVelocity += direction * m_speed * deltaTime;
-				m_worldMatrix.SetLook(direction);
-			}
-			else {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-				m_isMove = false;
-			}
-		}
-
-		if (gameworld.lowHit()) {
-			int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &(m_worldMatrix), 64);
-			gameworld.SendToAllClient(datacap);
-		}
-	}
-}
-
-
-void Monster::OnCollision(GameObject* other)
-{
-	collideCount += 1;
-	float belowDist = 0;
-	BoundingOrientedBox otherOBB = other->GetOBB();
-	bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
-	if (belowhit && belowDist < mesh.GetOBB().Extents.y + 1.0f) {
-		LVelocity.y = 0;
-		isGround = true;
-	}
-}
-
-void Monster::OnCollisionRayWithBullet(GameObject* shooter)
-{
-	HP -= 10;
-
-	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &HP, sizeof(int));
-	gameworld.SendToAllClient(datacap);
-
-	if (HP <= 0) {
-		isDead = true;
-		vec4 prevpos = m_worldMatrix.pos;
-		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
-
-		int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &isDead, sizeof(bool));
-		gameworld.SendToAllClient(datacap);
-
-		// when monster is dead, player's killcount +1
-		void* vptr = *(void**)shooter;
-		if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
-			Player* p = (Player*)shooter;
-			p->KillCount += 1;
-			datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount, sizeof(int));
-			gameworld.clients[p->clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
-		}
-
-		//when monster is dead, loot random items;
-		ItemLoot il = {};
-		il.itemDrop.id = 1 + (rand() % (ItemTable.size() - 1));
-		il.itemDrop.ItemCount = 1 + rand() % 5;
-		il.pos = prevpos;
-		int newindex = gameworld.DropedItems.Alloc();
-		gameworld.DropedItems[newindex] = il;
-		datacap = gameworld.Sending_ItemDrop(newindex, il);
-		gameworld.SendToAllClient(datacap);
-	}
-}
-
-void Monster::Init(const XMMATRIX& initialWorldMatrix)
-{
-	m_worldMatrix = (initialWorldMatrix);
-	m_homePos = m_worldMatrix.pos;
-}
-
-void Monster::Respawn()
-{
-	isDead = false;
-	HP = 30;
-
-	/*Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));*/
-	m_isMove = false;
-
-	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &isDead, sizeof(bool));
-	gameworld.SendToAllClient(datacap);
-
-	datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &HP, sizeof(int));
-	gameworld.SendToAllClient(datacap);
-
-}
-
-BoundingOrientedBox Monster::GetOBB()
-{
-	BoundingOrientedBox obb_local = mesh.GetOBB();
-	obb_local.Extents.x = obb_local.Extents.z;
-	BoundingOrientedBox obb_world;
-	matrix id = XMMatrixIdentity();
-	id.pos = m_worldMatrix.pos;
-	obb_local.Transform(obb_world, id);
-	return obb_world;
-}
-
-vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*>& allNodes, int gridWidth, int gridHeight)
-{
-	std::vector<AstarNode*> neighbors;
-
-	for (int dx = -1; dx <= 1; ++dx) {
-		for (int dz = -1; dz <= 1; ++dz) {
-			if (dx == 0 && dz == 0)
-				continue;
-
-			int nx = current->xIndex + dx;
-			int nz = current->zIndex + dz;
-
-			// 범위 밖이면 무시
-			if (nx < 0 || nz < 0 || nx >= gridWidth || nz >= gridHeight)
-				continue;
-
-			// 인덱스로 노드 접근
-			AstarNode* neighbor = allNodes[nz * gridWidth + nx];
-			if (neighbor->cango)
-				neighbors.push_back(neighbor);
-		}
-	}
-
-	return neighbors;
-}
-
-
-vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination, std::vector<AstarNode*>& allNodes)
-{
-
-	std::vector<AstarNode*> openList;
-	std::vector<AstarNode*> closedList;
-
-	if (start == nullptr || destination == nullptr)
-		return {};
-
-	// 초기화
-	for (auto node : allNodes)
+void PrintOffset() {
 	{
-		node->gCost = FLT_MAX;
-		node->hCost = 0.0f;
-		node->fCost = 0.0f;
-		node->parent = nullptr;
+		int n = sizeof(GameObject);
+		dbglog1(L"class GameObject : size = %d\n", n);
+		GameObject temp;
+
+		n = (char*)&temp - (char*)&temp.isExist;
+		dbglog1(L"class GameObject.isExist%d\n", n);
+		/*n = (char*)&temp - (char*)&temp.diffuseTextureIndex;
+		dbglog1(L"class GameObject.diffuseTextureIndex%d\n", n);*/
+		n = (char*)&temp - (char*)&temp.m_worldMatrix;
+		dbglog1(L"class GameObject.m_worldMatrix%d\n", n);
+		n = (char*)&temp - (char*)&temp.LVelocity;
+		dbglog1(L"class GameObject.LVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.tickLVelocity;
+		dbglog1(L"class GameObject.tickLVelocity%d\n", n);
+
+		/*n = (char*)&temp - (char*)&temp.m_pMesh;
+		dbglog1(L"class GameObject.m_pMesh%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pShader;
+		dbglog1(L"class GameObject.m_pShader%d\n", n);
+		n = (char*)&temp - (char*)&temp.Destpos;
+		dbglog1(L"class GameObject.Destpos%d\n", n);*/
 	}
-
-	start->gCost = 0.0f;
-	start->gCost = 0.0f;
-	start->hCost = std::abs(start->xIndex - destination->xIndex) + std::abs(start->zIndex - destination->zIndex);
-	start->fCost = start->gCost + start->hCost;
-
-	openList.push_back(start);
-
-	while (!openList.empty())
+	dbglog1(L"-----------------------------------%d\n\n", rand());
 	{
-		// fCost 최소 노드 선택
-		AstarNode* currentNode = openList[0];
-		for (AstarNode* node : openList)
-		{
-			if (node->fCost < currentNode->fCost)
-				currentNode = node;
-		}
+		int n = sizeof(Player);
+		dbglog1(L"class Player : size = %d\n", n);
+		Player temp;
 
-		// 목적지 도달 시 경로 추적
-		if (currentNode == destination)
-		{
-			std::vector<AstarNode*> path;
-			AstarNode* pathNode = currentNode;
-			while (pathNode != nullptr)
-			{
-				path.push_back(pathNode);
-				pathNode = pathNode->parent;
-			}
-			std::reverse(path.begin(), path.end());
-			return path;
-		}
+		n = (char*)&temp - (char*)&temp.isExist;
+		dbglog1(L"class Player.isExist%d\n", n);
+		/*n = (char*)&temp - (char*)&temp.diffuseTextureIndex;
+		dbglog1(L"class Player.diffuseTextureIndex%d\n", n);*/
+		n = (char*)&temp - (char*)&temp.m_worldMatrix;
+		dbglog1(L"class Player.m_worldMatrix%d\n", n);
+		n = (char*)&temp - (char*)&temp.LVelocity;
+		dbglog1(L"class Player.LVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.tickLVelocity;
+		dbglog1(L"class Player.tickLVelocity%d\n", n);
+		//n = (char*)&temp - (char*)&temp.m_pMesh;
+		//dbglog1(L"class Player.m_pMesh%d\n", n);
+		//n = (char*)&temp - (char*)&temp.m_pShader;
+		//dbglog1(L"class Player.m_pShader%d\n", n);
+		//n = (char*)&temp - (char*)&temp.Destpos;
+		//dbglog1(L"class Player.Destpos%d\n", n);
+		dbglog1(L"-----------------------%d\n", rand());
+		n = (char*)&temp - (char*)&temp.ShootFlow;
+		dbglog1(L"class Player.ShootFlow%d\n", n);
+		n = (char*)&temp - (char*)&temp.recoilFlow;
+		dbglog1(L"class Player.recoilFlow%d\n", n);
+		n = (char*)&temp - (char*)&temp.HP;
+		dbglog1(L"class Player.HP%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaxHP;
+		dbglog1(L"class Player.MaxHP%d\n", n);
+		n = (char*)&temp - (char*)&temp.DeltaMousePos;
+		dbglog1(L"class Player.DeltaMousePos%d\n", n);
+		n = (char*)&temp - (char*)&temp.bullets;
+		dbglog1(L"class Player.bullets%d\n", n);
+		n = (char*)&temp - (char*)&temp.KillCount;
+		dbglog1(L"class Player.KillCount%d\n", n);
+		n = (char*)&temp - (char*)&temp.DeathCount;
+		dbglog1(L"class Player.DeathCount%d\n", n);
+		n = (char*)&temp - (char*)&temp.HeatGauge;
+		dbglog1(L"class Player.Heat%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaxHeatGauge;
+		dbglog1(L"class Player.MaxHeat%d\n", n);
 
-		// 오픈 리스트 → 클로즈드 리스트
-		openList.erase(std::remove(openList.begin(), openList.end(), currentNode), openList.end());
-		closedList.push_back(currentNode);
-
-		// 이웃 탐색
-		for (AstarNode* neighbor : GetNeighbors(currentNode, allNodes, 80, 80))
-		{
-			// 이미 방문한 노드는 스킵
-			if (std::find(closedList.begin(), closedList.end(), neighbor) != closedList.end())
-				continue;
-
-			float costToNeighbor = ((currentNode->xIndex != neighbor->xIndex && currentNode->zIndex != neighbor->zIndex) ? 1.414f : 1.0f);
-			float tentativeG = currentNode->gCost + costToNeighbor;
-
-			if (tentativeG < neighbor->gCost)
-			{
-				neighbor->parent = currentNode;
-				neighbor->gCost = tentativeG;
-				neighbor->hCost = std::abs(neighbor->xIndex - destination->xIndex) + std::abs(neighbor->zIndex - destination->zIndex);
-				neighbor->fCost = neighbor->gCost + neighbor->hCost;
-
-				if (std::find(openList.begin(), openList.end(), neighbor) == openList.end())
-					openList.push_back(neighbor);
-			}
-		}
 	}
+	dbglog1(L"-----------------------------------%d\n\n", rand());
+	{
+		int n = sizeof(Monster);
+		dbglog1(L"class Monster : size = %d\n", n);
+		Monster temp;
 
-	return {}; // 경로 없음
-}
-
-void Monster::MoveByAstar(float deltaTime)
-{
-	if (path.empty() || currentPathIndex >= path.size())
-		return;
-
-	AstarNode* targetNode = path[currentPathIndex];
-	XMFLOAT3 targetPos = XMFLOAT3(targetNode->worldx, 0.0f, targetNode->worldz);
-
-	// 방향 계산
-	XMVECTOR pos = m_worldMatrix.pos;
-	XMVECTOR target = XMLoadFloat3(&targetPos);
-	XMVECTOR dir = XMVector3Normalize(target - pos);
-
-	// 이동
-	XMVECTOR newPos = pos + dir * deltaTime * 5.0f; // 속도 5
-	m_worldMatrix.pos = newPos;
-
-	// 목표 근처 도달 시 다음 노드로
-	XMVECTOR diffVec = XMVectorAbs(target - newPos);
-	XMFLOAT3 diff;
-	XMStoreFloat3(&diff, diffVec);
-
-	if (diff.x < 0.5f && diff.z < 0.5f)
-		currentPathIndex++;
-}
-
-AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
-{
-	AstarNode* best = nullptr;
-	float bestDist2 = FLT_MAX;
-	for (AstarNode* n : allNodes) {
-		if (!n->cango) continue;
-		float dx = n->worldx - wx;
-		float dz = n->worldz - wz;
-		float d2 = dx * dx + dz * dz;
-		if (d2 < bestDist2) { bestDist2 = d2; best = n; }
+		n = (char*)&temp - (char*)&temp.isExist;
+		dbglog1(L"class Monster.isExist%d\n", n);
+		/*n = (char*)&temp - (char*)&temp.diffuseTextureIndex;
+		dbglog1(L"class Monster.diffuseTextureIndex%d\n", n);*/
+		n = (char*)&temp - (char*)&temp.m_worldMatrix;
+		dbglog1(L"class Monster.m_worldMatrix%d\n", n);
+		n = (char*)&temp - (char*)&temp.LVelocity;
+		dbglog1(L"class Monster.LVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.tickLVelocity;
+		dbglog1(L"class Monster.tickLVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.isDead;
+		dbglog1(L"class Monster.isDead%d\n", n);
+		n = (char*)&temp - (char*)&temp.HP;
+		dbglog1(L"class Monster.HP%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaxHP;
+		dbglog1(L"class Monster.MaxHP%d\n", n);
+		/*n = (char*)&temp - (char*)&temp.m_pMesh;
+		dbglog1(L"class Monster.m_pMesh%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pShader;
+		dbglog1(L"class Monster.m_pShader%d\n", n);
+		n = (char*)&temp - (char*)&temp.Destpos;
+		dbglog1(L"class Monster.Destpos%d\n", n);*/
 	}
-	return best;
 }
-

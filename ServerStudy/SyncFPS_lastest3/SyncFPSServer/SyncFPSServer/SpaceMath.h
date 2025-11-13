@@ -54,7 +54,7 @@ AddUnit(mps, 1)
 AddUnit(kmph, (0.2777777777777778))
 #pragma endregion
 
-float sign_spread(float Dest, float Source) {
+inline float sign_spread(float Dest, float Source) {
 	ui32 f = bitcast(ui32, Source) & 0x80000000;
 	ui32 g = bitcast(ui32, Dest) & 0x7FFFFFFF;
 	return bitcast(float, f | g);
@@ -337,7 +337,7 @@ struct OBB_vertexVector {
 	vec4 vertex[2][2][2] = { {{}} };
 };
 
-OBB_vertexVector GetOBBVertexs(BoundingOrientedBox obb)
+inline OBB_vertexVector GetOBBVertexs(BoundingOrientedBox obb)
 {
 	OBB_vertexVector ovv;
 	matrix mat;
@@ -362,7 +362,7 @@ OBB_vertexVector GetOBBVertexs(BoundingOrientedBox obb)
 	return ovv;
 }
 
-vec4 GetPlane_FrustomRange(BoundingOrientedBox obb, vec4 point) {
+inline vec4 GetPlane_FrustomRange(BoundingOrientedBox obb, vec4 point) {
 	static vec4 One = XMVectorSetInt(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
 	matrix mat;
