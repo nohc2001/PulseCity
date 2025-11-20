@@ -122,6 +122,11 @@ public:
 	}
 };
 
+struct collisionchecksphere {
+	vec4 center;
+	float radius;
+};
+
 struct World {
 	vecset<ClientData> clients; // players
 	vecset<GameObject*> gameObjects;
@@ -153,6 +158,7 @@ struct World {
 
 	void Init();
 	void Update();
+	void gridcollisioncheck();
 	__forceinline int Receiving(int clientIndex, char* rBuffer);
 
 	int NewObject(GameObject* obj, GameObjectType gotype);
@@ -260,3 +266,4 @@ extern World gameworld;
 extern float DeltaTime;
 
 void PrintOffset();
+bool CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfSize, const collisionchecksphere& sphere);

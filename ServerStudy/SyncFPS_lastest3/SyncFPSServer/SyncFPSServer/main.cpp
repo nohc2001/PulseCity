@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "stdafx.h"
 #include "main.h"
 
@@ -154,6 +155,20 @@ int main() {
 	return 0;
 }
 
+//그리드 그리기 함수
+void PrintCangoGrid(const std::vector<AstarNode*>& all, int gridWidth, int gridHeight)
+{
+	std::cout << "\n=== CANGO GRID (.: walkable, #: blocked) ===\n";
+	for (int z = 0; z < gridHeight; ++z) {
+		for (int x = 0; x < gridWidth; ++x) {
+			const AstarNode* n = all[z * gridWidth + x];
+			std::cout << (n && n->cango ? '.' : '#');
+		}
+		std::cout << '\n';
+	}
+	std::cout << std::flush;
+}
+
 void World::Init() {
 	ItemTable.push_back(Item(0)); // blank space in inventory.
 	ItemTable.push_back(Item(1));
@@ -165,22 +180,23 @@ void World::Init() {
 	const int gridHeight = 80;
 	const float cellSize = 1.0f;
 
-	const float offsetX = -gridWidth * cellSize * 0.5f;  // -40.0f
-	const float offsetZ = -gridHeight * cellSize * 0.5f; // -40.0f
+	const float offsetX = -gridWidth * cellSize * 0.5f;  // -40
+	const float offsetZ = -gridHeight * cellSize * 0.5f; // -40
 
 	allnodes.clear();
 	allnodes.reserve(gridWidth * gridHeight);
 
+
 	//Grid initiolaize
-	/*for (int z = 0; z < gridHeight; ++z)
+	for (int z = 0; z < gridHeight; ++z)
 	{
 		for (int x = 0; x < gridWidth; ++x)
 		{
 			AstarNode* node = new AstarNode();
+			node->worldx = offsetX + x * cellSize + cellSize * 0.5f;
+			node->worldz = offsetZ + z * cellSize + cellSize * 0.5f;
 			node->xIndex = x;
 			node->zIndex = z;
-			node->worldx = x * cellSize + cellSize * 0.5f;
-			node->worldz = z * cellSize + cellSize * 0.5f;
 			node->gCost = 0;
 			node->hCost = 0;
 			node->fCost = 0;
@@ -190,7 +206,7 @@ void World::Init() {
 
 			allnodes.push_back(node);
 		}
-	}*/
+	}
 
 	DropedItems.Init(4096);
 	pack_factory.Clear();
@@ -445,6 +461,15 @@ void World::Init() {
 	datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
 	SendToAllClient(datacap);*/
 
+	//그리드(노드)의 cango를 체크하는 함수
+	gridcollisioncheck();
+
+	const int GRID_W = 80;
+	const int GRID_H = 80;
+
+	//PrintCangoSummary(allnodes, GRID_W, GRID_H);
+	PrintCangoGrid(allnodes, GRID_W, GRID_H);
+
 	cout << "Game Init end" << endl;
 }
 
@@ -535,6 +560,46 @@ void World::Update() {
 	}
 	if (highHit()) {
 		highFrequencyFlow = 0;
+	}
+}
+
+
+void World::gridcollisioncheck()
+{
+	const float radius = 0.2f;
+	const float groundY = 0.0f;
+
+	for (AstarNode* node : allnodes)
+	{
+		vec4 nodePos(node->worldx, groundY, node->worldz);
+		collisionchecksphere sphere = { nodePos, radius };
+
+		bool blocked = false;
+
+		// 모든 오브젝트 중 "Wall001" 메쉬만 검사
+		for (int i = 0; i < gameObjects.size; ++i)
+		{
+			if (gameObjects.isnull(i)) continue;
+			GameObject* obj = gameObjects[i];
+
+			// 벽 메쉬 식별
+			if (obj->MeshIndex == Mesh::GetMeshIndex("Wall001"))
+			{
+				vec4 wallCenter(obj->m_worldMatrix.pos.x,
+					obj->m_worldMatrix.pos.y,
+					obj->m_worldMatrix.pos.z);
+
+				// Wall001이 5x2x1로 생성되었다면 절반 크기 = {2.5, 1.0, 0.5}
+				vec4 wallHalfSize(2.5f, 1.0f, 0.5f);
+
+				if (CheckAABBSphereCollision(wallCenter, wallHalfSize, sphere))
+				{
+					blocked = true;
+					break;
+				}
+			}
+		}
+		node->cango = !blocked;
 	}
 }
 
@@ -909,4 +974,18 @@ void PrintOffset() {
 		n = (char*)&temp - (char*)&temp.Destpos;
 		dbglog1(L"class Monster.Destpos%d\n", n);*/
 	}
+}
+
+bool CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfSize, const collisionchecksphere& sphere)
+{
+	float x = std::max(boxCenter.x - boxHalfSize.x, std::min(sphere.center.x, boxCenter.x + boxHalfSize.x));
+	float y = std::max(boxCenter.y - boxHalfSize.y, std::min(sphere.center.y, boxCenter.y + boxHalfSize.y));
+	float z = std::max(boxCenter.z - boxHalfSize.z, std::min(sphere.center.z, boxCenter.z + boxHalfSize.z));
+
+	float dx = sphere.center.x - x;
+	float dy = sphere.center.y - y;
+	float dz = sphere.center.z - z;
+
+	float dist2 = dx * dx + dy * dy + dz * dz;
+	return dist2 < (sphere.radius * sphere.radius);
 }

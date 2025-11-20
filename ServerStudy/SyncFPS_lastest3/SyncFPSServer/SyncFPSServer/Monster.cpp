@@ -6,8 +6,6 @@
 
 void Monster::Update(float deltaTime)
 {
-
-
 	if (isDead) {
 		respawntimer += deltaTime;
 		if (respawntimer > 1.0f) {
@@ -58,19 +56,40 @@ void Monster::Update(float deltaTime)
 		toPlayer.y = 0.0f;
 		float distanceToPlayer = toPlayer.len3;
 
+		// 플레이어 추적
 		if (distanceToPlayer <= m_chaseRange) {
 			m_targetPos = playerPos;
 			m_isMove = true;
 
-			toPlayer.len3 = 1.0f;
-			tickLVelocity += toPlayer * m_speed * deltaTime;
-			m_worldMatrix.SetLook(toPlayer);
+			// A* 경로가 없거나, 다 소비했으면 새로 계산
+			if (path.empty() || currentPathIndex >= path.size()) {
+				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, gameworld.allnodes);
+				AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, gameworld.allnodes);
+
+				if (start && goal) {
+					path = AstarSearch(start, goal, gameworld.allnodes);
+					currentPathIndex = 0;
+				}
+			}
+
+			// A* 경로가 있으면 그 경로를 따라 이동
+			if (!path.empty() && currentPathIndex < path.size()) {
+				MoveByAstar(deltaTime);
+			}
+			else {
+				// 경로 계산 실패했을 때만 기존 직선 추적으로 fallback
+				if (distanceToPlayer > 0.0001f) {
+					toPlayer.len3 = 1.0f;
+					tickLVelocity += toPlayer * m_speed * deltaTime;
+					m_worldMatrix.SetLook(toPlayer);
+				}
+			}
+
 
 			if (distanceToPlayer < 2.0f) {
 				tickLVelocity.x = 0;
 				tickLVelocity.z = 0;
 			}
-
 			m_fireTimer += deltaTime;
 			if (m_fireTimer >= m_fireDelay) {
 				m_fireTimer = 0.0f;
@@ -99,6 +118,18 @@ void Monster::Update(float deltaTime)
 
 				m_isMove = true;
 				m_patrolTimer = 0.0f;
+
+				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, gameworld.allnodes);
+				AstarNode* goal = FindClosestNode(m_targetPos.x, m_targetPos.z, gameworld.allnodes);
+
+				if (start && goal) {
+					path = AstarSearch(start, goal, gameworld.allnodes);
+					currentPathIndex = 0;
+				}
+				else {
+					path.clear();
+					currentPathIndex = 0;
+				}
 			}
 
 			m_patrolTimer += deltaTime;
@@ -107,24 +138,39 @@ void Monster::Update(float deltaTime)
 				tickLVelocity.x = 0;
 				tickLVelocity.z = 0;
 				m_isMove = false;
+				path.clear();
+				currentPathIndex = 0;
 				return;
 			}
 
-			vec4 currentPos = m_worldMatrix.pos;
-			currentPos.w = 0;
-			vec4 direction = m_targetPos - currentPos;
-			direction.y = 0.0f;
-			float distance = direction.len3;
+			if (!path.empty() && currentPathIndex < path.size()) {
+				MoveByAstar(deltaTime);
 
-			if (distance > 1.0f) {
-				direction.len3 = 1.0f;
-				tickLVelocity += direction * m_speed * deltaTime;
-				m_worldMatrix.SetLook(direction);
+				if (currentPathIndex >= path.size()) {
+					tickLVelocity.x = 0;
+					tickLVelocity.z = 0;
+					m_isMove = false;
+					path.clear();
+					currentPathIndex = 0;
+				}
 			}
 			else {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-				m_isMove = false;
+				vec4 currentPos = m_worldMatrix.pos;
+				currentPos.w = 0;
+				vec4 direction = m_targetPos - currentPos;
+				direction.y = 0.0f;
+				float distance = direction.len3;
+
+				if (distance > 1.0f) {
+					direction.len3 = 1.0f;
+					tickLVelocity += direction * m_speed * deltaTime;
+					m_worldMatrix.SetLook(direction);
+				}
+				else {
+					tickLVelocity.x = 0;
+					tickLVelocity.z = 0;
+					m_isMove = false;
+				}
 			}
 		}
 
@@ -329,24 +375,32 @@ void Monster::MoveByAstar(float deltaTime)
 		return;
 
 	AstarNode* targetNode = path[currentPathIndex];
-	XMFLOAT3 targetPos = XMFLOAT3(targetNode->worldx, 0.0f, targetNode->worldz);
 
-	// 방향 계산
-	XMVECTOR pos = m_worldMatrix.pos;
-	XMVECTOR target = XMLoadFloat3(&targetPos);
-	XMVECTOR dir = XMVector3Normalize(target - pos);
+	// 현재 몬스터 위치
+	vec4 pos = m_worldMatrix.pos;
+	pos.w = 1.0f;
 
-	// 이동
-	XMVECTOR newPos = pos + dir * deltaTime * 5.0f; // 속도 5
-	m_worldMatrix.pos = newPos;
+	// A*에서 지정한 타겟 노드 위치 (y는 현재 높이 유지)
+	vec4 target(targetNode->worldx, pos.y, targetNode->worldz, 1.0f);
 
-	// 목표 근처 도달 시 다음 노드로
-	XMVECTOR diffVec = XMVectorAbs(target - newPos);
-	XMFLOAT3 diff;
-	XMStoreFloat3(&diff, diffVec);
+	// 방향 벡터
+	vec4 dir = target - pos;
+	dir.y = 0.0f;
+	float len = dir.len3;
 
-	if (diff.x < 0.5f && diff.z < 0.5f)
+	// 거의 도착했다고 보면 다음 노드로 넘어감
+	if (len < 0.3f) {
 		currentPathIndex++;
+		return;
+	}
+
+	// 정규화
+	dir /= len;
+
+	tickLVelocity.x = dir.x * m_speed * deltaTime;
+	tickLVelocity.z = dir.z * m_speed * deltaTime;
+
+	m_worldMatrix.SetLook(dir);
 }
 
 AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
