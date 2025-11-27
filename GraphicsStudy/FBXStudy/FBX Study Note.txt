@@ -1,3 +1,0 @@
-MaterialConnection
-	eAllSame mapping type
-	eByPolygon mapping type - Polygon마다 다른 texture를 매핑할 수 있다.
