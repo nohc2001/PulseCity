@@ -1361,13 +1361,6 @@ void Model::LoadModelFile2(string filename)
 		GPUResource* Texture = new GPUResource();
 		game.TextureTable.push_back(Texture);
 
-		int width = 0, height = 0;
-		ifs.read((char*)&width, sizeof(int));
-		ifs.read((char*)&height, sizeof(int));
-		int datasiz = 4 * width * height;
-		void* pdata = malloc(4 * width * height);
-		ifs.read((char*)pdata, datasiz);
-
 		Texture->resource = nullptr;
 		string DDSFilename = filename;
 		for (int k = 0; k < 6; ++k) DDSFilename.pop_back();
@@ -1386,6 +1379,25 @@ void Model::LoadModelFile2(string filename)
 			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip);
 		}
 		else {
+			string texfile = filename;
+			for (int u = 0; u < 6; ++u) texfile.pop_back();
+			texfile += to_string(i);
+			texfile += ".tex";
+			void* pdata = nullptr;
+			int width = 0, height = 0;
+			ifstream ifstex{ texfile, ios_base::binary };
+			if (ifstex.good()) {
+				ifstex.read((char*)&width, sizeof(int));
+				ifstex.read((char*)&height, sizeof(int));
+				int datasiz = 4 * width * height;
+				pdata = malloc(4 * width * height);
+				ifstex.read((char*)pdata, datasiz);
+			}
+			else {
+				dbglog1(L"texture is not exist. %d\n", 0);
+				return;
+			}
+
 			//make dds texture in DDSFilename path
 			char BMPFile[512] = {};
 			strcpy_s(BMPFile, DDSFilename.c_str());
@@ -1412,8 +1424,9 @@ void Model::LoadModelFile2(string filename)
 
 			DeleteFileA(BMPFile);
 			//Texture->CreateTexture_fromImageBuffer(width, height, (BYTE*)pdata, DXGI_FORMAT_BC2_UNORM);
+
+			free(pdata);
 		}
-		free(pdata);
 		// copy pdata?
 		//mTextures[i] = Texture;
 	}
