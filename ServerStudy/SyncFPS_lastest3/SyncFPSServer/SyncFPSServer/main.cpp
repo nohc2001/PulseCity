@@ -78,7 +78,7 @@ int main() {
 						// player index sending
 						int indexes[2] = {};
 						int clientindex = newindex;
-						gameworld.SendingAllObjectForNewClient(newindex);
+						gameworld.SendingAllObjectForNewClient(newindex); // pack factory
 
 						Player* p = new Player();
 						p->clientIndex = clientindex;
