@@ -28,8 +28,6 @@ public:
 
 	vec4 DeltaMousePos;
 
-
-
 	Mesh* Gun;
 	Mesh* ShootPointMesh;
 	matrix gunMatrix_thirdPersonView;
