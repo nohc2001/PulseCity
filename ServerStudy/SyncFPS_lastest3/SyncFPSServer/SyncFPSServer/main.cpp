@@ -235,6 +235,8 @@ void World::Init() {
 	AddClientOffset(GameObjectType::_Player, 152, 200); // DeathCount
 	AddClientOffset(GameObjectType::_Player, 156, 204); // HeatGauge
 	AddClientOffset(GameObjectType::_Player, 160, 208); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 164, 212); // HealSkillCooldown
+	AddClientOffset(GameObjectType::_Player, 168, 216); // HealSkillCooldownFlow
 
 	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
 	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
@@ -952,6 +954,10 @@ void PrintOffset() {
 		dbglog1(L"class Player.Heat%d\n", n);
 		n = (char*)&temp - (char*)&temp.MaxHeatGauge;
 		dbglog1(L"class Player.MaxHeat%d\n", n);
+		n = (char*)&temp - (char*)&temp.HealSkillCooldown;
+		dbglog1(L"class Player.cooldown%d\n", n);
+		n = (char*)&temp - (char*)&temp.HealSkillCooldownFlow;
+		dbglog1(L"class Player.cooldownflow%d\n", n);
 
 	}
 	dbglog1(L"-----------------------------------%d\n\n", rand());

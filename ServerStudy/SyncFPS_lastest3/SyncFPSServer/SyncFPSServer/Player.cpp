@@ -49,6 +49,41 @@ void Player::Update(float deltaTime)
 		tickLVelocity += speed * m_worldMatrix.right * deltaTime;
 	}
 
+	if (HealSkillCooldownFlow >= 0.0f) {
+		HealSkillCooldownFlow -= deltaTime;
+		int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HealSkillCooldownFlow, sizeof(HealSkillCooldownFlow));
+		gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
+	}
+
+	if (InputBuffer[InputID::KeyboardQ] == true) {
+		std::cout << "[Player::Update] Q pressed!  HP=" << HP
+			<< " Heat=" << HeatGauge
+			<< " CD=" << HealSkillCooldownFlow << std::endl;
+
+		if (HealSkillCooldownFlow <= 0.0f && HeatGauge > 0.0f && HP < MaxHP) {
+
+			// 회복량 HeatGauge 전부를 HP로 전환
+			float healAmount = HeatGauge;
+			HP += healAmount;
+
+			if (HP > MaxHP) HP = MaxHP;
+
+			// 게이지 소모
+			HeatGauge = 0.0f;
+
+			// 쿨타임 리셋
+			HealSkillCooldownFlow = HealSkillCooldown;
+
+			// HP, HeatGauge 서버→클라 동기화
+			int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP, sizeof(HP));
+			gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
+
+			datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge, sizeof(HeatGauge));
+			gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
+		}
+	}
+
+
 	//if (InputBuffer[InputID::MouseLbutton] == true) {
 	//	if (ShootFlow >= ShootDelay) {
 	//		if (bFirstPersonVision) {

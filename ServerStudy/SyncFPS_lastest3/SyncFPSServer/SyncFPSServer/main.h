@@ -13,6 +13,7 @@ enum InputID {
 	KeyboardA = 'A',
 	KeyboardS = 'S',
 	KeyboardD = 'D',
+	KeyboardQ = 'Q',
 	KeyboardSpace = VK_SPACE,
 	MouseLbutton = 5,
 	MouseRbutton = 6,

@@ -456,6 +456,8 @@ void Game::Render() {
 	int kill = 0;
 	int death = 0;
 	int bulletCount = 0;
+	float HealSkillCooldownFlow = 0;
+
 
 	// UI/AfterDepthClear Render
 	if (game.player != nullptr) {
@@ -465,6 +467,8 @@ void Game::Render() {
 		kill = game.player->KillCount;
 		death = game.player->DeathCount;
 		bulletCount = game.player->bullets;
+		HealSkillCooldownFlow = game.player->HealSkillCooldownFlow;
+
 	}
 
 	// HP 
@@ -480,6 +484,12 @@ void Game::Render() {
 	rt_heat.y -= 80 * Rate;   // HP보다 약간 아래로 내림 (간격 50 정도)
 	std::wstring ui_heat = L"Heat: " + std::to_wstring((int)HeatGauge);
 	RenderText(ui_heat.c_str(), ui_heat.length(), rt_heat, 30);
+
+	//Skill
+		rt = Rate * vec4(-900, 850, -200, 700);
+	std::wstring ui_cool = L"[Q] Heal CD: " + std::to_wstring((int)HealSkillCooldownFlow);
+	RenderText(ui_cool.c_str(), ui_cool.length(), rt, 30);
+
 
 	// Bullet
 	rt = Rate * vec4(900, -800, 1550, -900);

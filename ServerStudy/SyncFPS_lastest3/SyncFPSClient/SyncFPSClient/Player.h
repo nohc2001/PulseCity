@@ -26,6 +26,11 @@ public:
 	float HeatGauge = 0;
 	float MaxHeatGauge = 100;
 
+	//스킬 쿨타임
+	float HealSkillCooldown = 10.0f;   // 5초 쿨타임
+	float HealSkillCooldownFlow = 0.0f;  // 쿨타임 타이머
+
+
 	vec4 DeltaMousePos;
 
 	Mesh* Gun;

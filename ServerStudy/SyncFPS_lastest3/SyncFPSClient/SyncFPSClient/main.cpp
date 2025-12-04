@@ -201,6 +201,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 		}
 		break;
+		case 'Q':
+		{
+			if ((game.pKeyBuffer['Q'] & 0xF0) == false) {
+				char input[3] = "QD";
+				ClientSocket->Send(input, 2);
+			}
+		}
+		break;
+
 		case VK_SPACE:
 		{
 			if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
@@ -264,6 +273,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		case 'D':
 		{
 			char input[3] = "DU";
+			ClientSocket->Send(input, 2);
+		}
+		break;
+		case 'Q':
+		{
+			char input[3] = "QU";
 			ClientSocket->Send(input, 2);
 		}
 		break;
@@ -425,6 +440,10 @@ void PrintOffset() {
 		dbglog1(L"class Player.HeatGauge%d\n", n);
 		n = (char*)&temp - (char*)&temp.MaxHeatGauge;
 		dbglog1(L"class Player.MaxHeatGauge%d\n", n);
+		n = (char*)&temp - (char*)&temp.HealSkillCooldown;
+		dbglog1(L"class Player.Heal%d\n", n);
+		n = (char*)&temp - (char*)&temp.HealSkillCooldownFlow;
+		dbglog1(L"class Player.Healflow%d\n", n);
 	}
 	dbglog1(L"-----------------------------------%d\n\n", rand());
 	{
