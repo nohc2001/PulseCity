@@ -1204,6 +1204,11 @@ void Model::LoadModelFile(string filename)
 
 	RootNode = &Nodes[0];
 
+	BindPose.resize(nodeCount);
+	for (int i = 0; i < nodeCount; ++i) {
+		BindPose[i] = Nodes[i].transform;
+	}
+
 	BakeAABB();
 
 	delete[] vertice;
@@ -1507,6 +1512,21 @@ void Model::LoadModelFile2(string filename)
 	BakeAABB();
 }
 
+void Model::DebugPrintHierarchy(ModelNode* node, int depth)
+{
+	if (node == nullptr) return;
+
+	string logMsg = "";
+	for (int i = 0; i < depth; ++i) logMsg += "  - ";
+
+	logMsg += node->name + "\n";
+	OutputDebugStringA(logMsg.c_str());
+
+	for (int i = 0; i < node->numChildren; ++i) {
+		DebugPrintHierarchy(node->Childrens[i], depth + 1);
+	}
+}
+
 void Model::BakeAABB()
 {
 	RootNode->BakeAABB(this, XMMatrixIdentity());
@@ -1583,6 +1603,14 @@ void Model::Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, Shade
 		RootNode->Render(this, cmdlist, worldMatrix);
 	}
 	//game.MyShader->Add_RegisterShaderCommand(cmdlist);
+}
+
+int Model::FindNodeIndexByName(const std::string& name)
+{
+	for (int i = 0; i < nodeCount; ++i) {
+		if (Nodes[i].name == name) return i;
+	}
+	return -1;
 }
 
 int Shape::GetShapeIndex(string meshName)

@@ -4,6 +4,9 @@
 
 extern UCHAR* m_pKeyBuffer;
 
+struct Model;
+struct ModelNode;
+
 class Player : public GameObject {
 public:
 	/*bool isGround = false;
@@ -33,7 +36,9 @@ public:
 
 	vec4 DeltaMousePos;
 
-	Mesh* Gun;
+	//Mesh* Gun;
+	::Model* GunModel;
+
 	Mesh* ShootPointMesh;
 	matrix gunMatrix_thirdPersonView;
 	matrix gunMatrix_firstPersonView;
@@ -45,6 +50,10 @@ public:
 	matrix HeatBarMatrix;
 
 	vector<ItemStack> Inventory;
+
+	std::vector<int> gunBarrelNodeIndices;
+	float gunBarrelAngle;
+	float gunBarrelSpeed;
 
 	Player() : HP{ 100 } {}
 
@@ -76,4 +85,7 @@ public:
 	void TakeDamage(float damage);
 
 	virtual void OnCollisionRayWithBullet();
+
+	void UpdateGunBarrelNodes();
+
 };

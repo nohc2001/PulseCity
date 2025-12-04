@@ -40,7 +40,19 @@ void Player::ClientUpdate(float deltaTime)
 
 	float recoilAmount = 1.0f - shootrate;
 
-	gunMatrix_firstPersonView.pos.z = 0.3f + 0.2f * recoilAmount;
+	gunMatrix_firstPersonView.pos.z = 0.3f + 0.01f * recoilAmount;
+
+	// 머신건 회전 로직
+	gunBarrelSpeed = 100.0f;
+
+	float t = ShootFlow / ShootDelay;
+	if (t < 1.0f) {
+		float spinRate = powf(1.0f - t, 2);
+		gunBarrelAngle += gunBarrelSpeed * spinRate * deltaTime;
+		if (gunBarrelAngle > XM_2PI) gunBarrelAngle -= XM_2PI;
+	}
+
+	UpdateGunBarrelNodes();
 
 	/*recoilFlow += deltaTime;
 	if (recoilFlow < recoilDelay) {
@@ -97,12 +109,23 @@ void Player::Render()
 			GameObject::Render();
 
 			matrix gunmat = gunMatrix_thirdPersonView;
-			gunmat *= m_worldMatrix;
-			gunmat.LookAt(m_worldMatrix.look);
-			gunmat.transpose();
 
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
-			Gun->Render(gd.pCommandList, 1);
+			const float PI = 3.141592f;
+			gunmat *= XMMatrixRotationY(PI);
+
+			gunmat.pos.y -= 0.40f;
+			gunmat.pos.x += 0.55f;
+			gunmat.pos.z += 0.80f;
+
+			gunmat *= m_worldMatrix;
+			//gunmat.LookAt(m_worldMatrix.look);
+			//gunmat.transpose();
+
+			//gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
+			//Gun->Render(gd.pCommandList, 1);
+			if (GunModel) {
+				GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
+			}
 		}
 	}
 	else {
@@ -115,7 +138,7 @@ void Player::Render_AfterDepthClear()
 	matrix viewmat = gd.viewportArr[0].ViewMatrix.RTInverse;
 	if (game.bFirstPersonVision)
 	{
-		((Shader*)game.MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.pCommandList);
+		/*((Shader*)game.MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.pCommandList);
 
 		gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCBResource.resource->GetGPUVirtualAddress());
 
@@ -123,14 +146,26 @@ void Player::Render_AfterDepthClear()
 		gunmat *= viewmat;
 		gunmat.transpose();
 
-		//gunmat.Id();
-		//gunmat.pos.y = 10;
 		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
 
 		game.MyDiffuseTextureShader->SetTextureCommand(&game.GunTexture);
 
-		//game.MiniGunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
-		Gun->Render(gd.pCommandList, 1);
+		Gun->Render(gd.pCommandList, 1);*/
+		if (GunModel) {
+			matrix gunmat = gunMatrix_firstPersonView;
+
+			const float PI = 3.141592f;
+			gunmat *= XMMatrixRotationY(PI);
+
+			gunmat.pos.y -= 0.40f;
+			gunmat.pos.x += 0.35f;
+			gunmat.pos.z += 0.90f;
+
+			gunmat *= viewmat;
+			//gunmat.transpose(); 
+
+			GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
+		}
 	}
 
 	Shader* shader = (Shader*)game.MyOnlyColorShader;
@@ -243,4 +278,17 @@ void Player::TakeDamage(float damage)
 void Player::OnCollisionRayWithBullet()
 {
 	TakeDamage(10);
+}
+
+void Player::UpdateGunBarrelNodes()
+{
+	if (!GunModel) return;
+
+	if (gunBarrelNodeIndices.empty()) return;
+
+	matrix rot = XMMatrixRotationZ(gunBarrelAngle);
+
+	for (int idx : gunBarrelNodeIndices) {
+		GunModel->Nodes[idx].transform = rot * GunModel->BindPose[idx];
+	}
 }

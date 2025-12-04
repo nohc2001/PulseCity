@@ -28,7 +28,8 @@ public:
 	Mesh* HPBarMesh;
 	Mesh* HeatBarMesh;
 	Mesh* ShootPointMesh;
-	Model* MiniGunModel;
+
+	Model* GunModel;
 
 	std::vector<GameObject*> m_gameObjects; // GameObjets
 	vector<ItemLoot> DropedItems;

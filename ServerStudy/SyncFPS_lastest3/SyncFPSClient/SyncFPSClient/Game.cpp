@@ -115,9 +115,6 @@ void Game::Init()
 	DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
 	DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
 
-	MiniGunModel = new Model();
-	MiniGunModel->LoadModelFile("Resources/Model/minigun_m134.model");
-
 	Map = new GameMap();
 	Map->LoadMap("The_Port");
 
@@ -184,9 +181,13 @@ void Game::Init()
 	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 0, 0, 1 });
 	Shape::AddMesh("Monster001", MyMonsterMesh);
 
-	game.GunMesh = (Mesh*)new UVMesh();
-	game.GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/minigun.obj", { 1, 1, 1, 1 });
-	//Shape::AddMesh("Gun001", GunMesh);
+	//game.GunMesh = (Mesh*)new UVMesh();
+	//game.GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/minigun.obj", { 1, 1, 1, 1 });
+	////Shape::AddMesh("Gun001", GunMesh);
+	game.GunModel = new Model;
+	game.GunModel->LoadModelFile("Resources/Model/minigun_m134.model");
+	//game.GunModel->DebugPrintHierarchy(game.GunModel->RootNode);
+
 
 	game.HPBarMesh = new Mesh();
 	game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
@@ -1328,7 +1329,8 @@ int Game::Receiving(char* ptr, int totallen)
 			if (newobjindex == game.playerGameObjectIndex) {
 				if (playerGameObjectIndex >= 0 && playerGameObjectIndex < m_gameObjects.size()) {
 					player = (Player*)m_gameObjects[playerGameObjectIndex];
-					player->Gun = game.GunMesh;
+					//player->Gun = game.GunMesh;
+					player->GunModel = game.GunModel;
 
 					player->gunMatrix_thirdPersonView.Id();
 					player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
@@ -1501,7 +1503,22 @@ int Game::Receiving(char* ptr, int totallen)
 
 		if (playerGameObjectIndex >= 0 && playerGameObjectIndex < m_gameObjects.size()) {
 			player = (Player*)m_gameObjects[playerGameObjectIndex];
-			player->Gun = game.GunMesh;
+			//player->Gun = game.GunMesh;
+			player->GunModel = game.GunModel;
+
+			if (player->GunModel) {
+				player->gunBarrelNodeIndices.clear();
+				auto addBarrel = [&](const char* name) {
+					int idx = player->GunModel->FindNodeIndexByName(name);
+					if (idx >= 0) player->gunBarrelNodeIndices.push_back(idx);
+					};
+
+				addBarrel("Cylinder.107");
+				addBarrel("Cylinder.108");
+				addBarrel("Cylinder.109");
+				addBarrel("Cylinder.110");
+			}
+
 
 			player->gunMatrix_thirdPersonView.Id();
 			player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);

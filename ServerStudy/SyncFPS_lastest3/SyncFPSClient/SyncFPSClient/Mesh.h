@@ -464,14 +464,21 @@ struct Model {
 	vec4 OBB_Tr;
 	vec4 OBB_Ext;
 
+	std::vector<matrix> BindPose;
+
 	//void SaveModelFile(string filename);
 	void LoadModelFile(string filename);
 	void LoadModelFile2(string filename);
+
+	void DebugPrintHierarchy(ModelNode* node, int depth = 0);
 
 	void BakeAABB();
 	BoundingOrientedBox GetOBB();
 
 	void Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderNormal);
+
+	int FindNodeIndexByName(const std::string& name);
+
 };
 
 struct Shape {
