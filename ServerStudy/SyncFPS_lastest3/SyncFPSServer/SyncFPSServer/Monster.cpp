@@ -181,14 +181,25 @@ void Monster::Update(float deltaTime)
 	}
 }
 
-
 void Monster::OnCollision(GameObject* other)
 {
 	collideCount += 1;
 	float belowDist = 0;
 	BoundingOrientedBox otherOBB = other->GetOBB();
 	bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
-	if (belowhit && belowDist < mesh.GetOBB().Extents.y + 1.0f) {
+	if (belowhit && belowDist < GetOBB().Extents.y + 1.0f) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+void Monster::OnStaticCollision(BoundingOrientedBox obb)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = obb;
+	bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
+	if (belowhit && belowDist < GetOBB().Extents.y + 1.0f) {
 		LVelocity.y = 0;
 		isGround = true;
 	}
@@ -254,7 +265,7 @@ void Monster::Respawn()
 
 BoundingOrientedBox Monster::GetOBB()
 {
-	BoundingOrientedBox obb_local = mesh.GetOBB();
+	BoundingOrientedBox obb_local = Shape::IndexToShapeMap[ShapeIndex].GetMesh()->GetOBB();
 	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
 	matrix id = XMMatrixIdentity();
@@ -288,7 +299,6 @@ vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*
 
 	return neighbors;
 }
-
 
 vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination, std::vector<AstarNode*>& allNodes)
 {

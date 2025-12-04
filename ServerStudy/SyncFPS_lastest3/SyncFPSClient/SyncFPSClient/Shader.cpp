@@ -1119,7 +1119,7 @@ void PBRShader1::CreateRootSignature_withShadow()
 	sampler.MaxAnisotropy = 16;
 	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
 	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
-	sampler.MinLOD = -FLT_MAX;
+	sampler.MinLOD = 0;
 	sampler.MaxLOD = D3D12_FLOAT32_MAX;
 	sampler.RegisterSpace = 0;
 	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;

@@ -1344,9 +1344,9 @@ void Game::Init()
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 
 	Model* model = new Model;
-	model->GetModelFromAssimp("Resources/Model/AW101.fbx", 2);
-	model->SaveModelFile("Resources/Model/AW101.model");
-	model->LoadModelFile("Resources/Model/AW101.model");
+	model->GetModelFromAssimp("Resources/Model/minigun_m134/scene.glb", 1);
+	model->SaveModelFile("Resources/Model/minigun_m134.model");
+	model->LoadModelFile("Resources/Model/minigun_m134.model");
 
 	MyShader = new Shader();
 	MyShader->InitShader();

@@ -5,6 +5,7 @@
 #include "Mesh.h"
 
 Mesh* BulletRay::mesh = nullptr;
+ViewportData* Hierarchy_Object::renderViewPort = nullptr;
 
 GameObject::GameObject()
 {
@@ -501,7 +502,7 @@ void Hierarchy_Object::Render_Inherit(matrix parent_world, Shader::RegisterEnum 
 {
 	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
 	BoundingOrientedBox obb = GetOBBw(sav);
-	if (obb.Extents.x > 0 && gd.viewportArr[0].m_xmFrustumWorld.Intersects(obb)) {
+	if (obb.Extents.x > 0 && renderViewPort->m_xmFrustumWorld.Intersects(obb)) {
 		if (rmod == GameObject::eRenderMeshMod::single_Mesh && m_pMesh != nullptr) {
 			matrix m = sav;
 			m.transpose();
@@ -922,9 +923,6 @@ void GameMap::LoadMap(const char* MapName)
 		string filename = MeshDirPath;
 		// .map (확장자)제거
 		filename += name;
-		if (name == "Ship") {
-			cout << endl;
-		}
 		filename += ".mesh";
 
 		BumpMesh* mesh = new BumpMesh();
@@ -1144,8 +1142,8 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&scale, sizeof(float) * 3);
 
 		rot *= 3.141592f / 180.0f;
-		go->m_worldMatrix *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
 		go->m_worldMatrix *= XMMatrixScaling(scale.x, scale.y, scale.z);
+		go->m_worldMatrix *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
 		go->m_worldMatrix.pos.f3 = pos.f3;
 		go->m_worldMatrix.pos.w = 1;
 

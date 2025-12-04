@@ -3,7 +3,8 @@
 #include "Mesh.h"
 #include "Game.h"
 
-unordered_map<string, Mesh*> Mesh::meshmap;
+vector<string> Shape::ShapeNameArr;
+unordered_map<string, Shape> Shape::StrToShapeMap;
 
 Mesh::Mesh()
 {
@@ -1582,4 +1583,41 @@ void Model::Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, Shade
 		RootNode->Render(this, cmdlist, worldMatrix);
 	}
 	//game.MyShader->Add_RegisterShaderCommand(cmdlist);
+}
+
+int Shape::GetShapeIndex(string meshName)
+{
+	for (int i = 0; i < Shape::ShapeNameArr.size(); ++i) {
+		if (Shape::ShapeNameArr[i] == meshName) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+int Shape::AddShapeName(string meshName)
+{
+	int r = ShapeNameArr.size();
+	ShapeNameArr.push_back(meshName);
+	return r;
+}
+
+int Shape::AddMesh(string name, Mesh* ptr)
+{
+	int index = AddShapeName(name);
+	Shape s;
+	s.SetMesh(ptr);
+	StrToShapeMap.insert(pair<string, Shape>(name, s));
+	//Shape::IndexToShapeMap.insert(pair<int, Shape>(index, s));
+	return index;
+}
+
+int Shape::AddModel(string name, Model* ptr)
+{
+	int index = AddShapeName(name);
+	Shape s;
+	s.SetModel(ptr);
+	StrToShapeMap.insert(pair<string, Shape>(name, s));
+	//IndexToShapeMap.insert(pair<int, Shape>(index, s));
+	return index;
 }

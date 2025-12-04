@@ -17,10 +17,10 @@ void Player::ClientUpdate(float deltaTime)
 	float pow = deltaTime * 5;
 	game.DeltaMousePos = (1.0f - pow) * game.DeltaMousePos + pow * DeltaMousePos;
 
-	if (m_worldMatrix.pos.fast_square_of_len3 > 10000) {
+	/*if (m_worldMatrix.pos.fast_square_of_len3 > 10000) {
 		m_worldMatrix.pos = vec4(0, 10, 0, 1);
 		LVelocity = 0;
-	}
+	}*/
 
 	// 권총 반동 로직
 	/*ShootFlow += deltaTime;
@@ -123,10 +123,13 @@ void Player::Render_AfterDepthClear()
 		gunmat *= viewmat;
 		gunmat.transpose();
 
+		//gunmat.Id();
+		//gunmat.pos.y = 10;
 		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
 
 		game.MyDiffuseTextureShader->SetTextureCommand(&game.GunTexture);
 
+		//game.MiniGunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
 		Gun->Render(gd.pCommandList, 1);
 	}
 
@@ -166,7 +169,6 @@ void Player::Render_AfterDepthClear()
 	heatmat *= viewmat;
 	heatmat.transpose();
 	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
-	//Mesh::meshmap["HeatBar"]->Render(gd.pCommandList, 1);
 	HeatBarMesh->Render(gd.pCommandList, 1);
 }
 //not using

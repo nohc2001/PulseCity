@@ -83,9 +83,9 @@ int main() {
 						Player* p = new Player();
 						p->clientIndex = clientindex;
 						p->m_worldMatrix.Id();
-						p->m_worldMatrix.pos.f3.y = 5;
-						p->MeshIndex = Mesh::GetMeshIndex("Player");
-						p->mesh = *Mesh::meshmap["Player"];
+						p->m_worldMatrix.pos.f3.y = 10;
+						p->ShapeIndex = Shape::GetShapeIndex("Player");
+						//p->mesh = Mesh::StrToShapeMap["Player"];
 						p->Inventory.reserve(36);
 						p->Inventory.resize(36);
 						for (int i = 0; i < 36; ++i) {
@@ -103,8 +103,8 @@ int main() {
 						//gameworld.clients[clientindex].socket.Send((char*)gameworld.tempbuffer.data, dcap);
 						gameworld.clients[clientindex].objindex = objindex;
 
-						if (p->MeshIndex >= 0) {
-							dcap = gameworld.Sending_SetMeshInGameObject(objindex, Mesh::MeshNameArr[p->MeshIndex]);
+						if (p->ShapeIndex >= 0) {
+							dcap = gameworld.Sending_SetMeshInGameObject(objindex, Shape::ShapeNameArr[p->ShapeIndex]);
 							gameworld.SendToAllClient_execept(dcap, clientindex);
 							gameworld.pack_factory.push_data(dcap, gameworld.tempbuffer.data);
 						}
@@ -224,24 +224,24 @@ void World::Init() {
 	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
 	AddClientOffset(GameObjectType::_Player, 64, 128); // pos
 
-	AddClientOffset(GameObjectType::_Player, 144, 176); // ShootFlow
-	AddClientOffset(GameObjectType::_Player, 148, 180); // recoilFlow
-	AddClientOffset(GameObjectType::_Player, 152, 184); // HP
-	AddClientOffset(GameObjectType::_Player, 156, 188); // MaxHP
-	AddClientOffset(GameObjectType::_Player, 192, 224); // DeltaMousePos
+	AddClientOffset(GameObjectType::_Player, 128, 176); // ShootFlow
+	AddClientOffset(GameObjectType::_Player, 132, 180); // recoilFlow
+	AddClientOffset(GameObjectType::_Player, 136, 184); // HP
+	AddClientOffset(GameObjectType::_Player, 140, 188); // MaxHP
+	AddClientOffset(GameObjectType::_Player, 176, 224); // DeltaMousePos
 
-	AddClientOffset(GameObjectType::_Player, 160, 192); // Bullets
-	AddClientOffset(GameObjectType::_Player, 164, 196); // KillCount
-	AddClientOffset(GameObjectType::_Player, 168, 200); // DeathCount
-	AddClientOffset(GameObjectType::_Player, 172, 204); // HeatGauge
-	AddClientOffset(GameObjectType::_Player, 188, 208); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 144, 192); // Bullets
+	AddClientOffset(GameObjectType::_Player, 148, 196); // KillCount
+	AddClientOffset(GameObjectType::_Player, 152, 200); // DeathCount
+	AddClientOffset(GameObjectType::_Player, 156, 204); // HeatGauge
+	AddClientOffset(GameObjectType::_Player, 160, 208); // MaxHeatGauge
 
 	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
 	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
 	AddClientOffset(GameObjectType::_Monster, 80, 144); // pos
-	AddClientOffset(GameObjectType::_Monster, 226, 176); // isDead
-	AddClientOffset(GameObjectType::_Monster, 200, 180); // HP
-	AddClientOffset(GameObjectType::_Monster, 204, 184); // MaxHP
+	AddClientOffset(GameObjectType::_Monster, 210, 176); // isDead
+	AddClientOffset(GameObjectType::_Monster, 184, 180); // HP
+	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
 #else
 	AddClientOffset(GameObjectType::_GameObject, 16, 16); // isExist
 	AddClientOffset(GameObjectType::_GameObject, 32, 32); // world Matrix
@@ -267,26 +267,22 @@ void World::Init() {
 
 	Mesh* MyMesh = new Mesh();
 	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 1, 1, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Player", MyMesh));
-	Mesh::MeshNameArr.push_back("Player");
+	int playerMesh_index = Shape::AddMesh("Player", MyMesh);
 
 	Mesh* MyGroundMesh = new Mesh();
 	MyGroundMesh->CreateWallMesh(40.0f, 0.5f, 40.0f);
-	Mesh::meshmap.insert(pair<string, Mesh*>("Ground001", MyGroundMesh));
-	Mesh::MeshNameArr.push_back("Ground001");
+	int groundMesh_index = Shape::AddMesh("Ground001", MyGroundMesh);
 
 	Mesh* MyWallMesh = new Mesh();
 	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f);
-	Mesh::meshmap.insert(pair<string, Mesh*>("Wall001", MyWallMesh));
-	Mesh::MeshNameArr.push_back("Wall001");
+	int wallMesh_index = Shape::AddMesh("Wall001", MyWallMesh);
 
 	/*BulletRay::mesh = new Mesh();
 	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);*/
 
 	Mesh* MyMonsterMesh = new Mesh();
 	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 0, 0, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Monster001", MyMonsterMesh));
-	Mesh::MeshNameArr.push_back("Monster001");
+	int monsterMesh_index = Shape::AddMesh("Monster001", MyMonsterMesh);
 
 	int newindex = 0;
 	int datacap = 0;
@@ -300,56 +296,56 @@ void World::Init() {
 	SendToAllClient(datacap);*/
 
 	GameObject* groundObject = new GameObject();
-	groundObject->MeshIndex = Mesh::GetMeshIndex("Ground001");
-	groundObject->mesh = *MyGroundMesh;
+	groundObject->ShapeIndex = Shape::GetShapeIndex("Ground001");
+	//groundObject->mesh = MyGroundMesh;
 	groundObject->m_worldMatrix = (XMMatrixTranslation(0.0f, -1.0f, 0.0f));
 	newindex = NewObject(groundObject, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Ground001");
 	SendToAllClient(datacap);
 
 	GameObject* wallObject = new GameObject();
-	wallObject->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject->mesh = *(MyWallMesh);
+	wallObject->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject->mesh = (MyWallMesh);
 	wallObject->m_worldMatrix = (XMMatrixTranslation(0.0f, 1.0f, 5.0f));
 	newindex = NewObject(wallObject, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 	SendToAllClient(datacap);
 
 	GameObject* wallObject2 = new GameObject();
-	wallObject2->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject2->mesh = *(MyWallMesh);
+	wallObject2->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject2->mesh = (MyWallMesh);
 	wallObject2->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationY(45), XMMatrixTranslation(10.0f, 1.0f, 0.0f)));
 	newindex = NewObject(wallObject2, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 	SendToAllClient(datacap);
 
 	GameObject* wallObject3 = new GameObject();
-	wallObject3->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject3->mesh = *(MyWallMesh);
+	wallObject3->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject3->mesh = (MyWallMesh);
 	wallObject3->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationZ(3.141592f / 6), XMMatrixTranslation(5.0f, 0.0f, -5.0f)));
 	newindex = NewObject(wallObject3, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 	SendToAllClient(datacap);
 
 	GameObject* wallObject4 = new GameObject();
-	wallObject4->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject4->mesh = *(MyWallMesh);
+	wallObject4->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject4->mesh = (MyWallMesh);
 	wallObject4->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationZ(-3.141592f / 4), XMMatrixTranslation(-7.0f, -1.0f, 0)));
 	newindex = NewObject(wallObject4, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 	SendToAllClient(datacap);
 
 	wallObject4 = new GameObject();
-	wallObject4->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject4->mesh = *(MyWallMesh);
+	wallObject4->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject4->mesh = (MyWallMesh);
 	wallObject4->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationX(3.141592f / 4), XMMatrixTranslation(-10.0f, -1.0f, -10.0f)));
 	newindex = NewObject(wallObject4, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 	SendToAllClient(datacap);
 
 	wallObject2 = new GameObject();
-	wallObject2->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject2->mesh = *(MyWallMesh);
+	wallObject2->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject2->mesh = (MyWallMesh);
 	wallObject2->m_worldMatrix = XMMatrixRotationY(-3.141592f / 4);
 	wallObject2->m_worldMatrix.pos = vec4(20.0f, 1.0f, -20.0f, 1);
 	newindex = NewObject(wallObject2, GameObjectType::_GameObject);
@@ -357,8 +353,8 @@ void World::Init() {
 	SendToAllClient(datacap);
 
 	wallObject2 = new GameObject();
-	wallObject2->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject2->mesh = *(MyWallMesh);
+	wallObject2->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject2->mesh = (MyWallMesh);
 	wallObject2->m_worldMatrix = XMMatrixRotationY(3.141592f / 4);
 	wallObject2->m_worldMatrix.pos = vec4(-20.0f, 1.0f, -20.0f, 1);
 	newindex = NewObject(wallObject2, GameObjectType::_GameObject);
@@ -366,8 +362,8 @@ void World::Init() {
 	SendToAllClient(datacap);
 
 	wallObject2 = new GameObject();
-	wallObject2->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject2->mesh = *(MyWallMesh);
+	wallObject2->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject2->mesh = (MyWallMesh);
 	wallObject2->m_worldMatrix = XMMatrixRotationY(3.141592f / 4);
 	wallObject2->m_worldMatrix.pos = vec4(20.0f, 1.0f, 20.0f, 1);
 	newindex = NewObject(wallObject2, GameObjectType::_GameObject);
@@ -375,8 +371,8 @@ void World::Init() {
 	SendToAllClient(datacap);
 
 	wallObject = new GameObject();
-	wallObject->MeshIndex = Mesh::GetMeshIndex("Wall001");
-	wallObject->mesh = *(MyWallMesh);
+	wallObject->ShapeIndex = Shape::GetShapeIndex("Wall001");
+	//wallObject->mesh = (MyWallMesh);
 	wallObject->m_worldMatrix = (XMMatrixTranslation(-23.0f, 1.0f, 15.0f));
 	newindex = NewObject(wallObject, GameObjectType::_GameObject);
 	datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
@@ -384,32 +380,32 @@ void World::Init() {
 
 	for (int i = 0; i < 1; ++i) {
 		wallObject2 = new GameObject();
-		wallObject2->MeshIndex = Mesh::GetMeshIndex("Wall001");
-		wallObject2->mesh = *(MyWallMesh);
+		wallObject2->ShapeIndex = Shape::GetShapeIndex("Wall001");
+		//wallObject2->mesh = (MyWallMesh);
 		wallObject2->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationY(45), XMMatrixTranslation((float)(rand() % 80 - 40), 1.0f, (float)(rand() % 80 - 40))));
 		newindex = NewObject(wallObject2, GameObjectType::_GameObject);
 		datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 		SendToAllClient(datacap);
 
 		wallObject3 = new GameObject();
-		wallObject3->MeshIndex = Mesh::GetMeshIndex("Wall001");
-		wallObject3->mesh = *(MyWallMesh);
+		wallObject3->ShapeIndex = Shape::GetShapeIndex("Wall001");
+		//wallObject3->mesh = (MyWallMesh);
 		wallObject3->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationZ(3.141592f / 6), XMMatrixTranslation((float)(rand() % 80 - 40), 0.0f, (float)(rand() % 80 - 40))));
 		newindex = NewObject(wallObject3, GameObjectType::_GameObject);
 		datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 		SendToAllClient(datacap);
 
 		wallObject4 = new GameObject();
-		wallObject4->MeshIndex = Mesh::GetMeshIndex("Wall001");
-		wallObject4->mesh = *(MyWallMesh);
+		wallObject4->ShapeIndex = Shape::GetShapeIndex("Wall001");
+		//wallObject4->mesh = (MyWallMesh);
 		wallObject4->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationZ(-3.141592f / 4), XMMatrixTranslation((float)(rand() % 80 - 40), -1.0f, (float)(rand() % 80 - 40))));
 		newindex = NewObject(wallObject4, GameObjectType::_GameObject);
 		datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
 		SendToAllClient(datacap);
 
 		wallObject4 = new GameObject();
-		wallObject4->MeshIndex = Mesh::GetMeshIndex("Wall001");
-		wallObject4->mesh = *(MyWallMesh);
+		wallObject4->ShapeIndex = Shape::GetShapeIndex("Wall001");
+		//wallObject4->mesh = (MyWallMesh);
 		wallObject4->m_worldMatrix = (XMMatrixMultiply(XMMatrixRotationX(3.141592f / 4), XMMatrixTranslation((float)(rand() % 80 - 40), -1.0f, (float)(rand() % 80 - 40))));
 		newindex = NewObject(wallObject4, GameObjectType::_GameObject);
 		datacap = Sending_SetMeshInGameObject(newindex, "Wall001");
@@ -434,9 +430,9 @@ void World::Init() {
 
 	for (int i = 0; i < 20; ++i) {
 		Monster* myMonster_1 = new Monster();
-		myMonster_1->MeshIndex = Mesh::GetMeshIndex("Monster001");
-		myMonster_1->mesh = *(MyMonsterMesh);
-		myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+		myMonster_1->ShapeIndex = Shape::GetShapeIndex("Monster001");
+		//myMonster_1->mesh = (MyMonsterMesh);
+		myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 20.0f, rand() % 80 - 40));
 		newindex = NewObject(myMonster_1, GameObjectType::_Monster);
 		datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
 		SendToAllClient(datacap);
@@ -467,6 +463,8 @@ void World::Init() {
 	//PrintCangoSummary(allnodes, GRID_W, GRID_H);
 	PrintCangoGrid(allnodes, GRID_W, GRID_H);
 
+	map.LoadMap("The_Port");
+
 	cout << "Game Init end" << endl;
 }
 
@@ -491,14 +489,26 @@ void World::Update() {
 		GameObject* gbj1 = gameObjects[i];
 		//if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) bFixed = true;
 
-		float fsl1 = gbj1->mesh.MAXpos.fast_square_of_len3;
+		Shape s1 = Shape::IndexToShapeMap[gbj1->ShapeIndex];
+		float fsl1 = 0;
+		if (s1.isMesh()) {
+			fsl1 = s1.GetMesh()->MAXpos.fast_square_of_len3;
+		}
+		else fsl1 = s1.GetModel()->OBB_Ext.fast_square_of_len3;
+		
 		vec4 lastpos1 = gbj1->m_worldMatrix.pos + gbj1->tickLVelocity;
 
 		for (int j = i + 1; j < gameObjects.size; ++j) {
 			if (gameObjects.isnull(j)) continue;
 			GameObject* gbj2 = gameObjects[j];
+			Shape s2 = Shape::IndexToShapeMap[gbj2->ShapeIndex];
 
-			vec4 Ext2 = gbj2->mesh.MAXpos;
+			vec4 Ext2 = 0;
+			if (s1.isMesh()) {
+				Ext2 = s2.GetMesh()->MAXpos;
+			}
+			else Ext2 = s2.GetModel()->OBB_Ext;
+
 			vec4 dist = lastpos1 - (gbj2->m_worldMatrix.pos + gbj2->tickLVelocity);
 			//if (gbj2->tickLVelocity.fast_square_of_len3 <= 0.001f && bFixed) continue;
 
@@ -508,12 +518,15 @@ void World::Update() {
 			//GameObject::CollisionMove(gbj1, gbj2);
 		}
 
+		map.StaticCollisionMove(gbj1);
+
 		//gbj1->tickLVelocity.w = 0;
 		if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) continue;
+
 		gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
-		if (fabsf(gbj1->m_worldMatrix.pos.x) > 40.0f || fabsf(gbj1->m_worldMatrix.pos.z) > 40.0f) {
+		/*if (fabsf(gbj1->m_worldMatrix.pos.x) > 40.0f || fabsf(gbj1->m_worldMatrix.pos.z) > 40.0f) {
 			gbj1->m_worldMatrix.pos -= gbj1->tickLVelocity;
-		}
+		}*/
 		gbj1->tickLVelocity = XMVectorZero();
 
 		// send pos to client
@@ -579,7 +592,7 @@ void World::gridcollisioncheck()
 			GameObject* obj = gameObjects[i];
 
 			// 벽 메쉬 식별
-			if (obj->MeshIndex == Mesh::GetMeshIndex("Wall001"))
+			if (obj->ShapeIndex == Shape::GetShapeIndex("Wall001"))
 			{
 				vec4 wallCenter(obj->m_worldMatrix.pos.x,
 					obj->m_worldMatrix.pos.y,

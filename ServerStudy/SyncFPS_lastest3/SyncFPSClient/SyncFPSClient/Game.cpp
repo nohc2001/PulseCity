@@ -34,13 +34,13 @@ union GameObjectType {
 
 	static constexpr int ServerSizeof[ObjectTypeCount] = {
 #ifdef _DEBUG
-		144,
-		368,
-		288,
+		128,
+		352,
+		272,
 #else
-		144,
-		368,
-		288,
+		128,
+		352,
+		272,
 #endif
 	};
 
@@ -115,8 +115,8 @@ void Game::Init()
 	DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
 	DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
 
-	Model* model = new Model;
-	model->LoadModelFile("Resources/Model/thunderbolt.model");
+	MiniGunModel = new Model();
+	MiniGunModel->LoadModelFile("Resources/Model/minigun_m134.model");
 
 	Map = new GameMap();
 	Map->LoadMap("The_Port");
@@ -167,40 +167,38 @@ void Game::Init()
 
 	Mesh* MyMesh = (Mesh*)new UVMesh();
 	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 1, 1, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Player", MyMesh));
-	//9월8일
-	OutputDebugStringA("[MESHLOAD] 'Player' inserted into meshmap\n");
+	Shape::AddMesh("Player", MyMesh);
 
 	Mesh* MyGroundMesh = (Mesh*)new UVMesh();
 	MyGroundMesh->CreateWallMesh(40.0f, 0.5f, 40.0f, { 1, 1, 1, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Ground001", MyGroundMesh));
+	Shape::AddMesh("Ground001", MyGroundMesh);
 
 	Mesh* MyWallMesh = (Mesh*)new UVMesh();
 	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f, { 1, 1, 1, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Wall001", MyWallMesh));
+	Shape::AddMesh("Wall001", MyWallMesh);
 
 	BulletRay::mesh = (Mesh*)new Mesh();
 	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
 
 	Mesh* MyMonsterMesh = (Mesh*)new UVMesh();
 	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 0, 0, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Monster001", MyMonsterMesh));
+	Shape::AddMesh("Monster001", MyMonsterMesh);
 
-	Mesh* GunMesh = (Mesh*)new UVMesh();
-	GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/minigun.obj", { 1, 1, 1, 1 });
-	Mesh::meshmap.insert(pair<string, Mesh*>("Gun001", GunMesh));
+	game.GunMesh = (Mesh*)new UVMesh();
+	game.GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/minigun.obj", { 1, 1, 1, 1 });
+	//Shape::AddMesh("Gun001", GunMesh);
 
-	Mesh* HPBarMesh = new Mesh();
-	HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
-	Mesh::meshmap.insert(pair<string, Mesh*>("HPBar", HPBarMesh));
+	game.HPBarMesh = new Mesh();
+	game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
+	//Shape::AddMesh("HPBar", HPBarMesh);
 
-	Mesh* HeatBarMesh = new Mesh();
-	HeatBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 0, 0, 1 }, false);
-	Mesh::meshmap.insert(pair<string, Mesh*>("HeatBar", HeatBarMesh));
+	game.HeatBarMesh = new Mesh();
+	game.HeatBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 0, 0, 1 }, false);
+	//Mesh::meshmap.insert(pair<string, Mesh*>("HeatBar", HeatBarMesh));
 
-	Mesh* ShootPointMesh = new Mesh();
-	ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
-	Mesh::meshmap.insert(pair<string, Mesh*>("ShootPoint", ShootPointMesh));
+	game.ShootPointMesh = new Mesh();
+	game.ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
+	//Mesh::meshmap.insert(pair<string, Mesh*>("ShootPoint", ShootPointMesh));
 
 	MySpotLight.ShadowMap = MyShadowMappingShader->CreateShadowMap(4096/*gd.ClientFrameWidth*/, 4096/*gd.ClientFrameHeight*/, 0);
 	MySpotLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
@@ -419,7 +417,8 @@ void Game::Render() {
 
 	Hierarchy_Object* obj = Map->MapObjects[0];
 	matrix mat2 = XMMatrixIdentity();
-	mat2.pos.y -= 1.75f;
+	//mat2.pos.y -= 1.75f;
+	Hierarchy_Object::renderViewPort = &gd.viewportArr[0];
 	obj->Render_Inherit(mat2, Shader::RegisterEnum::RenderWithShadow);
 	//////////////////
 
@@ -444,7 +443,7 @@ void Game::Render() {
 			matrix& hpBarWorldMat = game.NpcHPBars[i];
 			hpBarWorldMat.transpose();
 			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
-			Mesh::meshmap["HPBar"]->Render(gd.pCommandList, 1);
+			game.HPBarMesh->Render(gd.pCommandList, 1);
 		}
 	}
 
@@ -763,7 +762,7 @@ void Game::Render_last() {
 			matrix& hpBarWorldMat = game.NpcHPBars[i];
 			hpBarWorldMat.transpose();
 			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
-			Mesh::meshmap["HPBar"]->Render(gd.pCommandList, 1);
+			game.HPBarMesh->Render(gd.pCommandList, 1);
 		}
 	}
 
@@ -1069,7 +1068,9 @@ void Game::Render_ShadowPass()
 	gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
 
 	matrix mat2 = XMMatrixIdentity();
-	mat2.pos.y -= 1.75f;
+	//mat2.pos.y -= 1.75f;
+	game.MySpotLight.viewport.UpdateFrustum();
+	Hierarchy_Object::renderViewPort = &game.MySpotLight.viewport;
 	game.Map->MapObjects[0]->Render_Inherit(mat2, Shader::RegisterEnum::RenderShadowMap);
 
 	d3dResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -1317,7 +1318,7 @@ int Game::Receiving(char* ptr, int totallen)
 			if (newobjindex == game.playerGameObjectIndex) {
 				if (playerGameObjectIndex >= 0 && playerGameObjectIndex < m_gameObjects.size()) {
 					player = (Player*)m_gameObjects[playerGameObjectIndex];
-					player->Gun = Mesh::meshmap["Gun001"];
+					player->Gun = game.GunMesh;
 
 					player->gunMatrix_thirdPersonView.Id();
 					player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
@@ -1326,13 +1327,13 @@ int Game::Receiving(char* ptr, int totallen)
 					player->gunMatrix_firstPersonView.pos = vec4(0.13f, -0.15f, 0.5f, 1);
 					player->gunMatrix_firstPersonView.LookAt(vec4(0, 0, 5) - player->gunMatrix_firstPersonView.pos);
 
-					player->ShootPointMesh = Mesh::meshmap["ShootPoint"];
+					player->ShootPointMesh = game.ShootPointMesh;
 
-					player->HPBarMesh = Mesh::meshmap["HPBar"];
+					player->HPBarMesh = game.HPBarMesh;
 					player->HPMatrix.pos = vec4(-1, 1, 1, 1);
 					player->HPMatrix.LookAt(vec4(-1, 0, 0));
 
-					player->HeatBarMesh = Mesh::meshmap["HeatBar"];
+					player->HeatBarMesh = game.HeatBarMesh;
 					player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
 					player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
 				}
@@ -1419,15 +1420,17 @@ int Game::Receiving(char* ptr, int totallen)
 		memcpy_s(&str[0], slen, &ptr[offset], slen);
 		offset += slen;
 
+		// is this AI?? why not describe in comment???
+
 		//9월8일
 		// 1) 이름 그대로 출력
 		char dbg[256];
 		snprintf(dbg, sizeof(dbg), "[SET_MESH] obj=%d name='%s' len=%d\n", objindex, str.c_str(), slen);
 		OutputDebugStringA(dbg);
-
+		
 		// 2) 매핑 존재 여부 확인
-		auto it = Mesh::meshmap.find(str);
-		if (it == Mesh::meshmap.end()) {
+		auto it = Shape::StrToShapeMap.find(str);
+		if (it == Shape::StrToShapeMap.end()) {
 			snprintf(dbg, sizeof(dbg), "[SET_MESH][ERROR] name '%s' NOT FOUND in meshmap\n", str.c_str());
 			OutputDebugStringA(dbg);
 			// 안전장치: nullptr 세팅하고 리턴(혹은 기본 메시 붙이기)
@@ -1436,25 +1439,39 @@ int Game::Receiving(char* ptr, int totallen)
 		}
 		else {
 			// 3) 실제 포인터 출력
-			Mesh* mp = it->second;
-			snprintf(dbg, sizeof(dbg), "[SET_MESH] name '%s' -> ptr=%p\n", str.c_str(), (void*)mp);
-			OutputDebugStringA(dbg);
+			Shape s = it->second;
+			if (s.isMesh()) {
+				Mesh* mp = s.GetMesh();
+				snprintf(dbg, sizeof(dbg), "[SET_MESH] name '%s' -> ptr=%p\n", str.c_str(), (void*)mp);
+				OutputDebugStringA(dbg);
 
-			m_gameObjects[objindex]->m_pMesh = mp;
-			m_gameObjects[objindex]->m_pShader = MyShader; // 셰이더도 셋
+				m_gameObjects[objindex]->rmod = GameObject::eRenderMeshMod::single_Mesh;
+				m_gameObjects[objindex]->m_pMesh = mp;
+				m_gameObjects[objindex]->m_pShader = MyShader; // 셰이더도 셋
+			}
+			else {
+				Model* mp = s.GetModel();
+
+				snprintf(dbg, sizeof(dbg), "[SET_MODEL] name '%s' -> ptr=%p\n", str.c_str(), (void*)mp);
+				OutputDebugStringA(dbg);
+
+				m_gameObjects[objindex]->rmod = GameObject::eRenderMeshMod::Model;
+				m_gameObjects[objindex]->pModel = mp;
+				m_gameObjects[objindex]->m_pShader = MyPBRShader1; // 셰이더도 셋
+			}
 		}
 
-		m_gameObjects[objindex]->m_pMesh = Mesh::meshmap[str];
-		m_gameObjects[objindex]->m_pShader = MyShader;
+		//m_gameObjects[objindex]->m_pMesh = Mesh::meshmap[str];
+		//m_gameObjects[objindex]->m_pShader = MyShader;
 
-		//tempcode..??
-		if (m_gameObjects[objindex]->m_pMesh == Mesh::meshmap["Ground001"]) {
+		//tempcode..?? >> when fix??
+		if (m_gameObjects[objindex]->m_pMesh == Shape::StrToShapeMap["Ground001"].GetMesh()) {
 			m_gameObjects[objindex]->diffuseTextureIndex = 0;
 		}
-		else if (m_gameObjects[objindex]->m_pMesh == Mesh::meshmap["Wall001"]) {
+		else if (m_gameObjects[objindex]->m_pMesh == Shape::StrToShapeMap["Wall001"].GetMesh()) {
 			m_gameObjects[objindex]->diffuseTextureIndex = 1;
 		}
-		else if (m_gameObjects[objindex]->m_pMesh == Mesh::meshmap["Monster001"]) {
+		else if (m_gameObjects[objindex]->m_pMesh == Shape::StrToShapeMap["Monster001"].GetMesh()) {
 			m_gameObjects[objindex]->diffuseTextureIndex = 2;
 		}
 	}
@@ -1474,7 +1491,7 @@ int Game::Receiving(char* ptr, int totallen)
 
 		if (playerGameObjectIndex >= 0 && playerGameObjectIndex < m_gameObjects.size()) {
 			player = (Player*)m_gameObjects[playerGameObjectIndex];
-			player->Gun = Mesh::meshmap["Gun001"];
+			player->Gun = game.GunMesh;
 
 			player->gunMatrix_thirdPersonView.Id();
 			player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
@@ -1483,13 +1500,13 @@ int Game::Receiving(char* ptr, int totallen)
 			player->gunMatrix_firstPersonView.pos = vec4(0.13f, -0.15f, 0.5f, 1);
 			player->gunMatrix_firstPersonView.LookAt(vec4(0, 0, 5) - player->gunMatrix_firstPersonView.pos);
 
-			player->ShootPointMesh = Mesh::meshmap["ShootPoint"];
+			player->ShootPointMesh = game.ShootPointMesh;
 
-			player->HPBarMesh = Mesh::meshmap["HPBar"];
+			player->HPBarMesh = game.HPBarMesh;
 			player->HPMatrix.pos = vec4(-1, 1, 1, 1);
 			player->HPMatrix.LookAt(vec4(-1, 0, 0));
 
-			player->HeatBarMesh = Mesh::meshmap["HeatBar"];
+			player->HeatBarMesh = game.HeatBarMesh;
 			player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
 			player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
 

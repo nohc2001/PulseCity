@@ -36,7 +36,7 @@ template <int n> struct BitBoolArr {
 struct Player : public GameObject {
 	static constexpr float ShootDelay = 0.1f;
 	float ShootFlow = 0;
-	static constexpr float recoilVelocity = 20.0f;
+	static constexpr float recoilVelocity = 15.0f;
 	float recoilFlow = 0;
 	static constexpr float recoilDelay = 0.3f;
 	float HP;
@@ -54,7 +54,7 @@ struct Player : public GameObject {
 	bool isGround = false;
 	bool isMouseReturn;
 	int collideCount = 0;
-	float JumpVelocity = 5;
+	float JumpVelocity = 20;
 	int clientIndex = 0;
 
 	vec4 LastMousePos;
@@ -72,6 +72,8 @@ struct Player : public GameObject {
 	//virtual void Event(WinEvent evt);
 
 	virtual void OnCollision(GameObject* other) override;
+
+	virtual void OnStaticCollision(BoundingOrientedBox obb) override;
 
 	virtual BoundingOrientedBox GetOBB();
 

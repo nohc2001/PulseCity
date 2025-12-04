@@ -17,7 +17,7 @@ protected:
 	ui32 VertexNum = 0;
 	D3D12_PRIMITIVE_TOPOLOGY topology;
 public:
-	static unordered_map<string, Mesh*> meshmap;
+	//static unordered_map<string, Mesh*> meshmap;
 
 	struct Vertex {
 		XMFLOAT3 position;
@@ -472,4 +472,47 @@ struct Model {
 	BoundingOrientedBox GetOBB();
 
 	void Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderNormal);
+};
+
+struct Shape {
+	ui64 FlagPtr;
+
+	__forceinline bool isMesh() {
+		return FlagPtr & 0x8000000000000000;
+
+		// highest bit == 1 -> Mesh
+		// else -> Model
+	}
+
+	__forceinline Mesh* GetMesh() {
+		if (isMesh()) {
+			return reinterpret_cast<Mesh*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
+		}
+		else return nullptr;
+	}
+
+	__forceinline void SetMesh(Mesh* ptr) {
+		FlagPtr = reinterpret_cast<ui64>(ptr);
+		FlagPtr |= 0x8000000000000000;
+	}
+
+	__forceinline Model* GetModel() {
+		if (isMesh()) return nullptr;
+		else {
+			return reinterpret_cast<Model*>(FlagPtr);
+		}
+	}
+
+	__forceinline void SetModel(Model* ptr) {
+		FlagPtr = reinterpret_cast<ui64>(ptr);
+	}
+
+	static int GetShapeIndex(string meshName);
+	static int AddShapeName(string meshName);
+
+	static vector<string> ShapeNameArr;
+	static unordered_map<string, Shape> StrToShapeMap;
+
+	static int AddMesh(string name, Mesh* ptr);
+	static int AddModel(string name, Model* ptr);
 };

@@ -41,6 +41,8 @@ struct Monster : public GameObject {
 	//virtual void Render();
 	virtual void OnCollision(GameObject* other) override;
 
+	virtual void OnStaticCollision(BoundingOrientedBox obb) override;
+
 	virtual void OnCollisionRayWithBullet(GameObject* shooter);
 
 	void Init(const XMMATRIX& initialWorldMatrix);

@@ -132,6 +132,7 @@ public:
 	}
 	~Hierarchy_Object() {}
 
+	static ViewportData* renderViewPort;
 	void Render_Inherit(matrix parent_world, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderWithShadow);
 	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);

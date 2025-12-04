@@ -156,6 +156,8 @@ struct World {
 		return highFrequencyFlow > midFrequencyDelay;
 	}
 
+	GameMap map;
+
 	void Init();
 	void Update();
 	void gridcollisioncheck();
@@ -204,8 +206,8 @@ struct World {
 			pack_factory.push_data(datacap, tempbuffer.data);
 			//clients[new_client_index].socket.Send((char*)tempbuffer.data, datacap);
 
-			if (gameObjects[i]->MeshIndex >= 0) {
-				datacap = Sending_SetMeshInGameObject(i, Mesh::MeshNameArr[gameObjects[i]->MeshIndex]);
+			if (gameObjects[i]->ShapeIndex >= 0) {
+				datacap = Sending_SetMeshInGameObject(i, Shape::ShapeNameArr[gameObjects[i]->ShapeIndex]);
 				pack_factory.push_data(datacap, tempbuffer.data);
 				//clients[new_client_index].socket.Send((char*)tempbuffer.data, datacap);
 			}

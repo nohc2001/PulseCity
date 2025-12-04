@@ -24,6 +24,11 @@ public:
 	SkyBoxShader* MySkyBoxShader;
 
 	UVMesh* TextMesh;
+	Mesh* GunMesh;
+	Mesh* HPBarMesh;
+	Mesh* HeatBarMesh;
+	Mesh* ShootPointMesh;
+	Model* MiniGunModel;
 
 	std::vector<GameObject*> m_gameObjects; // GameObjets
 	vector<ItemLoot> DropedItems;

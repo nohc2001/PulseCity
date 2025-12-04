@@ -1,0 +1,11 @@
+Model Information:
+* title:	MINIGUN M134
+* source:	https://sketchfab.com/3d-models/minigun-m134-8826a33183d344e6bf30f8be27b7a91d
+* author:	Andrey Gulev (https://sketchfab.com/anefiga02)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "MINIGUN M134" (https://sketchfab.com/3d-models/minigun-m134-8826a33183d344e6bf30f8be27b7a91d) by Andrey Gulev (https://sketchfab.com/anefiga02) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

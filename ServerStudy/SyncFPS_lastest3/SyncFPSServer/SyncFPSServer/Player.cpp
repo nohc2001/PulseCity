@@ -26,7 +26,7 @@ void Player::Update(float deltaTime)
 	}
 
 	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
-	constexpr float speed = 3.0f;
+	constexpr float speed = 6.0f;
 
 	if (isGround) {
 		if (InputBuffer[InputID::KeyboardSpace]) {
@@ -196,7 +196,21 @@ void Player::OnCollision(GameObject* other)
 
 	bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
 
-	if (belowhit && belowDist < mesh.GetOBB().Extents.y + 1.0f) {
+	if (belowhit && belowDist < Shape::IndexToShapeMap[ShapeIndex].GetMesh()->GetOBB().Extents.y + 1.0f) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+void Player::OnStaticCollision(BoundingOrientedBox obb)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = obb;
+
+	bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
+
+	if (belowhit && belowDist < Shape::IndexToShapeMap[ShapeIndex].GetMesh()->GetOBB().Extents.y + 1.0f) {
 		LVelocity.y = 0;
 		isGround = true;
 	}
@@ -204,7 +218,7 @@ void Player::OnCollision(GameObject* other)
 
 BoundingOrientedBox Player::GetOBB()
 {
-	BoundingOrientedBox obb_local = mesh.GetOBB();
+	BoundingOrientedBox obb_local = Shape::IndexToShapeMap[ShapeIndex].GetMesh()->GetOBB();
 	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
 	matrix id = XMMatrixIdentity();
