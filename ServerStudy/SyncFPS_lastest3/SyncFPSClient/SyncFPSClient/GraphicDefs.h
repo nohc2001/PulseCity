@@ -10,6 +10,7 @@ struct ViewportData {
 	vec4 Camera_Pos;
 	BoundingFrustum	m_xmFrustumView = BoundingFrustum();
 	BoundingFrustum	m_xmFrustumWorld = BoundingFrustum();
+	BoundingOrientedBox OrthoFrustum;
 
 	__forceinline XMVECTOR project(const vec4& vec_in_gamespace) {
 		return XMVector3Project(vec_in_gamespace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
@@ -38,6 +39,17 @@ struct ViewportData {
 
 		BoundingFrustum::CreateFromMatrix(m_xmFrustumWorld, ProjectMatrix);
 		m_xmFrustumWorld.Transform(m_xmFrustumWorld, ViewMatrix.RTInverse);
+	}
+
+	void UpdateOrthoFrustum(float nearF, float farF) {
+		matrix v = ViewMatrix;
+		v.transpose(); 
+		vec4 Center = (Camera_Pos + v.look * nearF) + (Camera_Pos + v.look * farF); // should config it is near, far
+		Center *= 0.5f;
+		OrthoFrustum.Center = Center.f3;
+		OrthoFrustum.Extents = { 0.5f * Viewport.Width, 0.5f * Viewport.Height, 0.5f * (farF - nearF) };
+		v = ViewMatrix;
+		OrthoFrustum.Orientation = vec4(XMQuaternionRotationMatrix(v.RTInverse)).f4;
 	}
 };
 

@@ -1008,7 +1008,7 @@ void Game::Render_ShadowPass()
 	MySpotLight.View.mat = XMMatrixLookAtLH(MySpotLight.LightPos, obj, vec4(0, 1, 0, 0));
 	game.MySpotLight.viewport.ViewMatrix = MySpotLight.View;
 
-	constexpr float rate = 1.0f / 32.0f;
+	constexpr float rate = 1.0f / 16.0f;
 	game.MySpotLight.viewport.ProjectMatrix = XMMatrixOrthographicLH(rate * ShadowResolusion, rate * ShadowResolusion, 0.1f, 1000.0f);
 
 	matrix projmat = XMMatrixTranspose(MySpotLight.viewport.ProjectMatrix);
@@ -1080,9 +1080,11 @@ void Game::Render_ShadowPass()
 
 	matrix mat2 = XMMatrixIdentity();
 	//mat2.pos.y -= 1.75f;
-	game.MySpotLight.viewport.UpdateFrustum();
+	//game.MySpotLight.viewport.ProjectMatrix = XMMatrixOrthographicLH(rate * ShadowResolusion * 2, rate * ShadowResolusion * 2, 0.1f, 1000.0f);
+	//game.MySpotLight.viewport.UpdateFrustum();
+	game.MySpotLight.viewport.UpdateOrthoFrustum(0.1f, 1000.0f);
 	Hierarchy_Object::renderViewPort = &game.MySpotLight.viewport;
-	game.Map->MapObjects[0]->Render_Inherit(mat2, Shader::RegisterEnum::RenderShadowMap);
+	game.Map->MapObjects[0]->Render_Inherit_CullingOrtho(mat2, Shader::RegisterEnum::RenderShadowMap);
 
 	d3dResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	d3dResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;

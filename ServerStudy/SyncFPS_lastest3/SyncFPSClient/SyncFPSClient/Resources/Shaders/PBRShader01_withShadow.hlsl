@@ -320,13 +320,14 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
 float4 OuterPBR(VS_OUTPUT input)
 {
     float3 Color = baseColor * PBR_Tex[0].Sample(StaticSampler, input.uv);
-    float3 TBNnormal = PBR_Tex[1].Sample(StaticSampler, input.uv);
-    TBNnormal = TBNnormal.xzy;
-    TBNnormal = 2.0 * (TBNnormal - 0.5);
+    
     float AmbientOculusion = PBR_Tex[2].Sample(StaticSampler, input.uv).r;
     float Metalic = metalicFactor * PBR_Tex[3].Sample(StaticSampler, input.uv).r;
     float Roughness = PBR_Tex[4].Sample(StaticSampler, input.uv).r;
     
+    float3 TBNnormal = PBR_Tex[1].Sample(StaticSampler, input.uv);
+    TBNnormal = TBNnormal.xyz;
+    TBNnormal = 2.0 * (TBNnormal - 0.5);
     float3x3 invTBN = transpose(float3x3(input.T, input.B, input.N));
     float3 normalW = normalize(mul(TBNnormal, invTBN));
 
@@ -334,34 +335,28 @@ float4 OuterPBR(VS_OUTPUT input)
     float3 V = input.ViewDir;
     float3 color = float3(0, 0, 0);
     
-    for (int i = 0; i < 8; ++i)
-    {
-        PointLight p = pointLightArr[i];
-        float3 L = normalize(p.LightPos - input.positionW.xyz);
-        float3 H = normalize(V + L);
-
-        float3 F0 = float3(0.04, 0.04, 0.04); // default for dielectrics
-        F0 = lerp(F0, Color, Metalic);
-
-        // Cook-Torrance BRDF
-        float NDF = DistributionGGX(N, H, Roughness);
-        float G = GeometrySmith(N, V, L, Roughness);
-        float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        float3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
-        float3 specular = numerator / denominator;
-
-        float3 kS = F;
-        float3 kD = 1.0 - kS;
-        kD *= 1.0 - Metalic;
-
-        float NdotL = max(dot(N, L), 0.0);
-        float3 irradiance = p.LightColor * NdotL;
-
-        float3 diffuse = kD * Color / 3.141592f;
-        color += (diffuse + specular) * irradiance;
-    }
+    //for (int i = 0; i < 8; ++i)
+    //{
+    //    PointLight p = pointLightArr[i];
+    //    float3 L = normalize(p.LightPos - input.positionW.xyz);
+    //    float3 H = normalize(V + L);
+    //    float3 F0 = float3(0.04, 0.04, 0.04); // default for dielectrics
+    //    F0 = lerp(F0, Color, Metalic);
+    //    // Cook-Torrance BRDF
+    //    float NDF = DistributionGGX(N, H, Roughness);
+    //    float G = GeometrySmith(N, V, L, Roughness);
+    //    float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+    //    float3 numerator = NDF * G * F;
+    //    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+    //    float3 specular = numerator / denominator;
+    //    float3 kS = F;
+    //    float3 kD = 1.0 - kS;
+    //    kD *= 1.0 - Metalic;
+    //    float NdotL = max(dot(N, L), 0.0);
+    //    float3 irradiance = p.LightColor * NdotL;
+    //    float3 diffuse = kD * Color / 3.141592f;
+    //    color += (diffuse + specular) * irradiance;
+    //}
     
     //directional Light
     {
@@ -378,7 +373,7 @@ float4 OuterPBR(VS_OUTPUT input)
         float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
 
         float3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+        float denominator = 8.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
         float3 specular = numerator / denominator;
 
         float3 kS = F;
@@ -386,7 +381,7 @@ float4 OuterPBR(VS_OUTPUT input)
         kD *= 1.0 - Metalic;
 
         float NdotL = max(dot(N, L), 0.0);
-        float3 irradiance = p.gLightColor * NdotL;
+        float3 irradiance = float4(1, 1, 1, 1) * NdotL;
 
         float3 diffuse = kD * Color / 3.141592f;
         color += (diffuse + specular) * irradiance;
@@ -410,12 +405,12 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
     //return PBR_Tex[0].Sample(StaticSampler, input.uv);
     
     //float depth = LightShadowMap.Sample(StaticSampler, vShadowTexCoord).r;
-    //if (distance(Camera_Position, input.positionW) > 60)
-    //{
-    //    return OuterPBR(input);
-    //}
-    //else
-    //{
+    if (distance(Camera_Position, input.positionW) > 100)
+    {
+        return OuterPBR(input);
+    }
+    else
+    {
         // Compute pixel position in light space.
         float4 vLightSpacePos = input.positionW;
         vLightSpacePos = mul(vLightSpacePos, LightView);
@@ -435,8 +430,7 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
         vSubPixelCoords.xy = frac(vShadowMapDims * vShadowTexCoord);
         vSubPixelCoords.zw = 1.0f - vSubPixelCoords.xy;
         float4 vBilinearWeights = vSubPixelCoords.zxzx * vSubPixelCoords.wwyy;
-
-    // 2x2 percentage closer filtering.
+        
         float2 vTexelUnits = 1.0f / vShadowMapDims;
         float4 vShadowDepths;
         vShadowDepths.x = LightShadowMap.Sample(StaticSampler, vShadowTexCoord);
@@ -456,5 +450,5 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
         }
     
         return f * OuterPBR(input);
-    //}
+    }
 }

@@ -539,6 +539,47 @@ void Hierarchy_Object::Render_Inherit(matrix parent_world, Shader::RegisterEnum 
 	}
 }
 
+void Hierarchy_Object::Render_Inherit_CullingOrtho(matrix parent_world, Shader::RegisterEnum sre)
+{
+	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
+	BoundingOrientedBox obb = GetOBBw(sav);
+	if (obb.Extents.x > 0 && renderViewPort->OrthoFrustum.Intersects(obb)) {
+		if (rmod == GameObject::eRenderMeshMod::single_Mesh && m_pMesh != nullptr) {
+			matrix m = sav;
+			m.transpose();
+
+			//set world matrix in shader
+			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+			//set texture in shader
+			//game.MyPBRShader1->SetTextureCommand()
+			int materialIndex = Mesh_materialIndex;
+			Material& mat = game.MaterialTable[materialIndex];
+			/*GPUResource* diffuseTex = &game.DefaultTex;
+			if (mat.ti.Diffuse >= 0) diffuseTex = game.TextureTable[mat.ti.Diffuse];
+			GPUResource* normalTex = &game.DefaultNoramlTex;
+			if (mat.ti.Normal >= 0) normalTex = game.TextureTable[mat.ti.Normal];
+			GPUResource* ambientTex = &game.DefaultTex;
+			if (mat.ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[mat.ti.AmbientOcculsion];
+			GPUResource* MetalicTex = &game.DefaultAmbientTex;
+			if (mat.ti.Metalic >= 0) MetalicTex = game.TextureTable[mat.ti.Metalic];
+			GPUResource* roughnessTex = &game.DefaultAmbientTex;
+			if (mat.ti.Roughness >= 0) roughnessTex = game.TextureTable[mat.ti.Roughness];
+			game.MyPBRShader1->SetTextureCommand(diffuseTex, normalTex, ambientTex, MetalicTex, roughnessTex);*/
+
+			gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);
+			gd.pCommandList->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
+			m_pMesh->Render(gd.pCommandList, 1);
+		}
+		else if (rmod == GameObject::eRenderMeshMod::Model && pModel != nullptr) {
+			pModel->Render(gd.pCommandList, sav, sre);
+		}
+	}
+
+	for (int i = 0; i < childCount; ++i) {
+		childs[i]->Render_Inherit_CullingOrtho(sav, sre);
+	}
+}
+
 bool Hierarchy_Object::Collision_Inherit(matrix parent_world, BoundingBox bb)
 {
 	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
@@ -1009,6 +1050,52 @@ void GameMap::LoadMap(const char* MapName)
 			ifs2.read((char*)pixels, width * height * 4);
 			ifs2.close();
 
+			char* isnormal = &filename[filename.size() - 10];
+			char* isnormalmap = &filename[filename.size() - 13];
+			char* isnormalDX = &filename[filename.size() - 12];
+			if ((strcmp(isnormal, "Normal.tex") == 0 ||
+				strcmp(isnormalDX, "NormalDX.tex") == 0) ||
+				strcmp(isnormalmap, "normalmap.tex") == 0) {
+				float xtotal = 0;
+				float ytotal = 0;
+				float ztotal = 0;
+				for (int ix = 0; ix < width; ++ix) {
+					int h = rand() % height;
+					BYTE* p = &pixels[h * width * 4 + ix * 4];
+					xtotal += p[0];
+					ytotal += p[1];
+					ztotal += p[2];
+				}
+				if (ztotal < ytotal) {
+					// x = z
+					// y = -x
+					// z = y
+					for (int ix = 0; ix < width; ++ix) {
+						for (int iy = 0; iy < height; ++iy) {
+							BYTE* p = &pixels[iy * width * 4 + ix * 4];
+							BYTE z = p[2];
+							BYTE y = p[1];
+							BYTE x = p[0];
+							p[0] = z;
+							p[1] = 255 - x;
+							p[2] = y;
+						}
+					}
+				}
+				if (ztotal < xtotal) {
+					// x = z
+					// y = y
+					// z = x
+					for (int ix = 0; ix < width; ++ix) {
+						for (int iy = 0; iy < height; ++iy) {
+							BYTE* p = &pixels[iy * width * 4 + ix * 4];
+							BYTE k = p[2];
+							p[2] = p[0];
+							p[0] = k;
+						}
+					}
+				}
+			}
 			imgform::PixelImageObject pio;
 			pio.data = (imgform::RGBA_pixel*)pixels;
 			pio.width = width;

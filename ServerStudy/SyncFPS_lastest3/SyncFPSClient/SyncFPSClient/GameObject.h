@@ -134,6 +134,7 @@ public:
 
 	static ViewportData* renderViewPort;
 	void Render_Inherit(matrix parent_world, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderWithShadow);
+	void Render_Inherit_CullingOrtho(matrix parent_world, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderWithShadow);
 	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
 	BoundingOrientedBox GetOBBw(matrix worldMat);

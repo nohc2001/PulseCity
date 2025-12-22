@@ -4,6 +4,8 @@
 #include "ttfParser.h"
 #include "SpaceMath.h"
 
+
+
 using namespace TTFFontParser;
 
 // name completly later. ??
