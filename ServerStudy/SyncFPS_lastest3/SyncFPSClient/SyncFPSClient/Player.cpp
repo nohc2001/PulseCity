@@ -163,6 +163,7 @@ void Player::Render_AfterDepthClear()
 		if (GunModel) {
 			matrix gunmat = gunMatrix_firstPersonView;
 
+			gunmat *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
 			const float PI = 3.141592f;
 			gunmat *= XMMatrixRotationY(PI);
 
