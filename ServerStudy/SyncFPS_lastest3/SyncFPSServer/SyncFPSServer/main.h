@@ -133,6 +133,10 @@ struct World {
 	vecset<GameObject*> gameObjects;
 	vecset<ItemLoot> DropedItems;
 	vector<AstarNode*> allnodes; //Astar pathfinding
+	static constexpr float AstarStartX = -40.0f;
+	static constexpr float AstarStartZ = -40.0f;
+	static constexpr float AstarEndX = 40.0f;
+	static constexpr float AstarEndZ = 40.0f;
 
 	twoPage tempbuffer;
 	DataPackFactory pack_factory;

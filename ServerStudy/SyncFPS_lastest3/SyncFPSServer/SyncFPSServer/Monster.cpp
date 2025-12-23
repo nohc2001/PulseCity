@@ -14,7 +14,6 @@ void Monster::Update(float deltaTime)
 		}
 	}
 	else {
-
 		if (collideCount == 0) isGround = false;
 		collideCount = 0;
 
@@ -208,17 +207,15 @@ void Monster::OnStaticCollision(BoundingOrientedBox obb)
 void Monster::OnCollisionRayWithBullet(GameObject* shooter)
 {
 	HP -= 10;
-
 	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &HP, sizeof(int));
 	gameworld.SendToAllClient(datacap);
 
-	if (HP <= 0) {
+	if (HP <= 0 && isDead == false) {
 		isDead = true;
-		vec4 prevpos = m_worldMatrix.pos;
-		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
-
 		int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &isDead, sizeof(bool));
 		gameworld.SendToAllClient(datacap);
+
+		vec4 prevpos = m_worldMatrix.pos;
 
 		// when monster is dead, player's killcount +1
 		void* vptr = *(void**)shooter;
@@ -249,18 +246,18 @@ void Monster::Init(const XMMATRIX& initialWorldMatrix)
 
 void Monster::Respawn()
 {
-	isDead = false;
-	HP = 30;
-
-	/*Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));*/
+	Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
 	m_isMove = false;
-
-	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &isDead, sizeof(bool));
+	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &m_worldMatrix.pos, sizeof(float)*4);
 	gameworld.SendToAllClient(datacap);
 
+	isDead = false;
+	datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &isDead, sizeof(bool));
+	gameworld.SendToAllClient(datacap);
+
+	HP = 30;
 	datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &HP, sizeof(int));
 	gameworld.SendToAllClient(datacap);
-
 }
 
 BoundingOrientedBox Monster::GetOBB()
@@ -392,6 +389,10 @@ void Monster::MoveByAstar(float deltaTime)
 
 	// A*에서 지정한 타겟 노드 위치 (y는 현재 높이 유지)
 	vec4 target(targetNode->worldx, pos.y, targetNode->worldz, 1.0f);
+	if (gameworld.AstarStartX > target.x) target.x = gameworld.AstarStartX;
+	if (gameworld.AstarStartZ > target.z) target.x = gameworld.AstarStartZ;
+	if (gameworld.AstarEndX < target.x) target.x = gameworld.AstarEndX;
+	if (gameworld.AstarEndZ < target.z) target.z = gameworld.AstarEndZ;
 
 	// 방향 벡터
 	vec4 dir = target - pos;

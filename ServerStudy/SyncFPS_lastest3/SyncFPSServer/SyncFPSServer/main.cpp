@@ -186,7 +186,6 @@ void World::Init() {
 	allnodes.clear();
 	allnodes.reserve(gridWidth * gridHeight);
 
-
 	//Grid initiolaize
 	for (int z = 0; z < gridHeight; ++z)
 	{
