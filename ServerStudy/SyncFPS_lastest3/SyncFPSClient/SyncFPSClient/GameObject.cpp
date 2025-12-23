@@ -42,7 +42,11 @@ void GameObject::Render()
 
 	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &xmf4x4World, 0);
 
-	game.MyDiffuseTextureShader->SetTextureCommand(&gd.GlobalTextureArr[diffuseTextureIndex]);
+	//game.MyDiffuseTextureShader->SetTextureCommand(&gd.GlobalTextureArr[diffuseTextureIndex]);
+	int materialIndex = MaterialIndex;
+	Material& mat = game.MaterialTable[materialIndex];
+	gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);
+	gd.pCommandList->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
 
 	m_pMesh->Render(gd.pCommandList, 1);
 }

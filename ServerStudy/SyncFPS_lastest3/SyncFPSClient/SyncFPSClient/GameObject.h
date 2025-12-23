@@ -9,7 +9,8 @@ struct GPUResource;
 
 struct GameObject {
 	bool isExist = true;
-	int diffuseTextureIndex = 0;
+	int MaterialIndex = 0;
+
 	matrix m_worldMatrix;
 	vec4 LVelocity;
 	vec4 tickLVelocity;

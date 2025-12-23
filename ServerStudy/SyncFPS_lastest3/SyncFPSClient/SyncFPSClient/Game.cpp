@@ -108,12 +108,29 @@ void Game::Init()
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 	DefaultTex.CreateTexture_fromFile(L"Resources/DefaultTexture.png", game.basicTexFormat, game.basicTexMip);
 	GunTexture.CreateTexture_fromFile(L"Resources/m1911pistol_diffuse0.png", game.basicTexFormat, game.basicTexMip);
-	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex].CreateTexture_fromFile(L"Resources/Tiles036_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
-	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_WallTex].CreateTexture_fromFile(L"Resources/Chip001_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
-	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster].CreateTexture_fromFile(L"Resources/PaintedMetal004_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
-
 	DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
 	DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
+
+	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex].CreateTexture_fromFile(L"Resources/Tiles036_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
+	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex]);
+	Material TileMat;
+	TileMat.ti.Diffuse = game.TextureTable.size() - 1;
+	TileMat.SetDescTable(); // (int)gd.GlobalDevice::GM_TileTex
+	game.MaterialTable.push_back(TileMat);
+	
+	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_WallTex].CreateTexture_fromFile(L"Resources/Chip001_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
+	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_WallTex]);
+	Material WallMat;
+	WallMat.ti.Diffuse = game.TextureTable.size() - 1;
+	WallMat.SetDescTable();
+	game.MaterialTable.push_back(WallMat);
+
+	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster].CreateTexture_fromFile(L"Resources/PaintedMetal004_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
+	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster]);
+	Material MonsterMat;
+	MonsterMat.ti.Diffuse = game.TextureTable.size() - 1;
+	MonsterMat.SetDescTable();
+	game.MaterialTable.push_back(MonsterMat);
 
 	Map = new GameMap();
 	Map->LoadMap("The_Port");
@@ -128,7 +145,7 @@ void Game::Init()
 
 	//
 
-	Mesh* ItemMesh = new UVMesh();
+	BumpMesh* ItemMesh = new BumpMesh();
 	ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
 	ItemTable.push_back(Item(0, vec4(0, 0, 0, 0), nullptr, nullptr, L"")); // blank space in inventory.
 	ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster], L"[»¡°£ Åº¾ËÁý]"));
@@ -162,22 +179,22 @@ void Game::Init()
 
 	bulletRays.Init(32);
 
-	Mesh* MyMesh = (Mesh*)new UVMesh();
+	BumpMesh* MyMesh = (BumpMesh*)new BumpMesh();
 	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 1, 1, 1 });
 	Shape::AddMesh("Player", MyMesh);
 
-	Mesh* MyGroundMesh = (Mesh*)new UVMesh();
+	BumpMesh* MyGroundMesh = (BumpMesh*)new BumpMesh();
 	MyGroundMesh->CreateWallMesh(40.0f, 0.5f, 40.0f, { 1, 1, 1, 1 });
 	Shape::AddMesh("Ground001", MyGroundMesh);
 
-	Mesh* MyWallMesh = (Mesh*)new UVMesh();
+	BumpMesh* MyWallMesh = (BumpMesh*)new BumpMesh();
 	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f, { 1, 1, 1, 1 });
 	Shape::AddMesh("Wall001", MyWallMesh);
 
 	BulletRay::mesh = (Mesh*)new Mesh();
 	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
 
-	Mesh* MyMonsterMesh = (Mesh*)new UVMesh();
+	BumpMesh* MyMonsterMesh = (BumpMesh*)new BumpMesh();
 	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 0, 0, 1 });
 	Shape::AddMesh("Monster001", MyMonsterMesh);
 
@@ -362,32 +379,24 @@ void Game::Render() {
 	gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
-	//////////////////////
-	((Shader*)MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.pCommandList);
-	MyDiffuseTextureShader->SetTextureCommand(&game.DefaultTex);
+	game.MyPBRShader1->Add_RegisterShaderCommand(gd.pCommandList, Shader::RegisterEnum::RenderWithShadow);
 
-	/*XMFLOAT4X4 xmf4x4Projection;
-	XMStoreFloat4x4(&xmf4x4Projection, XMMatrixTranspose(gd.viewportArr[0].ProjectMatrix));
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4Projection, 0);
-
-	XMFLOAT4X4 xmf4x4View;
-	XMStoreFloat4x4(&xmf4x4View, XMMatrixTranspose(gd.viewportArr[0].ViewMatrix));
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 16);*/
-
-	matrix viewMat = gd.viewportArr[0].ViewMatrix;
-	viewMat *= gd.viewportArr[0].ProjectMatrix;
-	viewMat.transpose();
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
-
+	matrix view = gd.viewportArr[0].ViewMatrix;
+	view *= gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
 	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
+	gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
+	gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
+	game.MyPBRShader1->SetShadowMapCommand(game.MySpotLight.renderDesc);
 
-	gd.pCommandList->SetGraphicsRootConstantBufferView(2, LightCBResource.resource->GetGPUVirtualAddress());
-
+	//render Objects
 	for (int i = 0; i < m_gameObjects.size(); ++i) {
 		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->isExist == false) continue;
 		m_gameObjects[i]->Render();
 	}
 
+	//Render Items
 	// already droped items. (non move..)
 	static float itemRotate = 0;
 	itemRotate += DeltaTime;
@@ -404,18 +413,7 @@ void Game::Render() {
 		}
 	}
 
-	//////////////////
-	game.MyPBRShader1->Add_RegisterShaderCommand(gd.pCommandList, Shader::RegisterEnum::RenderWithShadow);
-
-	matrix view = gd.viewportArr[0].ViewMatrix;
-	view *= gd.viewportArr[0].ProjectMatrix;
-	view.transpose();
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
-	gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
-	gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
-	game.MyPBRShader1->SetShadowMapCommand(game.MySpotLight.renderDesc);
-
+	//Render Static Map
 	Hierarchy_Object* obj = Map->MapObjects[0];
 	matrix mat2 = XMMatrixIdentity();
 	//mat2.pos.y -= 1.75f;
@@ -425,7 +423,7 @@ void Game::Render() {
 
 	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);
 
-	viewMat = gd.viewportArr[0].ViewMatrix;
+	matrix viewMat = gd.viewportArr[0].ViewMatrix;
 	viewMat *= gd.viewportArr[0].ProjectMatrix;
 	viewMat.transpose();
 	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
@@ -1086,6 +1084,12 @@ void Game::Render_ShadowPass()
 	Hierarchy_Object::renderViewPort = &game.MySpotLight.viewport;
 	game.Map->MapObjects[0]->Render_Inherit_CullingOrtho(mat2, Shader::RegisterEnum::RenderShadowMap);
 
+	//render Objects
+	for (int i = 0; i < m_gameObjects.size(); ++i) {
+		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->isExist == false) continue;
+		m_gameObjects[i]->Render();
+	}
+
 	d3dResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	d3dResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 	d3dResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -1480,13 +1484,13 @@ int Game::Receiving(char* ptr, int totallen)
 
 		//tempcode..?? >> when fix??
 		if (m_gameObjects[objindex]->m_pMesh == Shape::StrToShapeMap["Ground001"].GetMesh()) {
-			m_gameObjects[objindex]->diffuseTextureIndex = 0;
+			m_gameObjects[objindex]->MaterialIndex = 0;
 		}
 		else if (m_gameObjects[objindex]->m_pMesh == Shape::StrToShapeMap["Wall001"].GetMesh()) {
-			m_gameObjects[objindex]->diffuseTextureIndex = 1;
+			m_gameObjects[objindex]->MaterialIndex = 1;
 		}
 		else if (m_gameObjects[objindex]->m_pMesh == Shape::StrToShapeMap["Monster001"].GetMesh()) {
-			m_gameObjects[objindex]->diffuseTextureIndex = 2;
+			m_gameObjects[objindex]->MaterialIndex = 2;
 		}
 	}
 	break;

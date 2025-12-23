@@ -42,7 +42,7 @@ public:
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
 	BoundingOrientedBox GetOBB();
 	void CreateGroundMesh(ID3D12GraphicsCommandList* pCommandList);
-	void CreateWallMesh(float width, float height, float depth, vec4 color);
+	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
 
 	virtual void Release();
 };
@@ -123,6 +123,7 @@ public:
 
 	BumpMesh();
 	virtual ~BumpMesh();
+	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
 	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds);
 	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
@@ -367,12 +368,14 @@ struct Material {
 
 	Material()
 	{
-		clr.base = vec4(1, 1, 1, 1);
 		ZeroMemory(this, sizeof(Material));
 		TilingX = 1;
 		TilingY = 1;
-		TilingOffsetX = 1;
-		TilingOffsetY = 1;
+		TilingOffsetX = 0;
+		TilingOffsetY = 0;
+		clr.bumpscaling = 1;
+		clr.base = vec4(1, 1, 1, 1);
+		memset(&ti, -1, sizeof(TextureIndex));
 	}
 
 	~Material()

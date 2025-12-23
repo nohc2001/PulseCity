@@ -379,8 +379,8 @@ void PrintOffset() {
 
 		n = (char*)&temp - (char*)&temp.isExist;
 		dbglog1(L"class GameObject.isExist%d\n", n);
-		n = (char*)&temp - (char*)&temp.diffuseTextureIndex;
-		dbglog1(L"class GameObject.diffuseTextureIndex%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaterialIndex;
+		dbglog1(L"class GameObject.MaterialIndex%d\n", n);
 		n = (char*)&temp - (char*)&temp.m_worldMatrix;
 		dbglog1(L"class GameObject.m_worldMatrix%d\n", n);
 		n = (char*)&temp - (char*)&temp.LVelocity;
@@ -405,8 +405,8 @@ void PrintOffset() {
 
 		n = (char*)&temp - (char*)&temp.isExist;
 		dbglog1(L"class Player.isExist%d\n", n);
-		n = (char*)&temp - (char*)&temp.diffuseTextureIndex;
-		dbglog1(L"class Player.diffuseTextureIndex%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaterialIndex;
+		dbglog1(L"class Player.MaterialIndex%d\n", n);
 		n = (char*)&temp - (char*)&temp.m_worldMatrix;
 		dbglog1(L"class Player.m_worldMatrix%d\n", n);
 		n = (char*)&temp - (char*)&temp.LVelocity;
@@ -453,8 +453,8 @@ void PrintOffset() {
 
 		n = (char*)&temp - (char*)&temp.isExist;
 		dbglog1(L"class Monster.isExist%d\n", n);
-		n = (char*)&temp - (char*)&temp.diffuseTextureIndex;
-		dbglog1(L"class Monster.diffuseTextureIndex%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaterialIndex;
+		dbglog1(L"class Monster.MaterialIndex%d\n", n);
 		n = (char*)&temp - (char*)&temp.m_worldMatrix;
 		dbglog1(L"class Monster.m_worldMatrix%d\n", n);
 		n = (char*)&temp - (char*)&temp.LVelocity;

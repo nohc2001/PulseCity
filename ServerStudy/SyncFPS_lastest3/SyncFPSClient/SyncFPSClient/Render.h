@@ -3,8 +3,7 @@
 #include "GraphicDefs.h"
 #include "ttfParser.h"
 #include "SpaceMath.h"
-
-
+#include "Mesh.h"
 
 using namespace TTFFontParser;
 
@@ -77,6 +76,13 @@ struct GlobalDevice {
 		GT_TileTex = 0,
 		GT_WallTex = 1,
 		GT_Monster = 2,
+	};
+
+	Material GlobalMaterialArr[64] = {};
+	enum GlobalMaterial {
+		GM_TileTex = 0,
+		GM_WallTex = 1,
+		GM_Monster = 2,
 	};
 
 	unsigned long long CBV_SRV_UAV_Desc_IncrementSiz = 0;

@@ -648,6 +648,93 @@ BumpMesh::~BumpMesh()
 {
 }
 
+void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+	// Front
+	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, height, -depth), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1, 1), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, height, -depth), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0, 1), XMFLOAT3(1, 0, 0)));
+	// Back
+	vertices.push_back(Vertex(XMFLOAT3(-width, -height, depth), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, -height, depth),  XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, height, depth),XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1, 1), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, height, depth), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0, 1), XMFLOAT3(1, 0, 0)));
+	// Top
+	vertices.push_back(Vertex(XMFLOAT3(-width, height, -depth), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, height, -depth), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, height, depth), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, height, depth), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(1, 0, 0)));
+	// Bottom
+	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(width, -height, depth), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(1, 0, 0)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, -height, depth), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(1, 0, 0)));
+	// Left
+	vertices.push_back(Vertex(XMFLOAT3(-width, -height, depth), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(0, 0, 1)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(0, 0, 1)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, height, -depth), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(0, 0, 1)));
+	vertices.push_back(Vertex(XMFLOAT3(-width, height, depth), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(0, 0, 1)));
+	// Right
+	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(0, 0, 1)));
+	vertices.push_back(Vertex(XMFLOAT3(width, -height, depth), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(0, 0, 1)));
+	vertices.push_back(Vertex(XMFLOAT3(width, height, depth), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(0, 0, 1)));
+	vertices.push_back(Vertex(XMFLOAT3(width, height, -depth), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(0, 0, 1)));
+
+	// index
+	// front
+	indices.push_back(0); indices.push_back(2); indices.push_back(1);
+	indices.push_back(2); indices.push_back(0); indices.push_back(3);
+	// back
+	indices.push_back(4); indices.push_back(5); indices.push_back(6);
+	indices.push_back(6); indices.push_back(7); indices.push_back(4);
+	// top
+	indices.push_back(8); indices.push_back(10); indices.push_back(9);
+	indices.push_back(10); indices.push_back(8); indices.push_back(11);
+	// bottom
+	indices.push_back(12); indices.push_back(13); indices.push_back(14);
+	indices.push_back(14); indices.push_back(15); indices.push_back(12);
+	// left
+	indices.push_back(16); indices.push_back(18); indices.push_back(17);
+	indices.push_back(18); indices.push_back(16); indices.push_back(19);
+	// right
+	indices.push_back(20); indices.push_back(22); indices.push_back(21);
+	indices.push_back(22); indices.push_back(20); indices.push_back(23);
+
+	// OBB
+	OBB_Tr = { 0, 0, 0 };
+	OBB_Ext = XMFLOAT3(width, height, depth);
+
+	int nVertices = vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = indices.size() * sizeof(UINT);
+
+	IndexNum = indices.size();
+	VertexNum = vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
 void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds)
 {
 	int m_nVertices = vert.size();
