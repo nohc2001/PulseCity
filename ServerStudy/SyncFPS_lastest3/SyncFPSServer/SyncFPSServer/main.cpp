@@ -288,6 +288,8 @@ void World::Init() {
 	int newindex = 0;
 	int datacap = 0;
 
+	map.LoadMap("The_Port");
+
 	/*Player* MyPlayer = new Player();
 	MyPlayer->m_worldMatrix = (XMMatrixTranslation(5.0f, 5.0f, 3.0f));
 	MyPlayer->MeshIndex = Mesh::GetMeshIndex("Player");
@@ -433,7 +435,12 @@ void World::Init() {
 		Monster* myMonster_1 = new Monster();
 		myMonster_1->ShapeIndex = Shape::GetShapeIndex("Monster001");
 		//myMonster_1->mesh = (MyMonsterMesh);
+
 		myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 20.0f, rand() % 80 - 40));
+		while (gameworld.map.isStaticCollision(myMonster_1->GetOBB())) {
+			myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+		}
+
 		newindex = NewObject(myMonster_1, GameObjectType::_Monster);
 		datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
 		SendToAllClient(datacap);
@@ -464,7 +471,7 @@ void World::Init() {
 	//PrintCangoSummary(allnodes, GRID_W, GRID_H);
 	PrintCangoGrid(allnodes, GRID_W, GRID_H);
 
-	map.LoadMap("The_Port");
+	
 
 	cout << "Game Init end" << endl;
 }

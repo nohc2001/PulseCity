@@ -242,11 +242,15 @@ void Monster::Init(const XMMATRIX& initialWorldMatrix)
 {
 	m_worldMatrix = (initialWorldMatrix);
 	m_homePos = m_worldMatrix.pos;
+	
 }
 
 void Monster::Respawn()
 {
 	Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+	while (gameworld.map.isStaticCollision(GetOBB())) {
+		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+	}
 	m_isMove = false;
 	int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.currentIndex, this, GameObjectType::_Monster, &m_worldMatrix.pos, sizeof(float)*4);
 	gameworld.SendToAllClient(datacap);

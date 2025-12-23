@@ -457,7 +457,6 @@ void Game::Render() {
 	int bulletCount = 0;
 	float HealSkillCooldownFlow = 0;
 
-
 	// UI/AfterDepthClear Render
 	if (game.player != nullptr) {
 		game.player->Render_AfterDepthClear();
@@ -536,7 +535,6 @@ void Game::Render() {
 		TextMesh->Render(gd.pCommandList, 1);
 
 		vec4 slotColor = { 0.15f, 0.15f, 0.15f, 0.9f };
-		//Mesh* slotMesh = GetOrCreateColoredQuadMesh(slotColor);
 
 		float startSlotX = invPosX - invWidth + slotPadding + slotSize;
 		float startSlotY = invPosY - invHeight + slotPadding + slotSize;
@@ -1089,6 +1087,8 @@ void Game::Render_ShadowPass()
 		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->isExist == false) continue;
 		m_gameObjects[i]->Render();
 	}
+
+	player->Render_AfterDepthClear();
 
 	d3dResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	d3dResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
@@ -1807,11 +1807,11 @@ void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz,
 
 		//set root variables
 		vec4 textRt = vec4(pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul);
-		float tConst[7] = { textRt.x, textRt.y, textRt.z, textRt.w, gd.ClientFrameWidth, gd.ClientFrameHeight, depth };
+		float tConst[11] = { textRt.x, textRt.y, textRt.z, textRt.w, 1, 1, 1, 1, gd.ClientFrameWidth, gd.ClientFrameHeight, depth };
 		/*gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &textRt, 0);
 		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameWidth, 4);
 		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameHeight, 5);*/
-		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 7, &tConst, 0);
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 11, &tConst, 0);
 		MyScreenCharactorShader->SetTextureCommand(texture);
 
 		//Render Text

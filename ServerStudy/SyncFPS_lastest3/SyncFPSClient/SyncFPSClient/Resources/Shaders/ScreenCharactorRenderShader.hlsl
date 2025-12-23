@@ -1,6 +1,7 @@
 cbuffer LocationInfo : register(b0)
 {
     float4 rect;
+    float4 color;
     float ScreenWidth;
     float ScreenHeight;
     float depth;
@@ -70,7 +71,7 @@ VS_OUTPUT VSMain(VS_INPUT input)
  //«»ºø ºŒ¿Ã¥ı∏¶ ¡§¿««—¥Ÿ.
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {   
-    float4 diffuseTexColor = texDiffuse.Sample(StaticSampler, input.uv);
+    float4 diffuseTexColor = color * texDiffuse.Sample(StaticSampler, input.uv);
     //if (diffuseTexColor.a == 0)
     //    discard;
     return diffuseTexColor;

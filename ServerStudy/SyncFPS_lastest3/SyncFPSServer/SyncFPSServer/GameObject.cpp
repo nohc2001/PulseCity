@@ -531,6 +531,115 @@ void GameMap::StaticCollisionMove(GameObject* obj)
 	}
 }
 
+bool GameMap::isStaticCollision(BoundingOrientedBox obb)
+{
+	vec4 AABB[2];
+	vector<StaticCollisions*> SCArr;
+	SCArr.reserve(8);
+
+	Mesh::GetAABBFromOBB(AABB, obb, true);
+	int xMin = floor(AABB[0].x / GameMap::chunck_divide_Width);
+	int xMax = floor(AABB[1].x / GameMap::chunck_divide_Width);
+	int yMin = floor(AABB[0].y / GameMap::chunck_divide_Width);
+	int yMax = floor(AABB[1].y / GameMap::chunck_divide_Width);
+	int zMin = floor(AABB[0].z / GameMap::chunck_divide_Width);
+	int zMax = floor(AABB[1].z / GameMap::chunck_divide_Width);
+	auto f = static_collision_chunck.end();
+	if (xMin != xMax) {
+		if (yMin != yMax) {
+			if (zMin != zMax) {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+			else {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+		}
+		else {
+			if (zMin != zMax) {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+			else {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+		}
+	}
+	else {
+		if (yMin != yMax) {
+			if (zMin != zMax) {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+			else {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+		}
+		else {
+			if (zMin != zMax) {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+			else {
+				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
+				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
+			}
+		}
+	}
+
+	for (int i = 0; i < SCArr.size(); ++i) {
+		for (int k = 0; k < SCArr[i]->obbs.size(); ++k) {
+			BoundingOrientedBox staticobb = SCArr[i]->obbs[k];
+
+			if (obb.Intersects(staticobb)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 void GameMap::PushOBB_ToStaticCollisions(BoundingOrientedBox obb) {
 	vec4 AABB[2];
 	Mesh::GetAABBFromOBB(AABB, obb, true);

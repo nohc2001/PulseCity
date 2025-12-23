@@ -123,9 +123,18 @@ void Player::Render()
 
 			//gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
 			//Gun->Render(gd.pCommandList, 1);
-			if (GunModel) {
-				GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
+			if (Hierarchy_Object::renderViewPort == &game.MySpotLight.viewport) {
+				//shadowMapping
+				if (GunModel) {
+					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
+				}
 			}
+			else {
+				if (GunModel) {
+					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderWithShadow);
+				}
+			}
+			
 		}
 	}
 	else {
@@ -164,7 +173,19 @@ void Player::Render_AfterDepthClear()
 			gunmat *= viewmat;
 			//gunmat.transpose(); 
 
-			GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
+			//GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
+			if (Hierarchy_Object::renderViewPort == &game.MySpotLight.viewport) {
+				//shadowMapping
+				if (GunModel) {
+					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
+					return;
+				}
+			}
+			else {
+				if (GunModel) {
+					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderWithShadow);
+				}
+			}
 		}
 	}
 

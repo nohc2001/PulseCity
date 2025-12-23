@@ -227,6 +227,7 @@ struct GameMap {
 	void BakeStaticCollision();
 
 	void StaticCollisionMove(GameObject* obj);
+	bool isStaticCollision(BoundingOrientedBox obb);
 
 
 	unsigned int TextureTableStart = 0;

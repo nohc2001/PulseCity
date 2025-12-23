@@ -626,7 +626,7 @@ void ScreenCharactorShader::CreateRootSignature()
 	D3D12_ROOT_PARAMETER1 rootParam[2] = {};
 
 	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 	rootParam[0].Constants.Num32BitValues = 11; // rect(4) + mulcolor(4) + screenWidht, screenHeight, depth
 	rootParam[0].Constants.ShaderRegister = 0; // b0
 	rootParam[0].Constants.RegisterSpace = 0;
@@ -768,13 +768,16 @@ void ScreenCharactorShader::CreatePipelineState()
 	::ZeroMemory(&d3dBlendDesc, sizeof(D3D12_BLEND_DESC));
 	d3dBlendDesc.AlphaToCoverageEnable = 0;
 	d3dBlendDesc.IndependentBlendEnable = 0;
-	d3dBlendDesc.RenderTarget[0] = {
-		TRUE, FALSE,
-		D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_OP_ADD,
-		D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-		D3D12_LOGIC_OP_NOOP,
-		D3D12_COLOR_WRITE_ENABLE_ALL,
-	};
+	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
+	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
 	gPipelineStateDesc.BlendState = d3dBlendDesc;
 	//Output Merger - MSAA
 	gPipelineStateDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
