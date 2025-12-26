@@ -320,7 +320,6 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 	}
 
 	start->gCost = 0.0f;
-	start->gCost = 0.0f;
 	start->hCost = std::abs(start->xIndex - destination->xIndex) + std::abs(start->zIndex - destination->zIndex);
 	start->fCost = start->gCost + start->hCost;
 
@@ -394,7 +393,7 @@ void Monster::MoveByAstar(float deltaTime)
 	// A*에서 지정한 타겟 노드 위치 (y는 현재 높이 유지)
 	vec4 target(targetNode->worldx, pos.y, targetNode->worldz, 1.0f);
 	if (gameworld.AstarStartX > target.x) target.x = gameworld.AstarStartX;
-	if (gameworld.AstarStartZ > target.z) target.x = gameworld.AstarStartZ;
+	if (gameworld.AstarStartZ > target.z) target.z = gameworld.AstarStartZ;
 	if (gameworld.AstarEndX < target.x) target.x = gameworld.AstarEndX;
 	if (gameworld.AstarEndZ < target.z) target.z = gameworld.AstarEndZ;
 
