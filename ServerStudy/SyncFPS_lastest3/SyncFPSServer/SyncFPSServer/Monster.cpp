@@ -497,7 +497,7 @@ if 여러 후보가 있으면 -> 거리^2(dx^2+dz^2)가 최소인 노드 반환
 2) (node.worldx - wx)^2 + (node.worldz - wz)^2 를 계산해 가장 작은 노드를 갱신한다.
 3) 최종적으로 가장 가까운 노드를 반환.
 */
-AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
+AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
 {
 	AstarNode* best = nullptr;
 	float bestDist2 = FLT_MAX;
