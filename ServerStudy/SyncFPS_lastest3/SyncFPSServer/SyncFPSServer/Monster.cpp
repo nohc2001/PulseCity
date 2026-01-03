@@ -275,6 +275,25 @@ BoundingOrientedBox Monster::GetOBB()
 	return obb_world;
 }
 
+
+/*<설명>
+A*에서 현재 노드(current) 기준으로 갈 수 있는 이웃 노드를 찾아 반환한다.
+8방향(상하좌우 + 대각선) 모두 검사한다.
+맵 밖으로 나가는 노드는 제외한다.
+이동 불가(cango==false) 노드는 제외한다.
+
+매변 :
+current : 이웃을 구하려는 기준 노드.
+allNodes : 전체 노드.
+gridWidth : 그리드 가로 크기.
+gridHeight : 그리드 세로 크기.
+
+return :
+vector<AstarNode*> neighbor (이동 가능한 이웃 노드 목록)
+if current가 가장자리 -> 범위 검사로 이웃 수가 줄어듦
+if 주변 노드가 cango=false -> 목록에서 제외됨
+*/
+//AI involved Code Start : <chatgpt>
 vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*>& allNodes, int gridWidth, int gridHeight)
 {
 	std::vector<AstarNode*> neighbors;
@@ -300,7 +319,33 @@ vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*
 
 	return neighbors;
 }
+//AI involved Code End : <chatgpt>
 
+/* <설명>
+- A* 알고리즘으로 start -> destination 최단 경로를 계산해 "노드 리스트(path)"를 반환한다.
+- 노드마다 g/h/f 비용과 parent를 갱신하며, 목적지 도달 시 parent를 따라 역추적해 경로를 만든다.
+
+매변 :
+<start> : 시작 노드(몬스터 위치를 FindClosestNode로 스냅한 결과).
+<destination> : 목적지 노드(플레이어/순찰 목표를 FindClosestNode로 스냅한 결과).
+<allNodes> : 전체 노드 목록(매 탐색마다 노드 비용/parent 초기화에 사용).
+
+return :
+vector<AstarNode*> (start부터 destination까지의 경로 노드들)
+if start == nullptr or destination == nullptr -> 빈 벡터 반환
+if openList가 비어서도 destination에 도달 못함 -> 빈 벡터 반환(경로 없음)
+if destination 도달 -> parent를 따라 역추적한 뒤 reverse하여 정상 순서 경로 반환
+
+1) 모든 노드의 gCost를 무한대로, parent를 nullptr로 초기화한다(이전 탐색 흔적 제거).
+2) start를 openList에 넣고 g=0, h=거리(휴리스틱), f=g+h를 계산한다.
+3) openList에서 f가 가장 작은 노드를 current로 뽑는다.
+4) current가 destination이면, current에서 parent를 따라가며 경로를 만들고 반환한다.
+5) 아니면 current를 closedList로 옮긴다.
+6) current의 이웃들을 가져오고, 더 좋은 경로(tentativeG)가 나오면 neighbor의 parent/g/h/f를 갱신한다.
+7) openList가 빌 때까지 반복한다.
+*/
+
+//AI Code Start : <chatgpt>
 vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination, std::vector<AstarNode*>& allNodes)
 {
 
@@ -378,7 +423,24 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 
 	return {}; // 경로 없음
 }
+//AI Code End : <chatgpt>
 
+/*<설명>
+AstarSearch로 만들어진 path에 맞춰 이동.
+path[currentPathIndex] 노드 방향으로 이동한다.
+목표 노드에 가까워지면 currentPathIndex++ 하여 다음 노드를 목표로 한다.
+
+매변 :
+deltaTime : speed*deltaTime로 이동량을 계산한다.
+
+1) 현재 목표 노드 = path[currentPathIndex]를 잡는다.
+2) 몬스터 위치에서 목표 노드 월드좌표(worldx, worldz)까지 방향 벡터(dir)를 만든 다.
+3) 거의 도착했으면 다음 노드로 넘어간다.
+4) 아니면 dir을 정규화하고, tickLVelocity = dir * m_speed * deltaTime로 이번 프레임 이동량을 만든다.
+5) 바라보는 방향(look)을 dir로 맞춘다.
+*/
+
+//AI involved Code Start : <chatgpt>
 void Monster::MoveByAstar(float deltaTime)
 {
 	if (path.empty() || currentPathIndex >= path.size())
@@ -416,8 +478,26 @@ void Monster::MoveByAstar(float deltaTime)
 
 	m_worldMatrix.SetLook(dir);
 }
+//AI involved Code End : <chatgpt>
 
-AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
+/*<설명>
+- 월드 좌표(wx, wz)에 가장 가까운 "이동 가능 노드(cango==true)"를 찾아 반환한다.
+- 월드 좌표는 그리드 정중앙이 아닐 수 있으므로, A*의 start/goal 노드를 잡기 위한 함수.
+
+매변 :
+wx : 월드 X 좌표.
+wz : 월드 Z 좌표.
+allNodes : 전체 노드 목록(가장 가까운 노드 찾기 위해 전체 순회).
+
+return :
+if 이동 가능 노드가 하나도 없으면 -> nullptr 반환
+if 여러 후보가 있으면 -> 거리^2(dx^2+dz^2)가 최소인 노드 반환
+
+1) allNodes를 전부 돌며 cango==true인 노드만 본다.
+2) (node.worldx - wx)^2 + (node.worldz - wz)^2 를 계산해 가장 작은 노드를 갱신한다.
+3) 최종적으로 가장 가까운 노드를 반환.
+*/
+AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
 {
 	AstarNode* best = nullptr;
 	float bestDist2 = FLT_MAX;
