@@ -31,6 +31,7 @@ typedef unsigned long long ui64;
 constexpr long double operator"" ##N##(long double val) { return val * M; } \
 constexpr unsigned long long operator"" ##N##(unsigned long long val) { return (long double)val * M; }
 
+//단위 초기화
 #pragma region DistanceUnit
 AddUnit(km, 1000)
 AddUnit(m, 1)
@@ -54,16 +55,26 @@ AddUnit(mps, 1)
 AddUnit(kmph, (0.2777777777777778))
 #pragma endregion
 
+/*
+* 설명 : Source의 부호를 Dest로 전이시킨다.
+* 매개변수 :
+* float Source : 소스가 되는 float
+* float Dest : 전이의 목적이 되는 float
+*/
 inline float sign_spread(float Dest, float Source) {
 	ui32 f = bitcast(ui32, Source) & 0x80000000;
 	ui32 g = bitcast(ui32, Dest) & 0x7FFFFFFF;
 	return bitcast(float, f | g);
 }
 
-//vec4 x1 : position, color, vector, dir, angle, plane, querternien, bound
-//vec4 x2 : cube range(AABB), ray, line
-//vec4 x3 : triangle, OBB
-//vec4 x4 : matrix
+/*
+* 설명 : float4개를 simd 연산에 편히 쓸 수 있도록 만들어놓은 자료구조.
+* vec4의 개수에 따라 다음과 같은 것들을 표현가능하다.
+//vec4x1 : position, color, vector, dir, angle, plane, querternien, 2d bound
+//vec4x2 : cube range(AABB), ray, line
+//vec4x3 : triangle, OBB
+//vec4x4 : matrix
+*/
 struct vec4 {
 	union {
 		XMFLOAT3 f3;
@@ -333,10 +344,17 @@ struct matrix {
 	__declspec(property(get = InverseRTMat)) matrix RTInverse;
 };
 
+#pragma region OBBDefines
+
 struct OBB_vertexVector {
 	vec4 vertex[2][2][2] = { {{}} };
 };
 
+/*
+* 설명/반환 : obb 직육면체의 모든 꼭지점을 반환한다.
+* 매개변수 : 
+* BoundingOrientedBox obb : obb
+*/
 inline OBB_vertexVector GetOBBVertexs(BoundingOrientedBox obb)
 {
 	OBB_vertexVector ovv;
@@ -362,6 +380,14 @@ inline OBB_vertexVector GetOBBVertexs(BoundingOrientedBox obb)
 	return ovv;
 }
 
+/*
+* 설명/반환 : point가 obb의 어느범위에 있는지 알기위해 함수를 쓴다.
+* 범위는 6개로, x+, x-, y+, y-, z+, z- 가 있다.
+* 대표되는 OBB 평면을 반환한다.
+* 매개변수 : 
+* BoundingOrientedBox obb : obb
+* vec4 point : point
+*/
 inline vec4 GetPlane_FrustomRange(BoundingOrientedBox obb, vec4 point) {
 	static vec4 One = XMVectorSetInt(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
@@ -412,7 +438,8 @@ RETURN:
 	PlanePos += E.v4.m128_f32[index] * mat.mat.r[index];
 	return vec4::getPlane(PlanePos, mat.mat.r[index]);
 
-
+	//temp ???? <최적화를 위해 만든 코드 하지만 특정상황에서 오류가 발생되는걸 확인. 유닛테스트 필요.>
+	//<그래서 현재 써있는 코드는 사실 돌아가게 만든 대체코드임.>
 	/*vec4 dsv1 = d.constSuffle<2, 0, 1, 3>();
 	vec4 dsv2 = d.constSuffle<1, 2, 0, 3>();
 	vec4 Esv1 = E.constSuffle<1, 2, 0, 3>();
@@ -445,3 +472,23 @@ RETURN:
 	PlanePos += E.v4.m128_f32[index] * mat.mat.r[index];
 	return vec4::getPlane(PlanePos, mat.mat.r[index]);*/
 }
+
+/*
+* 설명/반환 : obb의 y 기저의 위쪽에 위치한 바닥 obb를 반환한다.
+* <A* 관련으로 나중에 쓰일 수 있어 남긴다.>
+*/
+inline BoundingOrientedBox GetBottomOBB(const BoundingOrientedBox& obb)
+{
+	constexpr float margin = 0.1f;
+	BoundingOrientedBox robb;
+	robb.Center = obb.Center;
+	robb.Center.y -= obb.Extents.y;
+	robb.Extents = obb.Extents;
+	robb.Extents.y = 0.4f;
+	robb.Extents.x -= margin;
+	robb.Extents.z -= margin;
+	robb.Orientation = obb.Orientation;
+	return robb;
+}
+
+#pragma endregion

@@ -1,6 +1,6 @@
 #pragma once
 
-#define PIX_DEBUGING
+//#define PIX_DEBUGING
 
 #include <SDKDDKVer.h>
 
@@ -51,6 +51,7 @@ using namespace std;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
+// improve : not just wchar, char also. function name is dbglogaN
 #pragma region dbglogDefines
 #define dbglog1(format, A) \
 	{\
@@ -86,6 +87,12 @@ static inline ui64 GetTicks()
 	return ticks.QuadPart;
 }
 
+/*
+* 설명 : 
+* GPU에 올렸거나 올릴 리소스의 디스크립터 핸들을 저장한다.
+* Sentinel Value
+* NULL = (hcpu == 0 && hgpu == 0)
+*/
 struct DescHandle {
 	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
 	D3D12_GPU_DESCRIPTOR_HANDLE hgpu;

@@ -5,7 +5,7 @@ vector<string> Shape::ShapeNameArr;
 unordered_map<string, Shape> Shape::StrToShapeMap;
 unordered_map<int, Shape> Shape::IndexToShapeMap;
 
-void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
+void Mesh::ReadMeshFromFile_OBJ(const char* path, bool centering)
 {
 	XMFLOAT3 maxPos = { 0, 0, 0 };
 	XMFLOAT3 minPos = { 0, 0, 0 };
@@ -33,18 +33,21 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
 
 	XMFLOAT3 CenterPos;
 	if (centering) {
+		Center = 0;
+	}
+	else {
 		CenterPos.x = (maxPos.x + minPos.x) * 0.5f;
 		CenterPos.y = (maxPos.y + minPos.y) * 0.5f;
 		CenterPos.z = (maxPos.z + minPos.z) * 0.5f;
-	}
-	else {
-		CenterPos.x = 0;
-		CenterPos.y = 0;
-		CenterPos.z = 0;
+		Center.f3 = CenterPos;
 	}
 	MAXpos.x = (maxPos.x - minPos.x) * 0.5f;
 	MAXpos.y = (maxPos.y - minPos.y) * 0.5f;
 	MAXpos.z = (maxPos.z - minPos.z) * 0.5f;
+
+	// fbx의 기본 크기 비율이 100 이기 때문에 이렇게 조정했음.
+	// 하지만 UnitScale이 다를 경우에는 어떻게 하는가?
+	// 조치가 필요하다.
 	MAXpos *= 0.01f;
 }
 
@@ -119,10 +122,6 @@ GameObject::~GameObject()
 }
 
 void GameObject::Update(float deltaTime)
-{
-}
-
-void GameObject::Event()
 {
 }
 
@@ -253,12 +252,13 @@ Collision_By_Move_static_vs_dynamic:
 		movObj->OnCollision(colObj);
 		colObj->OnCollision(movObj);
 
-		CollisionMove_DivideBaseline(movObj, colObj, obb2);
+		CollisionMove_DivideBaseline(movObj, colObj);
 	}
 }
 
-void GameObject::CollisionMove_DivideBaseline(GameObject* movObj, GameObject* colObj, BoundingOrientedBox colOBB)
+void GameObject::CollisionMove_DivideBaseline(GameObject* movObj, GameObject* colObj)
 {
+	BoundingOrientedBox colOBB = colObj->GetOBB();
 	XMMATRIX basemat = colObj->m_worldMatrix;
 	XMMATRIX invmat = colObj->m_worldMatrix.RTInverse;
 	invmat.r[3] = XMVectorSet(0, 0, 0, 1);
@@ -1283,8 +1283,7 @@ void Hierarchy_Object::InitMapAABB_Inherit(void* origin, matrix parent_world)
 	}
 }
 
-BoundingOrientedBox Hierarchy_Object::GetOBBw(matrix worldMat)
-{
+BoundingOrientedBox Hierarchy_Object::GetOBBw(matrix worldMat) {
 	BoundingOrientedBox obb_local;
 	Shape s = Shape::IndexToShapeMap[ShapeIndex];
 	if (ShapeIndex == -1) {

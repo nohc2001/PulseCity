@@ -78,7 +78,7 @@ int main() {
 						// player index sending
 						int indexes[2] = {};
 						int clientindex = newindex;
-						gameworld.SendingAllObjectForNewClient(newindex); // pack factory
+						gameworld.SendingAllObjectForNewClient(); // pack factory
 
 						Player* p = new Player();
 						p->clientIndex = clientindex;
@@ -252,22 +252,33 @@ void World::Init() {
 	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
 	AddClientOffset(GameObjectType::_Player, 64, 128); // pos
 
-	AddClientOffset(GameObjectType::_Player, 144, 160); // ShootFlow
-	AddClientOffset(GameObjectType::_Player, 148, 164); // recoilFlow
-	AddClientOffset(GameObjectType::_Player, 152, 168); // HP
-	AddClientOffset(GameObjectType::_Player, 156, 172); // MaxHP
-	AddClientOffset(GameObjectType::_Player, 160, 176); // DeltaMousePos
+	AddClientOffset(GameObjectType::_Player, 128, 176); // ShootFlow
+	AddClientOffset(GameObjectType::_Player, 132, 180); // recoilFlow
+	AddClientOffset(GameObjectType::_Player, 136, 184); // HP
+	AddClientOffset(GameObjectType::_Player, 140, 188); // MaxHP
+	AddClientOffset(GameObjectType::_Player, 176, 224); // DeltaMousePos
+
+	AddClientOffset(GameObjectType::_Player, 144, 192); // Bullets
+	AddClientOffset(GameObjectType::_Player, 148, 196); // KillCount
+	AddClientOffset(GameObjectType::_Player, 152, 200); // DeathCount
+	AddClientOffset(GameObjectType::_Player, 156, 204); // HeatGauge
+	AddClientOffset(GameObjectType::_Player, 160, 208); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 164, 212); // HealSkillCooldown
+	AddClientOffset(GameObjectType::_Player, 168, 216); // HealSkillCooldownFlow
 
 	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
 	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
 	AddClientOffset(GameObjectType::_Monster, 80, 144); // pos
+	AddClientOffset(GameObjectType::_Monster, 210, 176); // isDead
+	AddClientOffset(GameObjectType::_Monster, 184, 180); // HP
+	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
 #endif
 
 
 	//bulletRays.Init(32);
 
 	Mesh* MyMesh = new Mesh();
-	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 1, 1, 1 });
+	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj");
 	int playerMesh_index = Shape::AddMesh("Player", MyMesh);
 
 	Mesh* MyGroundMesh = new Mesh();
@@ -282,7 +293,7 @@ void World::Init() {
 	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);*/
 
 	Mesh* MyMonsterMesh = new Mesh();
-	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 0, 0, 1 });
+	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj");
 	int monsterMesh_index = Shape::AddMesh("Monster001", MyMonsterMesh);
 
 	int newindex = 0;
@@ -542,34 +553,6 @@ void World::Update() {
 		SendToAllClient(datacap);
 	}
 
-	//for (int i = 0; i < clients.size; ++i) {
-	//	if (clients.isnull(i)) continue;
-	//	Player& p = *clients[i].pObjData;
-	//	if (p.InputBuffer[(int)InputID::KeyboardW]) {
-	//		clients[i].pos += XMVectorSet(0, 0, ClientData::MoveSpeed * DeltaTime, 0);
-	//		clients[i].isPosUpdate = true;
-	//	}
-	//	if (clients[i].InputBuffer[(int)InputID::KeyboardA]) {
-	//		clients[i].pos += XMVectorSet(-ClientData::MoveSpeed * DeltaTime, 0, 0, 0);
-	//		clients[i].isPosUpdate = true;
-	//	}
-	//	if (clients[i].InputBuffer[(int)InputID::KeyboardS]) {
-	//		clients[i].pos += XMVectorSet(0, 0, -ClientData::MoveSpeed * DeltaTime, 0);
-	//		clients[i].isPosUpdate = true;
-	//	}
-	//	if (clients[i].InputBuffer[(int)InputID::KeyboardD]) {
-	//		clients[i].pos += XMVectorSet(ClientData::MoveSpeed * DeltaTime, 0, 0, 0);
-	//		clients[i].isPosUpdate = true;
-	//	}
-	//}
-
-	for (int i = 0; i < clients.size; ++i) {
-		if (clients[i].isPosUpdate) {
-			clients[i].socket.Send((char*)&clients[i].pos.m128_f32[0], 12);
-			clients[i].isPosUpdate = false;
-		}
-	}
-
 	if (lowHit()) {
 		lowFrequencyFlow = 0;
 	}
@@ -631,7 +614,16 @@ int World::Receiving(int clientIndex, char* rBuffer) {
 	}
 
 	if (rBuffer[0] != InputID::MouseMove) {
-		client.pObjData->InputBuffer[rBuffer[0]] = putv;
+		BitBoolArr_ui64& bit = client.pObjData->InputBuffer[rBuffer[0]];
+		/*char str[512] = {0};
+		char format0[128] = "%s line %d : ";
+		strcat_s(format0, sizeof(format0), "key bit index : %d \n");
+		int bitindex = bit.bitindex;
+		int ret = sprintf_s(str, 512, format0, (char*)__FUNCTION__, 618, bitindex);
+		OutputDebugStringA(str);*/
+
+		bit = putv;
+		//dbglog1a("key ui64 : %d \n", *bit.data);
 		cout << "client " << clientIndex << " Input : " << rBuffer[0] << rBuffer[1] << endl;
 		return 2;
 	}

@@ -7,6 +7,10 @@ typedef unsigned short ui16;
 typedef unsigned int ui32;
 typedef unsigned long long ui64;
 
+/*
+* 설명 : vector와 구조가 유사하지만, 비트플레그로 해당 공간의 할당/해제를 파악할 수 있고,
+* 이를 통해 재활용이 가능한 자료구조.
+*/
 template <typename T> struct vecset {
 	T* Arr; // [Data Arr] [ mask[Capacity / 8 byte], ceil to sizeof(T)]
 	int Capacity;
@@ -115,7 +119,11 @@ template <typename T> struct vecset {
 	}
 };
 
-// vecset without data.
+
+/*
+* // vecset without data.
+* 설명 : 비트를 통해 어떤 공간의 할당여부를 감시할 수 있는 할당자 자료구조
+*/
 struct BitAllotter {
 	ui32* AllocFlag = nullptr;
 private:
@@ -233,6 +241,10 @@ public:
 	}
 };
 
+/*
+* // vecset without data.
+* 설명 : Capcity와 Size를 통해 vector와 같이 동작하는 할당자 자료구조
+*/
 struct NextAllotter {
 	int Capacity;
 	int size;

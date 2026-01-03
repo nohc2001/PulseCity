@@ -10,8 +10,3 @@ void GameObjectType::STATICINIT()
 	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<Player>(), GameObjectType::_Player));
 	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<Monster>(), GameObjectType::_Monster));
 }
-
-void GameObjectType::AddClientOffset_ptr(GameObjectType gotype, char* obj, char* member, int clientOffset)
-{
-	AddClientOffset(gotype, (short)(member - obj), (short)clientOffset);
-}

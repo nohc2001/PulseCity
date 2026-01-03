@@ -35,11 +35,11 @@ union GameObjectType {
 	static constexpr int ServerSizeof[ObjectTypeCount] = {
 #ifdef _DEBUG
 		128,
-		352,
+		336,
 		272,
 #else
 		128,
-		352,
+		336,
 		272,
 #endif
 	};

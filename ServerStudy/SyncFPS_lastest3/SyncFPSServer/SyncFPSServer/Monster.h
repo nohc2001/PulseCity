@@ -13,6 +13,9 @@ struct AstarNode {
 
 AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
 
+/*
+* 설명 : 간이 몬스터 클래스
+*/
 struct Monster : public GameObject {
 	vec4 m_homePos;
 	vec4 m_targetPos;
