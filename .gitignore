@@ -117,6 +117,14 @@ Utill/VisualStudioProjectNameChanger/.vs/
 Utill/VisualStudioProjectNameChanger/x64/
 Utill/VisualStudioProjectNameChanger/VisualStudioProjectNameChanger/x64/
 
+GraphicsStudy/DX12RaytracingStudy/x64/
+GraphicsStudy/DX12RaytracingStudy/.vs/
+GraphicsStudy/DX12RaytracingStudy/DX12RaytracingStudy/x64/
+
+GraphicsStudy/DX12MyModelExporter2/x64/
+GraphicsStudy/DX12MyModelExporter2/.vs/
+GraphicsStudy/DX12MyModelExporter2/DX12MyModelExporter/x64/
+
 *.log
 *.pch
 *.ipch
