@@ -1780,7 +1780,7 @@ void RayTracingDevice::CreateCameraCB()
 
 	MappedCB->cameraPosition = m_eye;
 	float fovAngleY = 45.0f;
-	XMMATRIX view = XMMatrixLookAtLH(gd.raytracing.m_eye, gd.raytracing.m_at, gd.raytracing.m_up);
+	XMMATRIX view = XMMatrixLookAtLH(gd.raytracing.m_eye, gd.raytracing.m_eye, gd.raytracing.m_eye);
 	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
 	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 125.0f);
 	XMMATRIX viewProj = view * proj;
