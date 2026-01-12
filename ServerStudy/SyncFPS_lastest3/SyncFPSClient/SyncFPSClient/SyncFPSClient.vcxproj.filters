@@ -172,6 +172,9 @@
     <FxCompile Include="Resources\Shaders\Skybox.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Particle.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="memo.txt" />

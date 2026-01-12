@@ -530,7 +530,7 @@ int GlobalDevice::PixelFormatToPixelSize(DXGI_FORMAT format)
 	}
 }
 
-GPUResource GlobalDevice::CreateCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat)
+GPUResource GlobalDevice::CreateCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat, D3D12_RESOURCE_FLAGS flags)
 {
 	ID3D12Resource* pBuffer = NULL;
 	ID3D12Resource2* pBuffer2 = NULL;
@@ -560,7 +560,7 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(ID3D12GraphicsCommandList* com
 	else {
 		d3dResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	}
-	d3dResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	d3dResourceDesc.Flags = flags;
 
 	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
 	if (d3dResourceDesc.Layout == D3D12_TEXTURE_LAYOUT_ROW_MAJOR && (d3dResourceDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)) {

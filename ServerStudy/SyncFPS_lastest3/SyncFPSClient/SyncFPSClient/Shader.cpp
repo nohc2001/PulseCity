@@ -3,6 +3,7 @@
 #include "Render.h"
 #include "Game.h"
 
+
 Shader::Shader() {
 
 }
@@ -1882,4 +1883,187 @@ void SkyBoxShader::RenderSkyBox()
 	gd.pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	gd.pCommandList->IASetVertexBuffers(0, 1, &SkyBoxMeshVBView);
 	gd.pCommandList->DrawInstanced(36, 1, 0, 0);
+}
+
+void ParticleShader::InitShader()
+{
+	CreateRootSignature();
+	CreatePipelineState();
+}
+
+void ParticleShader::CreateRootSignature()
+{
+	CD3DX12_ROOT_PARAMETER rootParams[2];
+
+	// t0 : StructuredBuffer<Particle>
+	rootParams[0].InitAsShaderResourceView(
+		0, 0, D3D12_SHADER_VISIBILITY_VERTEX
+	);
+
+	// b0 : ViewProj
+	rootParams[1].InitAsConstants(23, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
+	rsDesc.Init(_countof(rootParams), rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ID3DBlob* sigBlob = nullptr;
+	ID3DBlob* errBlob = nullptr;
+
+	HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
+
+	if (FAILED(hr))
+	{
+		if (errBlob)
+			OutputDebugStringA((char*)errBlob->GetBufferPointer());
+		return;
+	}
+
+	hr = gd.pDevice->CreateRootSignature(
+		0,
+		sigBlob->GetBufferPointer(),
+		sigBlob->GetBufferSize(),
+		IID_PPV_ARGS(&ParticleRootSig)
+	);
+
+	if (sigBlob) sigBlob->Release();
+	if (errBlob) errBlob->Release();
+}
+
+void ParticleShader::CreatePipelineState()
+{
+	ID3DBlob* vsBlob = nullptr;
+	ID3DBlob* psBlob = nullptr;
+
+	Shader::GetShaderByteCode(L"Particle.hlsl", "VS", "vs_5_1", &vsBlob);
+	Shader::GetShaderByteCode(L"Particle.hlsl", "PS", "ps_5_1", &psBlob);
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+	psoDesc.pRootSignature = ParticleRootSig;
+
+	// Input ¾øÀ½ (SV_VertexID)
+	psoDesc.InputLayout = { nullptr, 0 };
+
+	psoDesc.VS = { vsBlob->GetBufferPointer(), vsBlob->GetBufferSize() };
+	psoDesc.PS = { psBlob->GetBufferPointer(), psBlob->GetBufferSize() };
+
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	// Rasterizer
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+	// Additive Blend 
+	D3D12_BLEND_DESC blendDesc = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	psoDesc.BlendState = blendDesc;
+
+	// Depth
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	psoDesc.DepthStencilState.DepthEnable = FALSE;
+	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.RTVFormats[0] = gd.MainRenderTarget_PixelFormat;
+	psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	psoDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
+	psoDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable)
+		? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+
+	HRESULT hr = gd.pDevice->CreateGraphicsPipelineState(
+		&psoDesc,
+		IID_PPV_ARGS(&ParticlePSO)
+	);
+
+	if (vsBlob) vsBlob->Release();
+	if (psBlob) psBlob->Release();
+
+	if (FAILED(hr))
+		OutputDebugStringA("[ERROR] Particle PSO Create Failed\n");
+}
+
+void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount)
+{
+	cmd->SetPipelineState(ParticlePSO);
+	cmd->SetGraphicsRootSignature(ParticleRootSig);
+
+	cmd->SetGraphicsRootShaderResourceView(0, particleBuffer->resource->GetGPUVirtualAddress());
+
+	matrix viewProj = gd.viewportArr[0].ViewMatrix;
+	viewProj *= gd.viewportArr[0].ProjectMatrix;
+	viewProj.transpose();
+
+	matrix view = gd.viewportArr[0].ViewMatrix;
+
+	XMMATRIX xmView = XMLoadFloat4x4((XMFLOAT4X4*)&view);
+	XMMATRIX xmInvView = XMMatrixInverse(nullptr, xmView);
+
+	matrix invView;
+	XMStoreFloat4x4((XMFLOAT4X4*)&invView, xmInvView);
+
+	XMFLOAT3 camRight = invView.right.f3;
+	XMFLOAT3 camUp = invView.up.f3;
+	float pad0 = 0.0f;
+
+	cmd->SetGraphicsRoot32BitConstants(1, 16, &viewProj, 0);   // ViewProj
+	cmd->SetGraphicsRoot32BitConstants(1, 3, &camRight, 16);  // CamRight
+	cmd->SetGraphicsRoot32BitConstants(1, 1, &pad0, 19);      // padding
+	cmd->SetGraphicsRoot32BitConstants(1, 3, &camUp, 20);     // CamUp
+
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	cmd->DrawInstanced(particleCount * 6, 1, 0, 0);
+
+}
+
+void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
+{
+	// RootSignature 
+	CD3DX12_ROOT_PARAMETER params[2];
+	params[0].InitAsUnorderedAccessView(0); // u0
+	params[1].InitAsConstants(1, 0);        // b0 (dt)
+
+	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
+	rsDesc.Init(2, params);
+
+	ID3DBlob* sig = nullptr;
+	D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, nullptr);
+
+	gd.pDevice->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&RootSig));
+
+	sig->Release();
+
+	ID3DBlob* csBlob = nullptr;
+	Shader::GetShaderByteCode(hlslFile, entry, "cs_5_1", &csBlob);
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
+	desc.pRootSignature = RootSig;
+	desc.CS = { csBlob->GetBufferPointer(), csBlob->GetBufferSize() };
+
+	gd.pDevice->CreateComputePipelineState(&desc, IID_PPV_ARGS(&PSO));
+
+	csBlob->Release();
+}
+
+void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt)
+{
+	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+	cmd->SetPipelineState(PSO);
+	cmd->SetComputeRootSignature(RootSig);
+	cmd->SetComputeRootUnorderedAccessView(0, buffer->resource->GetGPUVirtualAddress());
+	cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
+
+	cmd->Dispatch((count + 255) / 256, 1, 1);
+
+	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 }
