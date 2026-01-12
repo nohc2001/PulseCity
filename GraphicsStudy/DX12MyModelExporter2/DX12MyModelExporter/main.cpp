@@ -193,6 +193,12 @@ void TestStruct::SetTestValue()
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow) {
+#ifdef PIX_DEBUGING
+	LoadLibrary(L"C:/Program Files/Microsoft PIX/2509.25/WinPixGpuCapturer.dll");
+#endif
+
+	dbg.open("dbglog.txt");
+
 	testData.SetTestValue();
 
 	gd.screenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -1340,13 +1346,12 @@ void Game::Init()
 	DefaultAmbientTex.CreateTexture_fromFile("Resources/Mesh/GlobalTexture/DefaultAmbientTexture.png");
 	DefaultNoramlTex.CreateTexture_fromFile("Resources/Mesh/GlobalTexture/DefaultNormalTexture.png");
 	
-
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 
 	Model* model = new Model;
-	model->GetModelFromAssimp("Resources/Model/minigun_m134/scene.glb", 1);
-	model->SaveModelFile("Resources/Model/minigun_m134.model");
-	model->LoadModelFile("Resources/Model/minigun_m134.model");
+	model->GetModelFromAssimp("Resources/Model/Walking.fbx", 0.01);
+	/*model->SaveModelFile("Resources/Model/minigun_m134.model");
+	model->LoadModelFile("Resources/Model/minigun_m134.model");*/
 
 	MyShader = new Shader();
 	MyShader->InitShader();
@@ -1434,11 +1439,11 @@ void Game::Init()
 	m_gameObjects.push_back(wallObject4);
 
 	GameObject* myModelObject = new GameObject();
-	myModelObject->rmod = GameObject::eRenderMeshMod::Model;
-	myModelObject->pModel = model;
 	myModelObject->SetShader(game.MyPBRShader1);
 	myModelObject->m_worldMatrix.Id();
-	myModelObject->m_worldMatrix.pos.f3 = { 0, -0.5, -2 };
+	myModelObject->m_worldMatrix.pos.f3 = { 0, 0, 0 };
+	myModelObject->SetModel(model);
+	myModelObject->InitRootBoneMatrixs();
 	m_gameObjects.push_back(myModelObject);
 
 	gd.pCommandList->Close();
@@ -2618,6 +2623,14 @@ void ColorMesh::SetOBBDataWithAABB(XMFLOAT3 minpos, XMFLOAT3 maxpos)
 	OBB_Tr = mid.f3;
 }
 
+BumpSkinMesh::BumpSkinMesh()
+{
+}
+
+BumpSkinMesh::~BumpSkinMesh()
+{
+}
+
 void ColorMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds)
 {
 	int m_nVertices = vert.size();
@@ -3223,6 +3236,88 @@ void BumpMesh::Release()
 {
 }
 
+void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<BumpSkinMesh::Vertex>& vert, vector<TriangleIndex>& inds, MatNode* NodeLocalMatrixs, int matrixCount)
+{
+	int m_nVertices = vert.size();
+	int m_nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, vert.size() * sizeof(Vertex), 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, vert.size() * sizeof(Vertex), 1);
+	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &vert[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = m_nStride;
+	VertexBufferView.SizeInBytes = m_nStride * m_nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * inds.size(), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * inds.size(), 1);
+	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &inds[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = sizeof(TriangleIndex) * inds.size();
+
+	IndexNum = inds.size() * 3;
+	VertexNum = vert.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+	MatrixCount = matrixCount;
+	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256의 배수
+	ToLocalCB = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	ToLocalCB.resource->Map(0, NULL, (void**)&ToLocalArr);
+
+	//make DefaultToWorldArr, ToLocalArr
+	DefaultToWorldArr = new matrix[MatrixCount];
+	for (int i = 0; i < MatrixCount; ++i) {
+		matrix mat = NodeLocalMatrixs[i].mat;
+		int k = NodeLocalMatrixs[i].parent;
+		while (k >= 0) {
+			mat = mat * NodeLocalMatrixs[k].mat;
+			k = NodeLocalMatrixs[k].parent;
+		}
+
+		DefaultToWorldArr[i] = mat;
+		vec4 det;
+		mat = XMMatrixInverse(&det.v4, mat);
+		ToLocalArr[i] = mat;
+		ToLocalArr[i].transpose();
+	}
+
+	ToLocalCB.resource->Unmap(0, nullptr);
+
+	int n = gd.TextureDescriptorAllotter.Alloc();
+	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+	cbvDesc.BufferLocation = ToLocalCB.resource->GetGPUVirtualAddress();
+	cbvDesc.SizeInBytes = ncbElementBytes;
+	gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
+	ToLocalCB.hCpu = hCPU;
+}
+
+void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum) {
+	ui32 SlotNum = 0;
+	pCommandList->IASetVertexBuffers(SlotNum, 1, &VertexBufferView);
+	pCommandList->IASetPrimitiveTopology(topology);
+	if (IndexBuffer.resource)
+	{
+		pCommandList->IASetIndexBuffer(&IndexBufferView);
+		pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
+	}
+	else
+	{
+		ui32 VertexOffset = 0;
+		pCommandList->DrawInstanced(VertexNum, instanceNum, VertexOffset, 0);
+	}
+}
+void BumpSkinMesh::Release() {
+	delete[] DefaultToWorldArr;
+
+	VertexBuffer.Release();
+	VertexUploadBuffer.Release();
+	IndexBuffer.Release();
+	IndexUploadBuffer.Release();
+}
+
 void GPUResource::AddResourceBarrierTransitoinToCommand(ID3D12GraphicsCommandList* cmd, D3D12_RESOURCE_STATES afterState)
 {
 	if (CurrentState_InCommandWriteLine != afterState) {
@@ -3467,6 +3562,50 @@ void GPUResource::Release()
 	hGpu.ptr = 0;
 }
 
+void GameObject::InitRootBoneMatrixs()
+{
+	int boneNum = pModel->nodeCount - pModel->BoneStartIndex;
+	UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255); //256의 배수
+	BoneToWorldMatrixCB = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	BoneToWorldMatrixCB.resource->Map(0, NULL, (void**)&RootBoneMatrixs);
+
+	SetRootMatrixs();
+
+	//ToLocalCB.resource->Unmap(0, nullptr);
+
+	int n = gd.TextureDescriptorAllotter.Alloc();
+	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+	cbvDesc.BufferLocation = BoneToWorldMatrixCB.resource->GetGPUVirtualAddress();
+	cbvDesc.SizeInBytes = ncbElementBytes;
+	gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
+	BoneToWorldMatrixCB.hCpu = hCPU;
+}
+
+void GameObject::SetRootMatrixs()
+{
+	if (RootBoneMatrixs) {
+		RootBoneMatrixs[0] = m_worldMatrix;
+		RootBoneMatrixs[0].transpose();
+		SetRootMatrixsInherit(m_worldMatrix, &pModel->Nodes[pModel->BoneStartIndex]);
+	}
+}
+
+void GameObject::SetRootMatrixsInherit(matrix parentMat, ModelNode* node)
+{
+	int nodeindex = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+	int boneIndex = nodeindex - pModel->BoneStartIndex;
+	if (boneIndex >= 0) {
+		RootBoneMatrixs[boneIndex + 1] = BoneLocalMatrixs[boneIndex] * parentMat;
+	}
+	for (int i = 0; i < node->numChildren; ++i) {
+		SetRootMatrixsInherit(RootBoneMatrixs[boneIndex + 1], node->Childrens[i]);
+	}
+	if (boneIndex >= 0) {
+		RootBoneMatrixs[boneIndex + 1].transpose();
+	}
+}
+
 GameObject::GameObject()
 {
 	tickLVelocity = vec4(0, 0, 0, 0);
@@ -3480,6 +3619,30 @@ GameObject::~GameObject()
 
 void GameObject::Update(float delatTime)
 {
+	if (rmod == _Model && pModel->mNumAnimations > 0) {
+		if (stack > 5) stack = 0;
+		if (pModel->mAnimations[0] != nullptr) {
+			//pModel->mAnimations[0]->GetBoneLocalMatrixAtTime(BoneLocalMatrixs, 6 * stack);
+			BumpSkinMesh* bsm = (BumpSkinMesh*)pModel->mMeshes[0];
+			SetRootMatrixs();
+			
+			/*for (int i = 0; i < pModel->MaxBoneCount; ++i) {
+				BoneLocalMatrixs[i] = bsm->OffsetMatrixs[i] * BoneLocalMatrixs[i];
+			}*/
+
+			/*for (int i = 0; i < bsm->MatrixCount; ++i) {
+				dbg << "mat" << i << endl;
+				MatrixDbg(bsm->OffsetMatrixs[i]);
+			}*/
+
+			/*for (int i = 0; i < pModel->MaxBoneCount; ++i) {
+				dbg << "mat" << i << endl;
+				MatrixDbg(BoneLocalMatrixs[i]);
+			}
+
+			cout << endl;*/
+		}
+	}
 }
 
 void GameObject::Render()
@@ -3501,12 +3664,37 @@ void GameObject::Render()
 		m_pMesh->Render(gd.pCommandList, 1);
 	}
 	else {
-		pModel->Render(gd.pCommandList, m_worldMatrix);
+		pModel->Render(gd.pCommandList, m_worldMatrix, this);
 	}
 }
 
 void GameObject::Event(WinEvent evt)
 {
+	static int rotIndex = 0;
+	if (rmod == _Model && pModel->mNumAnimations > 0) {
+		if (evt.Message == WM_KEYDOWN) {
+			if (evt.wParam == 'Q') {
+				rotIndex -= 1;
+			}
+			if (evt.wParam == 'E') {
+				rotIndex += 1;
+			}
+			if (rotIndex < 0) rotIndex = 0;
+			
+			if (evt.wParam == VK_UP) {
+				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(0.1f, 0, 0) * BoneLocalMatrixs[rotIndex];
+			}
+			if (evt.wParam == VK_DOWN) {
+				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(-0.1f, 0, 0) * BoneLocalMatrixs[rotIndex];
+			}
+			if (evt.wParam == VK_RIGHT) {
+				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(0, 0.1f, 0)*BoneLocalMatrixs[rotIndex];
+			}
+			if (evt.wParam == VK_LEFT) {
+				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(0, -0.1f, 0)*BoneLocalMatrixs[rotIndex];
+			}
+		}
+	}
 }
 
 void GameObject::Release()
@@ -3519,6 +3707,18 @@ void GameObject::Release()
 void GameObject::SetMesh(ColorMesh* pMesh)
 {
 	m_pMesh = pMesh;
+}
+
+void GameObject::SetModel(Model* model)
+{
+	rmod = _Model;
+	pModel = model;
+	int boneNum = model->nodeCount - model->BoneStartIndex;
+	BoneLocalMatrixs = new matrix[boneNum];
+	RootBoneMatrixs = nullptr;
+	for (int i = 0; i < boneNum; ++i) {
+		BoneLocalMatrixs[i] = model->Nodes[i + model->BoneStartIndex].transform;
+	}
 }
 
 void GameObject::SetShader(Shader* pShader)
@@ -4094,7 +4294,9 @@ void ShaderVisibleDescriptorPool::Reset()
 void PBRShader1::InitShader()
 {
 	CreateRootSignature();
+	CreateRootSignature_SkinedMesh();
 	CreatePipelineState();
+	CreatePipelineState_SkinedMesh();
 }
 
 void PBRShader1::CreateRootSignature()
@@ -4172,6 +4374,111 @@ void PBRShader1::CreateRootSignature()
 	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
 		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
 			**)&pRootSignature);
+	if (pd3dErrorBlob) pd3dErrorBlob->Release();
+	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
+}
+
+void PBRShader1::CreateRootSignature_SkinedMesh()
+{
+	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
+
+	constexpr int rootParamCount = 5;
+	D3D12_ROOT_PARAMETER1 rootParam[rootParamCount] = {};
+
+	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParam[0].Constants.Num32BitValues = 16 + 4;
+	rootParam[0].Constants.ShaderRegister = 0; // b0 : Camera Matrix (Projection + View) + Camera Positon
+	rootParam[0].Constants.RegisterSpace = 0;
+
+	rootParam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParam[1].DescriptorTable.NumDescriptorRanges = 1;
+	D3D12_DESCRIPTOR_RANGE1 CBDescTable_ranges[1];
+	CBDescTable_ranges[0].BaseShaderRegister = 1; // b1 : ToLocal Bone Marix
+	CBDescTable_ranges[0].RegisterSpace = 0;
+	CBDescTable_ranges[0].NumDescriptors = 1;
+	CBDescTable_ranges[0].OffsetInDescriptorsFromTableStart = 0;
+	CBDescTable_ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	CBDescTable_ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	rootParam[1].DescriptorTable.pDescriptorRanges = &CBDescTable_ranges[0];
+
+	rootParam[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParam[2].DescriptorTable.NumDescriptorRanges = 1;
+	D3D12_DESCRIPTOR_RANGE1 CBDescTable_ranges1[1];
+	CBDescTable_ranges1[0].BaseShaderRegister = 2; // b2 : ToWorld Bone Marix (volatile)
+	CBDescTable_ranges1[0].RegisterSpace = 0;
+	CBDescTable_ranges1[0].NumDescriptors = 1;
+	CBDescTable_ranges1[0].OffsetInDescriptorsFromTableStart = 0;
+	CBDescTable_ranges1[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	CBDescTable_ranges1[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
+	rootParam[2].DescriptorTable.pDescriptorRanges = &CBDescTable_ranges1[0];
+
+	rootParam[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; //Static Light
+	rootParam[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParam[3].Descriptor.ShaderRegister = 3; // b3
+	rootParam[3].Descriptor.RegisterSpace = 0;
+
+	rootParam[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParam[4].DescriptorTable.NumDescriptorRanges = 1;
+	D3D12_DESCRIPTOR_RANGE1 ranges[1];
+	ranges[0].BaseShaderRegister = 0; // t0 //Diffuse Texture
+	ranges[0].RegisterSpace = 0;
+	ranges[0].NumDescriptors = 5; // t0 t1 t2 t3 t4 -> must be Continuous Desc in DescHeap
+	ranges[0].OffsetInDescriptorsFromTableStart = 0;
+	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	rootParam[4].DescriptorTable.pDescriptorRanges = &ranges[0];
+
+	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS*/;
+
+		/// default sampler
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	// sampler register index.
+	sampler.ShaderRegister = 0;
+	// setting
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.MipLODBias = 0.0f;
+	sampler.MaxAnisotropy = 16;
+	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+	sampler.MinLOD = -FLT_MAX;
+	sampler.MaxLOD = D3D12_FLOAT32_MAX;
+	sampler.RegisterSpace = 0;
+	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+
+	rootSigDesc1.NumParameters = rootParamCount;
+	rootSigDesc1.pParameters = rootParam;
+	rootSigDesc1.NumStaticSamplers = 1; // question002 : what is static samplers?
+	rootSigDesc1.pStaticSamplers = &sampler;
+	rootSigDesc1.Flags = d3dRootSignatureFlags;
+
+	ID3DBlob* pd3dSignatureBlob = NULL;
+	ID3DBlob* pd3dErrorBlob = NULL;
+	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
+	versioned_rootSigDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+	versioned_rootSigDesc.Desc_1_1 = rootSigDesc1;
+	HRESULT hr = D3D12SerializeVersionedRootSignature(&versioned_rootSigDesc, &pd3dSignatureBlob, &pd3dErrorBlob);
+	if (FAILED(hr)) { 
+		if (pd3dErrorBlob) {
+			OutputDebugStringA((char*)pd3dErrorBlob->GetBufferPointer());
+			pd3dErrorBlob->Release();
+		} 
+	}
+
+	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
+		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
+			**)&pRootSignature_SkinedMesh);
 	if (pd3dErrorBlob) pd3dErrorBlob->Release();
 	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
 }
@@ -4292,10 +4599,149 @@ void PBRShader1::CreatePipelineState()
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
 
+void PBRShader1::CreatePipelineState_SkinedMesh()
+{
+	D3D12_SHADER_BYTECODE NULLCODE;
+	NULLCODE.BytecodeLength = 0;
+	NULLCODE.pShaderBytecode = nullptr;
+
+	ID3DBlob* pd3dVertexShaderBlob = NULL, * pd3dPixelShaderBlob = NULL;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC gPipelineStateDesc;
+	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+
+	gPipelineStateDesc.pRootSignature = pRootSignature_SkinedMesh;
+
+	gPipelineStateDesc.NodeMask = 0;
+
+	//Input Asm
+	gPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	constexpr int inputElementCount = 13;
+	D3D12_INPUT_ELEMENT_DESC inputElementDesc[inputElementCount] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // pos vec3
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // normal vec3
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},// uv vec2
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}, // float3 tangent
+		{ "BINORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 44,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}, // float3 bitangent
+		{ "BONEINDEX", 0, DXGI_FORMAT_R32_UINT, 0, 56, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex0;
+		{ "BONEWEIGHT", 0, DXGI_FORMAT_R32_FLOAT, 0, 60, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // float boneweight0;
+		{ "BONEINDEX", 1, DXGI_FORMAT_R32_UINT, 0, 64, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex1;
+		{ "BONEWEIGHT", 1, DXGI_FORMAT_R32_FLOAT, 0, 68, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // float boneweight1;
+		{ "BONEINDEX", 2, DXGI_FORMAT_R32_UINT, 0, 72, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex2;
+		{ "BONEWEIGHT", 2, DXGI_FORMAT_R32_FLOAT, 0, 76, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },  // float boneweight2;
+		{ "BONEINDEX", 3, DXGI_FORMAT_R32_UINT, 0, 80, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex3;
+		{ "BONEWEIGHT", 3, DXGI_FORMAT_R32_FLOAT, 0, 84, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // float boneweight3;
+	};
+	gPipelineStateDesc.InputLayout.NumElements = inputElementCount;
+	gPipelineStateDesc.InputLayout.pInputElementDescs = inputElementDesc;
+
+	//Vertex Shader
+	gPipelineStateDesc.VS = Shader::GetShaderByteCode(L"Resources/Shaders/SkinedPBRShader01.hlsl", "VSMain", "vs_5_1", &pd3dVertexShaderBlob);
+
+	//Hull Shader
+	//gPipelineStateDesc.HS = NULLCODE;
+
+	//Tessellation
+
+	//Domain Shader
+	//gPipelineStateDesc.DS = NULLCODE;
+
+	//Geometry Shader
+	//gPipelineStateDesc.GS = NULLCODE;
+
+	//Stream Output
+	//gPipelineStateDesc.StreamOutput
+
+	//Rasterazer
+	gPipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	gPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	gPipelineStateDesc.RasterizerState.FrontCounterClockwise = FALSE; // front = clock wise
+	//Rasterazer-depth
+	gPipelineStateDesc.RasterizerState.DepthBias = 0;
+	gPipelineStateDesc.RasterizerState.DepthBiasClamp = 0;
+	gPipelineStateDesc.RasterizerState.SlopeScaledDepthBias = 0;
+	gPipelineStateDesc.RasterizerState.DepthClipEnable = TRUE; // if depth > 1, cliping vertex.
+	//Rasterazer-MSAA
+	gPipelineStateDesc.RasterizerState.MultisampleEnable = TRUE;
+	gPipelineStateDesc.RasterizerState.AntialiasedLineEnable = TRUE;
+	gPipelineStateDesc.RasterizerState.ForcedSampleCount = 0; // sample count of UAV rendering // question 003 : what is UAV rendering?
+	//Rasterazer - Conservative Rendering On/Off - (bosujuk rendering)
+	gPipelineStateDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+	//Pixel Shader
+	gPipelineStateDesc.PS = Shader::GetShaderByteCode(L"Resources/Shaders/SkinedPBRShader01.hlsl", "PSMain", "ps_5_1", &pd3dPixelShaderBlob);
+
+	//Output Merger
+	//Output Merger-Blend
+	D3D12_BLEND_DESC d3dBlendDesc;
+	::ZeroMemory(&d3dBlendDesc, sizeof(D3D12_BLEND_DESC));
+	d3dBlendDesc.AlphaToCoverageEnable = FALSE;
+	d3dBlendDesc.IndependentBlendEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
+	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+	d3dBlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	gPipelineStateDesc.BlendState = d3dBlendDesc;
+	//Output Merger - MSAA
+	gPipelineStateDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
+	gPipelineStateDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable) ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+	gPipelineStateDesc.SampleMask = 0xFFFFFFFF; // pass every sampling.
+	//Output Merger - DepthStencil
+	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
+	//Output Merger - DepthStencil - depth
+	depthStencilDesc.DepthEnable = TRUE;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
+	//Output Merger - DepthStencil - stencil
+	depthStencilDesc.StencilEnable = FALSE;
+	depthStencilDesc.StencilReadMask = 0x00;
+	depthStencilDesc.StencilWriteMask = 0x00;
+	depthStencilDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NEVER;
+	depthStencilDesc.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_NEVER;
+	gPipelineStateDesc.DepthStencilState = depthStencilDesc;
+	//Output Merger - RenderTagets / DepthStencil Buffer
+	gPipelineStateDesc.NumRenderTargets = 1;
+	gPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	gPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	gd.pDevice->CreateGraphicsPipelineState(&gPipelineStateDesc,
+		__uuidof(ID3D12PipelineState), (void**)&pPipelineState_SkinedMesh);
+	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
+	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
+}
+
 void PBRShader1::Release()
 {
 	if (pPipelineState) pPipelineState->Release();
 	if (pRootSignature) pRootSignature->Release();
+	if (pPipelineState_SkinedMesh) pPipelineState_SkinedMesh->Release();
+	pPipelineState_SkinedMesh = nullptr;
+	if (pRootSignature_SkinedMesh) pRootSignature_SkinedMesh->Release();
+	pRootSignature_SkinedMesh = nullptr;
+}
+
+void PBRShader1::Add_RegisterShaderCommand2(ID3D12GraphicsCommandList* commandList, bool skined)
+{
+	if (skined) {
+		commandList->SetPipelineState(pPipelineState_SkinedMesh);
+		commandList->SetGraphicsRootSignature(pRootSignature_SkinedMesh);
+	}
+	else {
+		commandList->SetPipelineState(pPipelineState);
+		commandList->SetGraphicsRootSignature(pRootSignature);
+	}
 }
 
 void PBRShader1::SetTextureCommand(GPUResource* Color, GPUResource* Normal, GPUResource* AO, GPUResource* Metalic, GPUResource* Roughness)
@@ -4336,6 +4782,12 @@ void Model::Rearrange2()
 		Nodes[i] = *NodeArr[i];
 		for (int k = 0; k < Nodes[i].numChildren; ++k) {
 			Nodes[i].Childrens[k] = &Nodes[nodeindexmap[Nodes[i].Childrens[k]]];
+		}
+	}
+
+	for (int i = 0; i < NodeArr.size(); ++i) {
+		for (int k = 0; k < Nodes[i].numChildren; ++k) {
+			Nodes[i].Childrens[k]->parent = &Nodes[i];
 		}
 	}
 
@@ -4386,12 +4838,36 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 			UnitScaleFactor = *(float*)meta->mData;
 		}
 	}*/
+
+	//arrange Nodes
+	RootNode = new ModelNode;
+	modelLoader->processNode(pScene->mRootNode, pScene);
+	modelLoader->copyNode(RootNode, pScene->mRootNode, nullptr, 0);
+	Rearrange1(RootNode);
+	Rearrange2();
+	for (int i = 0; i < nodeCount; ++i) {
+		matrix mat = Nodes[i].transform;
+		mat.pos *= UnitScaleFactor;
+		mat.pos.w = 1;
+		Nodes[i].transform = mat;
+	}
 	
 	//read mesh
 	mNumMeshes = pScene->mNumMeshes;
 	mMeshes = new ColorMesh * [mNumMeshes];
-	vertice = new vector<BumpMesh::Vertex>[mNumMeshes];
+	//vertice = new vector<BumpMesh::Vertex>[mNumMeshes];
 	indice = new vector<TriangleIndex>[mNumMeshes];
+	MaxBoneCount = 0;
+	// Get MAX Bone Count
+	for (UINT i = 0; i < pScene->mNumMeshes; i++) {
+		aiMesh* mesh = pScene->mMeshes[i];
+		if (mesh->HasBones()) {
+			if (MaxBoneCount < mesh->mNumBones) {
+				MaxBoneCount = mesh->mNumBones;
+			}
+		}
+	}
+	// Make Meshes.
 	for (UINT i = 0; i < pScene->mNumMeshes; i++) {
 		aiMesh* mesh = pScene->mMeshes[i];
 		mMeshes[i] = Assimp_ReadMesh(mesh, pScene, i);
@@ -4465,12 +4941,6 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 
 	//read metadata
 
-	RootNode = new ModelNode;
-	modelLoader->processNode(pScene->mRootNode, pScene);
-	modelLoader->copyNode(RootNode, pScene->mRootNode, nullptr, 0);
-	Rearrange1(RootNode);
-	Rearrange2();
-
 	//read animations
 	mNumAnimations = pScene->mNumAnimations;
 	mAnimations = new Animation * [mNumAnimations];
@@ -4483,113 +4953,283 @@ ColorMesh* Model::Assimp_ReadMesh(aiMesh* mesh, const aiScene* scene, int meshin
 {
 	float SpaceMul = UnitScaleFactor;
 
-	BumpMesh* pMesh = new BumpMesh();
+	if (mesh->HasBones()) {
+		//BumpSkindMesh
+		BumpSkinMesh* pMesh = new BumpSkinMesh();
+		pMesh->type = ColorMesh::MeshType::SkinedBumpMesh;
 
-	pMesh->material_index = mesh->mMaterialIndex; // temp inner model material index
+		pMesh->material_index = mesh->mMaterialIndex; // temp inner model material index
 
-	// Data to fill
-	std::vector<BumpMesh::Vertex>& vertices = vertice[meshindex];
-	std::vector<TriangleIndex>& indices = indice[meshindex];
-	//std::vector<Texture> textures;
-
-	XMFLOAT3 AABB[2] = {};
-	AABB[0] = XMFLOAT3(mesh->mAABB.mMin.x * SpaceMul, mesh->mAABB.mMin.y * SpaceMul, mesh->mAABB.mMin.z * SpaceMul);
-	AABB[1] = XMFLOAT3(mesh->mAABB.mMax.x * SpaceMul, mesh->mAABB.mMax.y * SpaceMul, mesh->mAABB.mMax.z * SpaceMul);
-
-	bool tangent_missing = false;
-	//vertex
-	if (mesh->mNormals && mesh->mTangents && mesh->mBitangents) {
-		for (UINT i = 0; i < mesh->mNumVertices; i++) {
-			BumpMesh::Vertex vertex;
-
-			vertex.position.x = mesh->mVertices[i].x * SpaceMul;
-			vertex.position.y = mesh->mVertices[i].y * SpaceMul;
-			vertex.position.z = mesh->mVertices[i].z * SpaceMul;
-			vertex.normal.x = mesh->mNormals[i].x;
-			vertex.normal.y = mesh->mNormals[i].y;
-			vertex.normal.z = mesh->mNormals[i].z;
-			vertex.tangent.x = mesh->mTangents[i].x;
-			vertex.tangent.y = mesh->mTangents[i].y;
-			vertex.tangent.z = mesh->mTangents[i].z;
-			vertex.bitangent.x = mesh->mBitangents[i].x;
-			vertex.bitangent.y = mesh->mBitangents[i].y;
-			vertex.bitangent.z = mesh->mBitangents[i].z;
-
-			if (mesh->mTextureCoords[0]) {
-				vertex.uv.x = (float)mesh->mTextureCoords[0][i].x;
-				vertex.uv.y = (float)mesh->mTextureCoords[0][i].y;
+		// Data to fill
+		std::vector<BumpSkinMesh::Vertex> vertices;
+		std::vector<TriangleIndex> indices;
+		vector <BumpSkinMesh::BoneWeight4> bone_weights;
+		bone_weights.reserve(mesh->mNumVertices);
+		bone_weights.resize(mesh->mNumVertices);
+		
+		for (int i = 0; i < mesh->mNumBones; ++i) {
+			if (i == 0) {
+				BoneStartIndex = GetNodeIndex((char*)mesh->mBones[i]->mName.C_Str());
 			}
-
-			vertices.push_back(vertex);
-		}
-	}
-	else if (mesh->mNormals) {
-		tangent_missing = true;
-		//pos + normal
-		for (UINT i = 0; i < mesh->mNumVertices; i++) {
-			BumpMesh::Vertex vertex;
-
-			vertex.position.x = mesh->mVertices[i].x * SpaceMul;
-			vertex.position.y = mesh->mVertices[i].y * SpaceMul;
-			vertex.position.z = mesh->mVertices[i].z * SpaceMul;
-			vertex.normal.x = mesh->mNormals[i].x;
-			vertex.normal.y = mesh->mNormals[i].y;
-			vertex.normal.z = mesh->mNormals[i].z;
-			vertex.tangent = { 0, 0, 0 };
-			vertex.bitangent = { 0, 0, 0 };
-
-			if (mesh->mTextureCoords[0]) {
-				vertex.uv.x = (float)mesh->mTextureCoords[0][i].x;
-				vertex.uv.y = (float)mesh->mTextureCoords[0][i].y;
+			aiBone* b = mesh->mBones[i];
+			for (int k = 0; k < b->mNumWeights; ++k) {
+				BumpSkinMesh::BoneWeight bone;
+				bone.boneID = i;
+				bone.weight = b->mWeights[k].mWeight;
+				bone_weights[b->mWeights[k].mVertexId].PushBones(bone);
 			}
-
-			vertices.push_back(vertex);
 		}
+
+		//std::vector<Texture> textures;
+
+		XMFLOAT3 AABB[2] = {};
+		AABB[0] = XMFLOAT3(mesh->mAABB.mMin.x * SpaceMul, mesh->mAABB.mMin.y * SpaceMul, mesh->mAABB.mMin.z * SpaceMul);
+		AABB[1] = XMFLOAT3(mesh->mAABB.mMax.x * SpaceMul, mesh->mAABB.mMax.y * SpaceMul, mesh->mAABB.mMax.z * SpaceMul);
+
+		bool tangent_missing = false;
+		//vertex
+		if (mesh->mNormals && mesh->mTangents && mesh->mBitangents) {
+			for (UINT i = 0; i < mesh->mNumVertices; i++) {
+				BumpSkinMesh::Vertex vertex;
+
+				vertex.position.x = mesh->mVertices[i].x * SpaceMul;
+				vertex.position.y = mesh->mVertices[i].y * SpaceMul;
+				vertex.position.z = mesh->mVertices[i].z * SpaceMul;
+				vertex.normal.x = mesh->mNormals[i].x;
+				vertex.normal.y = mesh->mNormals[i].y;
+				vertex.normal.z = mesh->mNormals[i].z;
+				vertex.tangent.x = mesh->mTangents[i].x;
+				vertex.tangent.y = mesh->mTangents[i].y;
+				vertex.tangent.z = mesh->mTangents[i].z;
+				vertex.bitangent.x = mesh->mBitangents[i].x;
+				vertex.bitangent.y = mesh->mBitangents[i].y;
+				vertex.bitangent.z = mesh->mBitangents[i].z;
+				vertex.boneWeight[0] = bone_weights[i].bones[0];
+				vertex.boneWeight[1] = bone_weights[i].bones[1];
+				vertex.boneWeight[2] = bone_weights[i].bones[2];
+				vertex.boneWeight[3] = bone_weights[i].bones[3];
+
+				if (mesh->mTextureCoords[0]) {
+					vertex.uv.x = (float)mesh->mTextureCoords[0][i].x;
+					vertex.uv.y = (float)mesh->mTextureCoords[0][i].y;
+				}
+
+				vertices.push_back(vertex);
+			}
+		}
+		else if (mesh->mNormals) {
+			tangent_missing = true;
+			//pos + normal
+			for (UINT i = 0; i < mesh->mNumVertices; i++) {
+				BumpSkinMesh::Vertex vertex;
+
+				vertex.position.x = mesh->mVertices[i].x * SpaceMul;
+				vertex.position.y = mesh->mVertices[i].y * SpaceMul;
+				vertex.position.z = mesh->mVertices[i].z * SpaceMul;
+				vertex.normal.x = mesh->mNormals[i].x;
+				vertex.normal.y = mesh->mNormals[i].y;
+				vertex.normal.z = mesh->mNormals[i].z;
+				vertex.tangent = { 0, 0, 0 };
+				vertex.bitangent = { 0, 0, 0 };
+				vertex.boneWeight[0] = bone_weights[i].bones[0];
+				vertex.boneWeight[1] = bone_weights[i].bones[1];
+				vertex.boneWeight[2] = bone_weights[i].bones[2];
+				vertex.boneWeight[3] = bone_weights[i].bones[3];
+
+				if (mesh->mTextureCoords[0]) {
+					vertex.uv.x = (float)mesh->mTextureCoords[0][i].x;
+					vertex.uv.y = (float)mesh->mTextureCoords[0][i].y;
+				}
+
+				vertices.push_back(vertex);
+			}
+		}
+		else {
+			//only vertexdata..
+			for (UINT i = 0; i < mesh->mNumVertices; i++) {
+
+			}
+		}
+
+		//index
+		for (UINT i = 0; i < mesh->mNumFaces; i++) {
+			aiFace face = mesh->mFaces[i];
+
+			for (int i = 1; i < face.mNumIndices - 1; ++i) {
+				TriangleIndex ti;
+				ti.v[0] = face.mIndices[0];
+				ti.v[i] = face.mIndices[i];
+				ti.v[i + 1] = face.mIndices[i + 1];
+				indices.push_back(ti);
+			}
+		}
+
+		if (tangent_missing) {
+			for (int i = 0; i < indices.size(); ++i) {
+				TriangleIndex index = indices.at(i);
+				if (vertices[index.v[0]].HaveToSetTangent()) {
+					BumpSkinMesh::Vertex::CreateTBN(vertices[index.v[0]],
+						vertices[index.v[1]], vertices[index.v[2]]);
+				}
+
+				if (vertices[index.v[1]].HaveToSetTangent()) {
+					BumpSkinMesh::Vertex::CreateTBN(vertices[index.v[1]],
+						vertices[index.v[0]], vertices[index.v[2]]);
+				}
+
+				if (vertices[index.v[2]].HaveToSetTangent()) {
+					BumpSkinMesh::Vertex::CreateTBN(vertices[index.v[2]],
+						vertices[index.v[0]], vertices[index.v[1]]);
+				}
+			}
+		}
+
+		for (int i = 0; i < nodeCount; ++i) {
+			OutputDebugStringA(Nodes[i].name.c_str());
+			OutputDebugStringA("\n");
+		}
+
+		vector<BumpSkinMesh::MatNode> BoneMatrixs;
+		BoneMatrixs.reserve(MaxBoneCount);
+		BoneMatrixs.resize(MaxBoneCount);
+		for (int i = 0; i < mesh->mNumBones; ++i) {
+			char* c0 = (char*)mesh->mBones[i]->mName.C_Str();
+			OutputDebugStringA(c0);
+			OutputDebugStringA("\n");
+			int node_ind = GetNodeIndex(c0);
+			int bone_ind = node_ind - BoneStartIndex;
+			BoneMatrixs[bone_ind].mat = *(matrix*)&Nodes[node_ind].transform;
+			char* c2 = (char*)Nodes[node_ind].parent->name.c_str();
+			int parentNodeIndex = GetNodeIndex(c2);
+			int pbone_ind = parentNodeIndex - BoneStartIndex;
+			BoneMatrixs[bone_ind].parent = pbone_ind;
+		}
+
+		pMesh->CreateMesh_FromVertexAndIndexData(vertices, indices, BoneMatrixs.data(), MaxBoneCount);
+		pMesh->OffsetMatrixs = new matrix[128];
+		pMesh->OffsetMatrixs[0].Id();
+		for (int i = 0; i < mesh->mNumBones; ++i) {
+			int n = GetNodeIndex((char*)mesh->mBones[i]->mName.C_Str());
+			pMesh->OffsetMatrixs[n] = *(matrix*)&mesh->mBones[i]->mOffsetMatrix;
+			pMesh->OffsetMatrixs[n].transpose();
+			pMesh->OffsetMatrixs[n].pos *= UnitScaleFactor;
+			pMesh->OffsetMatrixs[n].pos.w = 1;
+		}
+		pMesh->material_index = mesh->mMaterialIndex;
+		pMesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
+		return pMesh;
 	}
 	else {
-		//only vertexdata..
-		for (UINT i = 0; i < mesh->mNumVertices; i++) {
+		//BumpMesh
+		BumpMesh* pMesh = new BumpMesh();
+		pMesh->type = ColorMesh::MeshType::BumpMesh;
 
-		}
-	}
+		pMesh->material_index = mesh->mMaterialIndex; // temp inner model material index
 
-	//index
-	for (UINT i = 0; i < mesh->mNumFaces; i++) {
-		aiFace face = mesh->mFaces[i];
+		// Data to fill
+		std::vector<BumpMesh::Vertex>& vertices = vertice[meshindex];
+		std::vector<TriangleIndex>& indices = indice[meshindex];
+		//std::vector<Texture> textures;
 
-		for (int i = 1; i < face.mNumIndices - 1; ++i) {
-			TriangleIndex ti;
-			ti.v[0] = face.mIndices[0];
-			ti.v[i] = face.mIndices[i];
-			ti.v[i + 1] = face.mIndices[i + 1];
-			indices.push_back(ti);
-		}
-	}
+		XMFLOAT3 AABB[2] = {};
+		AABB[0] = XMFLOAT3(mesh->mAABB.mMin.x * SpaceMul, mesh->mAABB.mMin.y * SpaceMul, mesh->mAABB.mMin.z * SpaceMul);
+		AABB[1] = XMFLOAT3(mesh->mAABB.mMax.x * SpaceMul, mesh->mAABB.mMax.y * SpaceMul, mesh->mAABB.mMax.z * SpaceMul);
 
-	if (tangent_missing) {
-		for (int i = 0; i < indices.size(); ++i) {
-			TriangleIndex index = indices.at(i);
-			if (vertices[index.v[0]].HaveToSetTangent()) {
-				BumpMesh::Vertex::CreateTBN(vertices[index.v[0]],
-					vertices[index.v[1]], vertices[index.v[2]]);
+		bool tangent_missing = false;
+		//vertex
+		if (mesh->mNormals && mesh->mTangents && mesh->mBitangents) {
+			for (UINT i = 0; i < mesh->mNumVertices; i++) {
+				BumpMesh::Vertex vertex;
+
+				vertex.position.x = mesh->mVertices[i].x * SpaceMul;
+				vertex.position.y = mesh->mVertices[i].y * SpaceMul;
+				vertex.position.z = mesh->mVertices[i].z * SpaceMul;
+				vertex.normal.x = mesh->mNormals[i].x;
+				vertex.normal.y = mesh->mNormals[i].y;
+				vertex.normal.z = mesh->mNormals[i].z;
+				vertex.tangent.x = mesh->mTangents[i].x;
+				vertex.tangent.y = mesh->mTangents[i].y;
+				vertex.tangent.z = mesh->mTangents[i].z;
+				vertex.bitangent.x = mesh->mBitangents[i].x;
+				vertex.bitangent.y = mesh->mBitangents[i].y;
+				vertex.bitangent.z = mesh->mBitangents[i].z;
+
+				if (mesh->mTextureCoords[0]) {
+					vertex.uv.x = (float)mesh->mTextureCoords[0][i].x;
+					vertex.uv.y = (float)mesh->mTextureCoords[0][i].y;
+				}
+
+				vertices.push_back(vertex);
 			}
+		}
+		else if (mesh->mNormals) {
+			tangent_missing = true;
+			//pos + normal
+			for (UINT i = 0; i < mesh->mNumVertices; i++) {
+				BumpMesh::Vertex vertex;
 
-			if (vertices[index.v[1]].HaveToSetTangent()) {
-				BumpMesh::Vertex::CreateTBN(vertices[index.v[1]],
-					vertices[index.v[0]], vertices[index.v[2]]);
-			}
+				vertex.position.x = mesh->mVertices[i].x * SpaceMul;
+				vertex.position.y = mesh->mVertices[i].y * SpaceMul;
+				vertex.position.z = mesh->mVertices[i].z * SpaceMul;
+				vertex.normal.x = mesh->mNormals[i].x;
+				vertex.normal.y = mesh->mNormals[i].y;
+				vertex.normal.z = mesh->mNormals[i].z;
+				vertex.tangent = { 0, 0, 0 };
+				vertex.bitangent = { 0, 0, 0 };
 
-			if (vertices[index.v[2]].HaveToSetTangent()) {
-				BumpMesh::Vertex::CreateTBN(vertices[index.v[2]],
-					vertices[index.v[0]], vertices[index.v[1]]);
+				if (mesh->mTextureCoords[0]) {
+					vertex.uv.x = (float)mesh->mTextureCoords[0][i].x;
+					vertex.uv.y = (float)mesh->mTextureCoords[0][i].y;
+				}
+
+				vertices.push_back(vertex);
 			}
 		}
-	}
+		else {
+			//only vertexdata..
+			for (UINT i = 0; i < mesh->mNumVertices; i++) {
 
-	pMesh->CreateMesh_FromVertexAndIndexData(vertices, indices);
-	pMesh->material_index = mesh->mMaterialIndex;
-	pMesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
-	return pMesh;
+			}
+		}
+
+		//index
+		for (UINT i = 0; i < mesh->mNumFaces; i++) {
+			aiFace face = mesh->mFaces[i];
+
+			for (int i = 1; i < face.mNumIndices - 1; ++i) {
+				TriangleIndex ti;
+				ti.v[0] = face.mIndices[0];
+				ti.v[i] = face.mIndices[i];
+				ti.v[i + 1] = face.mIndices[i + 1];
+				indices.push_back(ti);
+			}
+		}
+
+		if (tangent_missing) {
+			for (int i = 0; i < indices.size(); ++i) {
+				TriangleIndex index = indices.at(i);
+				if (vertices[index.v[0]].HaveToSetTangent()) {
+					BumpMesh::Vertex::CreateTBN(vertices[index.v[0]],
+						vertices[index.v[1]], vertices[index.v[2]]);
+				}
+
+				if (vertices[index.v[1]].HaveToSetTangent()) {
+					BumpMesh::Vertex::CreateTBN(vertices[index.v[1]],
+						vertices[index.v[0]], vertices[index.v[2]]);
+				}
+
+				if (vertices[index.v[2]].HaveToSetTangent()) {
+					BumpMesh::Vertex::CreateTBN(vertices[index.v[2]],
+						vertices[index.v[0]], vertices[index.v[1]]);
+				}
+			}
+		}
+
+		pMesh->CreateMesh_FromVertexAndIndexData(vertices, indices);
+		pMesh->material_index = mesh->mMaterialIndex;
+		pMesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
+		return pMesh;
+	}
 }
 
 Material* Model::Assimp_ReadMaterial(aiMaterial* mat, const aiScene* scene)
@@ -4776,10 +5416,207 @@ Animation* Model::Assimp_ReadAnimation(aiAnimation* anim, const aiScene* scene)
 	a->mDuration = anim->mDuration;
 	a->mTicksPerSecond = anim->mTicksPerSecond;
 	a->mNumChannels = anim->mNumChannels;
-	for (int i = 0; i < a->mNumChannels; ++i) {
 
+	vector<int> posSizes;
+	vector<int> rotSizes;
+	vector<int> scaleSizes;
+	posSizes.reserve(nodeCount);
+	rotSizes.reserve(nodeCount);
+	scaleSizes.reserve(nodeCount);
+	posSizes.resize(nodeCount);
+	rotSizes.resize(nodeCount);
+	scaleSizes.resize(nodeCount);
+
+	vector<int> posUp;
+	vector<int> rotUp;
+	vector<int> scaleUp;
+	posUp.reserve(nodeCount);
+	rotUp.reserve(nodeCount);
+	scaleUp.reserve(nodeCount);
+	posUp.resize(nodeCount);
+	rotUp.resize(nodeCount);
+	scaleUp.resize(nodeCount);
+	
+	vector<int> acToNodeIndex;
+	vector<int> cToNodeIndex;
+	vector<int> ToChannelIndex; // nodeindex to channelindex
+	acToNodeIndex.reserve(anim->mNumChannels);
+	acToNodeIndex.resize(anim->mNumChannels);
+	ToChannelIndex.reserve(nodeCount);
+	ToChannelIndex.resize(nodeCount);
+
+	for (int i = 0; i < nodeCount; ++i) {
+		posSizes[i] = 0;
+		posUp[i] = 0;
+		rotSizes[i] = 0;
+		rotUp[i] = 0;
+		scaleSizes[i] = 0;
+		scaleUp[i] = 0;
 	}
-	return nullptr;
+
+	for (int i = 0; i < anim->mNumChannels; ++i) {
+		aiNodeAnim* aiChannel = anim->mChannels[i];
+		char* nodename = (char*)aiChannel->mNodeName.C_Str();
+		char* posfind = strstr(nodename, "_$AssimpFbx$_Translation");
+		char* rotfind = strstr(nodename, "_$AssimpFbx$_Rotation");
+		char* scalefind = strstr(nodename, "_$AssimpFbx$_Scaling");
+		if (posfind) {
+			char Temp[256] = {};
+			strcpy_s(Temp, nodename);
+			*(Temp + (posfind - nodename)) = 0;
+			int nodeIndex = GetNodeIndex((char*)Temp);
+			acToNodeIndex[i] = nodeIndex;
+			posSizes[nodeIndex] += aiChannel->mNumPositionKeys;
+		}
+		else if (rotfind) {
+			char Temp[256] = {};
+			strcpy_s(Temp, nodename);
+			*(Temp + (rotfind - nodename)) = 0;
+			int nodeIndex = GetNodeIndex((char*)Temp);
+			acToNodeIndex[i] = nodeIndex;
+			rotSizes[nodeIndex] += aiChannel->mNumRotationKeys;
+		}
+		else if (scalefind) {
+			char Temp[256] = {};
+			strcpy_s(Temp, nodename);
+			*(Temp + (scalefind - nodename)) = 0;
+			int nodeIndex = GetNodeIndex((char*)Temp);
+			acToNodeIndex[i] = nodeIndex;
+			scaleSizes[nodeIndex] += aiChannel->mNumScalingKeys;
+		}
+		else {
+			int nodeIndex = GetNodeIndex((char*)aiChannel->mNodeName.C_Str());
+			acToNodeIndex[i] = nodeIndex;
+			posSizes[nodeIndex] += aiChannel->mNumPositionKeys;
+			rotSizes[nodeIndex] += aiChannel->mNumRotationKeys;
+			scaleSizes[nodeIndex] += aiChannel->mNumScalingKeys;
+		}
+	}
+
+	int channelCount = 0;
+	for (int i = 0; i < nodeCount; ++i) {
+		if (posSizes[i] + rotSizes[i] + scaleSizes[i] > 0) {
+			channelCount++;
+			cToNodeIndex.push_back(i);
+		}
+	}
+
+	for (int i = 0; i < channelCount; ++i) {
+		ToChannelIndex[cToNodeIndex[i]] = i;
+	}
+
+	a->mChannels = new NodeAnim[channelCount];
+	a->mNumChannels = channelCount;
+	for (int i = 0; i < channelCount; ++i) {
+		a->mChannels[i].nodeIndex = cToNodeIndex[i];
+		int nodeindex = cToNodeIndex[i];
+		a->mChannels[i].mNumPositionKeys = posSizes[nodeindex];
+		a->mChannels[i].mPositionKeys = new VectorKey[posSizes[nodeindex]];
+		a->mChannels[i].mNumRotationKeys = rotSizes[nodeindex];
+		a->mChannels[i].mRotationKeys = new QuatKey[rotSizes[nodeindex]];
+		a->mChannels[i].mNumScalingKeys = scaleSizes[nodeindex];
+		a->mChannels[i].mScalingKeys = new VectorKey[scaleSizes[nodeindex]];
+	}
+
+	for (int i = 0; i < anim->mNumChannels; ++i) {
+		aiNodeAnim* aiChannel = anim->mChannels[i];
+		char* nodename = (char*)aiChannel->mNodeName.C_Str();
+		char* posfind = strstr(nodename, "_$AssimpFbx$_Translation");
+		char* rotfind = strstr(nodename, "_$AssimpFbx$_Rotation");
+		char* scalefind = strstr(nodename, "_$AssimpFbx$_Scaling");
+		if (posfind) {
+			char Temp[256] = {};
+			strcpy_s(Temp, nodename);
+			*(Temp + (posfind - nodename)) = 0;
+			int nodeIndex = GetNodeIndex((char*)Temp);
+			int channelIndex = ToChannelIndex[nodeIndex];
+			NodeAnim& channel = a->mChannels[channelIndex];
+			for (int k = 0; k < aiChannel->mNumPositionKeys; ++k) {
+				VectorKey& vkey = channel.mPositionKeys[posUp[nodeIndex]];
+				const aiVectorKey& aivkey = aiChannel->mPositionKeys[k];
+				vkey.mValue.x = aivkey.mValue.x * UnitScaleFactor;
+				vkey.mValue.y = aivkey.mValue.y * UnitScaleFactor;
+				vkey.mValue.z = aivkey.mValue.z * UnitScaleFactor;
+				vkey.mTime = aivkey.mTime;
+				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
+				posUp[nodeIndex] += 1;
+			}
+		}
+		else if (rotfind) {
+			char Temp[256] = {};
+			strcpy_s(Temp, nodename);
+			*(Temp + (rotfind - nodename)) = 0;
+			int nodeIndex = GetNodeIndex((char*)Temp);
+			int channelIndex = ToChannelIndex[nodeIndex];
+			NodeAnim& channel = a->mChannels[channelIndex];
+			for (int k = 0; k < channel.mNumRotationKeys; ++k) {
+				QuatKey& vkey = channel.mRotationKeys[rotUp[nodeIndex]];
+				const aiQuatKey& aivkey = aiChannel->mRotationKeys[k];
+				vkey.mValue = vec4(aivkey.mValue.x, aivkey.mValue.y, aivkey.mValue.z, aivkey.mValue.w);
+				vkey.mTime = aivkey.mTime;
+				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
+				rotUp[nodeIndex]++;
+			}
+		}
+		else if (scalefind) {
+			char Temp[256] = {};
+			strcpy_s(Temp, nodename);
+			*(Temp + (scalefind - nodename)) = 0;
+			int nodeIndex = GetNodeIndex((char*)Temp);
+			int channelIndex = ToChannelIndex[nodeIndex];
+			NodeAnim& channel = a->mChannels[channelIndex];
+			for (int k = 0; k < aiChannel->mNumScalingKeys; ++k) {
+				VectorKey& vkey = channel.mScalingKeys[scaleUp[nodeIndex]];
+				const aiVectorKey& aivkey = aiChannel->mScalingKeys[k];
+				vkey.mValue.x = aivkey.mValue.x;
+				vkey.mValue.y = aivkey.mValue.y;
+				vkey.mValue.z = aivkey.mValue.z;
+				vkey.mTime = aivkey.mTime;
+				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
+				scaleUp[nodeIndex] += 1;
+			}
+		}
+		else {
+			int nodeIndex = GetNodeIndex((char*)aiChannel->mNodeName.C_Str());
+			int channelIndex = ToChannelIndex[nodeIndex];
+
+			NodeAnim& channel = a->mChannels[channelIndex];
+			aiNodeAnim* aiChannel = anim->mChannels[i];
+			channel.nodeIndex = nodeIndex;
+
+			for (int k = 0; k < aiChannel->mNumPositionKeys; ++k) {
+				VectorKey& vkey = channel.mPositionKeys[posUp[nodeIndex]];
+				const aiVectorKey& aivkey = aiChannel->mPositionKeys[k];
+				vkey.mValue.x = aivkey.mValue.x * UnitScaleFactor;
+				vkey.mValue.y = aivkey.mValue.y * UnitScaleFactor;
+				vkey.mValue.z = aivkey.mValue.z * UnitScaleFactor;
+				vkey.mTime = aivkey.mTime;
+				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
+				posUp[nodeIndex] += 1;
+			}
+			for (int k = 0; k < channel.mNumRotationKeys; ++k) {
+				QuatKey& vkey = channel.mRotationKeys[rotUp[nodeIndex]];
+				const aiQuatKey& aivkey = aiChannel->mRotationKeys[k];
+				vkey.mValue = vec4(aivkey.mValue.x, aivkey.mValue.y, aivkey.mValue.z, aivkey.mValue.w);
+				vkey.mTime = aivkey.mTime;
+				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
+				rotUp[nodeIndex] += 1;
+			}
+			for (int k = 0; k < aiChannel->mNumScalingKeys; ++k) {
+				VectorKey& vkey = channel.mScalingKeys[scaleUp[nodeIndex]];
+				const aiVectorKey& aivkey = aiChannel->mScalingKeys[k];
+				vkey.mValue.x = aivkey.mValue.x;
+				vkey.mValue.y = aivkey.mValue.y;
+				vkey.mValue.z = aivkey.mValue.z;
+				vkey.mTime = aivkey.mTime;
+				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
+				scaleUp[nodeIndex] += 1;
+			}
+			channel.mPreState = AnimBehaviour::AnimBehaviour_LINEAR;
+			channel.mPostState = AnimBehaviour::AnimBehaviour_LINEAR;
+		}
+	}
+	return a;
 }
 
 void Model::SaveModelFile(string filename)
@@ -4976,24 +5813,37 @@ void Model::LoadModelFile(string filename)
 	RootNode = &Nodes[0];
 }
 
-void Model::Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix)
+void Model::Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, void* goptr)
 {
-	game.MyPBRShader1->Add_RegisterShaderCommand(cmdlist);
+	GameObject* go = (GameObject*)goptr;
+	RootNode->Render(this, cmdlist, worldMatrix, go);
 
-	matrix xmf4x4Projection = gd.viewportArr[0].ProjectMatrix;
-	matrix xmf4x4View = gd.viewportArr[0].ViewMatrix;
-	xmf4x4View *= xmf4x4Projection;
-	xmf4x4View.transpose();
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
-	gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCBResource.resource->GetGPUVirtualAddress());
-
-	RootNode->Render(this, cmdlist, worldMatrix);
 	game.MyShader->Add_RegisterShaderCommand(cmdlist);
 }
 
-void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat)
+int Model::GetNodeIndex(char* NodeName)
 {
+	for (int i = 0; i < nodeCount; ++i) {
+		if (strcmp(Nodes[i].name.c_str(), NodeName) == 0) {
+			return i;
+		}
+	}
+	return 0;
+}
+
+int Model::BoneIndexToNodeIndex(int boneIndex)
+{
+	return boneIndex + BoneStartIndex;
+}
+
+int Model::NodeIndexToBoneIndex(int nodeIndex)
+{
+	return nodeIndex - BoneStartIndex;
+}
+
+void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat, void* goptr)
+{
+	GameObject* go = (GameObject*)goptr;
 	Model* pModel = (Model*)model;
 	XMMATRIX sav = XMMatrixMultiply(transform, parentMat);
 	if (numMesh != 0 && Meshes != nullptr) {
@@ -5001,31 +5851,177 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 		m.transpose();
 
 		//set world matrix in shader
-		cmdlist->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+		
 		//set texture in shader
 		//game.MyPBRShader1->SetTextureCommand()
 		for (int i = 0; i < numMesh; ++i) {
-			int materialIndex = ((BumpMesh*)pModel->mMeshes[Meshes[i]])->material_index;
-			Material& mat = *pModel->mMaterials[materialIndex];
-			GPUResource* diffuseTex = &game.DefaultTex;
-			if (mat.ti.Diffuse >= 0) diffuseTex = pModel->mTextures[mat.ti.Diffuse];
-			GPUResource* normalTex = &game.DefaultNoramlTex;
-			if (mat.ti.Normal >= 0) normalTex = pModel->mTextures[mat.ti.Normal];
-			GPUResource* ambientTex = &game.DefaultTex;
-			if (mat.ti.AmbientOcculsion >= 0) ambientTex = pModel->mTextures[mat.ti.AmbientOcculsion];
-			GPUResource* MetalicTex = &game.DefaultAmbientTex;
-			if (mat.ti.Metalic >= 0) MetalicTex = pModel->mTextures[mat.ti.Metalic];
-			GPUResource* roughnessTex = &game.DefaultAmbientTex;
-			if (mat.ti.Roughness >= 0) roughnessTex = pModel->mTextures[mat.ti.Roughness];
-			game.MyPBRShader1->SetTextureCommand(diffuseTex, normalTex, ambientTex, MetalicTex, roughnessTex);
+			ColorMesh* mesh = pModel->mMeshes[Meshes[i]];
+			if (mesh->type == ColorMesh::BumpMesh) {
+				game.MyPBRShader1->Add_RegisterShaderCommand2(cmdlist, false);
+				gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
 
-			pModel->mMeshes[Meshes[i]]->Render(cmdlist, 1);
+				matrix xmf4x4Projection = gd.viewportArr[0].ProjectMatrix;
+				matrix xmf4x4View = gd.viewportArr[0].ViewMatrix;
+				xmf4x4View *= xmf4x4Projection;
+				xmf4x4View.transpose();
+				gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
+				gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
+
+				cmdlist->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+
+				gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCBResource.resource->GetGPUVirtualAddress());
+
+				int materialIndex = ((BumpMesh*)mesh)->material_index;
+				Material& mat = *pModel->mMaterials[materialIndex];
+				GPUResource* diffuseTex = &game.DefaultTex;
+				if (mat.ti.Diffuse >= 0) diffuseTex = pModel->mTextures[mat.ti.Diffuse];
+				GPUResource* normalTex = &game.DefaultNoramlTex;
+				if (mat.ti.Normal >= 0) normalTex = pModel->mTextures[mat.ti.Normal];
+				GPUResource* ambientTex = &game.DefaultTex;
+				if (mat.ti.AmbientOcculsion >= 0) ambientTex = pModel->mTextures[mat.ti.AmbientOcculsion];
+				GPUResource* MetalicTex = &game.DefaultAmbientTex;
+				if (mat.ti.Metalic >= 0) MetalicTex = pModel->mTextures[mat.ti.Metalic];
+				GPUResource* roughnessTex = &game.DefaultAmbientTex;
+				if (mat.ti.Roughness >= 0) roughnessTex = pModel->mTextures[mat.ti.Roughness];
+				game.MyPBRShader1->SetTextureCommand(diffuseTex, normalTex, ambientTex, MetalicTex, roughnessTex);
+
+				pModel->mMeshes[Meshes[i]]->Render(cmdlist, 1);
+			}
+			else if (mesh->type == ColorMesh::SkinedBumpMesh) {
+				BumpSkinMesh* skinMesh = (BumpSkinMesh*)mesh;
+				game.MyPBRShader1->Add_RegisterShaderCommand2(cmdlist, true);
+				gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
+
+				matrix xmf4x4Projection = gd.viewportArr[0].ProjectMatrix;
+				matrix xmf4x4View = gd.viewportArr[0].ViewMatrix;
+				xmf4x4View *= xmf4x4Projection;
+				xmf4x4View.transpose();
+				gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
+				gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
+
+				DescHandle TolocalDesc;
+				gd.ShaderVisibleDescPool.AllocDescriptorTable(&TolocalDesc.hcpu, &TolocalDesc.hgpu, 1);
+				gd.pDevice->CopyDescriptorsSimple(1, TolocalDesc.hcpu, skinMesh->ToLocalCB.hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				gd.pCommandList->SetGraphicsRootDescriptorTable(1, TolocalDesc.hgpu);
+
+				DescHandle ToWorldDesc;
+				gd.ShaderVisibleDescPool.AllocDescriptorTable(&ToWorldDesc.hcpu, &ToWorldDesc.hgpu, 1);
+				gd.pDevice->CopyDescriptorsSimple(1, ToWorldDesc.hcpu, go->BoneToWorldMatrixCB.hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				gd.pCommandList->SetGraphicsRootDescriptorTable(2, ToWorldDesc.hgpu);
+
+				//cmdlist->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+				//gd.pCommandList->SetGraphicsRoot32BitConstants(2, 16, &m, 0);
+				//gd.pCommandList->SetGraphicsRoot32BitConstants(2, pModel->MaxBoneCount * 16, go->RootBoneMatrixs, 16);
+
+				gd.pCommandList->SetGraphicsRootConstantBufferView(3, game.LightCBResource.resource->GetGPUVirtualAddress());
+
+				int materialIndex = ((BumpMesh*)mesh)->material_index;
+				Material& mat = *pModel->mMaterials[materialIndex];
+				GPUResource* diffuseTex = &game.DefaultTex;
+				if (mat.ti.Diffuse >= 0) diffuseTex = pModel->mTextures[mat.ti.Diffuse];
+				GPUResource* normalTex = &game.DefaultNoramlTex;
+				if (mat.ti.Normal >= 0) normalTex = pModel->mTextures[mat.ti.Normal];
+				GPUResource* ambientTex = &game.DefaultTex;
+				if (mat.ti.AmbientOcculsion >= 0) ambientTex = pModel->mTextures[mat.ti.AmbientOcculsion];
+				GPUResource* MetalicTex = &game.DefaultAmbientTex;
+				if (mat.ti.Metalic >= 0) MetalicTex = pModel->mTextures[mat.ti.Metalic];
+				GPUResource* roughnessTex = &game.DefaultAmbientTex;
+				if (mat.ti.Roughness >= 0) roughnessTex = pModel->mTextures[mat.ti.Roughness];
+				
+				DescHandle hDesc;
+				gd.ShaderVisibleDescPool.AllocDescriptorTable(&hDesc.hcpu, &hDesc.hgpu, 5);
+				DescHandle hStart = hDesc;
+
+				unsigned long long inc = gd.CBV_SRV_UAV_Desc_IncrementSiz;
+				gd.pDevice->CopyDescriptorsSimple(1, hDesc.hcpu, diffuseTex->hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				hDesc += inc;
+				gd.pDevice->CopyDescriptorsSimple(1, hDesc.hcpu, normalTex->hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				hDesc += inc;
+				gd.pDevice->CopyDescriptorsSimple(1, hDesc.hcpu, ambientTex->hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				hDesc += inc;
+				gd.pDevice->CopyDescriptorsSimple(1, hDesc.hcpu, MetalicTex->hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				hDesc += inc;
+				gd.pDevice->CopyDescriptorsSimple(1, hDesc.hcpu, roughnessTex->hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+				gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
+				gd.pCommandList->SetGraphicsRootDescriptorTable(4, hStart.hgpu);
+
+				pModel->mMeshes[Meshes[i]]->Render(cmdlist, 1);
+			}
 		}
 	}
 
 	if (numChildren != 0 && Childrens != nullptr) {
 		for (int i = 0; i < numChildren; ++i) {
-			Childrens[i]->Render(model, cmdlist, sav);
+			Childrens[i]->Render(model, cmdlist, sav, go);
 		}
 	}
+}
+
+void Animation::GetBoneLocalMatrixAtTime(matrix* out, float time)
+{
+	for (int i = 0; i < mNumChannels; ++i) {
+		out[mChannels[i].nodeIndex+1] = mChannels[i].GetLocalMatrixAtTime(time);
+	}
+}
+
+matrix NodeAnim::GetLocalMatrixAtTime(float time)
+{
+	vec4 pos = vec4(0, 0, 0);
+	vec4 rotQ = vec4(0, 0, 0, 1);
+	vec4 scale = vec4(1, 1, 1);
+	if (mNumPositionKeys > 0) {
+		for (int i = 0; i < mNumPositionKeys - 1; ++i) {
+			if (mPositionKeys[i].mTime < time && time < mPositionKeys[i + 1].mTime) {
+				vec4 p0 = mPositionKeys[i].mValue;
+				vec4 p1 = mPositionKeys[i + 1].mValue;
+				float maxf = mPositionKeys[i + 1].mTime - mPositionKeys[i].mTime;
+				float flow = time - mPositionKeys[i].mTime;
+				float rate = flow / maxf;
+				pos = (1.0f - rate) * p0 + rate * p1;
+				break;
+			}
+		}
+	}
+
+	if (mNumRotationKeys > 0) {
+		for (int i = 0; i < mNumRotationKeys - 1; ++i) {
+			if (mRotationKeys[i].mTime < time && time < mRotationKeys[i + 1].mTime) {
+				vec4 p0 = mRotationKeys[i].mValue;
+				vec4 p1 = mRotationKeys[i + 1].mValue;
+				float maxf = mRotationKeys[i + 1].mTime - mRotationKeys[i].mTime;
+				float flow = time - mRotationKeys[i].mTime;
+				float rate = flow / maxf;
+				rotQ = vec4::Qlerp(p0, p1, rate);
+				break;
+			}
+		}
+	}
+	
+
+	if (mNumScalingKeys > 0) {
+		for (int i = 0; i < mNumScalingKeys - 1; ++i) {
+			if (mScalingKeys[i].mTime < time && time < mScalingKeys[i + 1].mTime) {
+				vec4 p0 = mScalingKeys[i].mValue;
+				vec4 p1 = mScalingKeys[i + 1].mValue;
+				float maxf = mScalingKeys[i + 1].mTime - mScalingKeys[i].mTime;
+				float flow = time - mScalingKeys[i].mTime;
+				float rate = flow / maxf;
+				scale = (1.0f - rate) * p0 + rate * p1;
+				break;
+			}
+		}
+	}
+
+	matrix mat =
+		XMMatrixScaling(scale.x, scale.y, scale.z) *
+		XMMatrixRotationQuaternion(rotQ) *
+		XMMatrixTranslation(pos.x, pos.y, pos.z);
+	//matrix mat = XMMatrixScaling(1, 1, 1);
+	//mat = mat * XMMatrixRotationQuaternion(rotQ);
+	//mat.pos = pos;
+	//mat.pos.w = 1;
+	////mat.transpose();
+
+	return mat;
 }

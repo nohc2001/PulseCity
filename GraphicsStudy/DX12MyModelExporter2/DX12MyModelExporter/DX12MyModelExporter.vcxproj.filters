@@ -94,6 +94,9 @@
     <FxCompile Include="Resources\Shaders\PBRShader01.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Resources\Shaders\SkinedPBRShader01.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="memo.txt" />

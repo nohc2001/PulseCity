@@ -52,8 +52,8 @@ AddUnit(kmph, (0.2777777777777778))
 //vec4 x4 : matrix
 struct vec4 {
 	union {
-		XMFLOAT3 f3;
 		XMFLOAT4 f4;
+		XMFLOAT3 f3;
 		XMVECTOR v4;
 		struct {
 			float x;
@@ -205,6 +205,37 @@ struct vec4 {
 	const vec4& getQdiff(const vec4& B) { // A-B
 		return mulQ(B.invQ());
 	}
+
+	// LERP 
+	static __forceinline vec4 QSimpleLerp(const vec4& q1, const vec4& q2, float t) { 
+		vec4 result; 
+		result = (1.0f - t) * q1 + t * q2;
+		float len = result.len4;
+		result /= len;
+		return result; 
+	}
+
+	// SLERP 
+	static vec4 Qlerp(const vec4& q1, const vec4& q2, float t) { 
+		float dot = q1.dot4(q2);
+		vec4 q2b = q2; 
+		if (dot < 0.0f) 
+		{ 
+			dot = -dot; 
+			q2b = -q2;
+		} 
+		if (dot > 0.9995f) { 
+			return QSimpleLerp(q1, q2b, t);
+		} 
+		float theta = acos(dot); 
+		float sinTheta = sin(theta); 
+		float w1 = sin((1 - t) * theta) / sinTheta; 
+		float w2 = sin(t * theta) / sinTheta; 
+		vec4 result; 
+		result = w1*q1 + w2*q2b;
+		return result; 
+	}
+
 	XMVECTOR ortho() const { return XMVector3Orthogonal(v4); }
 };
 

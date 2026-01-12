@@ -16,6 +16,12 @@ using namespace DirectX::PackedVector;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
+#define PIX_DEBUGING
+
+#ifdef PIX_DEBUGING
+#include "C:\\Users\\nohc2\\OneDrive\\Desktop\\WorkRoom\\Dev\\CollegeProjects\\Graphics\\PixEvents-main\\include\\pix3.h"
+#endif
+
 #pragma region dbglogDefines
 #define dbglog1(format, A) \
 	{\
@@ -67,6 +73,14 @@ using namespace DirectX::PackedVector;
 		OutputDebugStringA(str);\
 	}
 #pragma endregion
+
+ofstream dbg;
+void MatrixDbg(matrix mat) {
+	dbg << mat._11 << ", " << mat._12 << ", " << mat._13 << ", " << mat._14 << endl;
+	dbg << mat._21 << ", " << mat._22 << ", " << mat._23 << ", " << mat._24 << endl;
+	dbg << mat._31 << ", " << mat._32 << ", " << mat._33 << ", " << mat._34 << endl;
+	dbg << mat._41 << ", " << mat._42 << ", " << mat._43 << ", " << mat._44 << endl;
+}
 
 struct WinEvent {
 	HWND hWnd;
@@ -289,13 +303,20 @@ public:
 
 class PBRShader1 : public Shader{
 public:
+	ID3D12PipelineState* pPipelineState_SkinedMesh;
+	ID3D12RootSignature* pRootSignature_SkinedMesh;
+
 	PBRShader1() {}
 	virtual ~PBRShader1() {}
 
 	virtual void InitShader();
 	virtual void CreateRootSignature();
+	virtual void CreateRootSignature_SkinedMesh();
 	virtual void CreatePipelineState();
+	virtual void CreatePipelineState_SkinedMesh();
 	virtual void Release();
+
+	void Add_RegisterShaderCommand2(ID3D12GraphicsCommandList* commandList, bool skined);
 
 	union eTextureID {
 		enum texid {
@@ -364,6 +385,14 @@ public:
 	//XMFLOAT3 MAXpos = { 0, 0, 0 }; // it can replace Mesh OBB.
 	XMFLOAT3 OBB_Ext;
 	XMFLOAT3 OBB_Tr;
+
+	enum MeshType {
+		Mesh = 0,
+		UVMesh = 1,
+		BumpMesh = 2,
+		SkinedBumpMesh = 3
+	};
+	MeshType type;
 
 	struct Vertex {
 		XMFLOAT3 position;
@@ -477,6 +506,131 @@ public:
 	virtual ~BumpMesh();
 	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds);
 	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
+	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
+	virtual void Release();
+};
+
+class BumpSkinMesh : public ColorMesh {
+public:
+	int material_index;
+	matrix* DefaultToWorldArr;
+	matrix* ToLocalArr;
+	matrix* OffsetMatrixs;
+	int MatrixCount;
+	GPUResource ToLocalCB;
+
+	struct BoneWeight {
+		int boneID;
+		float weight;
+
+		BoneWeight(){
+			boneID = 0;
+			weight = 0;
+		}
+
+		BoneWeight(int bID, float w) :
+			boneID{ bID }, weight{w}
+		{
+
+		}
+	};
+
+	struct BoneWeight4 {
+		BoneWeight bones[4];
+		BoneWeight4() {
+
+		}
+		BoneWeight4(BoneWeight b0, BoneWeight b1, BoneWeight b2, BoneWeight b3) {
+			bones[0] = b0;
+			bones[1] = b1;
+			bones[2] = b2;
+			bones[3] = b3;
+		}
+
+		void PushBones(BoneWeight p) {
+			for (int i = 0; i < 4; ++i) {
+				if (bones[i].boneID < 0) {
+					bones[i] = p;
+					return;
+				}
+			}
+
+			for (int i = 0; i < 4; ++i) {
+				if (bones[i].weight < p.weight) {
+					bones[i] = p;
+					return;
+				}
+			}
+		}
+	};
+
+	struct MatNode {
+		matrix mat;
+		int parent; // NULL = -1
+	};
+
+	struct Vertex {
+		XMFLOAT3 position;
+		XMFLOAT3 normal;
+		XMFLOAT2 uv;
+		XMFLOAT3 tangent;
+		XMFLOAT3 bitangent;
+		BoneWeight boneWeight[4];
+
+		Vertex() {}
+		Vertex(XMFLOAT3 p, XMFLOAT3 nor, XMFLOAT2 _uv, XMFLOAT3 tan, XMFLOAT3 bit, BoneWeight b0, BoneWeight b1, BoneWeight b2, BoneWeight b3)
+			: position{ p }, normal{ nor }, uv{ _uv }, tangent{ tan }, bitangent{ bit }
+		{
+			boneWeight[0] = b0;
+			boneWeight[1] = b1;
+			boneWeight[2] = b2;
+			boneWeight[3] = b3;
+		}
+
+		bool HaveToSetTangent() {
+			bool b = ((tangent.x == 0 && tangent.y == 0) && tangent.z == 0);
+			b |= ((isnan(tangent.x) || isnan(tangent.y)) || isnan(tangent.z));
+
+			b |= ((bitangent.x == 0 && bitangent.y == 0) && bitangent.z == 0);
+			b |= ((isnan(bitangent.x) || isnan(bitangent.y)) || isnan(bitangent.z));
+			return b;
+		}
+
+		static void CreateTBN(Vertex& P0, Vertex& P1, Vertex& P2) {
+			vec4 N1, N2, M1, M2;
+			//XMFLOAT3 N0, N1, M0, M1;
+			N1 = vec4(P1.uv) - vec4(P0.uv);
+			N2 = vec4(P2.uv) - vec4(P0.uv);
+			M1 = vec4(P1.position) - vec4(P0.position);
+			M2 = vec4(P2.position) - vec4(P0.position);
+
+			float f = 1.0f / (N1.x * N2.y - N2.x * N1.y);
+			vec4 tan = vec4(P0.tangent);
+			tan = f * (M1 * N2.y - M2 * N1.y);
+			vec4 v = XMVector3Normalize(tan);
+			P0.tangent = v.f3;
+
+			XMVECTOR bit = vec4(P0.bitangent);
+			bit = f * (M2 * N1.x - M1 * N2.x);
+			v = XMVector3Normalize(bit);
+			P0.bitangent = v.f3;
+
+			if (P0.HaveToSetTangent()) {
+				// why tangent is nan???
+				XMVECTOR NorV = XMVectorSet(P0.normal.x, P0.normal.y, P0.normal.z, 1.0f);
+				XMVECTOR TanV = XMVectorSet(0, 0, 0, 0);
+				XMVECTOR BinV = XMVectorSet(0, 0, 0, 0);
+				BinV = XMVector3Cross(NorV, M1);
+				TanV = XMVector3Cross(NorV, BinV);
+				P0.tangent = { 1, 0, 0 };
+				P0.bitangent = { 0, 0, 1 };
+			}
+		}
+	};
+
+	BumpSkinMesh();
+	virtual ~BumpSkinMesh();
+	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, MatNode* NodeLocalMatrixs, int matrixCount);
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
 	virtual void Release();
 };
@@ -683,7 +837,7 @@ struct ModelNode {
 	unsigned int* Mesh_Materials;
 	ModelMetaData* mMetaData; // later..
 
-	void Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat);
+	void Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat, void* goptr);
 };
 
 /*
@@ -949,6 +1103,8 @@ struct NodeAnim {
 	VectorKey* mScalingKeys;
 	AnimBehaviour mPreState;
 	AnimBehaviour mPostState;
+
+	matrix GetLocalMatrixAtTime(float time);
 };
 
 struct MeshAnim {
@@ -965,13 +1121,15 @@ struct Animation {
 	double mTicksPerSecond;
 	
 	unsigned int mNumChannels;
-	NodeAnim** mChannels;
+	NodeAnim* mChannels;
 	
 	unsigned int mNumMeshChannels;
-	MeshAnim** mMeshChannels;
+	MeshAnim* mMeshChannels;
 	
 	unsigned int mNumMorphMeshChannels;
-	MeshMorphAnim** mMorphMeshChannels;
+	MeshMorphAnim* mMorphMeshChannels;
+
+	void GetBoneLocalMatrixAtTime(matrix* out, float time);
 };
 
 struct _Texture {
@@ -1009,6 +1167,7 @@ struct Model {
 
 	//metadata
 	float UnitScaleFactor = 1.0f;
+	int MaxBoneCount;
 
 	void Rearrange1(ModelNode* node);
 	void Rearrange2();
@@ -1020,7 +1179,12 @@ struct Model {
 	void SaveModelFile(string filename);
 	void LoadModelFile(string filename);
 
-	void Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix);
+	void Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, void* goptr);
+
+	int GetNodeIndex(char* NodeName);
+	int BoneStartIndex = 0; // Node중 뼈대가 시작되는 index.
+	int BoneIndexToNodeIndex(int boneIndex);
+	int NodeIndexToBoneIndex(int nodeIndex);
 };
 
 struct OBB_vertexVector {
@@ -1059,10 +1223,18 @@ struct GameObject {
 
 	enum eRenderMeshMod {
 		single_Mesh = 0,
-		Model = 1
+		_Model = 1
 	};
 
 	eRenderMeshMod rmod = eRenderMeshMod::single_Mesh;
+
+	// node? bone?
+	matrix* BoneLocalMatrixs;
+	matrix* RootBoneMatrixs; // [worldMat] [bone 0] [...] [bone N]
+	GPUResource BoneToWorldMatrixCB;
+	void InitRootBoneMatrixs();
+	void SetRootMatrixs();
+	void SetRootMatrixsInherit(matrix parentMat, ModelNode* node);
 
 	vec4 LVelocity;
 	vec4 tickLVelocity;
@@ -1078,6 +1250,7 @@ struct GameObject {
 	virtual void Release();
 
 	void SetMesh(ColorMesh* pMesh);
+	void SetModel(Model* model);
 	void SetShader(Shader* pShader);
 	void SetWorldMatrix(const XMMATRIX& worldMatrix);
 

@@ -1,0 +1,11 @@
+/*
+
+공부할 자료
+https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html#shader-tables
+
+
+할일
+
+1. Raytracing Instance Desc를 실시간 수정이 가능하도록 변경하기.
+	MappedData를 사용해 어떤 인스턴스의 생성 / 삭제 / 수정이 자유롭게 이루어 지도록.
+*/

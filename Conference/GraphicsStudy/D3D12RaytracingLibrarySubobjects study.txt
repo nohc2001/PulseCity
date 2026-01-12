@@ -1,0 +1,255 @@
+/*
+드디어 예제 1번을 개인 프로젝트에 구현해냈다.
+
+그럼 이제 정육면체 메쉬를 하나 출력하기 위해 
+이전과 무엇이 달라졌는지를 파악하기 위해 문서를 작성한다.
+
+결국 핵심적인 내용들은 모두 프로젝트와 동명의 클래스의 맴버함수로써 존재하기 때문에,
+D3D12RaytracingLibrarySubobjects.cpp 를 중점적으로 보겠다.
+
+이전 샘플에서 레이트레이싱에서 주요한 역할을 한 부분은 다음 과 같다.
+
+1. 레이트레이싱 디바이스 초기화
+2. RTPSO
+3. RenderLoop
+이 세 부분을 살펴 볼 것이다.
+
+<D3D12RaytracingLibrarySubobjects.cpp>
+@void D3D12RaytracingLibrarySubobjects::OnInit()
+먼저 디바이스 초기화 부분을 보자.
+여기에서 이전 예제들과 달라진 점은
+1. EnableDirectXRaytracing >> not use 001
+2. InitializeScene >> use 002
+표면적으로 이 두 부분으로 보인다.
+일단 이 두 함수가 무엇을 하는지 보자.
+이전 샘플에서는
+CreateDeviceDependentResources 에서 디바이스 관련 리소스들 대다수를 초기화 했고,
+CreateWindowSizeDependentResources에서 서브렌더타겟과 같이 원도우 사이즈에 따라 달라지는 리소스를 초기화 했다.
+때문에 이 두 함수도 잘 봐야 할 필요가 있다.
+
+#
+@void D3D12RaytracingLibrarySubobjects::CreateDeviceDependentResources()
+기존과 다른 추가된 함수는 
+CreateConstantBuffers(); 이다.
+그것을 포함해서 무엇이 다른지 비교해보자.
+
+1. CreateRaytracingInterfaces
+이건 전체적으로 똑같지만
+ThrowIfFailed(commandList->QueryInterface(IID_PPV_ARGS(&m_dxrCommandList)), L"Couldn't get DirectX Raytracing interface for the command list.\n");
+이 이전 코드가 'some reason' 으로 인해 실패한다고 한다. 왜인지는 안적혀 있음.
+그리고 이렇게 함
+m_dxrCommandList = reinterpret_cast<ID3D12GraphicsCommandList5*>(commandList);
+
+2. CreateRootSignatures
+unique 한 글로벌 루트 시그니처는 g_pRaytracing 안에 정의되어 있다고 한다.
+컴퓨트 루트 시그니처는 DXIL 바이트코드로 부터 올 수 있음. (CreateRootSignature API를 사용하여?)
+
+3. CreateRaytracingPipelineStateObject
+이전 샘플과 다른 추가적인 코드는 
+lib->DefineExport(c_globalRootSignatureName);
+lib->DefineExport(c_localRootSignatureName);
+lib->DefineExport(c_localRootSignatureAssociationName);
+lib->DefineExport(c_shaderConfigName);
+lib->DefineExport(c_pipelineConfigName);
+lib->DefineExport(c_hitGroupName);
+이런 것들이 들어갔다.
+글로벌 루트 시그니쳐, 로컬루트시그니처, 
+SOTAL, ShaderConfig, HitGroup 등을 등록? 한다.
+근데 이것들을 하고 그 대신 그걸 만드는 코드는 없다. 
+셰이더 코드에 그게 구성된 건가 보다.
+그 후 CreateStateObject 를 이용해 RTPSO를 만든다.
+
+4. CreateDescriptorHeap.
+이 함수가 달라진 점은 
+NumDescriptors가 1에서 3으로 증가했다.
+내 프로그램에서는 공간이 애초에 여유가 있을 수 밖에 없기 때문에 이건 신경 안써도 될 것 같다.
+
+5. BuildGeometry
+이전에는 삼각형을 구성했다면 지금은 큐브를 구현하고 있다.
+추가적으로 CreateBufferSRV를 indexBuffer, vertexBuffer를 대상으로 호출하고, 
+descriptorIndexVB == descriptorIndexIB + 1 를 검사한다.
+뭐하는 걸까?
+	5-1. CreateBufferSRV 란
+		뭔가 버택스 버퍼와 인덱스 버퍼의 SRV를 만드는 것 같음. 왜 SRV일까 생각했는데, 결국 RootSignature에 들어가려면 SRV 형태여야 하나? 생각했다. CBV는 좀 그래서. 
+		  인스턴싱도 SRV로 하잖아? 그런 건가 싶다.
+		  그 만든 SRV를 buffer의 gpudeschandle에 저장한다.
+
+6. BuildAccelerationStructures
+	BLAS, TLAS의 DESC이 위치가 뒤바뀐 것이 좀 차이가 있지만, 의미가 없으니 넘어가고,
+	PreBuildInfo를 얻는 과정도 같다.
+	근데 bottomLevelBuildDesc 구성에서 Input을 넣어주지 않는것 같다. 왜 그런걸까? >> 모름.
+
+7. 이제 새로 추가된 함수. CreateConstantBuffers를 보자.
+	CreateCommittedResource를 통해서 뭔가 CB를 만든다. UploadBuffer로 만들고, Map을 통해 m_mappedConstantData에 매핑한다.
+
+8. BuildShaderTables
+셰이더 테이블을 빌드하는 부분에도 달라진 것이 있나 살펴보자.
+첫번째 차이점은 
+RayGen Shader Table 에서 ShaderRecord를 push_back하는 부분에서, ShaderRecord의 생성자가 달라졌다.
+기존에는 RootArgument가 있고, 그 주소와 바이트 크기를 넘겨주었는데, 이 예제는 그런 거 없었다.
+클래스 정의를 살펴보니, ShaderRecord의 생성자는 애초부터 2개였다. 단지 이번에는 localRootArguemnt가 설정되지 않았을 뿐이었다.
+miss shader는 달라진 점이 없다. 원래부터 localRootArgument를 설정하지 않았다.
+HitGroupShader는 반대로 원래는 localRootArgument를 설정하지 않았는데, 이번에 RootArgument로 설정한다.
+단지 그 RootArgument 구조체가 바뀌었다.
+
+struct CubeConstantBuffer
+{
+	XMFLOAT4 albedo;
+};
+이것이다.
+
+9. CreateRaytracingOutputResource 는 안바뀌었다.
+
+
+
+<Raytracing.hlsl>
+이제 달라진 셰이더 코드를 보자.
+현재 셰이더에 매우 많은 것들이 정의되어 있는 것 같다.
+GlobalRootSignature 타입으로 MyGlobalRootSignature 변수가 정의되어 있다.
+
+GlobalRootSignature MyGlobalRootSignature =
+{
+	"DescriptorTable( UAV( u0 ) )," // Output texture
+	"SRV( t0 )," // Acceleration structure
+	"CBV( b0 )," // Scene constants
+	"DescriptorTable( SRV( t1, numDescriptors = 2 ) )" // Static index and vertex buffers.
+};
+
+LocalRootSignature MyLocalRootSignature =
+{
+	"RootConstants( num32BitConstants = 4, b1 )" // Cube constants
+};
+
+TriangleHitGroup MyHitGroup =
+{
+	"",                     // AnyHit
+	"MyClosestHitShader",   // ClosestHit
+};
+
+SubobjectToExportsAssociation  MyLocalRootSignatureAssociation =
+{
+	"MyLocalRootSignature",  // subobject name
+	"MyHitGroup"             // export association
+};
+
+RaytracingShaderConfig  MyShaderConfig =
+{
+	16, // max payload size
+	8   // max attribute size
+};
+
+RaytracingPipelineConfig MyPipelineConfig =
+{
+	1 // max trace recursion depth
+};
+
+이건 아마 코드에서 정의하지 못한 GlobalRootSignature, LocalRootSignature,
+HitGroup, SOTAL, ShaderConfig, RTPSO_recursiondepth 등을 설정하는 것일 것이다.
+이후에 다음과 같은 코드가 나온다.
+
+<이전>
+RaytracingAccelerationStructure Scene : register(t0, space0);
+RWTexture2D<float4> RenderTarget : register(u0);
+ConstantBuffer<RayGenConstantBuffer> g_rayGenCB : register(b0);
+
+<이후>
+RaytracingAccelerationStructure Scene : register(t0, space0);
+RWTexture2D<float4> RenderTarget : register(u0);
+
+//이런 식으로 인덱스와 버택스 버퍼를 바인딩하는 것 같음. 
+//근데 이러면 뭔가 도형이 새로 생길때마다 이런 식으로 해야 하는가?
+//그건 아니지 않나? 싶네..? 충돌이 되면 그때 바인딩 되는 형식인가?
+ByteAddressBuffer Indices : register(t1, space0);
+StructuredBuffer<Vertex> Vertices : register(t2, space0);
+
+// 씬 CB
+ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
+// 큐브 CB
+ConstantBuffer<CubeConstantBuffer> g_cubeCB : register(b1);
+
+
+
+typedef BuiltInTriangleIntersectionAttributes MyAttributes;
+
+struct RayPayload
+{
+	float4 color; // 색깔을 담는다.
+};
+// 애트리 뷰트와 페이로드 자료구조 정의
+
+일단 전체적인 셰이더 함수 구조를 설명한다.
+1. MyRaygenShader로 픽셀좌표가 
+DispatchRaysIndex().xy 를 통해 uint2로 들어온다.
+이와 GenerateCameraRay 함수를 통해 
+origin, rayDir에 Ray 정보를 얻어내고
+발사할 Ray 정보를 RayDesc ray에 구성한다.
+ RayPayload payload = { float4(0, 0, 0, 0) };
+ 를 통해 초기 페이로드를 정하고, 
+TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload); 를 호출하여 Ray를 발사한다.
+그로인해 저장된 payload의 색상을 픽셀에 출력한다.
+
+Trace의 결과 해당 Ray와 Payload는 
+MyClosestHitShader 혹은 MyMissShader를 호출하게 된다.
+MyMissShader의 경우, payload.color를 
+background = float4(0.0f, 0.2f, 0.4f, 1.0f);
+으로 설정하고 함수가 끝난다.
+
+MyClosestHitShader의 경우, 
+HitWorldPosition() 으로 hitPosition에 Ray와 Geometry가 충돌한 지점을 구하고, 
+uint indexSizeInBytes = 2; : 하나의 인덱스가 2바이트,
+uint indicesPerTriangle = 3; : 하나의 삼각형이 3개의 인덱스로 구성되어있단걸 명시한다.
+uint triangleIndexStride = indicesPerTriangle * indexSizeInBytes; // 그 둘을 곱하여 하나의 삼각형 데이터의 Stride를 구한다.
+
+uint baseIndex = PrimitiveIndex() * triangleIndexStride;
+//PrimitiveIndex() 로 충돌한 삼각형을 가리키는 Offset을 얻고, 
+
+const uint3 indices = Load3x16BitIndices(baseIndex);
+를 통해 indices에 삼각형을 구성하는 3개의 인덱스를 가져온다.
+
+//그리고 그 3개의 인덱스를 사용해 각각의 버택스에 접근하여 버택스들의 노멀값을 빼온다.
+float3 vertexNormals[3] = {
+		Vertices[indices[0]].normal,
+		Vertices[indices[1]].normal,
+		Vertices[indices[2]].normal
+};
+
+float3 triangleNormal = HitAttribute(vertexNormals, attr);
+을 통해 삼각형하나의 Normal을 구하고, 
+이를 통해 diffuse 라이팅 연산을 진행한다.
+그 결과를 payload.color에 담는다.
+
+///
+일단 여기까지 보고 의문은 만약 Mesh가 여러개면 어떻게 할까이다.
+VertexBuffer, IndexBuffer를 SRV로 바인딩해서 처리하는데,
+만약 mesh가 많으면 어떻게 할까 고민이었다.
+다른 예제를 보니까 Mesh마다 ID를 붙이고, 어떤 MeshID를 가지는지 LocalRootSignature에 저장한다.
+해당 LocalRootSignature를 보고 MeshID를 얻고,
+MeshID로 MeshMetaData[MeshID]를 얻는다.
+해당 메타데이터에 그 메쉬 버택스 데이터, 인덱스 데이터가
+몇 바이트부터 시작하는지, UV, Normal과 같은 데이터 버택스당 어떤 오프셋을 가지는지 등등을 얻게 할 수 있다.
+>> 일단 오케이. 그럼 개발한번 해보자.
+
+#not use 001
+@void D3D12RaytracingLibrarySubobjects::EnableDirectXRaytracing(IDXGIAdapter1* adapter)
+이 함수는 그냥 IsDirectXRaytracingSupported를 함수 안쪽으로 넣은 것이다.
+결국 같은 코드였다.
+
+#use 002
+@void D3D12RaytracingLibrarySubobjects::InitializeScene()
+1. 현재 프레임 인덱스를 얻어 frameIndex에 저장한다.
+2. m_cubeCB.albedo 에 큐브의 색상을 정한다.
+3. 카메라 정보를 설정한다.
+	특이한점은 rotate 라는 행렬을 구성하는데,
+	지역변수라 어디에도 영향을 주지 못한다.
+	음.. 보니까
+	m_eye, m_up, m_at이 프로젝트 클래스의 맴버변수로 저장되는데, 그곳에 쓰이는 행렬인것 같다.
+	UpdateCameraMatrices 함수를 호출하게된다.
+	3-1. frameIndex를 어는다.
+	3-2. m_eye, m_up, m_at으로 view, proj matrix를 구성하고 둘을 곱하여 viewProj Matrix를 구성한다. 그리고 그것의 역행렬? 을 
+		m_sceneCB[frameIndex].projectionToWorld에 저장한다.
+4. Setup Lights
+	m_sceneCB[frameIndex]의 
+	lightPosition, lightAmbientColor, lightDiffuseColor를 설정한다.
+5. 근데 그 씬 데이터가 스왑체인 개수만큼 있는 것 같다. 그것을 012 인덱스 돌아가며 복사한다.
+
+*/
