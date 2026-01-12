@@ -332,6 +332,7 @@ Collision_By_Move_static_vs_dynamic:
 		CollisionMove_DivideBaseline(movObj, colObj, obb2);
 	}
 }
+
 //not using
 void GameObject::CollisionMove_DivideBaseline(GameObject* movObj, GameObject* colObj, BoundingOrientedBox colOBB)
 {

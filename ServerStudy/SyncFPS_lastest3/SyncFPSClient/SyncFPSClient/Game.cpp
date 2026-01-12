@@ -33,14 +33,14 @@ union GameObjectType {
 	};
 
 	static constexpr int ServerSizeof[ObjectTypeCount] = {
-#ifdef _DEBUG
+#ifdef _DEBUG // 서버가 Debug일때
 		128,
 		336,
 		272,
-#else
+#else // 서버가 Release일 때.
 		128,
-		336,
-		272,
+		320,
+		256,
 #endif
 	};
 
