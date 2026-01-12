@@ -308,3 +308,21 @@ struct SpotLight {
 	DescHandle renderDesc;
 	ViewportData viewport;
 };
+
+struct Particle
+{
+	XMFLOAT3 Position;
+	float Life;
+
+	XMFLOAT3 Velocity;
+	float Age;
+
+	float Size;
+	float Padding[3];
+};
+
+struct ParticlePool
+{
+	GPUResource Buffer;
+	UINT Count;
+};

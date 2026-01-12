@@ -330,6 +330,96 @@ void Mesh::Release()
 	IndexUploadBuffer.Release();
 }
 
+// 备 皋浆 积己
+void Mesh::CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radius, int sliceCount, int stackCount, vec4 color)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	// 肺拿 OBB 
+	OBB_Tr = { 0, 0, 0 };
+	OBB_Ext = { radius, radius, radius };
+
+	// Vertex 积己
+	for (int i = 0; i <= stackCount; ++i)
+	{
+		float phi = XM_PI * (float)i / (float)stackCount;
+
+		for (int j = 0; j <= sliceCount; ++j)
+		{
+			float theta = XM_2PI * (float)j / (float)sliceCount;
+
+			XMFLOAT3 pos(
+				radius * sinf(phi) * cosf(theta),
+				radius * cosf(phi),
+				radius * sinf(phi) * sinf(theta)
+			);
+
+			// normal = normalize(pos)
+			XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&pos));
+			XMFLOAT3 normal;
+			XMStoreFloat3(&normal, n);
+
+			vertices.push_back(Vertex(pos, color, normal));
+		}
+	}
+
+	// Index 积己
+	UINT ring = (UINT)sliceCount + 1;
+
+	for (UINT i = 0; i < (UINT)stackCount; ++i)
+	{
+		for (UINT j = 0; j < (UINT)sliceCount; ++j)
+		{
+			indices.push_back(i * ring + j);
+			indices.push_back((i + 1) * ring + j + 1);
+			indices.push_back((i + 1) * ring + j);
+
+			indices.push_back(i * ring + j);
+			indices.push_back(i * ring + j + 1);
+			indices.push_back((i + 1) * ring + j + 1);
+		}
+	}
+
+	// GPU 滚欺 积己/诀肺靛 
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_DEFAULT,
+		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER,
+		nVertices * nStride, 1);
+
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_UPLOAD,
+		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER,
+		nVertices * nStride, 1);
+
+	gd.UploadToCommitedGPUBuffer(pCommandList, &vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_DEFAULT,
+		D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER,
+		(int)indices.size() * (int)sizeof(UINT), 1);
+
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(pCommandList, D3D12_HEAP_TYPE_UPLOAD,
+		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER,
+		(int)indices.size() * (int)sizeof(UINT), 1);
+
+	gd.UploadToCommitedGPUBuffer(pCommandList, &indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)indices.size() * sizeof(UINT);
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
 void UVMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
 {
 	std::vector< Vertex > temp_vertices;

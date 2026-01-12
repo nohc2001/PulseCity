@@ -97,6 +97,51 @@ void Game::SetLight()
 	LightCB_withShadowResource.resource->Unmap(0, nullptr);
 }
 
+void Game::InitParticlePool(ParticlePool& pool, UINT count)
+{
+	pool.Count = count;
+
+	std::vector<Particle> init(count);
+	for (UINT i = 0; i < count; ++i)
+	{
+		init[i].Life = 0.0f;
+		init[i].Age = 0.0f;
+		init[i].Size = 0.02f;
+	}
+
+	
+	pool.Buffer = gd.CreateCommitedGPUBuffer(
+		gd.pCommandList,                         
+		D3D12_HEAP_TYPE_DEFAULT,
+		D3D12_RESOURCE_STATE_COMMON,
+		D3D12_RESOURCE_DIMENSION_BUFFER,
+		sizeof(Particle) * count,
+		1,
+		DXGI_FORMAT_UNKNOWN,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+	);
+
+	
+	GPUResource upload = gd.CreateCommitedGPUBuffer(
+		gd.pCommandList,
+		D3D12_HEAP_TYPE_UPLOAD,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		D3D12_RESOURCE_DIMENSION_BUFFER,
+		sizeof(Particle) * count,
+		1,
+		DXGI_FORMAT_UNKNOWN
+	);
+
+	gd.UploadToCommitedGPUBuffer(
+		gd.pCommandList,
+		init.data(),
+		&upload,
+		&pool.Buffer,
+		true
+	);
+}
+
+
 //non using
 void Game::Init()
 {
@@ -191,6 +236,28 @@ void Game::Init()
 	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f, { 1, 1, 1, 1 });
 	Shape::AddMesh("Wall001", MyWallMesh);
 
+	// LOD Sphere Mesh 持失
+	Mesh* SphereHigh = new Mesh();
+	SphereHigh->CreateSphereMesh(gd.pCommandList, 1.5f, 10, 5, vec4(1, 0, 0, 1)); // 100 triangles
+	Shape::AddMesh("SphereHigh100", SphereHigh);
+
+	Mesh* SphereLow = new Mesh();
+	SphereLow->CreateSphereMesh(gd.pCommandList, 1.5f, 5, 2, vec4(0, 1, 0, 1));   // 20 triangles
+	Shape::AddMesh("SphereLow20", SphereLow);
+
+	//LOD Sphere Object 持失
+	SphereLODObject* lodSphere = new SphereLODObject();
+	lodSphere->MeshNear = SphereHigh;
+	lodSphere->MeshFar = SphereLow;
+	lodSphere->SetShader(MyShader);                
+	lodSphere->MaterialIndex = 0;                 
+	lodSphere->FixedPos = vec4(5, 5, 0, 1);
+	lodSphere->SetWorldMatrix(XMMatrixTranslation(5.0f, 5.0f, 0.0f));
+	lodSphere->SwitchDistance = 20.0f;
+
+	m_gameObjects.push_back(lodSphere);
+
+
 	BulletRay::mesh = (Mesh*)new Mesh();
 	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
 
@@ -221,97 +288,24 @@ void Game::Init()
 	MySpotLight.ShadowMap = MyShadowMappingShader->CreateShadowMap(4096/*gd.ClientFrameWidth*/, 4096/*gd.ClientFrameHeight*/, 0);
 	MySpotLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
 
-	/*
-	Player* MyPlayer = new Player(&pKeyBuffer[0]);
-	MyPlayer->SetMesh(Mesh::meshmap["Player"]);
-	MyPlayer->SetShader(MyShader);
-	MyPlayer->SetWorldMatrix(XMMatrixTranslation(5.0f, 5.0f, 3.0f));
-	m_gameObjects.push_back(MyPlayer);
-	player = MyPlayer;
-	player->Gun = new Mesh();
-	player->Gun->ReadMeshFromFile_OBJ("Resources/Mesh/m1911pistol.obj", { 1, 1, 1, 1 });
 
-	player->gunMatrix_thirdPersonView.Id();
-	player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
+	// particle init
+	InitParticlePool(FirePool, FIRE_COUNT);
+	InitParticlePool(FirePillarPool, FIRE_PILLAR_COUNT);
+	InitParticlePool(FireRingPool, FIRE_RING_COUNT);
 
-	player->gunMatrix_firstPersonView.Id();
-	player->gunMatrix_firstPersonView.pos = vec4(0.13f, -0.15f, 0.5f, 1);
-	player->gunMatrix_firstPersonView.LookAt(vec4(0, 0, 5) - player->gunMatrix_firstPersonView.pos);
+	FireCS = new ParticleCompute();
+	FireCS->Init(L"Particle.hlsl", "FireCS");
 
-	player->ShootPointMesh = new Mesh();
-	player->ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
+	FirePillarCS = new ParticleCompute();
+	FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS");
 
-	player->HPBarMesh = new Mesh();
-	player->HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 0, 0, 1 }, false);
-	player->HPMatrix.pos = vec4(-1, 1, 1, 1);
-	player->HPMatrix.LookAt(vec4(-1, 0, 0));
+	FireRingCS = new ParticleCompute();
+	FireRingCS->Init(L"Particle.hlsl", "FireRingCS");
 
-	Monster* myMonster_1 = new Monster();
-	myMonster_1->SetMesh(MyMonsterMesh);
-	myMonster_1->SetShader(MyShader);
-	myMonster_1->Init(XMMatrixTranslation(0.0f, 5.0f, 5.0f));
-	m_gameObjects.push_back(myMonster_1);
+	ParticleDraw = new ParticleShader();
+	ParticleDraw->InitShader();
 
-	Monster* myMonster_2 = new Monster();
-	myMonster_2->SetMesh(MyMonsterMesh);
-	myMonster_2->SetShader(MyShader);
-	myMonster_2->Init(XMMatrixTranslation(-5.0f, 0.5f, -2.5f));
-	m_gameObjects.push_back(myMonster_2);
-
-	Monster* myMonster_3 = new Monster();
-	myMonster_3->SetMesh(MyMonsterMesh);
-	myMonster_3->SetShader(MyShader);
-	myMonster_3->Init(XMMatrixTranslation(5.0f, 0.5f, -2.5f));
-	m_gameObjects.push_back(myMonster_3);
-
-	Mesh* ColMesh = new Mesh();
-	ColMesh->CreateWallMesh(0.1f, 0.15f, 0.2f, { 0, 1, 0, 1 });
-
-	for (int i = 0; i < 100; ++i) {
-		LMoveObject_CollisionTest* Col1 = new LMoveObject_CollisionTest();
-		Col1->SetMesh(ColMesh);
-		Col1->SetShader(MyShader);
-		Col1->m_worldMatrix.pos = vec4(-5 + (rand() % 100) / 10.0f, 1 + (rand() % 100) / 10.0f, -5 + (rand() % 100) / 10.0f, 1);
-
-		vec4 look = vec4(-5 + (rand() % 100) / 10.0f, 1 + (rand() % 100) / 10.0f, -5 + (rand() % 100) / 10.0f, 1);
-		look.len3 = 1;
-		Col1->m_worldMatrix.LookAt(look);
-
-		Col1->LVelocity = -Col1->m_worldMatrix.pos;
-		Col1->LVelocity.len3 = 1;
-		m_gameObjects.push_back(Col1);
-	}
-
-	GameObject* groundObject = new GameObject();
-	groundObject->SetMesh(MyGroundMesh);
-	groundObject->SetShader(MyShader);
-	groundObject->SetWorldMatrix(XMMatrixTranslation(0.0f, -1.0f, 0.0f));
-	m_gameObjects.push_back(groundObject);
-
-	GameObject* wallObject = new GameObject();
-	wallObject->SetMesh(MyWallMesh);
-	wallObject->SetShader(MyShader);
-	wallObject->SetWorldMatrix(XMMatrixTranslation(0.0f, 1.0f, 5.0f));
-	m_gameObjects.push_back(wallObject);
-
-	GameObject* wallObject2 = new GameObject();
-	wallObject2->SetMesh(MyWallMesh);
-	wallObject2->SetShader(MyShader);
-	wallObject2->SetWorldMatrix(XMMatrixMultiply(XMMatrixRotationY(45), XMMatrixTranslation(10.0f, 1.0f, 0.0f)));
-	m_gameObjects.push_back(wallObject2);
-
-	GameObject* wallObject3 = new GameObject();
-	wallObject3->SetMesh(MyWallMesh);
-	wallObject3->SetShader(MyShader);
-	wallObject3->SetWorldMatrix(XMMatrixMultiply(XMMatrixRotationZ(3.141592f / 6), XMMatrixTranslation(5.0f, 0.0f, -5.0f)));
-	m_gameObjects.push_back(wallObject3);
-
-	GameObject* wallObject4 = new GameObject();
-	wallObject4->SetMesh(MyWallMesh);
-	wallObject4->SetShader(MyShader);
-	wallObject4->SetWorldMatrix(XMMatrixMultiply(XMMatrixRotationZ(3.141592f / 4), XMMatrixTranslation(5.0f, -1.0f, -10.0f)));
-	m_gameObjects.push_back(wallObject4);
-	*/
 
 	gd.pCommandList->Close();
 	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
@@ -419,6 +413,18 @@ void Game::Render() {
 	//mat2.pos.y -= 1.75f;
 	Hierarchy_Object::renderViewPort = &gd.viewportArr[0];
 	obj->Render_Inherit(mat2, Shader::RegisterEnum::RenderWithShadow);
+
+
+	// Particle Render
+	FireCS->Dispatch(gd.pCommandList, &FirePool.Buffer, FirePool.Count, DeltaTime);
+	ParticleDraw->Render(gd.pCommandList, &FirePool.Buffer, FirePool.Count);
+
+	FirePillarCS->Dispatch(gd.pCommandList, &FirePillarPool.Buffer, FirePillarPool.Count, DeltaTime);
+	ParticleDraw->Render(gd.pCommandList, &FirePillarPool.Buffer, FirePillarPool.Count);
+
+	FireRingCS->Dispatch(gd.pCommandList, &FireRingPool.Buffer, FireRingPool.Count, DeltaTime);
+	ParticleDraw->Render(gd.pCommandList, &FireRingPool.Buffer, FireRingPool.Count);
+
 	//////////////////
 
 	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);

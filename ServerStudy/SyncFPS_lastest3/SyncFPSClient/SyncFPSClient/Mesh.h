@@ -45,6 +45,8 @@ public:
 	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
 
 	virtual void Release();
+
+	virtual void CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radius, int sliceCount, int stackCount, vec4 color);
 };
 
 class UVMesh : public Mesh {

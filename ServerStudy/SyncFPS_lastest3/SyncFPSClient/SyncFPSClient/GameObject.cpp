@@ -1296,3 +1296,24 @@ void GameMap::LoadMap(const char* MapName)
 
 	//BakeStaticCollision();
 }
+
+void SphereLODObject::Update(float deltaTime)
+{
+	m_worldMatrix.pos = FixedPos;
+}
+
+void SphereLODObject::Render()
+{
+	if (MeshNear && MeshFar)
+	{
+		vec4 cam = gd.viewportArr[0].Camera_Pos;
+		vec4 pos = m_worldMatrix.pos;
+
+		vec4 d = cam - pos;
+		float dist = d.len3;
+
+		m_pMesh = (dist < SwitchDistance) ? MeshNear : MeshFar;
+	}
+
+	GameObject::Render();
+}

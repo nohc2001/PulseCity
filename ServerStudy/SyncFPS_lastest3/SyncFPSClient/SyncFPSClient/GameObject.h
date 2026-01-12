@@ -174,3 +174,14 @@ struct GameMap {
 
 	void LoadMap(const char* MapName);
 };
+
+struct SphereLODObject : public GameObject {
+	Mesh* MeshNear;
+	Mesh* MeshFar;
+	float SwitchDistance;
+
+	vec4 FixedPos;
+
+	virtual void Update(float deltaTime) override; 
+	virtual void Render() override;
+};

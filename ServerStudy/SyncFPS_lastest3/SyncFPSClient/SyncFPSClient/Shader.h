@@ -33,6 +33,7 @@ public:
 	ID3D12RootSignature* pRootSignature = nullptr;
 	ID3D12RootSignature* pRootSignature_withShadow = nullptr;
 	ID3D12RootSignature* pRootSignature_Terrain = nullptr;
+
 	Shader();
 	virtual ~Shader();
 
@@ -162,4 +163,26 @@ public:
 	virtual void Release();
 
 	void RenderSkyBox();
+};
+
+class ParticleShader : public Shader {
+public:
+	ID3D12RootSignature* ParticleRootSig = nullptr;
+	ID3D12PipelineState* ParticlePSO = nullptr;
+
+	virtual void InitShader() override;
+	virtual void CreateRootSignature();
+	virtual void CreatePipelineState();
+
+	void Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount);
+};
+
+class ParticleCompute
+{
+public:
+	ID3D12RootSignature* RootSig = nullptr;
+	ID3D12PipelineState* PSO = nullptr;
+
+	void Init(const wchar_t* hlslFile, const char* entry);
+	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
 };

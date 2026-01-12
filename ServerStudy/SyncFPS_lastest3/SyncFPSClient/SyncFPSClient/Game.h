@@ -81,6 +81,24 @@ public:
 	static constexpr DXGI_FORMAT basicTexFormat = DXGI_FORMAT_BC3_UNORM;
 	static constexpr char basicTexFormatStr[] = "BC3_UNORM";
 
+	// particle
+	static constexpr UINT FIRE_COUNT = 200;
+	static constexpr UINT FIRE_PILLAR_COUNT = 400;
+	static constexpr UINT FIRE_RING_COUNT = 300;
+
+	ParticlePool FirePool;
+	ParticlePool FirePillarPool;
+	ParticlePool FireRingPool;
+
+	ParticleCompute* FireCS = nullptr;
+	ParticleCompute* FirePillarCS = nullptr;
+	ParticleCompute* FireRingCS = nullptr;
+
+	ParticleCompute* ParticleCS = nullptr;
+	ParticleShader* ParticleDraw = nullptr;
+
+	void InitParticlePool(ParticlePool& pool, UINT count);
+
 	Game() {}
 	~Game() {}
 	void Init();
