@@ -119,6 +119,7 @@ public:
 	}
 
 	void push_data(int datacap, void* dataptr) {
+		cout << datacap << endl;
 		bool b = packs[pack_up - 1].push_data(datacap, dataptr);
 		if (b == false) {
 			*(int*)&packs[pack_up - 1].data.data[6] = packs[pack_up - 1].up;

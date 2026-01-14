@@ -144,7 +144,7 @@ struct BitBoolArr_ui64 {
 	int bitindex;
 
 	operator bool() {
-		return *data & (1 << bitindex);
+		return *data & ((ui64)1 << (ui64)bitindex);
 	}
 
 	/*

@@ -33,7 +33,7 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 	GPUResource uploadBuffer;
 
 	//D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER - ??
-	*this = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_DIMENSION_TEXTURE2D, Width, Height, Format);
+	*this = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_DIMENSION_TEXTURE2D, Width, Height, Format);
 
 	if (pInitImage)
 	{
@@ -52,7 +52,7 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 
 		//return size of buffer for uploading data. (D3dx12.h)
 		UINT64 uploadBufferSize = gd.GetRequiredIntermediateSize(resource, 0, 1);
-		uploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, uploadBufferSize, 1, DXGI_FORMAT_UNKNOWN);
+		uploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, uploadBufferSize, 1, DXGI_FORMAT_UNKNOWN);
 
 		HRESULT hr = uploadBuffer.resource->Map(0, &writeRange, reinterpret_cast<void**>(&pMappedPtr));
 		if (FAILED(hr))

@@ -14,6 +14,11 @@ template <typename T> void* GetVptr() {
 	return *(void**)&a;
 }
 
+#define SERVER_RELEASE
+#ifndef SERVER_RELEASE
+#define SERVER_DEBUG
+#endif
+
 union GameObjectType {
 	static constexpr int ObjectTypeCount = 3;
 
@@ -33,7 +38,7 @@ union GameObjectType {
 	};
 
 	static constexpr int ServerSizeof[ObjectTypeCount] = {
-#ifdef _DEBUG // 서버가 Debug일때
+#ifdef SERVER_DEBUG
 		128,
 		336,
 		272,
@@ -58,7 +63,7 @@ void Game::SetLight()
 {
 	LightCBData = new LightCB_DATA();
 	UINT ncbElementBytes = ((sizeof(LightCB_DATA) + 255) & ~255); //256의 배수
-	LightCBResource = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	LightCBResource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 	LightCBResource.resource->Map(0, NULL, (void**)&LightCBData);
 	LightCBData->dirlight.gLightColor = { 0.5f, 0.5f, 0 };
 	LightCBData->dirlight.gLightDirection = { 1, -1, 1 };
@@ -77,7 +82,7 @@ void Game::SetLight()
 
 	//LightCBData_withShadow = new LightCB_DATA_withShadow();
 	ncbElementBytes = ((sizeof(LightCB_DATA) + 255) & ~255); //256의 배수
-	LightCB_withShadowResource = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	LightCB_withShadowResource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 	LightCB_withShadowResource.resource->Map(0, NULL, (void**)&LightCBData_withShadow);
 	LightCBData_withShadow->dirlight.gLightColor = { 0.5f, 0.5f, 0.5f };
 	vec4 dir = vec4(1, -2, 1, 0);
@@ -110,8 +115,7 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 	}
 
 	
-	pool.Buffer = gd.CreateCommitedGPUBuffer(
-		gd.pCommandList,                         
+	pool.Buffer = gd.CreateCommitedGPUBuffer(                 
 		D3D12_HEAP_TYPE_DEFAULT,
 		D3D12_RESOURCE_STATE_COMMON,
 		D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -123,7 +127,6 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 
 	
 	GPUResource upload = gd.CreateCommitedGPUBuffer(
-		gd.pCommandList,
 		D3D12_HEAP_TYPE_UPLOAD,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -141,20 +144,20 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 	);
 }
 
-
-//non using
 void Game::Init()
 {
 	GameObjectType::STATICINIT();
 
 	DropedItems.reserve(4096);
 	NpcHPBars.Init(32);
+	bulletRays.Init(32);
 
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 	DefaultTex.CreateTexture_fromFile(L"Resources/DefaultTexture.png", game.basicTexFormat, game.basicTexMip);
-	GunTexture.CreateTexture_fromFile(L"Resources/m1911pistol_diffuse0.png", game.basicTexFormat, game.basicTexMip);
 	DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
 	DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
+
+	GunTexture.CreateTexture_fromFile(L"Resources/m1911pistol_diffuse0.png", game.basicTexFormat, game.basicTexMip);
 
 	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex].CreateTexture_fromFile(L"Resources/Tiles036_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
 	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex]);
@@ -182,13 +185,13 @@ void Game::Init()
 
 	SetLight();
 
-	bulletRays.Init(32);
-
 	gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 
 	//gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 
 	//
+	TextMesh = new UVMesh();
+	TextMesh->CreateTextRectMesh();
 
 	BumpMesh* ItemMesh = new BumpMesh();
 	ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
@@ -219,11 +222,6 @@ void Game::Init()
 	MySkyBoxShader->InitShader();
 	MySkyBoxShader->LoadSkyBox(L"Resources/GlobalTexture/SkyBox_0.dds");
 
-	TextMesh = new UVMesh();
-	TextMesh->CreateTextRectMesh();
-
-	bulletRays.Init(32);
-
 	BumpMesh* MyMesh = (BumpMesh*)new BumpMesh();
 	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 1, 1, 1 });
 	Shape::AddMesh("Player", MyMesh);
@@ -249,10 +247,10 @@ void Game::Init()
 	SphereLODObject* lodSphere = new SphereLODObject();
 	lodSphere->MeshNear = SphereHigh;
 	lodSphere->MeshFar = SphereLow;
-	lodSphere->SetShader(MyShader);                
-	lodSphere->MaterialIndex = 0;                 
+	lodSphere->m_pShader = MyShader;
+	lodSphere->MaterialIndex = 0;
 	lodSphere->FixedPos = vec4(5, 5, 0, 1);
-	lodSphere->SetWorldMatrix(XMMatrixTranslation(5.0f, 5.0f, 0.0f));
+	lodSphere->m_worldMatrix = (XMMatrixTranslation(5.0f, 5.0f, 0.0f));
 	lodSphere->SwitchDistance = 20.0f;
 
 	m_gameObjects.push_back(lodSphere);
@@ -411,7 +409,7 @@ void Game::Render() {
 	Hierarchy_Object* obj = Map->MapObjects[0];
 	matrix mat2 = XMMatrixIdentity();
 	//mat2.pos.y -= 1.75f;
-	Hierarchy_Object::renderViewPort = &gd.viewportArr[0];
+	Game::renderViewPort = &gd.viewportArr[0];
 	obj->Render_Inherit(mat2, Shader::RegisterEnum::RenderWithShadow);
 
 
@@ -667,325 +665,6 @@ void Game::Render() {
 	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
 }
 
-void Game::Render_last() {
-	if (isPrepared == false) return;
-
-	//load text texture
-	if (gd.addTextureStack.size() > 0) {
-		for (int i = 0; i < gd.addTextureStack.size(); ++i) {
-			gd.AddTextTexture(gd.addTextureStack[i]);
-		}
-	}
-	gd.addTextureStack.clear();
-
-	gd.ShaderVisibleDescPool.Reset();
-
-	HRESULT hResult = gd.pCommandAllocator->Reset();
-	hResult = gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
-
-	//Wait Finish Present
-	D3D12_RESOURCE_BARRIER d3dResourceBarrier;
-	::ZeroMemory(&d3dResourceBarrier, sizeof(D3D12_RESOURCE_BARRIER));
-	d3dResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	d3dResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-	d3dResourceBarrier.Transition.pResource =
-		gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex];
-	d3dResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-	d3dResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	d3dResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	gd.pCommandList->ResourceBarrier(1, &d3dResourceBarrier);
-
-	gd.pCommandList->RSSetViewports(1, &gd.viewportArr[0].Viewport);
-	gd.pCommandList->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
-
-	//Clear Render Target Command Addition
-	D3D12_CPU_DESCRIPTOR_HANDLE d3dRtvCPUDescriptorHandle =
-		gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	d3dRtvCPUDescriptorHandle.ptr += (gd.CurrentSwapChainBufferIndex *
-		gd.RtvDescriptorIncrementSize);
-	float pfClearColor[4] = { 0.05f, 0.05f, 0.05f, 1.0f };
-	gd.pCommandList->ClearRenderTargetView(d3dRtvCPUDescriptorHandle,
-		pfClearColor, 0, NULL);
-
-	//Clear Depth Stencil Buffer Command Addtion
-	D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
-		gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-	gd.pCommandList->OMSetRenderTargets(1, &d3dRtvCPUDescriptorHandle, TRUE,
-		&d3dDsvCPUDescriptorHandle);
-	//render begin ----------------------------------------------------------------
-	((Shader*)MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.pCommandList);
-	MyDiffuseTextureShader->SetTextureCommand(&game.DefaultTex);
-
-	/*XMFLOAT4X4 xmf4x4Projection;
-	XMStoreFloat4x4(&xmf4x4Projection, XMMatrixTranspose(gd.viewportArr[0].ProjectMatrix));
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4Projection, 0);
-
-	XMFLOAT4X4 xmf4x4View;
-	XMStoreFloat4x4(&xmf4x4View, XMMatrixTranspose(gd.viewportArr[0].ViewMatrix));
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 16);*/
-
-	matrix viewMat = gd.viewportArr[0].ViewMatrix;
-	viewMat *= gd.viewportArr[0].ProjectMatrix;
-	viewMat.transpose();
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
-
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
-
-	gd.pCommandList->SetGraphicsRootConstantBufferView(2, LightCBResource.resource->GetGPUVirtualAddress());
-
-	for (int i = 0; i < m_gameObjects.size(); ++i) {
-		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->isExist == false) continue;
-		m_gameObjects[i]->Render();
-	}
-
-	// already droped items. (non move..)
-	static float itemRotate = 0;
-	itemRotate += DeltaTime;
-	matrix mat;
-	mat.trQ(vec4::getQ(vec4(0, itemRotate, 0, 0)));
-	for (int i = 0; i < DropedItems.size(); ++i) {
-		if (DropedItems[i].itemDrop.id != 0) {
-			mat.pos = DropedItems[i].pos;
-			mat.pos.w = 1;
-			matrix rmat = XMMatrixTranspose(mat);
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &rmat, 0);
-			MyDiffuseTextureShader->SetTextureCommand(ItemTable[DropedItems[i].itemDrop.id].tex);
-			ItemTable[DropedItems[i].itemDrop.id].MeshInInventory->Render(gd.pCommandList, 1);
-		}
-	}
-
-	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);
-
-	matrix view = gd.viewportArr[0].ViewMatrix;
-	view *= gd.viewportArr[0].ProjectMatrix;
-	view.transpose();
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
-
-	for (int i = 0; i < bulletRays.size; ++i) {
-		if (bulletRays.isnull(i)) continue;
-		bulletRays[i].Render();
-	}
-
-	for (int i = 0; i < game.NpcHPBars.size; ++i)
-	{
-		if (game.NpcHPBars.isAlloc(i))
-		{
-			matrix& hpBarWorldMat = game.NpcHPBars[i];
-			hpBarWorldMat.transpose();
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
-			game.HPBarMesh->Render(gd.pCommandList, 1);
-		}
-	}
-
-	gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-	//((Shader*)MyShader)->Add_RegisterShaderCommand(gd.pCommandList);
-
-	float hhpp = 0;
-	float HeatGauge = 0;
-	int kill = 0;
-	int death = 0;
-	int bulletCount = 0;
-
-	// UI/AfterDepthClear Render
-	if (game.player != nullptr) {
-		game.player->Render_AfterDepthClear();
-		hhpp = game.player->HP;
-		HeatGauge = game.player->HeatGauge;
-		kill = game.player->KillCount;
-		death = game.player->DeathCount;
-		bulletCount = game.player->bullets;
-	}
-
-	// HP 
-	//maybe..1706x960
-	float Rate = gd.ClientFrameHeight / 960.0f;
-	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
-	((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.pCommandList);
-	std::wstring ui_hp = L"HP: " + std::to_wstring(hhpp);
-	RenderText(ui_hp.c_str(), ui_hp.length(), rt, 30);
-
-	//Heat Gauge
-	vec4 rt_heat = rt;
-	rt_heat.y -= 80 * Rate;   // HP보다 약간 아래로 내림 (간격 50 정도)
-	std::wstring ui_heat = L"Heat: " + std::to_wstring((int)HeatGauge);
-	RenderText(ui_heat.c_str(), ui_heat.length(), rt_heat, 30);
-
-	// Bullet
-	rt = Rate * vec4(900, -800, 1550, -900);
-	std::wstring ui_bullet = L"Bullet: " + std::to_wstring(bulletCount);
-	RenderText(ui_bullet.c_str(), ui_bullet.length(), rt, 30);
-
-	// Kill/Death Counter
-	rt = Rate * vec4(1100, 920, 1550, 700);
-	std::wstring ui_kd = std::to_wstring(kill) + L" / " + std::to_wstring(death);
-	RenderText(L"Kill/Death", 10, rt, 30);
-	rt = Rate * vec4(1190, 850, 1550, 600);
-	RenderText(ui_kd.c_str(), ui_kd.length(), rt, 30);
-
-	// Player name
-	rt = Rate * vec4(-1650, 700, -1000, 500);
-	std::wstring playerName = L"Player: Leo";
-	RenderText(playerName.c_str(), playerName.length(), rt, 30);
-
-	// ----------Inventory------------
-	if (isInventoryOpen) {
-		matrix orthoMatrix = XMMatrixOrthographicOffCenterLH(0.0f, (float)gd.ClientFrameWidth, (float)gd.ClientFrameHeight, 0.0f, 0.01f, 1.0f);
-		matrix uiViewMat = orthoMatrix;
-		uiViewMat.transpose();
-		((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.pCommandList);
-		MyScreenCharactorShader->SetTextureCommand(&DefaultTex);
-		/*gd.pCommandList->SetPipelineState(MyOnlyColorShader->pUiPipelineState);*/
-		//gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &uiViewMat, 0);
-
-		const int gridColumns = 5;
-		const int gridRows = 5;
-		const float slotSize = Rate * 150.0f;
-		const float itemPadding = Rate * 20.0f;
-		const float slotPadding = Rate * 10.0f;
-
-		const float actualItemSize = slotSize - (itemPadding * 2);
-
-		float invWidth = (gridColumns * slotSize) + ((gridColumns + 1) * slotPadding);
-		float invHeight = (gridRows * slotSize) + ((gridRows + 1) * slotPadding);
-		float invPosX = 0;
-		float invPosY = 0;
-
-		vec4 bgColor = { 0.2f, 0.2f, 0.2f, 0.8f };
-		float CB[11] = { invPosX - invWidth ,invPosY - invHeight , invPosX + invWidth ,invPosY + invHeight, bgColor.r, bgColor.g, bgColor.b, bgColor.a, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.5f };
-		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 11, CB, 0);
-		TextMesh->Render(gd.pCommandList, 1);
-
-		vec4 slotColor = { 0.15f, 0.15f, 0.15f, 0.9f };
-		//Mesh* slotMesh = GetOrCreateColoredQuadMesh(slotColor);
-
-		float startSlotX = invPosX - invWidth + slotPadding + slotSize;
-		float startSlotY = invPosY - invHeight + slotPadding + slotSize;
-
-		for (int row = 0; row < gridRows; ++row) {
-			for (int col = 0; col < gridColumns; ++col) {
-				float slotCurrentX = startSlotX + col * (2 * (slotSize + slotPadding));
-				float slotCurrentY = startSlotY + row * (2 * (slotSize + slotPadding));
-
-				float CB2[11] = { slotCurrentX - slotSize ,slotCurrentY - slotSize , slotCurrentX + slotSize ,slotCurrentY + slotSize, slotColor.r, slotColor.g, slotColor.b, slotColor.a, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.05f };
-				gd.pCommandList->SetGraphicsRoot32BitConstants(0, 11, CB2, 0);
-				TextMesh->Render(gd.pCommandList, 1);
-			}
-		}
-
-		float startItemX = invPosX - Rate * 140.0f;
-		float startItemY = invPosY - Rate * 130.0f;
-
-		matrix viewMat2 = DirectX::XMMatrixLookAtLH(vec4(0, 0, 0), vec4(0, 0, 1), vec4(0, 1, 0));
-		viewMat2 *= gd.viewportArr[0].ProjectMatrix;
-		gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-		((Shader*)MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.pCommandList);
-		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
-		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
-		gd.pCommandList->SetGraphicsRootConstantBufferView(2, LightCBResource.resource->GetGPUVirtualAddress());
-
-		for (int i = 0; i < player->Inventory.size(); ++i) {
-			if (i >= gridColumns * gridRows)
-				break;
-
-			ItemStack& currentStack = player->Inventory[i];
-			ItemID currentItemID = currentStack.id;
-			if (currentItemID == 0) continue;
-
-			if (currentItemID >= ItemTable.size())
-				continue;
-
-			Item& itemInfo = ItemTable[currentItemID];
-
-			//Mesh* itemMesh = GetOrCreateColoredQuadMesh(itemInfo.color);
-
-			int column = i % gridColumns;
-			int row = i / gridColumns;
-
-			float itemCurrentX = startItemX + column * (2 * (slotSize + slotPadding));
-			float itemCurrentY = startItemY + row * (2 * (slotSize + slotPadding));
-
-			/*vec4 v = gd.viewportArr[0].unproject(vec4(gd.ClientFrameWidth/2, gd.ClientFrameHeight/2, 0, 1));
-			v *= 5;
-			v += gd.viewportArr[0].Camera_Pos;*/
-
-			/*vec4 unproj = gd.viewportArr[0].unproject(vec4(-0.5f, 0.5f, 0, 1));*/
-			matrix itemMat;
-			itemMat.pos = gd.viewportArr[0].Camera_Pos;
-			//caminvMat.look.x *= -1;
-			itemMat.pos += viewMat.look * 7;
-			constexpr float xmul = 1.35f;
-			constexpr float ymul = 0.825f;
-			itemMat.pos += viewMat.right * (-2.7f + xmul * column);
-			itemMat.pos += viewMat.up * (1.65f - ymul * row);
-			itemMat.pos.w = 1;
-
-			itemMat.transpose();
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &itemMat, 0);
-			MyDiffuseTextureShader->SetTextureCommand(ItemTable[currentItemID].tex);
-			ItemTable[currentItemID].MeshInInventory->Render(gd.pCommandList, 1);
-			//RenderUIObject(itemMesh, itemMat);
-		}
-
-		gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-		((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.pCommandList);
-
-		int i = 0;
-		float top = startSlotY + (gridRows - 1) * (2 * (slotSize + slotPadding));
-		for (int row = 0; row < gridRows; ++row) {
-			for (int col = 0; col < gridColumns; ++col) {
-				if (player->Inventory[i].id == 0) {
-					i++; continue;
-				}
-
-				float slotCurrentX = startSlotX + col * (2 * (slotSize + slotPadding));
-				float slotCurrentY = top - row * (2 * (slotSize + slotPadding));
-
-				ItemStack& currentStack = player->Inventory[i];
-				std::wstring countStr = L"x" + std::to_wstring(currentStack.ItemCount);
-				vec4 textRect = { slotCurrentX - slotSize ,slotCurrentY - slotSize , slotCurrentX + slotSize ,slotCurrentY + slotSize };
-				float fontSize = 20.0f;
-				RenderText(countStr.c_str(), countStr.length(), textRect, fontSize, 0.01f);
-				i++;
-			}
-		}
-	}
-
-	//static float stackT = 0;
-	//stackT += game.DeltaTime;
-	//RenderText(L"0123456789\nHello, World!\n안녕 너무 반가워~~", 36, vec4(-1000, 0, 1000, 100), 50 + 50 * sin(stackT));
-
-	//render end ----------------------------------------------------------------
-
-	//RenderTarget State Changing Command [RenderTarget -> Present] + wait untill finish rendering
-	d3dResourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	d3dResourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-	d3dResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	gd.pCommandList->ResourceBarrier(1, &d3dResourceBarrier);
-
-	//Command execution
-	hResult = gd.pCommandList->Close();
-	ID3D12CommandList* ppd3dCommandLists[] = { gd.pCommandList };
-	gd.pCommandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
-
-	gd.WaitGPUComplete();
-
-	// Present to Swapchain BackBuffer & RenderTargetIndex Update
-	DXGI_PRESENT_PARAMETERS dxgiPresentParameters;
-	dxgiPresentParameters.DirtyRectsCount = 0;
-	dxgiPresentParameters.pDirtyRects = NULL;
-	dxgiPresentParameters.pScrollRect = NULL;
-	dxgiPresentParameters.pScrollOffset = NULL;
-	gd.pSwapChain->Present1(1, 0, &dxgiPresentParameters);
-
-	//Get Present RenderTarget Index
-	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
-}
-
 void Game::Render_ShadowPass()
 {
 	constexpr int ShadowResolusion = 4096;
@@ -1085,7 +764,7 @@ void Game::Render_ShadowPass()
 	//game.MySpotLight.viewport.ProjectMatrix = XMMatrixOrthographicLH(rate * ShadowResolusion * 2, rate * ShadowResolusion * 2, 0.1f, 1000.0f);
 	//game.MySpotLight.viewport.UpdateFrustum();
 	game.MySpotLight.viewport.UpdateOrthoFrustum(0.1f, 1000.0f);
-	Hierarchy_Object::renderViewPort = &game.MySpotLight.viewport;
+	Game::renderViewPort = &game.MySpotLight.viewport;
 	game.Map->MapObjects[0]->Render_Inherit_CullingOrtho(mat2, Shader::RegisterEnum::RenderShadowMap);
 
 	//render Objects
@@ -1141,7 +820,7 @@ void Game::Update()
 			ClientSocket->Send(sendData, 9);
 			accDeltax = 0;
 			accDeltay = 0;
-			SetCursorPos(gd.screenWidth / 2, gd.screenHeight / 2);
+			SetCursorPos(gd.ClientFrameWidth / 2, gd.ClientFrameHeight / 2);
 		}
 		accSend -= SendPeriod;
 	}
@@ -1252,15 +931,6 @@ void Game::Update()
 	//	gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
 	//	gbj1->tickLVelocity = XMVectorZero();
 	//}
-}
-
-//not using
-void Game::Event(WinEvent evt)
-{
-	for (int i = 0; i < m_gameObjects.size(); ++i) {
-		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->isExist == false) continue;
-		m_gameObjects[i]->Event(evt);
-	}
 }
 
 int Game::Receiving(char* ptr, int totallen)
@@ -1723,53 +1393,6 @@ void Game::AddMouseInput(int deltaX, int deltaY)
 		if (DeltaMousePos.y < -200) {
 			DeltaMousePos.y = -200;
 		}
-	}
-}
-
-//not using
-void Game::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance)
-{
-	vec4 rayOrigin = rayStart;
-
-	GameObject* closestHitObject = nullptr;
-
-	float closestDistance = rayDistance;
-
-	for (int i = 0; i < m_gameObjects.size(); ++i) {
-		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->isExist == false) continue;
-		if (shooter == m_gameObjects[i]) continue;
-		BoundingOrientedBox obb = m_gameObjects[i]->GetOBB();
-		float distance;
-
-		if (obb.Intersects(rayOrigin, rayDirection, distance)) {
-			if (distance <= rayDistance) {
-				if (distance < closestDistance) {
-					closestDistance = distance;
-					closestHitObject = m_gameObjects[i];
-					m_gameObjects[i]->OnCollisionRayWithBullet();
-				}
-			}
-		}
-	}
-
-	int BulletIndex = bulletRays.Alloc();
-	if (BulletIndex < 0) {
-		return;
-	}
-	BulletRay& bray = bulletRays[BulletIndex];
-	bray = BulletRay(rayStart, rayDirection, closestDistance);
-
-	if (closestHitObject) {
-		Player* hitPlayer = (Player*)closestHitObject;
-
-		if (hitPlayer == game.player) {
-			hitPlayer->TakeDamage(10.0f);
-		}
-
-		//OutputDebugString(L"Hit a TargetBoard!\n");
-	}
-	else {
-		//OutputDebugString(L"Not hit any TargetBoard.\n");
 	}
 }
 

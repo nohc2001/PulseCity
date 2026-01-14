@@ -614,16 +614,10 @@ int World::Receiving(int clientIndex, char* rBuffer) {
 	}
 
 	if (rBuffer[0] != InputID::MouseMove) {
-		BitBoolArr_ui64& bit = client.pObjData->InputBuffer[rBuffer[0]];
-		/*char str[512] = {0};
-		char format0[128] = "%s line %d : ";
-		strcat_s(format0, sizeof(format0), "key bit index : %d \n");
-		int bitindex = bit.bitindex;
-		int ret = sprintf_s(str, 512, format0, (char*)__FUNCTION__, 618, bitindex);
-		OutputDebugStringA(str);*/
-
-		bit = putv;
-		//dbglog1a("key ui64 : %d \n", *bit.data);
+		BitBoolArr_ui64* bit = &client.pObjData->InputBuffer[rBuffer[0]];
+		*bit = putv;
+		//cout << *bit->data << endl;
+		//dbglog1a("key ui64 : %d \n", bit->data);
 		cout << "client " << clientIndex << " Input : " << rBuffer[0] << rBuffer[1] << endl;
 		return 2;
 	}

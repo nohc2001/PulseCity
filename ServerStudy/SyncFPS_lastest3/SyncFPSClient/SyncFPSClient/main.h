@@ -11,10 +11,18 @@ extern LPCTSTR lpszClass;
 extern LPCTSTR lpszWindowName;
 extern int resolutionLevel;
 
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam);
 
+/*
+* 설명 : 네트워크 통신을 위한 각종 클래스의 오프셋과 사이즈 정보를 출력한다.
+* 동기화에 필요한 작업
+*/
 void PrintOffset();
 
+/*
+* 설명 : 클라이언트의 입력을 구분하는 enum.
+*/
 enum InputID {
 	KeyboardW = 'W',
 	KeyboardA = 'A',
@@ -26,6 +34,9 @@ enum InputID {
 	MouseMove = 7,
 };
 
+/*
+* 설명 : WndProc 처리 (윈도우 메시지) 처리에 이용되는 구조체.
+*/
 struct WinEvent {
 	HWND hWnd;
 	UINT Message;

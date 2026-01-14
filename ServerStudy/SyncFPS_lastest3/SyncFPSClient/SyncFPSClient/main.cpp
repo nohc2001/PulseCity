@@ -22,32 +22,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 {
 	PrintOffset();
 
-	//GameObjectType::STATICINIT();
-
-	/*int result = ClientSocket->Receive();
-	if (result > 0) {
-		char* ptr = ClientSocket->m_receiveBuffer;
-		game.clientIndexInServer = *(int*)ptr;
-		ptr += 4;
-		game.playerGameObjectIndex = *(int*)ptr;
-	}*/
-
-	//while (true) {
-	//	result = ClientSocket->Receive();
-	//	if (result > 0) {
-	//		game.Receiving(ClientSocket->m_receiveBuffer);
-	//	}
-	//	else {
-	//		break;
-	//	}
-	//}
-
-	gd.screenWidth = GetSystemMetrics(SM_CXSCREEN);
-	gd.screenHeight = GetSystemMetrics(SM_CYSCREEN);
-	gd.ScreenRatio = (float)gd.screenHeight / (float)gd.screenWidth;
-	ResolutionStruct* ResolutionArr = gd.GetResolutionArr();
-	//question : is there any reason resolution must be setting already existed well known resolutions?
-	// most game do that _ but why??
+	gd.Factory_Adaptor_Output_Init();
+	
+	gd.ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
+	gd.ClientFrameHeight = gd.EnableFullScreenMode_Resolusions[resolutionLevel].height;
 
 	//RawInput Mouse
 	gd.RawMouse.usUsagePage = 0x01; // general input device
@@ -75,7 +53,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 
 	RegisterClassEx(&WndClass);
 
-	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, ResolutionArr[resolutionLevel].width, ResolutionArr[resolutionLevel].height, NULL, (HMENU)NULL, hInstance, NULL);
+	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, gd.ClientFrameWidth, gd.ClientFrameHeight, NULL, (HMENU)NULL, hInstance, NULL);
 	ShowWindow(hWnd, nCmdShow);
 	UpdateWindow(hWnd);
 	ShowCursor(FALSE);

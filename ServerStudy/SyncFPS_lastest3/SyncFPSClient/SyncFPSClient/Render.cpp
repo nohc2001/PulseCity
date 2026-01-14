@@ -34,25 +34,13 @@ void font_parsed(void* args, void* _font_data, int error)
 	}
 }
 
-void GlobalDevice::Init()
+void GlobalDevice::Factory_Adaptor_Output_Init()
 {
-	font_filename[0] = "consola.ttf"; // english
-	font_filename[1] = "malgunbd.ttf"; // korean
-	for (int i = 0; i < FontCount; ++i) {
-		uint8_t condition_variable = 0;
-		int8_t error = TTFFontParser::parse_file(font_filename[i].c_str(), &font_data[i], &font_parsed, &condition_variable);
-	}
-	addTextureStack.reserve(32);
-
-#ifdef PIX_DEBUGING
-	LoadLibrary(L"C:/Program Files/Microsoft PIX/2509.25/WinPixGpuCapturer.dll");
-#endif
-
-	HRESULT hResult;
+	HRESULT hr;
 	UINT nDXGIFactoryFlags = 0;
 #if defined(_DEBUG)
 	ID3D12Debug* pd3dDebugController = NULL;
-	hResult = D3D12GetDebugInterface(__uuidof(ID3D12Debug), (void
+	hr = D3D12GetDebugInterface(__uuidof(ID3D12Debug), (void
 		**)&pd3dDebugController);
 	if (pd3dDebugController)
 	{
@@ -61,12 +49,64 @@ void GlobalDevice::Init()
 	}
 	nDXGIFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
-	hResult = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory4), (void
-		**)&pFactory); // sus..
-	if (FAILED(hResult)) {
+
+	// sus 버전에 따라 안될 수 있으니 예외처리 필요.
+	hr = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory4), (void
+		**)&pFactory);
+	if (FAILED(hr)) {
 		OutputDebugStringA("[ERROR] : Create Factory Error.\n");
 		return;
 	}
+
+	IDXGIAdapter1* pd3dAdapter1 = NULL;
+	hr = pFactory->EnumAdapters1(0, &pd3dAdapter1);
+	if (FAILED(hr)) throw "EnumAdapters1 Error.";
+	// 전체화면 모드로 전환 가능한 해상도를 얻기 위한 작업
+	//AI Code Start <Microsoft Copilot>
+	IDXGIOutput* output;
+	hr = pd3dAdapter1->EnumOutputs(0, &output);
+	if (FAILED(hr)) throw "Get Monitor Outputs Error.";
+	UINT numModes = 0;
+	hr = output->GetDisplayModeList(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_ENUM_MODES_INTERLACED, &numModes, nullptr);
+	if (FAILED(hr)) throw "GetDisplayModeList Error";
+	vector<DXGI_MODE_DESC> modeList(numModes);
+	hr = output->GetDisplayModeList(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_ENUM_MODES_INTERLACED, &numModes, modeList.data());
+	if (FAILED(hr)) throw "GetDisplayModeList Error";
+	//AI Code End <Microsoft Copilot>
+
+	for (int i = 0; i < numModes; ++i) {
+		ResolutionStruct rs;
+		rs.width = modeList[i].Width;
+		rs.height = modeList[i].Height;
+		bool isExist = false;
+		for (int k = 0; k < EnableFullScreenMode_Resolusions.size(); ++k) {
+			ResolutionStruct rs2 = EnableFullScreenMode_Resolusions[k];
+			if (rs2.width == rs.width && rs2.height == rs.height) {
+				isExist = true;
+				break;
+			}
+		}
+		if (!isExist) {
+			EnableFullScreenMode_Resolusions.push_back(rs);
+		}
+	}
+}
+
+void GlobalDevice::Init()
+{
+	HRESULT hr;
+
+#ifdef PIX_DEBUGING
+	LoadLibrary(L"C:/Program Files/Microsoft PIX/2509.25/WinPixGpuCapturer.dll");
+#endif
+
+	font_filename[0] = "consola.ttf"; // english
+	font_filename[1] = "malgunbd.ttf"; // korean
+	for (int i = 0; i < FontCount; ++i) {
+		uint8_t condition_variable = 0;
+		int8_t error = TTFFontParser::parse_file(font_filename[i].c_str(), &font_data[i], &font_parsed, &condition_variable);
+	}
+	addTextureStack.reserve(32);
 
 	constexpr D3D_FEATURE_LEVEL FeatureLevelPriority[11] = {
 		D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_9_3, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_1_0_CORE
@@ -84,6 +124,7 @@ void GlobalDevice::Init()
 			if (dxgiAdapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
 			if (SUCCEEDED(D3D12CreateDevice(pd3dAdapter4, FeatureLevelPriority[i],
 				_uuidof(ID3D12Device), (void**)&pDevice))) {
+
 				pd3dAdapter4->Release();
 				pd3dAdapter1->Release();
 				goto GlobalDeviceInit_InitMultisamplingVariable;
@@ -115,7 +156,7 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	m_bMsaa4xEnable = (m_nMsaa4xQualityLevels > 1) ? true : false;
 	//when multi sampling quality level is bigger than 1, active MSAA.
 
-	hResult = pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence),
+	hr = pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence),
 		(void**)&pFence);
 	FenceValue = 0;
 	hFenceEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -126,18 +167,17 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	::ZeroMemory(&d3dCommandQueueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
 	d3dCommandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	d3dCommandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	hResult = pDevice->CreateCommandQueue(&d3dCommandQueueDesc,
+	hr = pDevice->CreateCommandQueue(&d3dCommandQueueDesc,
 		_uuidof(ID3D12CommandQueue), (void**)&pCommandQueue);
-	hResult = pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+	hr = pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
 		__uuidof(ID3D12CommandAllocator), (void**)&pCommandAllocator);
-	hResult = pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
+	hr = pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
 		pCommandAllocator, NULL, __uuidof(ID3D12GraphicsCommandList), (void
 			**)&pCommandList);
-	hResult = pCommandList->Close(); // why?
+	hr = pCommandList->Close(); // why?
 
-	ResolutionStruct* ResolutionArr = gd.GetResolutionArr();
-	ClientFrameWidth = ResolutionArr[resolutionLevel].width;
-	ClientFrameHeight = ResolutionArr[resolutionLevel].height;
+	ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
+	ClientFrameHeight = gd.EnableFullScreenMode_Resolusions[resolutionLevel].height;
 
 	viewportArr[0].Viewport.TopLeftX = 0;
 	viewportArr[0].Viewport.TopLeftY = 0;
@@ -449,27 +489,13 @@ void GlobalDevice::SetFullScreenMode(bool isFullScreen)
 	}
 }
 
-ResolutionStruct* GlobalDevice::GetResolutionArr()
-{
-	if (fabsf(ScreenRatio - 0.75f) <= 0.01f) {
-		return (ResolutionStruct*)ResolutionArr_GA;
-	}
-	else if (fabsf(ScreenRatio - 0.5625f) <= 0.01f) {
-		return (ResolutionStruct*)ResolutionArr_HD;
-	}
-	else if (fabsf(ScreenRatio - 0.625f) <= 0.01f) {
-		return (ResolutionStruct*)ResolutionArr_WGA;
-	}
-	return nullptr;
-}
-
 void GlobalDevice::SetResolution(int resid, bool ClientSizeUpdate)
 {
 	WaitGPUComplete();
-	ResolutionStruct* ResolutionArr = GetResolutionArr();
 
-	ClientFrameWidth = ResolutionArr[resid].width;
-	ClientFrameHeight = ResolutionArr[resid].height;
+	ClientFrameWidth = EnableFullScreenMode_Resolusions[resid].width;
+	ClientFrameHeight = EnableFullScreenMode_Resolusions[resid].height;
+
 	if (ClientSizeUpdate) {
 		SetWindowPos(hWnd, NULL, 0, 0, ClientFrameWidth, ClientFrameHeight, SWP_NOMOVE | SWP_NOZORDER);
 	}
@@ -530,7 +556,7 @@ int GlobalDevice::PixelFormatToPixelSize(DXGI_FORMAT format)
 	}
 }
 
-GPUResource GlobalDevice::CreateCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat, D3D12_RESOURCE_FLAGS flags)
+GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat, D3D12_RESOURCE_FLAGS flags)
 {
 	ID3D12Resource* pBuffer = NULL;
 	ID3D12Resource2* pBuffer2 = NULL;

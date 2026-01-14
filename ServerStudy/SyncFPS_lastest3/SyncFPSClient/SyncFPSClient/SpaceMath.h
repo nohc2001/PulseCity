@@ -298,3 +298,16 @@ struct matrix {
 };
 
 bool bPointInPolygonRange(XMVECTOR p, std::vector<XMFLOAT3>& polygon);
+
+inline BoundingOrientedBox GetBottomOBB(const BoundingOrientedBox& obb) {
+	constexpr float margin = 0.1f;
+	BoundingOrientedBox robb;
+	robb.Center = obb.Center;
+	robb.Center.y -= obb.Extents.y;
+	robb.Extents = obb.Extents;
+	robb.Extents.y = 0.4f;
+	robb.Extents.x -= margin;
+	robb.Extents.z -= margin;
+	robb.Orientation = obb.Orientation;
+	return robb;
+}

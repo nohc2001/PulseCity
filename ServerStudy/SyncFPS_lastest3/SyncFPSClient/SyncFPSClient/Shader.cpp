@@ -1636,8 +1636,8 @@ void SkyBoxShader::LoadSkyBox(const wchar_t* filename)
 	m_pxmf3Positions[34] = XMFLOAT3(+fx, -fx, +fx);
 	m_pxmf3Positions[35] = XMFLOAT3(+fx, -fx, -fx);
 
-	SkyBoxMesh = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
-	GPUResource VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
+	SkyBoxMesh = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
+	GPUResource VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
 	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &m_pxmf3Positions[0], &VertexUploadBuffer, &SkyBoxMesh, true);
 
 	SkyBoxMeshVBView.BufferLocation = SkyBoxMesh.resource->GetGPUVirtualAddress();

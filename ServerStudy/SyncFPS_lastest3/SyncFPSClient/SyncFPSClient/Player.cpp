@@ -5,7 +5,6 @@
 #include "Mesh.h"
 #include "Game.h"
 
-//not using
 void Player::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
@@ -123,7 +122,7 @@ void Player::Render()
 
 			//gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
 			//Gun->Render(gd.pCommandList, 1);
-			if (Hierarchy_Object::renderViewPort == &game.MySpotLight.viewport) {
+			if (Game::renderViewPort == &game.MySpotLight.viewport) {
 				//shadowMapping
 				if (GunModel) {
 					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
@@ -175,7 +174,7 @@ void Player::Render_AfterDepthClear()
 			//gunmat.transpose(); 
 
 			//GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
-			if (Hierarchy_Object::renderViewPort == &game.MySpotLight.viewport) {
+			if (Game::renderViewPort == &game.MySpotLight.viewport) {
 				//shadowMapping
 				if (GunModel) {
 					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
@@ -227,79 +226,6 @@ void Player::Render_AfterDepthClear()
 	heatmat.transpose();
 	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
 	HeatBarMesh->Render(gd.pCommandList, 1);
-}
-//not using
-void Player::Event(WinEvent evt)
-{
-	if (ShootFlow >= ShootDelay) {
-		if (evt.Message == WM_LBUTTONDOWN) {
-			if (game.bFirstPersonVision) {
-				matrix shootmat = gd.viewportArr[0].ViewMatrix.RTInverse;
-				game.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look, shootmat.look, 50.0f);
-			}
-			else {
-				matrix shootmat = gd.viewportArr[0].ViewMatrix.RTInverse;
-				game.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look * 3, shootmat.look, 50.0f);
-			}
-			ShootFlow = 0;
-			recoilFlow = 0;
-		}
-	}
-}
-//not using
-void Player::OnCollision(GameObject* other)
-{
-	//collideCount += 1;
-	//float belowDist = 0;
-	//BoundingOrientedBox otherOBB = other->GetOBB();
-	/*BoundingOrientedBox bottomOBB = GetBottomOBB(GetOBB());*/
-
-	/*if (bottomOBB.Intersects(otherOBB)) {
-		vec4 plane = GetPlane_FrustomRange(otherOBB, m_worldMatrix.pos);
-		if (plane.y > 0.6f) {
-			LVelocity.y = 0;
-			isGround = true;
-
-			CurrentPosPlane = vec4::getPlane(m_worldMatrix.pos, plane);
-		}
-
-		dbglog1(L"player collide! %d \n", rand());
-	}*/
-
-	//bool belowhit = otherOBB.Intersects(m_worldMatrix.pos, vec4(0, -1, 0, 0), belowDist);
-
-	//if (belowhit && belowDist < m_pMesh->GetOBB().Extents.y + 0.4f) {
-	//	LVelocity.y = 0;
-	//	isGround = true;
-	//}
-}
-//not using
-BoundingOrientedBox Player::GetOBB()
-{
-	BoundingOrientedBox obb_local = m_pMesh->GetOBB();
-	obb_local.Extents.x = obb_local.Extents.z;
-	BoundingOrientedBox obb_world;
-	matrix id = XMMatrixIdentity();
-	id.pos = m_worldMatrix.pos;
-	obb_local.Transform(obb_world, id);
-	return obb_world;
-}
-//not using
-void Player::TakeDamage(float damage)
-{
-	HP -= damage;
-	/*OutputDebugStringW(L"Player hit! HP: ");
-	OutputDebugStringW(std::to_wstring(HP).c_str());
-	OutputDebugStringW(L"\n");*/
-
-	if (HP <= 0) {
-		isExist = false;
-	}
-}
-//not using
-void Player::OnCollisionRayWithBullet()
-{
-	TakeDamage(10);
 }
 
 void Player::UpdateGunBarrelNodes()

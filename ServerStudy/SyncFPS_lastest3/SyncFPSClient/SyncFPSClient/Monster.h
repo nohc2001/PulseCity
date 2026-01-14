@@ -2,6 +2,9 @@
 #include "stdafx.h"
 #include "GameObject.h"
 
+/*
+* 설명 : 간이 몬스터 클래스
+*/
 class Monster : public GameObject {
 private:
 	/*float m_speed = 2.0f;
@@ -22,31 +25,37 @@ private:
 	const float MAXHP = 30;*/
 
 public:
+	// 몬스터 사망 여부
 	bool isDead;
 
+	// 몬스터 HP
 	float HP = 30;
+	// 몬스터 최대 채력
 	float MaxHP = 30;
 
+	// 여러 HP 바중 몇번째 HP 바인지. (렌더링 할때 중요.)
 	int HPBarIndex;
+	// HP 바를 표현하는 월드 행렬
 	matrix HPMatrix;
 
 	Monster() {}
 	virtual ~Monster() {}
 
+	/*
+	* 설명 : 게임오브젝트의 업데이트를 실행함.
+	* 매개변수 :
+	* float deltaTime : 이전 업데이트 실행 부터 현재까지의 시간 차이.
+	*/
 	virtual void Update(float deltaTime) override;
 
+	/*
+	* 설명 : 게임오브젝트를 렌더링한다.
+	*/
 	virtual void Render();
 
-	virtual void OnCollision(GameObject* other) override;
-
-	virtual void OnCollisionRayWithBullet();
-
+	/*
+	* 몬스터를 초기화 한다.
+	* const XMMATRIX& initialWorldMatrix : 초기 월드 행렬
+	*/
 	void Init(const XMMATRIX& initialWorldMatrix);
-
-	virtual BoundingOrientedBox GetOBB();
-
-	//bool& getisDead() { return ((bool*)this)[17]; }
-	//void SetidDead(bool v) { ((bool*)this)[17] = v; }
-
-	//__declspec(property(get = getisDead, put = SetidDead)) bool isDead;
 };

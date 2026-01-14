@@ -1,31 +1,89 @@
 #pragma once
 #include "stdafx.h"
 
+/*
+* 설명 : 뷰포트 정보
+*/
 struct ViewportData {
+	// AABB
 	D3D12_VIEWPORT Viewport;
+	// 시저렉트
 	D3D12_RECT ScissorRect;
-	ui64 LayerFlag = 0; // layers that contained.
+	
+	// improve : <원래는 이 변수는 만들때 어떤 Layer의 게임오브젝트만 출력하기 위해 만들어놓은 것이었음.>
+	// <대다수의 게임엔진에 이런 게념이 있음. 특히 UI가 3D거나 그러면 특히나.>
+	// <이를 어떻게 할지를 정해야 할듯.>
+	ui64 LayerFlag = 0;
+
+	// 뷰 행렬
 	matrix ViewMatrix;
+	// 투영 행렬
 	matrix ProjectMatrix;
+	// 카메라의 위치
 	vec4 Camera_Pos;
-	BoundingFrustum	m_xmFrustumView = BoundingFrustum();
+
+	// 원근 프러스텀 컬링을 위한 BoundingFrustum
 	BoundingFrustum	m_xmFrustumWorld = BoundingFrustum();
+	// 직교 프러스텀 컬링을 위한 BoundingOrientedBox
 	BoundingOrientedBox OrthoFrustum;
 
+	/*
+	* //sus : <제대로 실행될지 의심이 되는 것. 유닛테스트가 필요함.>
+	* 설명 : vec_in_gamespace 점을 화면상의 공간으로 투영하여 내보낸다.
+	* 피킹에 쓰려고 미리 만들어놨다.
+	* 매개변수 : 
+	* const vec4& vec_in_gamespace : 월드 공간상의 점
+	* 반환 : 
+	* vec_in_gamespace을 화면 공간상으로 투영한 지점
+	*/
 	__forceinline XMVECTOR project(const vec4& vec_in_gamespace) {
 		return XMVector3Project(vec_in_gamespace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
+
+	/*
+	* //sus : <제대로 실행될지 의심이 되는 것. 유닛테스트가 필요함.>
+	* 설명 : vec_in_screenspace 점을 화면상의 공간에서 월드 공간으로 변환해 내보낸다.
+	* 피킹에 쓰려고 미리 만들어놨다.
+	* 매개변수 : 
+	* const vec4& vec_in_screenspace : 화면 공간상의 점
+	* 반환 :
+	* vec_in_screenspace을 월드공간상으로 투영한 지점
+	*/
 	__forceinline XMVECTOR unproject(const vec4& vec_in_screenspace) {
 		return XMVector3Unproject(vec_in_screenspace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
 
+	/*
+	* //sus : <제대로 실행될지 의심이 되는 것. 유닛테스트가 필요함.>
+	* 설명 : invecArr_in_gamespace 점 배열들을 화면상의 공간으로 투영하여
+	* outvecArr_in_screenspace 배열으로 내보낸다.
+	* 피킹에 쓰려고 미리 만들어놨다.
+	* 매개변수 : 
+	* vec4* invecArr_in_gamespace : 입력이 되는 월드공간의 점 배열
+	* vec4* outvecArr_in_screenspace : 출력이 되는 화면공간상의 점 배열
+	* int count : 배열의 크기
+	*/
 	__forceinline void project_vecArr(vec4* invecArr_in_gamespace, vec4* outvecArr_in_screenspace, int count) {
 		XMVector3ProjectStream((XMFLOAT3*)invecArr_in_gamespace, 16, (XMFLOAT3*)outvecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
-	__forceinline XMVECTOR unproject_vecArr(vec4* outvecArr_in_screenspace, vec4* invecArr_in_gamespace, int count) {
-		XMVector3UnprojectStream((XMFLOAT3*)invecArr_in_gamespace, 16, (XMFLOAT3*)outvecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
+
+	/*
+	* //sus : <제대로 실행될지 의심이 되는 것. 유닛테스트가 필요함.>
+	* 설명 : invecArr_in_screenspace 화면상의 점 배열들을 월드 공간으로 변환하여
+	* outvecArr_in_gamespace 배열으로 내보낸다.
+	* 피킹에 쓰려고 미리 만들어놨다.
+	* 매개변수 :
+	* vec4* invecArr_in_screenspace : 입력이 되는 화면공간상의 점 배열
+	* vec4* outvecArr_in_gamespace : 출력이 되는 월드공간상의 점 배열
+	* int count : 배열의 크기
+	*/
+	__forceinline void unproject_vecArr(vec4* invecArr_in_screenspace, vec4* outvecArr_in_gamespace, int count) {
+		XMVector3UnprojectStream((XMFLOAT3*)outvecArr_in_gamespace, 16, (XMFLOAT3*)invecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
 
+	/*
+	* 설명 : 현재 ViewPort 데이터에 맞게 원근 뷰 프러스텀 m_xmFrustumWorld을 업데이트한다.
+	*/
 	void UpdateFrustum() {
 		/*m_xmFrustumWorld.Origin = { 0, 0, 0 };
 		m_xmFrustumWorld.Near = 0.1f;
@@ -41,6 +99,9 @@ struct ViewportData {
 		m_xmFrustumWorld.Transform(m_xmFrustumWorld, ViewMatrix.RTInverse);
 	}
 
+	/*
+	* 설명 : 현재 ViewPort 데이터에 맞게 직교 뷰 프러스텀 OrthoFrustum을 업데이트한다.
+	*/
 	void UpdateOrthoFrustum(float nearF, float farF) {
 		matrix v = ViewMatrix;
 		v.transpose(); 
@@ -53,88 +114,74 @@ struct ViewportData {
 	}
 };
 
+/*
+* 설명 : 해상도를 나타내는 구조체
+*/
 struct ResolutionStruct {
 	ui32 width;
 	ui32 height;
 };
 
-//ratio = 4 : 3
-constexpr ui32 ResolutionArr_GA[10][2] = {
-	{640, 480}, {800, 600}, {1024, 768}, {1152, 864},
-	{1400, 1050}, {1600, 1200}, {2048, 1536}, {3200, 2400},
-	{4096, 3072}, {6400, 4800}
-};
-enum class ResolutionName_GA {
-	VGA = 0,
-	SVGA = 1,
-	XGA = 2,
-	XGAplus = 3,
-	SXGAplus = 4,
-	UXGA = 5,
-	QXGA = 6,
-	QUXGA = 7,
-	HXGA = 8,
-	HUXGA = 9
-};
-
-//ratio = 16 : 9
-constexpr ui32 ResolutionArr_HD[12][2] = {
-	{640, 360}, {854, 480}, {960, 540}, {1280, 720}, {1600, 900},
-	{1920, 1080}, {2560, 1440}, {2880, 1620}, {3200, 1800}, {3840, 2160}, {5120, 2880}, {7680, 4320}
-};
-enum class ResolutionName_HD {
-	nHD = 0,
-	SD = 1,
-	qHD = 2,
-	HD = 3,
-	HDplus = 4,
-	FHD = 5,
-	QHD = 6,
-	QHDplus0 = 7,
-	QHDplus1 = 8,
-	UHD = 9,
-	UHDplus = 10,
-	FUHD = 11
-};
-
-//ratio = 16 : 10
-constexpr ui32 ResolutionArr_WGA[10][2] = {
-	{1280, 800}, {1440, 900}, {1680, 1050}, {1920, 1200},
-	{2560, 1600}, {2880, 1800}, {3072, 1920}, {3840, 2400},
-	{5120, 3200}, {7680, 4800}
-};
-enum class ResolutionName_WGA {
-	WXGA = 0,
-	WXGAplus = 1,
-	WSXGA = 2,
-	WUXGA = 3,
-	WQXGA0 = 4,
-	WQXGA1 = 5,
-	WQXGA2 = 6,
-	WQUXGA = 7,
-	WHXGA = 8,
-	WHUXGA = 9
-};
-
+/*
+* 설명 : 렌더링을 어떤 방식으로 진행할 건지 선택가능한 enum
+*/
 enum RenderingMod {
 	ForwardRendering = 0,
-	DeferedRendering = 1
+	DeferedRendering = 1,
+	WithRayTracing = 2,
 };
 
+/*
+* 설명 : 반영구적으로 보존되어 특정 상황마다 새로 만들 수 있고, 또 언제든 삭제될 수 있는 리소스에 대한 
+* Descriptor Heap을 가리키는 구조체.
+* 특정 위치에 리소스의 desc를 할당/삭제할 수 있다.
+*/
 struct DescriptorAllotter {
 	BitAllotter AllocFlagContainer;
 	ID3D12DescriptorHeap* pDescHeap;
 	ui32 DescriptorSize;
 	ui32 extraData;
 
+	/*
+	* 설명 : DescriptorAllotter 를 초기화한다.
+	* 매개변수 : 
+	* D3D12_DESCRIPTOR_HEAP_TYPE heapType : 리소스 디스크립터가 가지는 힙 타입
+	* D3D12_DESCRIPTOR_HEAP_FLAGS Flags : 디스크립터의 힙 플래그 (보통 Non-Shader-Visible)
+	* int Capacity : Desc를 저장할 수 있는 최대 개수.
+	*/
 	void Init(D3D12_DESCRIPTOR_HEAP_TYPE heapType, D3D12_DESCRIPTOR_HEAP_FLAGS Flags, int Capacity);
+	
+	/*
+	* 설명 : 디스크립터가 들어갈 자리 하나를 할당 받는다.
+	* 반환 : 할당된 디스크립터 자리의 배열 인덱스를 반환한다.
+	*/
 	int Alloc();
+
+	/*
+	* 설명 : 디스크립터 자리 하나를 해제한다.
+	* 매개변수 : 
+	* int index : 해제할 디스크립터 자리의 인덱스
+	*/
 	void Free(int index);
 
+	/*
+	* 설명 : 어떤 index에 있는 GPU Desc Handle을 반환한다.
+	* 매개변수 : 
+	* int index : Desc 자리 인덱스
+	*/
 	__forceinline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(int index);
+
+	/*
+	* 설명 : 어떤 index에 있는 CPU Desc Handle을 반환한다.
+	* 매개변수 :
+	* int index : Desc 자리 인덱스
+	*/
 	__forceinline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(int index);
 };
 
+/*
+* 설명 : 
+*/
 struct ShaderVisibleDescriptorPool
 {
 	UINT	m_AllocatedDescriptorCount = 0;

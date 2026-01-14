@@ -1,6 +1,11 @@
 #pragma once
 #include "stdafx.h"
 
+/*
+* 설명 : 서버로부터 받는 프로토콜의 타입을 분류하는 enum
+* Sentinal Value : 
+* NULL = 0;
+*/
 union ServerInfoType {
 	enum {
 		NullType = 0,
@@ -23,10 +28,17 @@ union ServerInfoType {
 	operator short() { return n; }
 };
 
+/*
+* 페이지 2개. 8196 바이트
+*/
 struct twoPage {
 	char data[8196] = {};
 };
 
+/*
+* 설명 : PACK 프로토콜을 받기 위한 팩토리
+* <PACK 은 수정되어야 하기 때문에 이것도 수정이 되어야 함.>
+*/
 struct DataPackFactory {
 	struct DataPack {
 		twoPage data;
