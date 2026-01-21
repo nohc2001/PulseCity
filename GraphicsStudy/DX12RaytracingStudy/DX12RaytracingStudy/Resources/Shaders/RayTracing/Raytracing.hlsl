@@ -197,14 +197,15 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
     float3 hitPosition = HitWorldPosition();
 
-    // Get the base index of the triangle's first 16 bit index.
-    uint indexSizeInBytes = 2;
+    // Get the base index of the triangle's first 32 bit index.
+    uint indexSizeInBytes = 4;
     uint indicesPerTriangle = 3;
     uint triangleIndexStride = indicesPerTriangle * indexSizeInBytes;
     uint baseIndex = PrimitiveIndex() * triangleIndexStride;
 
     // Load up 3 16 bit indices for the triangle.
-    const uint3 indices = Load3x16BitIndices(baseIndex);
+    const uint3 indices = Indices.Load3(baseIndex);
+    //const uint3 indices = Load3x16BitIndices(baseIndex); // when 16 bit
 
     // Retrieve corresponding vertex normals for the triangle vertices.
     float3 vertexNormals[3] =

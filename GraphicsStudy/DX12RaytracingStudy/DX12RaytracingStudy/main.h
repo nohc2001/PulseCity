@@ -1,6 +1,6 @@
 #pragma once
 
-//#define PIX_DEBUGING
+#define PIX_DEBUGING
 
 #include <Windows.h>
 #include <d3d12.h>
@@ -616,8 +616,8 @@ struct RayTracingDevice {
 #define SizeOfInUint32(obj) ((sizeof(obj) - 1) / sizeof(UINT32) + 1)
 
 struct RayTracingMesh {
-	ID3D12Resource* vertexBuffer;
-	ID3D12Resource* indexBuffer;
+	ID3D12Resource* vertexBuffer = nullptr;
+	ID3D12Resource* indexBuffer = nullptr;
 	ID3D12Resource* BLAS;
 	D3D12_RAYTRACING_GEOMETRY_DESC GeometryDesc;
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS BLAS_Input;

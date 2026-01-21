@@ -2149,7 +2149,7 @@ void RayTracingMesh::CreateCubeMesh()
 	}
 
 	// Cube indices.
-	UINT16 indices[] =
+	UINT32 indices[] =
 	{
 		3,1,0,
 		2,1,3,
@@ -2210,8 +2210,8 @@ void RayTracingMesh::CreateCubeMesh()
 	//Geometry
 	GeometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
 	GeometryDesc.Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress();
-	GeometryDesc.Triangles.IndexCount = static_cast<UINT>(indexBuffer->GetDesc().Width) / sizeof(unsigned short);
-	GeometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+	GeometryDesc.Triangles.IndexCount = static_cast<UINT>(indexBuffer->GetDesc().Width) / sizeof(UINT32);
+	GeometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
 	GeometryDesc.Triangles.Transform3x4 = 0;
 	GeometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 	GeometryDesc.Triangles.VertexCount = static_cast<UINT>(vertexBuffer->GetDesc().Width) / sizeof(Vertex);
@@ -2281,11 +2281,11 @@ void RayTracingMesh::CreateCubeMesh()
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_IB = {};
 	srvDesc_IB.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 	srvDesc_IB.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc_IB.Buffer.NumElements = ARRAYSIZE(vertices);
+	srvDesc_IB.Buffer.NumElements = ARRAYSIZE(indices);
 	srvDesc_IB.Format = DXGI_FORMAT_R32_TYPELESS;
 	srvDesc_IB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
 	srvDesc_IB.Buffer.StructureByteStride = 0;
-	gd.pDevice->CreateShaderResourceView(vertexBuffer, &srvDesc_IB, descHandle.hcpu);
+	gd.pDevice->CreateShaderResourceView(indexBuffer, &srvDesc_IB, descHandle.hcpu);
 }
 
 void Game::SetLight()
