@@ -8,6 +8,7 @@ using namespace DirectX::PackedVector;
 //using Microsoft::WRL::ComPtr; -> question 001
 
 #include <assimp/types.h>
+#include <assimp/version.h>
 #include "ASSIMP/ModelLoader.h"
 #include "Utill_ImageFormating.h"
 
@@ -513,11 +514,10 @@ public:
 class BumpSkinMesh : public ColorMesh {
 public:
 	int material_index;
-	matrix* DefaultToWorldArr;
-	matrix* ToLocalArr;
 	matrix* OffsetMatrixs;
 	int MatrixCount;
-	GPUResource ToLocalCB;
+	GPUResource ToOffsetMatrixsCB;
+	int* toNodeIndex;
 
 	struct BoneWeight {
 		int boneID;
@@ -630,7 +630,7 @@ public:
 
 	BumpSkinMesh();
 	virtual ~BumpSkinMesh();
-	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, MatNode* NodeLocalMatrixs, int matrixCount);
+	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, matrix* NodeLocalMatrixs, int matrixCount);
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
 	virtual void Release();
 };
@@ -807,6 +807,17 @@ struct ModelMetaData {
 	std::string* mKeys;
 	ModelMetaDataEntry* mValues;
 
+	void copyMetaData(aiMetadata* src) {
+		mNumProperties = src->mNumProperties;
+		mKeys = new string[mNumProperties];
+		mValues = new ModelMetaDataEntry[mNumProperties];
+		for (int i = 0; i < mNumProperties; ++i) {
+			mKeys[i] = src->mKeys[i].C_Str();
+			mValues[i].mType = src->mValues[i].mType;
+			mValues[i].mData = src->mValues[i].mData;
+		}
+	}
+
 	void LogMetaData() {
 		wchar_t str[512] = {};
 		swprintf_s(str, 512, L"[MetaData] property siz : %d\n", mNumProperties);
@@ -835,9 +846,11 @@ struct ModelNode {
 	unsigned int numMesh;
 	unsigned int* Meshes; // array of int
 	unsigned int* Mesh_Materials;
+	vec4 BoneOrientation;
 	ModelMetaData* mMetaData; // later..
 
 	void Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat, void* goptr);
+	void DBGNodes();
 };
 
 /*
@@ -1104,7 +1117,7 @@ struct NodeAnim {
 	AnimBehaviour mPreState;
 	AnimBehaviour mPostState;
 
-	matrix GetLocalMatrixAtTime(float time);
+	matrix GetLocalMatrixAtTime(float time, matrix original);
 };
 
 struct MeshAnim {
@@ -1168,6 +1181,9 @@ struct Model {
 	//metadata
 	float UnitScaleFactor = 1.0f;
 	int MaxBoneCount;
+	unsigned int mNumSkinMesh;
+	BumpSkinMesh** mBumpSkinMeshs;
+	matrix* DefaultNodelocalTr;
 
 	void Rearrange1(ModelNode* node);
 	void Rearrange2();
@@ -1185,6 +1201,10 @@ struct Model {
 	int BoneStartIndex = 0; // Node중 뼈대가 시작되는 index.
 	int BoneIndexToNodeIndex(int boneIndex);
 	int NodeIndexToBoneIndex(int nodeIndex);
+
+	void DBGNodes();
+
+	int GetSkinMeshIndexByPtr(BumpSkinMesh* ptr);
 };
 
 struct OBB_vertexVector {
@@ -1229,9 +1249,10 @@ struct GameObject {
 	eRenderMeshMod rmod = eRenderMeshMod::single_Mesh;
 
 	// node? bone?
-	matrix* BoneLocalMatrixs;
-	matrix* RootBoneMatrixs; // [worldMat] [bone 0] [...] [bone N]
-	GPUResource BoneToWorldMatrixCB;
+	matrix* NodeLocalMatrixs;
+	vector<matrix*> RootBoneMatrixs_PerSkinMesh;
+	// [bone 0] [...] [bone N]
+	vector<GPUResource> BoneToWorldMatrixCB;
 	void InitRootBoneMatrixs();
 	void SetRootMatrixs();
 	void SetRootMatrixsInherit(matrix parentMat, ModelNode* node);

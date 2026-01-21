@@ -125,6 +125,13 @@ void ModelLoader::copyNode(void* destnode, aiNode* srcnode, void* parent, int in
 		DestNode->numMesh = 0;
 		DestNode->Meshes = nullptr;
 	}
+
+	//metadata
+	DestNode->mMetaData = nullptr;
+	if (srcnode->mMetaData) {
+		DestNode->mMetaData = new ModelMetaData();
+		DestNode->mMetaData->copyMetaData(srcnode->mMetaData);
+	}
 }
 
 std::vector<Texture> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName, const aiScene* scene)
@@ -3236,7 +3243,7 @@ void BumpMesh::Release()
 {
 }
 
-void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<BumpSkinMesh::Vertex>& vert, vector<TriangleIndex>& inds, MatNode* NodeLocalMatrixs, int matrixCount)
+void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<BumpSkinMesh::Vertex>& vert, vector<TriangleIndex>& inds, matrix* NodeLocalMatrixs, int matrixCount)
 {
 	int m_nVertices = vert.size();
 	int m_nStride = sizeof(Vertex);
@@ -3263,35 +3270,34 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<BumpSkinMesh::Vertex
 
 	MatrixCount = matrixCount;
 	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256의 배수
-	ToLocalCB = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-	ToLocalCB.resource->Map(0, NULL, (void**)&ToLocalArr);
+	ToOffsetMatrixsCB = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	ToOffsetMatrixsCB.resource->Map(0, NULL, (void**)&OffsetMatrixs);
 
 	//make DefaultToWorldArr, ToLocalArr
-	DefaultToWorldArr = new matrix[MatrixCount];
 	for (int i = 0; i < MatrixCount; ++i) {
-		matrix mat = NodeLocalMatrixs[i].mat;
-		int k = NodeLocalMatrixs[i].parent;
-		while (k >= 0) {
-			mat = mat * NodeLocalMatrixs[k].mat;
-			k = NodeLocalMatrixs[k].parent;
-		}
+		//matrix mat = NodeLocalMatrixs[i].mat;
+		//int k = NodeLocalMatrixs[i].parent;
+		//while (k >= 0) {
+		//	mat = mat * NodeLocalMatrixs[k].mat; //
+		//	k = NodeLocalMatrixs[k].parent;
+		//}
 
-		DefaultToWorldArr[i] = mat;
-		vec4 det;
-		mat = XMMatrixInverse(&det.v4, mat);
-		ToLocalArr[i] = mat;
-		ToLocalArr[i].transpose();
+		//DefaultToWorldArr[i] = mat;
+		//vec4 det;
+		//mat = XMMatrixInverse(&det.v4, mat);
+		OffsetMatrixs[i] = NodeLocalMatrixs[i];
+		//OffsetMatrixs[i].transpose();
 	}
 
-	ToLocalCB.resource->Unmap(0, nullptr);
+	ToOffsetMatrixsCB.resource->Unmap(0, nullptr);
 
 	int n = gd.TextureDescriptorAllotter.Alloc();
 	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-	cbvDesc.BufferLocation = ToLocalCB.resource->GetGPUVirtualAddress();
+	cbvDesc.BufferLocation = ToOffsetMatrixsCB.resource->GetGPUVirtualAddress();
 	cbvDesc.SizeInBytes = ncbElementBytes;
 	gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
-	ToLocalCB.hCpu = hCPU;
+	ToOffsetMatrixsCB.hCpu = hCPU;
 }
 
 void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum) {
@@ -3310,7 +3316,7 @@ void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instance
 	}
 }
 void BumpSkinMesh::Release() {
-	delete[] DefaultToWorldArr;
+	//delete[] DefaultToWorldArr;
 
 	VertexBuffer.Release();
 	VertexUploadBuffer.Release();
@@ -3564,36 +3570,61 @@ void GPUResource::Release()
 
 void GameObject::InitRootBoneMatrixs()
 {
-	int boneNum = pModel->nodeCount - pModel->BoneStartIndex;
-	UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255); //256의 배수
-	BoneToWorldMatrixCB = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-	BoneToWorldMatrixCB.resource->Map(0, NULL, (void**)&RootBoneMatrixs);
+	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
+		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
+		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255); //256의 배수
+		GPUResource res = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		BoneToWorldMatrixCB.push_back(res);
+		RootBoneMatrixs_PerSkinMesh.push_back(nullptr);
+		BoneToWorldMatrixCB[i].resource->Map(0, NULL, (void**)&RootBoneMatrixs_PerSkinMesh[i]);
+	}
 
 	SetRootMatrixs();
 
-	//ToLocalCB.resource->Unmap(0, nullptr);
-
-	int n = gd.TextureDescriptorAllotter.Alloc();
-	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-	cbvDesc.BufferLocation = BoneToWorldMatrixCB.resource->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = ncbElementBytes;
-	gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
-	BoneToWorldMatrixCB.hCpu = hCPU;
+	for (int i = 0; i < pModel->mNumSkinMesh; ++i)
+	{
+		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
+		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255);
+		//ToLocalCB.resource->Unmap(0, nullptr);
+		int n = gd.TextureDescriptorAllotter.Alloc();
+		D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+		cbvDesc.BufferLocation = BoneToWorldMatrixCB[i].resource->GetGPUVirtualAddress();
+		cbvDesc.SizeInBytes = ncbElementBytes;
+		gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
+		BoneToWorldMatrixCB[i].hCpu = hCPU;
+	}
 }
 
 void GameObject::SetRootMatrixs()
 {
-	if (RootBoneMatrixs) {
-		RootBoneMatrixs[0] = m_worldMatrix;
-		RootBoneMatrixs[0].transpose();
-		SetRootMatrixsInherit(m_worldMatrix, &pModel->Nodes[pModel->BoneStartIndex]);
+	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
+		matrix* marr = RootBoneMatrixs_PerSkinMesh[i];
+		BumpSkinMesh* bsm = pModel->mBumpSkinMeshs[i];
+		for (int k = 0; k < bsm->MatrixCount; ++k) {
+			int nodeindex = bsm->toNodeIndex[k];
+			ModelNode* node = &pModel->Nodes[nodeindex];
+			int ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+
+			RootBoneMatrixs_PerSkinMesh[i][k].Id();
+			while (node != nullptr) {
+				RootBoneMatrixs_PerSkinMesh[i][k] *= NodeLocalMatrixs[ni];
+
+				node = node->parent;
+				ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+			}
+			RootBoneMatrixs_PerSkinMesh[i][k].transpose();
+		}
 	}
+	//if (RootBoneMatrixs) {
+	//	//SetRootMatrixsInherit(m_worldMatrix, &pModel->Nodes[pModel->BoneStartIndex]);
+	//	//RootBoneMatrixs[0].transpose();
+	//}
 }
 
 void GameObject::SetRootMatrixsInherit(matrix parentMat, ModelNode* node)
 {
-	int nodeindex = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+	/*int nodeindex = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
 	int boneIndex = nodeindex - pModel->BoneStartIndex;
 	if (boneIndex >= 0) {
 		RootBoneMatrixs[boneIndex + 1] = BoneLocalMatrixs[boneIndex] * parentMat;
@@ -3603,7 +3634,7 @@ void GameObject::SetRootMatrixsInherit(matrix parentMat, ModelNode* node)
 	}
 	if (boneIndex >= 0) {
 		RootBoneMatrixs[boneIndex + 1].transpose();
-	}
+	}*/
 }
 
 GameObject::GameObject()
@@ -3620,9 +3651,11 @@ GameObject::~GameObject()
 void GameObject::Update(float delatTime)
 {
 	if (rmod == _Model && pModel->mNumAnimations > 0) {
-		if (stack > 5) stack = 0;
 		if (pModel->mAnimations[0] != nullptr) {
-			//pModel->mAnimations[0]->GetBoneLocalMatrixAtTime(BoneLocalMatrixs, 6 * stack);
+			pModel->mAnimations[0]->GetBoneLocalMatrixAtTime(NodeLocalMatrixs, 30 * stack);
+			for (int i = 0; i < pModel->nodeCount; ++i) {
+				NodeLocalMatrixs[i] *= pModel->DefaultNodelocalTr[i];
+			}
 			BumpSkinMesh* bsm = (BumpSkinMesh*)pModel->mMeshes[0];
 			SetRootMatrixs();
 			
@@ -3682,16 +3715,24 @@ void GameObject::Event(WinEvent evt)
 			if (rotIndex < 0) rotIndex = 0;
 			
 			if (evt.wParam == VK_UP) {
-				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(0.1f, 0, 0) * BoneLocalMatrixs[rotIndex];
+				matrix mat = XMMatrixRotationRollPitchYaw(0.1f, 0, 0) * NodeLocalMatrixs[rotIndex];
+				mat.pos = NodeLocalMatrixs[rotIndex].pos;
+				NodeLocalMatrixs[rotIndex] = mat;
 			}
 			if (evt.wParam == VK_DOWN) {
-				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(-0.1f, 0, 0) * BoneLocalMatrixs[rotIndex];
+				matrix mat = XMMatrixRotationRollPitchYaw(-0.1f, 0, 0) * NodeLocalMatrixs[rotIndex];
+				mat.pos = NodeLocalMatrixs[rotIndex].pos;
+				NodeLocalMatrixs[rotIndex] = mat;
 			}
 			if (evt.wParam == VK_RIGHT) {
-				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(0, 0.1f, 0)*BoneLocalMatrixs[rotIndex];
+				matrix mat = XMMatrixRotationRollPitchYaw(0, 0.1f, 0)* NodeLocalMatrixs[rotIndex];
+				mat.pos = NodeLocalMatrixs[rotIndex].pos;
+				NodeLocalMatrixs[rotIndex] = mat;
 			}
 			if (evt.wParam == VK_LEFT) {
-				BoneLocalMatrixs[rotIndex] = XMMatrixRotationRollPitchYaw(0, -0.1f, 0)*BoneLocalMatrixs[rotIndex];
+				matrix mat = XMMatrixRotationRollPitchYaw(0, -0.1f, 0)* NodeLocalMatrixs[rotIndex];
+				mat.pos = NodeLocalMatrixs[rotIndex].pos;
+				NodeLocalMatrixs[rotIndex] = mat;
 			}
 		}
 	}
@@ -3713,12 +3754,47 @@ void GameObject::SetModel(Model* model)
 {
 	rmod = _Model;
 	pModel = model;
-	int boneNum = model->nodeCount - model->BoneStartIndex;
-	BoneLocalMatrixs = new matrix[boneNum];
-	RootBoneMatrixs = nullptr;
-	for (int i = 0; i < boneNum; ++i) {
-		BoneLocalMatrixs[i] = model->Nodes[i + model->BoneStartIndex].transform;
+	NodeLocalMatrixs = new matrix[model->nodeCount];
+
+	pModel->mNumSkinMesh;
+	RootBoneMatrixs_PerSkinMesh.reserve(pModel->mNumSkinMesh);
+	for (int i = 0; i < model->nodeCount; ++i) {
+		NodeLocalMatrixs[i] = model->Nodes[i].transform;
+		//NodeLocalMatrixs[i].Id();
 	}
+
+	if (pModel->mNumSkinMesh > 0) {
+		for (int i = 0; i < pModel->nodeCount; ++i) {
+			NodeLocalMatrixs[i] = pModel->DefaultNodelocalTr[i];
+		}
+	}
+	/*for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
+		BumpSkinMesh* bsm = pModel->mBumpSkinMeshs[i];
+		for (int k = 0; k < bsm->MatrixCount; ++k) {
+			vec4 det;
+			matrix invBoneWorld = bsm->OffsetMatrixs[k];
+			invBoneWorld.transpose();
+			invBoneWorld = XMMatrixInverse(&det.v4, invBoneWorld);
+			int nodeindex = bsm->toNodeIndex[k];
+			ModelNode* node = pModel->Nodes[nodeindex].parent;
+			matrix parentBoneOffset;
+
+			while (node != nullptr) {
+				int parentindex = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+				for (int u = 0; u < bsm->MatrixCount; ++u) {
+					if (parentindex == bsm->toNodeIndex[u]) {
+						parentBoneOffset = bsm->OffsetMatrixs[u];
+						parentBoneOffset.transpose();
+						goto SET_NODELOCALMAT;
+					}
+				}
+				node = node->parent;
+			}
+
+			SET_NODELOCALMAT:
+			NodeLocalMatrixs[nodeindex] = invBoneWorld * parentBoneOffset;
+		}
+	}*/
 }
 
 void GameObject::SetShader(Shader* pShader)
@@ -4801,6 +4877,10 @@ void Model::Rearrange2()
 float curr_model_PosMul = 0.01f;
 void Model::GetModelFromAssimp(string filename, float posmul)
 {
+	unsigned int major = aiGetVersionMajor();
+	unsigned int minor = aiGetVersionMinor();
+	unsigned int rev = aiGetVersionRevision();
+
 	if (posmul == 0) {
 		auto const pos = filename.find_last_of('.');
 		const auto leaf = filename.substr(pos + 1);
@@ -4817,10 +4897,24 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 	ModelLoader* modelLoader = new ModelLoader();
 	Assimp::Importer importer;
 
+	// 센티미터를 미터로 자동 변환
+	// 스케일 팩터 설정 (센티미터 → 미터)
+	importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 0.01f);
+	// 또는 더 명시적으로
+	importer.SetPropertyFloat("GLOBAL_SCALE_FACTOR", 0.01f);
+
 	const aiScene* pScene = importer.ReadFile(filename,
 		aiProcess_Triangulate |
-		aiProcess_ConvertToLeftHanded);
-
+		//aiProcess_ConvertToLeftHanded | // skinmesh일때 사용금지?
+		aiProcess_JoinIdenticalVertices |
+		aiProcess_FlipUVs |               // DirectX UV 좌표계
+		aiProcess_CalcTangentSpace |
+		aiProcess_LimitBoneWeights |
+		aiProcess_SortByPType |
+		aiProcess_PopulateArmatureData |
+		aiProcess_ValidateDataStructure
+		// 이거 켜면 Assimp가 PreRotation을 자동으로 Node Transform에 합쳐줌);
+		);
 	if (pScene == nullptr)
 		return;
 
@@ -4850,27 +4944,42 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 		mat.pos *= UnitScaleFactor;
 		mat.pos.w = 1;
 		Nodes[i].transform = mat;
+		if (Nodes[i].mMetaData) {
+			Nodes[i].mMetaData->LogMetaData();
+		}
+		
 	}
 	
+	//RootNode->DBGNodes();
+
 	//read mesh
 	mNumMeshes = pScene->mNumMeshes;
 	mMeshes = new ColorMesh * [mNumMeshes];
 	//vertice = new vector<BumpMesh::Vertex>[mNumMeshes];
 	indice = new vector<TriangleIndex>[mNumMeshes];
 	MaxBoneCount = 0;
+	mNumSkinMesh = 0;
 	// Get MAX Bone Count
 	for (UINT i = 0; i < pScene->mNumMeshes; i++) {
 		aiMesh* mesh = pScene->mMeshes[i];
 		if (mesh->HasBones()) {
+			mNumSkinMesh += 1;
 			if (MaxBoneCount < mesh->mNumBones) {
 				MaxBoneCount = mesh->mNumBones;
 			}
 		}
 	}
+
+	int tempup = 0;
+	mBumpSkinMeshs = new BumpSkinMesh*[mNumSkinMesh];
 	// Make Meshes.
 	for (UINT i = 0; i < pScene->mNumMeshes; i++) {
 		aiMesh* mesh = pScene->mMeshes[i];
 		mMeshes[i] = Assimp_ReadMesh(mesh, pScene, i);
+		if (mesh->HasBones()) {
+			mBumpSkinMeshs[tempup] = (BumpSkinMesh*)mMeshes[i];
+			tempup += 1;
+		}
 	}
 
 	gd.pCommandList->Close();
@@ -4947,6 +5056,38 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 	for (int i = 0; i < mNumAnimations; ++i) {
 		mAnimations[i] = Assimp_ReadAnimation(pScene->mAnimations[i], pScene);
 	}
+
+	//calcul normal Node Local Tr Mats (WhenSkinMesh enabled)
+	if (mNumSkinMesh > 0) {
+		DefaultNodelocalTr = new matrix[nodeCount];
+	}
+	for (int i = 0; i < mNumSkinMesh; ++i) {
+		BumpSkinMesh* bsm = mBumpSkinMeshs[i];
+		for (int k = 0; k < bsm->MatrixCount; ++k) {
+			vec4 det;
+			matrix invBoneWorld = bsm->OffsetMatrixs[k];
+			invBoneWorld.transpose();
+			invBoneWorld = XMMatrixInverse(&det.v4, invBoneWorld);
+			int nodeindex = bsm->toNodeIndex[k];
+			ModelNode* node = Nodes[nodeindex].parent;
+			matrix parentBoneOffset;
+
+			while (node != nullptr) {
+				int parentindex = ((char*)node - (char*)Nodes) / sizeof(ModelNode);
+				for (int u = 0; u < bsm->MatrixCount; ++u) {
+					if (parentindex == bsm->toNodeIndex[u]) {
+						parentBoneOffset = bsm->OffsetMatrixs[u];
+						parentBoneOffset.transpose();
+						goto SET_NODELOCALMAT;
+					}
+				}
+				node = node->parent;
+			}
+
+		SET_NODELOCALMAT:
+			DefaultNodelocalTr[nodeindex] = invBoneWorld * parentBoneOffset;
+		}
+	}
 }
 
 ColorMesh* Model::Assimp_ReadMesh(aiMesh* mesh, const aiScene* scene, int meshindex)
@@ -4971,6 +5112,7 @@ ColorMesh* Model::Assimp_ReadMesh(aiMesh* mesh, const aiScene* scene, int meshin
 			if (i == 0) {
 				BoneStartIndex = GetNodeIndex((char*)mesh->mBones[i]->mName.C_Str());
 			}
+
 			aiBone* b = mesh->mBones[i];
 			for (int k = 0; k < b->mNumWeights; ++k) {
 				BumpSkinMesh::BoneWeight bone;
@@ -5089,32 +5231,41 @@ ColorMesh* Model::Assimp_ReadMesh(aiMesh* mesh, const aiScene* scene, int meshin
 			OutputDebugStringA("\n");
 		}
 
-		vector<BumpSkinMesh::MatNode> BoneMatrixs;
-		BoneMatrixs.reserve(MaxBoneCount);
-		BoneMatrixs.resize(MaxBoneCount);
+		vector<matrix> BoneMatrixs;
+		BoneMatrixs.reserve(mesh->mNumBones);
+		BoneMatrixs.resize(mesh->mNumBones);
+		
+#define SET_OFFSET_BY_ASSIMP
+		pMesh->toNodeIndex = new int[mesh->mNumBones];
 		for (int i = 0; i < mesh->mNumBones; ++i) {
 			char* c0 = (char*)mesh->mBones[i]->mName.C_Str();
 			OutputDebugStringA(c0);
 			OutputDebugStringA("\n");
 			int node_ind = GetNodeIndex(c0);
-			int bone_ind = node_ind - BoneStartIndex;
-			BoneMatrixs[bone_ind].mat = *(matrix*)&Nodes[node_ind].transform;
-			char* c2 = (char*)Nodes[node_ind].parent->name.c_str();
-			int parentNodeIndex = GetNodeIndex(c2);
-			int pbone_ind = parentNodeIndex - BoneStartIndex;
-			BoneMatrixs[bone_ind].parent = pbone_ind;
+
+			pMesh->toNodeIndex[i] = node_ind;
+#ifdef SET_OFFSET_BY_ASSIMP
+			BoneMatrixs[i] = *(matrix*)&mesh->mBones[i]->mOffsetMatrix;
+			BoneMatrixs[i].transpose();
+			BoneMatrixs[i].pos *= UnitScaleFactor;
+			BoneMatrixs[i].pos.w = 1;
+			BoneMatrixs[i].transpose();
+
+			MatrixDbg(BoneMatrixs[i]);
+#else
+			matrix mat;
+			ModelNode* node = &Nodes[node_ind];
+			while (node != nullptr) {
+				mat *= *(matrix*)&node->transform;
+				node = node->parent;
+			}
+			vec4 det;
+			BoneMatrixs[i] = XMMatrixInverse(&det.v4, mat);
+			BoneMatrixs[i].transpose();
+#endif
 		}
 
-		pMesh->CreateMesh_FromVertexAndIndexData(vertices, indices, BoneMatrixs.data(), MaxBoneCount);
-		pMesh->OffsetMatrixs = new matrix[128];
-		pMesh->OffsetMatrixs[0].Id();
-		for (int i = 0; i < mesh->mNumBones; ++i) {
-			int n = GetNodeIndex((char*)mesh->mBones[i]->mName.C_Str());
-			pMesh->OffsetMatrixs[n] = *(matrix*)&mesh->mBones[i]->mOffsetMatrix;
-			pMesh->OffsetMatrixs[n].transpose();
-			pMesh->OffsetMatrixs[n].pos *= UnitScaleFactor;
-			pMesh->OffsetMatrixs[n].pos.w = 1;
-		}
+		pMesh->CreateMesh_FromVertexAndIndexData(vertices, indices, BoneMatrixs.data(), mesh->mNumBones);
 		pMesh->material_index = mesh->mMaterialIndex;
 		pMesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
 		return pMesh;
@@ -5437,8 +5588,8 @@ Animation* Model::Assimp_ReadAnimation(aiAnimation* anim, const aiScene* scene)
 	rotUp.resize(nodeCount);
 	scaleUp.resize(nodeCount);
 	
-	vector<int> acToNodeIndex;
-	vector<int> cToNodeIndex;
+	vector<int> acToNodeIndex; // assimp anim->Channel to nodeindex
+	vector<int> cToNodeIndex; // mymodel anim->channdel to nodeindex
 	vector<int> ToChannelIndex; // nodeindex to channelindex
 	acToNodeIndex.reserve(anim->mNumChannels);
 	acToNodeIndex.resize(anim->mNumChannels);
@@ -5457,6 +5608,7 @@ Animation* Model::Assimp_ReadAnimation(aiAnimation* anim, const aiScene* scene)
 	for (int i = 0; i < anim->mNumChannels; ++i) {
 		aiNodeAnim* aiChannel = anim->mChannels[i];
 		char* nodename = (char*)aiChannel->mNodeName.C_Str();
+		//GetNodeIndex(nodename);
 		char* posfind = strstr(nodename, "_$AssimpFbx$_Translation");
 		char* rotfind = strstr(nodename, "_$AssimpFbx$_Rotation");
 		char* scalefind = strstr(nodename, "_$AssimpFbx$_Scaling");
@@ -5568,9 +5720,9 @@ Animation* Model::Assimp_ReadAnimation(aiAnimation* anim, const aiScene* scene)
 			for (int k = 0; k < aiChannel->mNumScalingKeys; ++k) {
 				VectorKey& vkey = channel.mScalingKeys[scaleUp[nodeIndex]];
 				const aiVectorKey& aivkey = aiChannel->mScalingKeys[k];
-				vkey.mValue.x = aivkey.mValue.x;
-				vkey.mValue.y = aivkey.mValue.y;
-				vkey.mValue.z = aivkey.mValue.z;
+				vkey.mValue.x = aivkey.mValue.x * UnitScaleFactor;
+				vkey.mValue.y = aivkey.mValue.y * UnitScaleFactor;
+				vkey.mValue.z = aivkey.mValue.z * UnitScaleFactor;
 				vkey.mTime = aivkey.mTime;
 				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
 				scaleUp[nodeIndex] += 1;
@@ -5605,9 +5757,9 @@ Animation* Model::Assimp_ReadAnimation(aiAnimation* anim, const aiScene* scene)
 			for (int k = 0; k < aiChannel->mNumScalingKeys; ++k) {
 				VectorKey& vkey = channel.mScalingKeys[scaleUp[nodeIndex]];
 				const aiVectorKey& aivkey = aiChannel->mScalingKeys[k];
-				vkey.mValue.x = aivkey.mValue.x;
-				vkey.mValue.y = aivkey.mValue.y;
-				vkey.mValue.z = aivkey.mValue.z;
+				vkey.mValue.x = aivkey.mValue.x * UnitScaleFactor;
+				vkey.mValue.y = aivkey.mValue.y * UnitScaleFactor;
+				vkey.mValue.z = aivkey.mValue.z * UnitScaleFactor;
 				vkey.mTime = aivkey.mTime;
 				vkey.mInterpolation = (AnimInterpolation)aivkey.mInterpolation;
 				scaleUp[nodeIndex] += 1;
@@ -5841,6 +5993,31 @@ int Model::NodeIndexToBoneIndex(int nodeIndex)
 	return nodeIndex - BoneStartIndex;
 }
 
+int innerCount = 0;
+void ModelNode::DBGNodes() {
+	innerCount += 1;
+	dbglog2a("%d %s \n", innerCount, name.c_str());
+
+	for (int i = 0; i < numChildren; ++i) {
+		Childrens[i]->DBGNodes();
+	}
+
+	innerCount -= 1;
+}
+
+void Model::DBGNodes()
+{
+	RootNode->DBGNodes();
+}
+
+int Model::GetSkinMeshIndexByPtr(BumpSkinMesh* ptr)
+{
+	for (int i = 0; i < mNumSkinMesh;++i) {
+		if (mBumpSkinMeshs[i] == ptr) return i;
+	}
+	return 0;
+}
+
 void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat, void* goptr)
 {
 	GameObject* go = (GameObject*)goptr;
@@ -5851,6 +6028,7 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 		m.transpose();
 
 		//set world matrix in shader
+		
 		
 		//set texture in shader
 		//game.MyPBRShader1->SetTextureCommand()
@@ -5889,6 +6067,7 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 			}
 			else if (mesh->type == ColorMesh::SkinedBumpMesh) {
 				BumpSkinMesh* skinMesh = (BumpSkinMesh*)mesh;
+				int skinmeshup = pModel->GetSkinMeshIndexByPtr(skinMesh);
 				game.MyPBRShader1->Add_RegisterShaderCommand2(cmdlist, true);
 				gd.pCommandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
 
@@ -5901,12 +6080,12 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 
 				DescHandle TolocalDesc;
 				gd.ShaderVisibleDescPool.AllocDescriptorTable(&TolocalDesc.hcpu, &TolocalDesc.hgpu, 1);
-				gd.pDevice->CopyDescriptorsSimple(1, TolocalDesc.hcpu, skinMesh->ToLocalCB.hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				gd.pDevice->CopyDescriptorsSimple(1, TolocalDesc.hcpu, skinMesh->ToOffsetMatrixsCB.hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				gd.pCommandList->SetGraphicsRootDescriptorTable(1, TolocalDesc.hgpu);
 
 				DescHandle ToWorldDesc;
 				gd.ShaderVisibleDescPool.AllocDescriptorTable(&ToWorldDesc.hcpu, &ToWorldDesc.hgpu, 1);
-				gd.pDevice->CopyDescriptorsSimple(1, ToWorldDesc.hcpu, go->BoneToWorldMatrixCB.hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				gd.pDevice->CopyDescriptorsSimple(1, ToWorldDesc.hcpu, go->BoneToWorldMatrixCB[skinmeshup].hCpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				gd.pCommandList->SetGraphicsRootDescriptorTable(2, ToWorldDesc.hgpu);
 
 				//cmdlist->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
@@ -5947,6 +6126,7 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 				gd.pCommandList->SetGraphicsRootDescriptorTable(4, hStart.hgpu);
 
 				pModel->mMeshes[Meshes[i]]->Render(cmdlist, 1);
+				skinmeshup += 1;
 			}
 		}
 	}
@@ -5960,17 +6140,24 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 
 void Animation::GetBoneLocalMatrixAtTime(matrix* out, float time)
 {
+	float t = time;
+	constexpr bool isLoop = true;
+	if (isLoop) {
+		t = time - floor(time / (float)mDuration) * (float)mDuration;
+	}
 	for (int i = 0; i < mNumChannels; ++i) {
-		out[mChannels[i].nodeIndex+1] = mChannels[i].GetLocalMatrixAtTime(time);
+		out[mChannels[i].nodeIndex] = mChannels[i].GetLocalMatrixAtTime(t, out[mChannels[i].nodeIndex]);
 	}
 }
 
-matrix NodeAnim::GetLocalMatrixAtTime(float time)
+matrix NodeAnim::GetLocalMatrixAtTime(float time, matrix original)
 {
-	vec4 pos = vec4(0, 0, 0);
+	vec4 pos = vec4(0, 0, 0, 1);;
 	vec4 rotQ = vec4(0, 0, 0, 1);
 	vec4 scale = vec4(1, 1, 1);
-	if (mNumPositionKeys > 0) {
+	//XMMatrixDecompose(&scale.v4, &rotQ.v4, &pos.v4, original);
+
+	/*if (mNumPositionKeys > 0) {
 		for (int i = 0; i < mNumPositionKeys - 1; ++i) {
 			if (mPositionKeys[i].mTime < time && time < mPositionKeys[i + 1].mTime) {
 				vec4 p0 = mPositionKeys[i].mValue;
@@ -5982,7 +6169,7 @@ matrix NodeAnim::GetLocalMatrixAtTime(float time)
 				break;
 			}
 		}
-	}
+	}*/
 
 	if (mNumRotationKeys > 0) {
 		for (int i = 0; i < mNumRotationKeys - 1; ++i) {
@@ -5998,8 +6185,7 @@ matrix NodeAnim::GetLocalMatrixAtTime(float time)
 		}
 	}
 	
-
-	if (mNumScalingKeys > 0) {
+	/*if (mNumScalingKeys > 0) {
 		for (int i = 0; i < mNumScalingKeys - 1; ++i) {
 			if (mScalingKeys[i].mTime < time && time < mScalingKeys[i + 1].mTime) {
 				vec4 p0 = mScalingKeys[i].mValue;
@@ -6011,12 +6197,16 @@ matrix NodeAnim::GetLocalMatrixAtTime(float time)
 				break;
 			}
 		}
-	}
+	}*/
 
 	matrix mat =
 		XMMatrixScaling(scale.x, scale.y, scale.z) *
 		XMMatrixRotationQuaternion(rotQ) *
 		XMMatrixTranslation(pos.x, pos.y, pos.z);
+
+	
+	//mat.right *= -1;
+	//mat.up.y *= -1;
 	//matrix mat = XMMatrixScaling(1, 1, 1);
 	//mat = mat * XMMatrixRotationQuaternion(rotQ);
 	//mat.pos = pos;

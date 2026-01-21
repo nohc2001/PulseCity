@@ -12,8 +12,8 @@ cbuffer cbBoneToLocalWorldInfo : register(b1)
 
 cbuffer cbWorldInfo : register(b2)
 {
-    matrix gWorld;
-    matrix ToWorldMatrixs[127];
+    //matrix gWorld;
+    matrix ToWorldMatrixs[128];
 };
 
 struct DirectionLight
@@ -147,36 +147,51 @@ struct VS_OUTPUT
 VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
-    output.positionW = mul(float4(input.position, 1.0f), gWorld);
+    //output.positionW = mul(float4(input.position, 1.0f), gWorld);
     float4 v0, v1, v2, v3;
     
     // Bone Matrix Calculation
-    v0 = mul(output.positionW, ToLocalMatrixs[input.boneindex0]);
-    v1 = mul(output.positionW, ToLocalMatrixs[input.boneindex1]);
-    v2 = mul(output.positionW, ToLocalMatrixs[input.boneindex2]);
-    v3 = mul(output.positionW, ToLocalMatrixs[input.boneindex3]);
-    v0 = mul(v0, ToWorldMatrixs[input.boneindex0]);
-    v1 = mul(v1, ToWorldMatrixs[input.boneindex1]);
-    v2 = mul(v2, ToWorldMatrixs[input.boneindex2]);
-    v3 = mul(v3, ToWorldMatrixs[input.boneindex3]);
-    output.positionW = (v0 * input.weight0 + v1 * input.weight1 
-        + v2 * input.weight2 + v3 * input.weight3) /
-        (input.weight0 + input.weight1 + input.weight2 + input.weight3);
-    output.positionW.w = 1.0f;
+    //v0 = mul(output.positionW, ToLocalMatrixs[input.boneindex0]);
+    //v1 = mul(output.positionW, ToLocalMatrixs[input.boneindex1]);
+    //v2 = mul(output.positionW, ToLocalMatrixs[input.boneindex2]);
+    //v3 = mul(output.positionW, ToLocalMatrixs[input.boneindex3]);
+    //v0 = mul(v0, ToWorldMatrixs[input.boneindex0]);
+    //v1 = mul(v1, ToWorldMatrixs[input.boneindex1]);
+    //v2 = mul(v2, ToWorldMatrixs[input.boneindex2]);
+    //v3 = mul(v3, ToWorldMatrixs[input.boneindex3]);
     
+    //output.positionW = (v0 * input.weight0 + v1 * input.weight1 
+    //    + v2 * input.weight2 + v3 * input.weight3) /
+    //    (input.weight0 + input.weight1 + input.weight2 + input.weight3);
+    //output.positionW.w = 1.0f;
+    
+    float4x4 mtxVertexToBoneWorld = (float4x4) 0.0f;
+    matrix w0 = ToWorldMatrixs[input.boneindex0];
+    matrix w1 = ToWorldMatrixs[input.boneindex1];
+    matrix w2 = ToWorldMatrixs[input.boneindex2];
+    matrix w3 = ToWorldMatrixs[input.boneindex3];
+    mtxVertexToBoneWorld += input.weight0 * mul(ToLocalMatrixs[input.boneindex0], w0);
+    mtxVertexToBoneWorld += input.weight1 * mul(ToLocalMatrixs[input.boneindex1], w1);
+    mtxVertexToBoneWorld += input.weight2 * mul(ToLocalMatrixs[input.boneindex2], w2);
+    mtxVertexToBoneWorld += input.weight3 * mul(ToLocalMatrixs[input.boneindex3], w3);
+    output.positionW = mul(float4(input.position, 1.0f), mtxVertexToBoneWorld);
+    output.normalW = mul(input.normal, (float3x3) mtxVertexToBoneWorld).xyz;
+    output.T = mul(input.tangent, (float3x3) mtxVertexToBoneWorld).xyz;
+    output.B = mul(input.bitangent, (float3x3) mtxVertexToBoneWorld).xyz;
+    output.N = output.normalW;
+    
+    //output.normalW = mul(input.normal, (float3x3) gWorld);
+    //float3 T = normalize(mul(input.tangent, (float3x3) gWorld));
+    //float3 B = normalize(mul(input.bitangent, (float3x3) gWorld));
+    //float3 N = normalize(mul(input.normal, (float3x3) gWorld));
+    
+    //float3x3 TBN = transpose(float3x3(T, B, N));
+    //output.T = T;
+    //output.B = B;
+    //output.N = N;
     output.position = mul(output.positionW, gView);
-    output.normalW = mul(input.normal, (float3x3) gWorld);
-    float4 cameraPosW = mul(Camera_Position, gWorld);
     output.uv = input.uv;
     
-    float3 T = normalize(mul(input.tangent, (float3x3) gWorld));
-    float3 B = normalize(mul(input.bitangent, (float3x3) gWorld));
-    float3 N = normalize(mul(input.normal, (float3x3) gWorld));
-    
-    float3x3 TBN = transpose(float3x3(T, B, N));
-    output.T = T;
-    output.B = B;
-    output.N = N;
     //output.TBNPointLightDir = mul(pointLightArr[0].LightPos - output.positionW.xyz, inverseTBN);
     //output.TBNDirLightDir = mul(dirLight.gLightDirection, inverseTBN);
     output.ViewDir = normalize(Camera_Position.xyz - output.positionW.xyz);
