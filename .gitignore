@@ -125,6 +125,14 @@ GraphicsStudy/DX12MyModelExporter2/x64/
 GraphicsStudy/DX12MyModelExporter2/.vs/
 GraphicsStudy/DX12MyModelExporter2/DX12MyModelExporter/x64/
 
+ServerStudy/MaxUser/MaxUserServer/x64/
+ServerStudy/MaxUser/MaxUserServer/.vs/
+ServerStudy/MaxUser/MaxUserServer/MaxUserServer/.vs/
+
+ServerStudy/MaxUser/MaxUserClient/x64/
+ServerStudy/MaxUser/MaxUserClient/.vs/
+ServerStudy/MaxUser/MaxUserClient/MaxUserClient/.vs/
+
 *.log
 *.pch
 *.ipch
