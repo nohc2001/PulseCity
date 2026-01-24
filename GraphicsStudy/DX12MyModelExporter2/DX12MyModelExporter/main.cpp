@@ -1356,7 +1356,7 @@ void Game::Init()
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 
 	Model* model = new Model;
-	model->GetModelFromAssimp("Resources/Model/Walking.fbx", 0.01);
+	model->GetModelFromAssimp("Resources/Model/minigun_m134/scene.gltf", 1);
 	/*model->SaveModelFile("Resources/Model/minigun_m134.model");
 	model->LoadModelFile("Resources/Model/minigun_m134.model");*/
 
@@ -4959,6 +4959,9 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 	indice = new vector<TriangleIndex>[mNumMeshes];
 	MaxBoneCount = 0;
 	mNumSkinMesh = 0;
+
+	vertice = new vector<BumpMesh::Vertex>[mNumMeshes];
+	indice = new vector<TriangleIndex>[mNumMeshes];
 	// Get MAX Bone Count
 	for (UINT i = 0; i < pScene->mNumMeshes; i++) {
 		aiMesh* mesh = pScene->mMeshes[i];

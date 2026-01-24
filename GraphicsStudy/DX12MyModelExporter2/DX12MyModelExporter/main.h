@@ -17,7 +17,7 @@ using namespace DirectX::PackedVector;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
-#define PIX_DEBUGING
+//#define PIX_DEBUGING
 
 #ifdef PIX_DEBUGING
 #include "C:\\Users\\nohc2\\OneDrive\\Desktop\\WorkRoom\\Dev\\CollegeProjects\\Graphics\\PixEvents-main\\include\\pix3.h"
