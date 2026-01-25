@@ -22,11 +22,6 @@ struct SceneConstantBuffer
     XMVECTOR lightPosition;
 };
 
-struct CubeConstantBuffer
-{
-    XMFLOAT4 albedo;
-};
-
 struct Vertex
 {
     XMFLOAT3 position;
@@ -80,11 +75,12 @@ ByteAddressBuffer Indices : register(t2, space0);
 
 ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
 
-struct LocalCB
+struct LocalRootSig
 {
-    float4 Local[2];
+    uint VBOffset;
+    uint IBOffset;
 };
-ConstantBuffer<LocalCB> localCB : register(b1);
+ConstantBuffer<LocalRootSig> localCB : register(b1);
 
 // Load three 16 bit indices from a byte addressed buffer.
 uint3 Load3x16BitIndices(uint offsetBytes)
@@ -123,6 +119,10 @@ typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 struct RayPayload
 {
     float4 color;
+    float3 ReflectRayStart;
+    float isCollide_Light;
+    float3 ReflectRaydir;
+    float RelectRate;
 };
 
 // Retrieve hit world position.
@@ -180,56 +180,96 @@ void MyRaygenShader()
     // Set the ray's extents.
     RayDesc ray;
     ray.Origin = origin;
+    
+    //must normalize
     ray.Direction = rayDir;
     // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
     // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
-    RayPayload payload = { float4(0, 0, 0, 0) };
+    
+    RayPayload payload = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
+    float reflectRate = payload.RelectRate;
 
+    ray.Origin = payload.ReflectRayStart;
+    ray.Direction = payload.ReflectRaydir;
+    RayPayload rpayload = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, rpayload);
+    float4 reflectColor = rpayload.color;
+    
     // Write the raytraced color to the output texture.
-    RenderTarget[DispatchRaysIndex().xy] = payload.color;
+    RenderTarget[DispatchRaysIndex().xy] = (1 - reflectRate) * payload.color + (reflectRate) * reflectColor;
 }
 
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
     float3 hitPosition = HitWorldPosition();
-
-    // Get the base index of the triangle's first 32 bit index.
-    uint indexSizeInBytes = 4;
-    uint indicesPerTriangle = 3;
-    uint triangleIndexStride = indicesPerTriangle * indexSizeInBytes;
-    uint baseIndex = PrimitiveIndex() * triangleIndexStride;
-
-    // Load up 3 16 bit indices for the triangle.
-    const uint3 indices = Indices.Load3(baseIndex);
-    //const uint3 indices = Load3x16BitIndices(baseIndex); // when 16 bit
-
-    // Retrieve corresponding vertex normals for the triangle vertices.
-    float3 vertexNormals[3] =
+    
+    float3 DirLightDir = float3(1, 1, 1);
+    
+    // shadowRay
+    float ShadowRate = 1.0f;
+    ShadowRate = 0.0f;
+    RayDesc ray;
+    ray.Origin = hitPosition;
+    float3 vec = g_sceneCB.lightPosition.xyz - hitPosition; //DirLightDir;
+    ray.Direction = normalize(vec);
+    ray.TMin = 0.001;
+    ray.TMax = length(vec); // 10000.0f
+    payload.isCollide_Light = 0;
+    TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, payload);
+    ShadowRate = payload.isCollide_Light;
+   
+    //GetNormal
+    float3 triangleNormal;
     {
-        Vertices[indices[0]].normal,
-        Vertices[indices[1]].normal,
-        Vertices[indices[2]].normal 
-    };
+        // Get the base index of the triangle's first 32 bit index.
+        uint indexSizeInBytes = 4;
+        uint indicesPerTriangle = 3;
+        uint triangleIndexStride = indicesPerTriangle * indexSizeInBytes;
+        uint baseIndex = PrimitiveIndex() * triangleIndexStride;
 
-    // Compute the triangle's normal.
-    // This is redundant and done for illustration purposes 
-    // as all the per-vertex normals are the same and match triangle's normal in this sample. 
-    //float3 triangleNormal = HitAttribute(vertexNormals, attr);
-    float3 triangleNormal = (vertexNormals[0] + vertexNormals[1] + vertexNormals[2]) / 3;
+        // Load up 3 16 bit indices for the triangle.
+        const uint3 indices = Indices.Load3(localCB.IBOffset + baseIndex);
+        //const uint3 indices = Load3x16BitIndices(baseIndex); // when 16 bit
 
-    float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
+        // Retrieve corresponding vertex normals for the triangle vertices.
+        float3 vertexNormals[3] =
+        {
+            Vertices[localCB.VBOffset + indices[0]].normal,
+            Vertices[localCB.VBOffset + indices[1]].normal,
+            Vertices[localCB.VBOffset + indices[2]].normal 
+        };
+
+        // Compute the triangle's normal.
+        // This is redundant and done for illustration purposes 
+        // as all the per-vertex normals are the same and match triangle's normal in this sample. 
+        //float3 triangleNormal = HitAttribute(vertexNormals, attr);
+        triangleNormal = (vertexNormals[0] + vertexNormals[1] + vertexNormals[2]) / 3;
+        float3x3 mat3x3 = WorldToObject3x4();
+        triangleNormal = mul(triangleNormal, mat3x3);
+    }
+    
+    payload.ReflectRayStart = hitPosition;
+    float3 raydir = WorldRayDirection();
+    payload.ReflectRaydir = normalize(reflect(raydir, triangleNormal));
+    payload.RelectRate = 0.5f;
+    
+    //
+    
+    //float lightW = dot(triangleNormal, DirLightDir);
+    float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal); //float4(lightW, lightW, lightW, 1);
     float4 color = diffuseColor;
-
+    color.xyz *= ShadowRate;
     payload.color = color;
 }
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    float4 background = float4(0.0f, 0.2f, 0.4f, 1.0f);
+    float4 background = float4(0.0f, 0.0f, 0.0f, 1.0f);
     payload.color = background;
+    payload.isCollide_Light = 1.0f;
 }

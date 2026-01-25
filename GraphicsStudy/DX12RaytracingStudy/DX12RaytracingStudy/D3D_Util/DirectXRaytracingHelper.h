@@ -25,6 +25,8 @@ struct AccelerationStructureBuffers
 class ShaderRecord
 {
 public:
+    ShaderRecord() {}
+
     ShaderRecord(void* pShaderIdentifier, UINT shaderIdentifierSize) :
         shaderIdentifier(pShaderIdentifier, shaderIdentifierSize)
     {
@@ -60,6 +62,7 @@ public:
 // Shader table = {{ ShaderRecord 1}, {ShaderRecord 2}, ...}
 class ShaderTable : public GpuUploadBuffer
 {
+public:
     uint8_t* m_mappedShaderRecords;
     UINT m_shaderRecordSize;
 
@@ -68,7 +71,6 @@ class ShaderTable : public GpuUploadBuffer
     std::vector<ShaderRecord> m_shaderRecords;
 
     ShaderTable() {}
-public:
     ShaderTable(ID3D12Device* device, UINT numShaderRecords, UINT shaderRecordSize, LPCWSTR resourceName = nullptr) 
         : m_name(resourceName)
     {
@@ -147,7 +149,7 @@ void DefineExports(T* obj, LPCWSTR(&Exports)[N][M])
 }
 
 
-inline void AllocateUploadBuffer(ID3D12Device* pDevice, void *pData, UINT64 datasize, ID3D12Resource **ppResource, const wchar_t* resourceName = nullptr)
+inline void* AllocateUploadBuffer(ID3D12Device* pDevice, void *pData, UINT64 datasize, ID3D12Resource **ppResource, const wchar_t* resourceName = nullptr, bool isunmaped = true)
 {
     auto uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
     auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(datasize);
@@ -162,10 +164,17 @@ inline void AllocateUploadBuffer(ID3D12Device* pDevice, void *pData, UINT64 data
     {
         (*ppResource)->SetName(resourceName);
     }
-    void *pMappedData;
+    void *pMappedData = nullptr;
     (*ppResource)->Map(0, nullptr, &pMappedData);
-    memcpy(pMappedData, pData, datasize);
-    (*ppResource)->Unmap(0, nullptr);
+
+    if (pData) {
+        memcpy(pMappedData, pData, datasize);
+        if (isunmaped) {
+            (*ppResource)->Unmap(0, nullptr);
+        }
+    }
+
+    return pMappedData;
 }
 
 // Pretty-print a state object tree.

@@ -1,6 +1,6 @@
 #pragma once
 
-#define PIX_DEBUGING
+//#define PIX_DEBUGING
 
 #include <Windows.h>
 #include <d3d12.h>
@@ -18,6 +18,7 @@
 #include <thread>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <dxcapi.h>
 #include <d3d12sdklayers.h>
@@ -157,6 +158,23 @@ bool ChangeToFileDirectory(const std::string& filepath) {
 	}
 }
 //outer code end
+
+struct TriangleIndex {
+	UINT v[3];
+
+	bool operator==(TriangleIndex ti) {
+		v[0] = ti.v[0];
+		v[1] = ti.v[1];
+		v[2] = ti.v[2];
+	}
+
+	TriangleIndex() {}
+	TriangleIndex(UINT a0, UINT a1, UINT a2) {
+		v[0] = a0;
+		v[1] = a1;
+		v[2] = a2;
+	}
+};
 
 struct WinEvent {
 	HWND hWnd;
@@ -580,7 +598,8 @@ struct RayTracingDevice {
 	IDxcCompiler* pDXCCompiler;
 	IDxcIncludeHandler* pDSCIncHandle;
 
-	static constexpr UINT64 ASBuild_ScratchResource_Maxsiz = 4096;
+	//1MB Scratch GPU Mem
+	static constexpr UINT64 ASBuild_ScratchResource_Maxsiz = 1048576;
 	ID3D12Resource* ASBuild_ScratchResource = nullptr;
 
 	ID3D12Resource* RayTracingOutput = nullptr;
@@ -615,32 +634,96 @@ struct RayTracingDevice {
 
 #define SizeOfInUint32(obj) ((sizeof(obj) - 1) / sizeof(UINT32) + 1)
 
+//32 byte alignment require
+struct LocalRootSigData {
+	unsigned int VBOffset;
+	unsigned int IBOffset;
+	char padding[24];
+
+	LocalRootSigData() {}
+	LocalRootSigData(unsigned int VBOff, unsigned int IBOff) :
+		VBOffset{ VBOff }, IBOffset{ IBOff }
+	{
+	}
+	LocalRootSigData(const LocalRootSigData& ref) {
+		VBOffset = ref.VBOffset;
+		IBOffset = ref.IBOffset;
+	}
+
+	bool operator==(const LocalRootSigData& ref) const {
+		return ref.IBOffset == IBOffset && ref.VBOffset == VBOffset;
+	}
+};
+
 struct RayTracingMesh {
-	ID3D12Resource* vertexBuffer = nullptr;
-	ID3D12Resource* indexBuffer = nullptr;
+	//--------------- 모든 메쉬들이 공유하는 변수----------------//
+	// 모든 메쉬들이 같이 공유하는 VB, IB
+	inline static ID3D12Resource* vertexBuffer = nullptr;
+	inline static ID3D12Resource* indexBuffer = nullptr;
+	// VB, IB의 최대크기
+	static constexpr int VertexBufferCapacity = 2097152; // 2MB
+	static constexpr int IndexBufferCapacity = 2097152; // 2MB
+	// VB, IB의 현재 크기
+	inline static int VertexBufferByteSize = 0;
+	inline static int IndexBufferByteSize = 0;
+	// VB, IB가 매핑된 CPURAM 데이터의 주소
+	inline static char* pVBMappedStart = nullptr;
+	inline static char* pIBMappedStart = nullptr;
+	// VB, IB를 가리키는 SRV Desc Handle
+	inline static DescHandle VBIB_DescHandle;
+
+	//--------------- 메쉬들이 각각따로 소유한 변수---------------//
+	// 메쉬의 버택스 데이터, 엔덱스 데이터가 매핑된 CPURAM 데이터의 주소
+	char* pVBMapped = nullptr;
+	char* pIBMapped = nullptr;
+	// Ray가 발사되고 BLAS를 통과해 물체와 만났을때, Mesh의 VB, IB를 접근할 수 있도록
+	// LocalRootSignature에 해당 메쉬의 VB, IB가 시작되는 바이트오프셋을 넣어 주어야 한다.
+	UINT VBStartOffset;
+	UINT IBStartOffset;
+
+	// 메쉬의 BLAS
 	ID3D12Resource* BLAS;
 	D3D12_RAYTRACING_GEOMETRY_DESC GeometryDesc;
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS BLAS_Input;
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottomLevelPrebuildInfo = {};
-	DescHandle VBIB_DescHandle;
 
-	void CreateTriangleRayMesh();
-	void CreateCubeMesh();
+	// TLAS에 인스턴스를 추가할때 이 값을 사용해서 렌더링 인스턴스를 삽입.
+	D3D12_RAYTRACING_INSTANCE_DESC MeshDefaultInstanceData = {};
 
 	struct Vertex {
 		XMFLOAT3 pos;
 		XMFLOAT3 normal;
-
+		Vertex() {}
 		Vertex(XMFLOAT3 p, XMFLOAT3 n) 
 			: pos{ p } , normal{n}
 		{
 		}
 	};
+
+	static void StaticInit();
+	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr);
+	void CreateTriangleRayMesh();
+	void CreateCubeMesh();
 };
 
 struct RayTracingRenderInstance {
 	RayTracingMesh* pMesh;
 	matrix worldMat;
+};
+
+
+
+template<>
+class hash<LocalRootSigData> {
+public:
+	// 상황에 맞는 헤쉬를 정의할 필요가 있다.
+	size_t operator()(const LocalRootSigData& s) const {
+		size_t d0 = s.VBOffset;
+		d0 = _pdep_u64(d0, 0x5555555555555555);
+		size_t d1 = s.IBOffset;
+		d1 = _pdep_u64(d1, 0xAAAAAAAAAAAAAAAA);
+		return d0 | d1;
+	}
 };
 
 struct RayTracingShader {
@@ -655,13 +738,36 @@ struct RayTracingShader {
 
 	ID3D12Resource* TLAS;
 	ID3D12Resource* TLAS_InstanceDescs_Res; // UploadBuffer
-	int TLAS_InstanceDescs_Capacity = 1;
-	int TLAS_InstanceDescs_Size = 1;
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC TLASBuildDesc = {};
+
+	// 출력할 Mesh 물체의 개수
+	static constexpr int TLAS_InstanceDescs_Capacity = 1048576;
+	int TLAS_InstanceDescs_Size = 0;
+	int TLAS_InstanceDescs_ImmortalSize = 0;
 	D3D12_RAYTRACING_INSTANCE_DESC* TLAS_InstanceDescs_MappedData = nullptr;
 
+	// immortal 한 인스턴스는 clear가 된 후에 추가가 가능함. 안그럼 쌩뚱맞은 인스턴스가 immortal 영역으로 들어간다.
+	// 반환값은 해당 인스턴스의 월드행렬(3x4)를 가리키는 포인터를 반환한다.
+	float* push_rins_immortal(RayTracingMesh* mesh, matrix mat, LocalRootSigData LRSdata);
+	void clear_rins();
+	float* push_rins(RayTracingMesh* mesh, matrix mat, LocalRootSigData LRSdata);
+
+	UINT shaderIdentifierSize;
 	ComPtr<ID3D12Resource> RayGenShaderTable = nullptr;
 	ComPtr<ID3D12Resource> MissShaderTable = nullptr;
+	
+	void* hitGroupShaderIdentifier;
+	//같은 종류의 렌더메쉬의 개수
+	static constexpr int HitGroupShaderTableCapavity = 1048576;
+	int HitGroupShaderTableSize = 0;
+	int HitGroupShaderTableImmortalSize = 0;
+	ShaderTable hitGroupShaderTable;
 	ComPtr<ID3D12Resource> HitGroupShaderTable = nullptr;
+	
+	// 셰이더 테이블의 Map.
+	// 셰이더 레코드의 값으로 해당 레코드가 어떤 위치에 있는지 확인가능하고,
+	// 해당 셰이더 레코드가 테이블에 존재하는지도 확인가능하다.
+	unordered_map<LocalRootSigData, int> HitGroupShaderTableToIndex;
 
 	//Temp member
 	RayTracingMesh* TestMesh;
@@ -670,9 +776,12 @@ struct RayTracingShader {
 	void CreateGlobalRootSignature();
 	void CreateLocalRootSignatures();
 	void CreatePipelineState();
+	void InitAccelationStructure();
 	void BuildAccelationStructure();
+	void InitShaderTable();
 	void BuildShaderTable();
-	
+
+	void PrepareRender();
 };
 
 // name completly later. ??
@@ -680,7 +789,7 @@ struct GlobalDevice {
 	RayTracingDevice raytracing;
 	RasterDevice raster;
 	bool debugDXGI = false;
-	bool isRaytracingRender = false;
+	bool isRaytracingRender = true;
 
 	IDXGIAdapter1* pSelectedAdapter;
 	int adapterVersion = 0;
@@ -1513,23 +1622,6 @@ struct SpotLight {
 	ViewportData viewport;
 };
 
-struct TriangleIndex {
-	UINT v[3];
-
-	bool operator==(TriangleIndex ti) {
-		v[0] = ti.v[0];
-		v[1] = ti.v[1];
-		v[2] = ti.v[2];
-	}
-
-	TriangleIndex() {}
-	TriangleIndex(UINT a0, UINT a1, UINT a2) {
-		v[0] = a0;
-		v[1] = a1;
-		v[2] = a2;
-	}
-};
-
 struct Color {
 	XMFLOAT4 v;
 	operator XMFLOAT4() const { return v; }
@@ -1974,6 +2066,7 @@ struct Model {
 
 	unsigned int mNumMeshes;
 	Mesh** mMeshes;
+	RayTracingMesh** mRayMeshes;
 	vector<BumpMesh::Vertex>* vertice = nullptr;
 	vector<TriangleIndex>* indice = nullptr;
 
@@ -2007,13 +2100,27 @@ struct Model {
 	vec4 OBB_Ext;
 
 	//void SaveModelFile(string filename);
-	void LoadModelFile(string filename);
+	void LoadModelFile(string filename, bool include_DXR = false);
 	void LoadModelFile2(string filename);
 
 	void BakeAABB();
 	BoundingOrientedBox GetOBB();
 
 	void Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, Shader::ShadowRegisterEnum sre = Shader::ShadowRegisterEnum::RenderNormal, void* pGameobject = nullptr);
+};
+
+struct RaytracingGameObject {
+	RaytracingGameObject() {}
+	~RaytracingGameObject() {}
+
+	Model* pModel = nullptr;
+	matrix worldMat;
+	float** worldMatInput = nullptr; // nodecount 만큼 있음.
+	matrix* nodeWorldMats = nullptr; // nodecount 만큼 있음.
+
+	void SetModel(Model* model);
+	void UpdateTransform();
+	void UpdateTransform(ModelNode* node, matrix parent);
 };
 
 struct BulletRay {
@@ -2379,6 +2486,12 @@ public:
 
 	//RayTracingShader
 	RayTracingShader* MyRayTracingShader;
+
+	RayTracingMesh* mesh001;
+	float* DXRObjWorld001 = nullptr;
+	RayTracingMesh* mesh002;
+	float* DXRObjWorld002 = nullptr;
+	RaytracingGameObject* RGO_AW101;
 
 	BumpMesh* TestMirrorMesh = nullptr;
 	vec4 mirrorPlane;
