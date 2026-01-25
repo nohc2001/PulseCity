@@ -1893,18 +1893,29 @@ void ParticleShader::InitShader()
 
 void ParticleShader::CreateRootSignature()
 {
-	CD3DX12_ROOT_PARAMETER rootParams[2];
+	CD3DX12_ROOT_PARAMETER rootParams[3];
 
-	// t0 : StructuredBuffer<Particle>
-	rootParams[0].InitAsShaderResourceView(
-		0, 0, D3D12_SHADER_VISIBILITY_VERTEX
-	);
+	// t0 : StructuredBuffer<Particle> (VS)
+	rootParams[0].InitAsShaderResourceView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
-	// b0 : ViewProj
+	// b0 : ViewProj + CamRight + CamUp (VS)
 	rootParams[1].InitAsConstants(23, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
+	// t1 : Fire Texture (PS)
+	CD3DX12_DESCRIPTOR_RANGE srvRange;
+	srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1); // t1
+
+	rootParams[2].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	// s0 : Linear Sampler
+	CD3DX12_STATIC_SAMPLER_DESC samplerDesc(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP
+	);
+
 	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
-	rsDesc.Init(_countof(rootParams), rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	rsDesc.Init(_countof(rootParams), rootParams, 1, &samplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	ID3DBlob* sigBlob = nullptr;
 	ID3DBlob* errBlob = nullptr;
@@ -1918,16 +1929,13 @@ void ParticleShader::CreateRootSignature()
 		return;
 	}
 
-	hr = gd.pDevice->CreateRootSignature(
-		0,
-		sigBlob->GetBufferPointer(),
-		sigBlob->GetBufferSize(),
-		IID_PPV_ARGS(&ParticleRootSig)
-	);
+	gd.pDevice->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&ParticleRootSig));
 
-	if (sigBlob) sigBlob->Release();
+	sigBlob->Release();
 	if (errBlob) errBlob->Release();
 }
+
+
 
 void ParticleShader::CreatePipelineState()
 {
@@ -1955,7 +1963,7 @@ void ParticleShader::CreatePipelineState()
 	// Additive Blend 
 	D3D12_BLEND_DESC blendDesc = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	blendDesc.RenderTarget[0].BlendEnable = TRUE;
-	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
 	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
 	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
@@ -1968,7 +1976,7 @@ void ParticleShader::CreatePipelineState()
 	// Depth
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-	psoDesc.DepthStencilState.DepthEnable = FALSE;
+	psoDesc.DepthStencilState.DepthEnable = TRUE;
 	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
 	psoDesc.SampleMask = UINT_MAX;
@@ -1977,13 +1985,9 @@ void ParticleShader::CreatePipelineState()
 	psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
 	psoDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
-	psoDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable)
-		? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+	psoDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable) ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
 
-	HRESULT hr = gd.pDevice->CreateGraphicsPipelineState(
-		&psoDesc,
-		IID_PPV_ARGS(&ParticlePSO)
-	);
+	HRESULT hr = gd.pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&ParticlePSO));
 
 	if (vsBlob) vsBlob->Release();
 	if (psBlob) psBlob->Release();
@@ -1997,16 +2001,20 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 	cmd->SetPipelineState(ParticlePSO);
 	cmd->SetGraphicsRootSignature(ParticleRootSig);
 
+	// t0 : Particle Buffer
 	cmd->SetGraphicsRootShaderResourceView(0, particleBuffer->resource->GetGPUVirtualAddress());
 
+	// t1 : Fire Texture SRV
+	cmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.m_pDescritorHeap);
+	cmd->SetGraphicsRootDescriptorTable(2, FireTexture->hGpu);
+
+	// b0 : ViewProj + Cam vectors
 	matrix viewProj = gd.viewportArr[0].ViewMatrix;
 	viewProj *= gd.viewportArr[0].ProjectMatrix;
 	viewProj.transpose();
 
 	matrix view = gd.viewportArr[0].ViewMatrix;
-
-	XMMATRIX xmView = XMLoadFloat4x4((XMFLOAT4X4*)&view);
-	XMMATRIX xmInvView = XMMatrixInverse(nullptr, xmView);
+	XMMATRIX xmInvView = XMMatrixInverse(nullptr, XMLoadFloat4x4((XMFLOAT4X4*)&view));
 
 	matrix invView;
 	XMStoreFloat4x4((XMFLOAT4X4*)&invView, xmInvView);
@@ -2015,15 +2023,15 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 	XMFLOAT3 camUp = invView.up.f3;
 	float pad0 = 0.0f;
 
-	cmd->SetGraphicsRoot32BitConstants(1, 16, &viewProj, 0);   // ViewProj
-	cmd->SetGraphicsRoot32BitConstants(1, 3, &camRight, 16);  // CamRight
-	cmd->SetGraphicsRoot32BitConstants(1, 1, &pad0, 19);      // padding
-	cmd->SetGraphicsRoot32BitConstants(1, 3, &camUp, 20);     // CamUp
+	cmd->SetGraphicsRoot32BitConstants(1, 16, &viewProj, 0);
+	cmd->SetGraphicsRoot32BitConstants(1, 3, &camRight, 16);
+	cmd->SetGraphicsRoot32BitConstants(1, 1, &pad0, 19);
+	cmd->SetGraphicsRoot32BitConstants(1, 3, &camUp, 20);
 
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	cmd->DrawInstanced(particleCount * 6, 1, 0, 0);
-
 }
+
 
 void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
 {

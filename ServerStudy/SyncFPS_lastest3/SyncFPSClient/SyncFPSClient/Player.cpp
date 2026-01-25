@@ -164,7 +164,7 @@ void Player::Render_AfterDepthClear()
 
 			gunmat *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
 			const float PI = 3.141592f;
-			gunmat *= XMMatrixRotationY(PI);
+			//gunmat *= XMMatrixRotationY(PI);
 
 			gunmat.pos.y -= 0.40f;
 			gunmat.pos.x += 0.35f;

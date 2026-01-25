@@ -150,6 +150,8 @@ public:
 	static constexpr UINT FIRE_PILLAR_COUNT = 400;
 	static constexpr UINT FIRE_RING_COUNT = 300;
 
+	GPUResource FireTextureRes;
+
 	ParticlePool FirePool;
 	ParticlePool FirePillarPool;
 	ParticlePool FireRingPool;

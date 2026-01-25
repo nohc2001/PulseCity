@@ -223,6 +223,8 @@ public:
 	ID3D12RootSignature* ParticleRootSig = nullptr;
 	ID3D12PipelineState* ParticlePSO = nullptr;
 
+	GPUResource* FireTexture = nullptr;
+
 	virtual void InitShader() override;
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();

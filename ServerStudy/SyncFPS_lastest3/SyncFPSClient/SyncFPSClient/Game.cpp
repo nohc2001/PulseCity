@@ -159,6 +159,9 @@ void Game::Init()
 
 	GunTexture.CreateTexture_fromFile(L"Resources/m1911pistol_diffuse0.png", game.basicTexFormat, game.basicTexMip);
 
+	// particle texture
+	FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", DXGI_FORMAT_UNKNOWN, 1, true);
+
 	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex].CreateTexture_fromFile(L"Resources/Tiles036_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
 	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex]);
 	Material TileMat;
@@ -267,7 +270,7 @@ void Game::Init()
 	//game.GunMesh->ReadMeshFromFile_OBJ("Resources/Mesh/minigun.obj", { 1, 1, 1, 1 });
 	////Shape::AddMesh("Gun001", GunMesh);
 	game.GunModel = new Model;
-	game.GunModel->LoadModelFile("Resources/Model/minigun_m134.model");
+	game.GunModel->LoadModelFile("Resources/Model/minigun.model");
 	//game.GunModel->DebugPrintHierarchy(game.GunModel->RootNode);
 
 
@@ -304,6 +307,7 @@ void Game::Init()
 	ParticleDraw = new ParticleShader();
 	ParticleDraw->InitShader();
 
+	ParticleDraw->FireTexture = &FireTextureRes;
 
 	gd.pCommandList->Close();
 	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
