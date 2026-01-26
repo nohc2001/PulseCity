@@ -314,3 +314,25 @@
    - 인던 구현
 4. 다음 미팅
   - 1월 26일 월요일 오전 11시 00분
+
+2026-01-26
+-------------
+0. 결석 : 임동건 : 제주도 귀향
+1. 진행상황
+ - ( X )  머신건, 스나이퍼 건
+ - ( X )  Unity에서 Export 실패
+ - ( O ) 헬리콥테 레이트레이싱
+ - ( X ) 인던 구현
+2. BUG
+ - 총이 새까맣다.
+ - NPC가 새까맣다.
+3. Raytracing
+ - 레이트레이싱과 애니메이션 : https://blog.traverseresearch.nl/ray-tracing-animated-crowds-bc0e775c74ad
+4. ToDo
+ - 머신건, 스나이퍼 건
+ - 던전 1층 Unity에서 Export 해서 적용
+ - 인던 입장 구현
+ - BUG 수정
+ - RayTrace 텍스쳐링과 Skin Animation 넣기 => Pulse City 아바타 한마리 WSAD로 이동
+5. 다음미팅
+ - 2월 9일 월요일 오후7시
