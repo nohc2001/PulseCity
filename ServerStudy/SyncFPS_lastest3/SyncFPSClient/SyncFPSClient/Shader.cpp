@@ -433,7 +433,8 @@ void DiffuseTextureShader::CreateRootSignature()
 	ranges[0].NumDescriptors = 1;
 	ranges[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[3].DescriptorTable.pDescriptorRanges = &ranges[0];
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
@@ -641,7 +642,8 @@ void ScreenCharactorShader::CreateRootSignature()
 	ranges[0].NumDescriptors = 1;
 	ranges[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[1].DescriptorTable.pDescriptorRanges = &ranges[0];
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
@@ -984,7 +986,8 @@ void PBRShader1::CreateRootSignature()
 	ranges[0].NumDescriptors = 5; // t0 t1 t2 t3 t4 -> must be Continuous Desc in DescHeap
 	ranges[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[3].DescriptorTable.pDescriptorRanges = &ranges[0];
 
 	rootParam[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -996,7 +999,8 @@ void PBRShader1::CreateRootSignature()
 	ranges2[0].NumDescriptors = 1; // b3
 	ranges2[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges2[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-	ranges2[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges2[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[4].DescriptorTable.pDescriptorRanges = &ranges2[0];
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
@@ -1076,7 +1080,8 @@ void PBRShader1::CreateRootSignature_withShadow()
 	ranges[0].NumDescriptors = 5; // t0 t1 t2 t3 t4 -> must be Continuous Desc in DescHeap
 	ranges[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[3].DescriptorTable.pDescriptorRanges = &ranges[0];
 
 	//Material
@@ -1089,7 +1094,8 @@ void PBRShader1::CreateRootSignature_withShadow()
 	ranges2[0].NumDescriptors = 1; // b3
 	ranges2[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges2[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-	ranges2[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges2[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[4].DescriptorTable.pDescriptorRanges = &ranges2[0];
 
 	rootParam[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -1101,7 +1107,8 @@ void PBRShader1::CreateRootSignature_withShadow()
 	ranges3[0].NumDescriptors = 1; // t5
 	ranges3[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges3[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges3[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+	ranges3[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
+		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
 	rootParam[5].DescriptorTable.pDescriptorRanges = &ranges3[0];
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =

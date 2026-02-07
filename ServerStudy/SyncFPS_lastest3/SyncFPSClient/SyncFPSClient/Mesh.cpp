@@ -980,6 +980,8 @@ void Material::ShiftTextureIndexs(unsigned int TextureIndexStart)
 
 void Material::SetDescTable()
 {
+	if (CB_Resource.resource != nullptr) return;
+
 	DescHandle hDesc;
 	DescHandle hOriginDesc;
 	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
@@ -1096,6 +1098,7 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 		for (int i = 0; i < numMesh; ++i) {
 			int materialIndex = ((BumpMesh*)pModel->mMeshes[Meshes[i]])->material_index;
 			Material& mat = game.MaterialTable[materialIndex];
+
 			//GPUResource* diffuseTex = &game.DefaultTex;
 			//if (mat.ti.Diffuse >= 0) diffuseTex = game.TextureTable[mat.ti.Diffuse];
 			//GPUResource* normalTex = &game.DefaultNoramlTex;
@@ -1108,8 +1111,9 @@ void ModelNode::Render(void* model, ID3D12GraphicsCommandList* cmdlist, const ma
 			//if (mat.ti.Roughness >= 0) roughnessTex = game.TextureTable[mat.ti.Roughness];
 			//game.MyPBRShader1->SetTextureCommand(diffuseTex, normalTex, ambientTex, MetalicTex, roughnessTex);
 
-			gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);
 			gd.pCommandList->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
+
+			gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);            
 
 			pModel->mMeshes[Meshes[i]]->Render(cmdlist, 1);
 		}
@@ -1252,30 +1256,27 @@ void Model::LoadModelFile(string filename)
 	for (int i = 0; i < mNumTextures; ++i) {
 		GPUResource* Texture = new GPUResource();
 		game.TextureTable.push_back(Texture);
-
 		Texture->resource = nullptr;
+
+		int width = 0, height = 0;
+		ifs.read((char*)&width, sizeof(int));
+		ifs.read((char*)&height, sizeof(int));
+		int datasiz = 4 * width * height;
+
 		string DDSFilename = filename;
 		for (int k = 0; k < 6; ++k) DDSFilename.pop_back();
-		DDSFilename += to_string(i);
-		DDSFilename += ".dds";
+		DDSFilename += to_string(i) + ".dds";
+
 		ifstream ifs2{ DDSFilename , ios_base::binary };
 		if (ifs2.good()) {
 			ifs2.close();
-			//load dds texture
-			wstring wDDSFilename;
-			wDDSFilename.reserve(DDSFilename.size());
-			for (int k = 0; k < DDSFilename.size(); ++k) {
-				wDDSFilename.push_back(DDSFilename[k]);
-			}
+			ifs.seekg(datasiz, ios_base::cur);
+
+			wstring wDDSFilename(DDSFilename.begin(), DDSFilename.end());
 			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip);
 		}
 		else {
-			//make dds texture in DDSFilename path
-			int width = 0, height = 0;
-			ifs.read((char*)&width, sizeof(int));
-			ifs.read((char*)&height, sizeof(int));
-			int datasiz = 4 * width * height;
-			void* pdata = malloc(4 * width * height);
+			void* pdata = malloc(datasiz);
 			ifs.read((char*)pdata, datasiz);
 
 			char BMPFile[512] = {};
@@ -1294,29 +1295,12 @@ void Model::LoadModelFile(string filename)
 			char* onlyDDSfilename = &DDSFilename[pos + 1];
 			MoveFileA(onlyDDSfilename, DDSFilename.c_str());
 
-			wstring wDDSFilename;
-			wDDSFilename.reserve(DDSFilename.size());
-			for (int k = 0; k < DDSFilename.size(); ++k) {
-				wDDSFilename.push_back(DDSFilename[k]);
-			}
+			wstring wDDSFilename(DDSFilename.begin(), DDSFilename.end());
 			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip);
 
 			DeleteFileA(BMPFile);
-			//Texture->CreateTexture_fromImageBuffer(width, height, (BYTE*)pdata, DXGI_FORMAT_BC2_UNORM);
 			free(pdata);
 		}
-
-		/*GPUResource* Texture = new GPUResource();
-		game.TextureTable.push_back(Texture);
-		Texture->resource = nullptr;
-		int width = 0, height = 0;
-		ifs.read((char*)&width, sizeof(int));
-		ifs.read((char*)&height, sizeof(int));
-		int datasiz = 4 * width * height;
-		void* pdata = malloc(4 * width * height);
-		ifs.read((char*)pdata, datasiz);
-		Texture->CreateTexture_fromImageBuffer(width, height, (BYTE*)pdata, DXGI_FORMAT_BC2_UNORM);
-		free(pdata);*/
 	}
 
 	/*gd.pCommandAllocator->Reset();
@@ -1325,13 +1309,54 @@ void Model::LoadModelFile(string filename)
 	//mMaterials = new Material * [mNumMaterials];
 	for (int i = 0; i < mNumMaterials; ++i) {
 		Material newmat;
-		ifs.read((char*)&newmat, Material::MaterialSiz_withoutGPUResource);
-		ZeroMemory(&newmat.name, sizeof(string));
-		newmat.ShiftTextureIndexs(MaterialTableStart);
 
+		ifs.read(newmat.name, 40);
+
+		ifs.read((char*)&newmat.hGPU, 8);
+
+		ifs.read((char*)&newmat.clr.blending, sizeof(bool));
+		ifs.read((char*)&newmat.clr.bumpscaling, sizeof(float));
+		ifs.read((char*)&newmat.clr.ambient, sizeof(XMFLOAT4));
+		ifs.read((char*)&newmat.clr.base, sizeof(XMFLOAT4));
+		ifs.read((char*)&newmat.clr.emissive, sizeof(XMFLOAT4));
+		ifs.read((char*)&newmat.clr.reflective, sizeof(XMFLOAT4));
+		ifs.read((char*)&newmat.clr.specular, sizeof(XMFLOAT4));
+		ifs.read((char*)&newmat.clr.transparent, sizeof(float));
+
+		ifs.read((char*)&newmat.ti.Diffuse, sizeof(int));
+		ifs.read((char*)&newmat.ti.Specular, sizeof(int));
+		ifs.read((char*)&newmat.ti.Ambient, sizeof(int));
+		ifs.read((char*)&newmat.ti.Emissive, sizeof(int));
+		ifs.read((char*)&newmat.ti.Normal, sizeof(int));
+		ifs.read((char*)&newmat.ti.Shineness, sizeof(int));
+		ifs.read((char*)&newmat.ti.Opacity, sizeof(int));
+		ifs.read((char*)&newmat.ti.LightMap, sizeof(int));
+		ifs.read((char*)&newmat.ti.Reflection, sizeof(int));
+		ifs.read((char*)&newmat.ti.Sheen, sizeof(int));
+		ifs.read((char*)&newmat.ti.ClearCoat, sizeof(int));
+		ifs.read((char*)&newmat.ti.Transmission, sizeof(int));
+		ifs.read((char*)&newmat.ti.Anisotropy, sizeof(int));
+
+		ifs.read((char*)&newmat.pipelineC.twosided, sizeof(bool));
+		ifs.read((char*)&newmat.pipelineC.wireframe, sizeof(bool));
+		ifs.read((char*)&newmat.pipelineC.TextureSementicSelector, sizeof(unsigned short));
+
+		ifs.read((char*)&newmat.metallicFactor, sizeof(float));
+		ifs.read((char*)&newmat.roughnessFactor, sizeof(float));
+		ifs.read((char*)&newmat.shininess, sizeof(float));
+		ifs.read((char*)&newmat.opacity, sizeof(float));
+		ifs.read((char*)&newmat.specularFactor, sizeof(float));
+		ifs.read((char*)&newmat.clearcoat_factor, sizeof(float));
+		ifs.read((char*)&newmat.clearcoat_roughnessFactor, sizeof(float));
+
+		int alphaMode;
+		ifs.read((char*)&alphaMode, sizeof(int));
+		newmat.gltf_alphaMode = (Material::GLTF_alphaMod)alphaMode;
+		ifs.read((char*)&newmat.gltf_alpha_cutoff, sizeof(float));
+
+		newmat.ShiftTextureIndexs(TextureTableStart);
 		newmat.SetDescTable();
 		game.MaterialTable.push_back(newmat);
-		//mMaterials[i] = mat;
 	}
 
 	RootNode = &Nodes[0];

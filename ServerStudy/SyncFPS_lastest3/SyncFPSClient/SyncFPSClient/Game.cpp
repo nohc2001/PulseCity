@@ -273,7 +273,6 @@ void Game::Init()
 	game.GunModel->LoadModelFile("Resources/Model/minigun.model");
 	//game.GunModel->DebugPrintHierarchy(game.GunModel->RootNode);
 
-
 	game.HPBarMesh = new Mesh();
 	game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
 	//Shape::AddMesh("HPBar", HPBarMesh);

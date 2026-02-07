@@ -39,10 +39,10 @@ void Player::ClientUpdate(float deltaTime)
 
 	float recoilAmount = 1.0f - shootrate;
 
-	gunMatrix_firstPersonView.pos.z = 0.3f + 0.01f * recoilAmount;
+	gunMatrix_firstPersonView.pos.z = 0.3f + 0.02f * recoilAmount;
 
 	// 머신건 회전 로직
-	gunBarrelSpeed = 100.0f;
+	gunBarrelSpeed = 150.0f;
 
 	float t = ShootFlow / ShootDelay;
 	if (t < 1.0f) {
@@ -172,6 +172,8 @@ void Player::Render_AfterDepthClear()
 
 			gunmat *= viewmat;
 			//gunmat.transpose(); 
+
+
 
 			//GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderNormal);
 			if (Game::renderViewPort == &game.MySpotLight.viewport) {
