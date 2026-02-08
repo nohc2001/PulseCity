@@ -68,6 +68,10 @@ wstring const_str_to_wstr(const char* str) {
 	return wstr;
 }
 
+int dbgc[128] = {};
+void dbgbreak(bool condition) {
+	if (condition) __debugbreak();
+}
 #pragma region dbglogDefines
 #define dbglog1(format, A) \
 	{\
@@ -586,7 +590,10 @@ struct RayTracingDevice {
 	{
 		XMMATRIX projectionToWorld;
 		XMVECTOR cameraPosition;
-		XMVECTOR lightPosition;
+		XMFLOAT3 DirLight_invDirection;
+		float DirLight_intencity;
+		XMFLOAT3 DirLight_color;
+		float padding;
 	};
 
 	GlobalDevice* origin;
@@ -599,7 +606,7 @@ struct RayTracingDevice {
 	IDxcIncludeHandler* pDSCIncHandle;
 
 	//1MB Scratch GPU Mem
-	static constexpr UINT64 ASBuild_ScratchResource_Maxsiz = 1048576;
+	static constexpr UINT64 ASBuild_ScratchResource_Maxsiz = 10485760;
 	ID3D12Resource* ASBuild_ScratchResource = nullptr;
 
 	ID3D12Resource* RayTracingOutput = nullptr;
@@ -630,6 +637,8 @@ struct RayTracingDevice {
 	void CreateSubRenderTarget();
 
 	void CreateCameraCB();
+
+	void SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up = vec4(0, 1, 0, 0));
 };
 
 #define SizeOfInUint32(obj) ((sizeof(obj) - 1) / sizeof(UINT32) + 1)
@@ -655,20 +664,42 @@ struct LocalRootSigData {
 	}
 };
 
+// [float3 position] [float3 normal] [float2 uv] [float3 tangent] (기본적으로 BumpMesh임)
 struct RayTracingMesh {
 	//--------------- 모든 메쉬들이 공유하는 변수----------------//
-	// 모든 메쉬들이 같이 공유하는 VB, IB
+	// 모든 메쉬들이 같이 공유하는 VB, IB (UploadBuffer)
+	// 업로드 버퍼이므로 GPU 접근이 상대적으로 느리다. 성능이 좋지 않다면, 변하지 않는 Mesh들을 따로 
+	// DefaultHeap으로 구성할 필요가 있다.
+	/*
+	* commandList->CopyBufferRegion(
+    defaultBuffer.Get(),   // 대상(Default Heap)
+    destOffset,            // 대상 오프셋
+    uploadBuffer.Get(),    // 원본(Upload Heap)
+    srcOffset,             // 원본 오프셋
+    sizeInBytes            // 복사할 크기
+	);
+	*/
+
+	//모든 메쉬들이 같이 공유하는 VB, IB (UploadBuffer)
 	inline static ID3D12Resource* vertexBuffer = nullptr;
 	inline static ID3D12Resource* indexBuffer = nullptr;
 	// VB, IB의 최대크기
-	static constexpr int VertexBufferCapacity = 2097152; // 2MB
-	static constexpr int IndexBufferCapacity = 2097152; // 2MB
+	static constexpr int VertexBufferCapacity = 52428800; // 50MB
+	static constexpr int IndexBufferCapacity = 52428800; // 10MB
+
+	// 업로드할 메쉬의 VB, IB 가 들어갈 데이터
+	inline static ID3D12Resource* Upload_vertexBuffer = nullptr;
+	inline static ID3D12Resource* Upload_indexBuffer = nullptr;
+	// 업로드 VB, IB의 최대크기
+	static constexpr int Upload_VertexBufferCapacity = 20971520; // 20MB
+	static constexpr int Upload_IndexBufferCapacity = 20971520; // 10MB
+	// 업로드 VB, IB가 매핑된 CPURAM 데이터의 주소
+	inline static char* pVBMappedStart = nullptr;
+	inline static char* pIBMappedStart = nullptr;
+
 	// VB, IB의 현재 크기
 	inline static int VertexBufferByteSize = 0;
 	inline static int IndexBufferByteSize = 0;
-	// VB, IB가 매핑된 CPURAM 데이터의 주소
-	inline static char* pVBMappedStart = nullptr;
-	inline static char* pIBMappedStart = nullptr;
 	// VB, IB를 가리키는 SRV Desc Handle
 	inline static DescHandle VBIB_DescHandle;
 
@@ -678,8 +709,8 @@ struct RayTracingMesh {
 	char* pIBMapped = nullptr;
 	// Ray가 발사되고 BLAS를 통과해 물체와 만났을때, Mesh의 VB, IB를 접근할 수 있도록
 	// LocalRootSignature에 해당 메쉬의 VB, IB가 시작되는 바이트오프셋을 넣어 주어야 한다.
-	UINT VBStartOffset;
-	UINT IBStartOffset;
+	UINT64 VBStartOffset;
+	UINT64 IBStartOffset;
 
 	// 메쉬의 BLAS
 	ID3D12Resource* BLAS;
@@ -691,12 +722,52 @@ struct RayTracingMesh {
 	D3D12_RAYTRACING_INSTANCE_DESC MeshDefaultInstanceData = {};
 
 	struct Vertex {
-		XMFLOAT3 pos;
+		XMFLOAT3 position;
+		float u;
 		XMFLOAT3 normal;
+		float v;
+		XMFLOAT3 tangent;
+		float padding;
+
+		operator RayTracingMesh::Vertex() {
+			return RayTracingMesh::Vertex(position, normal, XMFLOAT2(u, v), tangent);
+		}
+
 		Vertex() {}
-		Vertex(XMFLOAT3 p, XMFLOAT3 n) 
-			: pos{ p } , normal{n}
+		Vertex(XMFLOAT3 p, XMFLOAT3 nor, XMFLOAT2 _uv, XMFLOAT3 tan)
+			: position{ p }, normal{ nor }, u{ _uv.x }, v{_uv.y}, tangent{ tan }
 		{
+		}
+
+		bool HaveToSetTangent() {
+			bool b = ((tangent.x == 0 && tangent.y == 0) && tangent.z == 0);
+			b |= ((isnan(tangent.x) || isnan(tangent.y)) || isnan(tangent.z));
+			return b;
+		}
+
+		static void CreateTBN(Vertex& P0, Vertex& P1, Vertex& P2) {
+			vec4 N1, N2, M1, M2;
+			//XMFLOAT3 N0, N1, M0, M1;
+			N1 = vec4(P1.u, P1.v, 0, 0) - vec4(P0.u, P0.v, 0, 0);
+			N2 = vec4(P2.u, P2.v, 0, 0) - vec4(P0.u, P0.v, 0, 0);
+			M1 = vec4(P1.position) - vec4(P0.position);
+			M2 = vec4(P2.position) - vec4(P0.position);
+
+			float f = 1.0f / (N1.x * N2.y - N2.x * N1.y);
+			vec4 tan = vec4(P0.tangent);
+			tan = f * (M1 * N2.y - M2 * N1.y);
+			vec4 v = XMVector3Normalize(tan);
+			P0.tangent = v.f3;
+
+			if (P0.HaveToSetTangent()) {
+				// why tangent is nan???
+				XMVECTOR NorV = XMVectorSet(P0.normal.x, P0.normal.y, P0.normal.z, 1.0f);
+				XMVECTOR TanV = XMVectorSet(0, 0, 0, 0);
+				XMVECTOR BinV = XMVectorSet(0, 0, 0, 0);
+				BinV = XMVector3Cross(NorV, M1);
+				TanV = XMVector3Cross(NorV, BinV);
+				P0.tangent = { 1, 0, 0 };
+			}
 		}
 	};
 
@@ -710,8 +781,6 @@ struct RayTracingRenderInstance {
 	RayTracingMesh* pMesh;
 	matrix worldMat;
 };
-
-
 
 template<>
 class hash<LocalRootSigData> {
@@ -1707,57 +1776,18 @@ public:
 class BumpMesh : public Mesh {
 public:
 	int material_index;
+	RayTracingMesh rmesh;
 
-	struct Vertex {
-		XMFLOAT3 position;
-		XMFLOAT3 normal;
-		XMFLOAT2 uv;
-		XMFLOAT3 tangent;
-
-		Vertex() {}
-		Vertex(XMFLOAT3 p, XMFLOAT3 nor, XMFLOAT2 _uv, XMFLOAT3 tan)
-			: position{ p }, normal{ nor }, uv{ _uv }, tangent{ tan }
-		{
-		}
-
-		bool HaveToSetTangent() {
-			bool b = ((tangent.x == 0 && tangent.y == 0) && tangent.z == 0);
-			b |= ((isnan(tangent.x) || isnan(tangent.y)) || isnan(tangent.z));
-			return b;
-		}
-
-		static void CreateTBN(Vertex& P0, Vertex& P1, Vertex& P2) {
-			vec4 N1, N2, M1, M2;
-			//XMFLOAT3 N0, N1, M0, M1;
-			N1 = vec4(P1.uv) - vec4(P0.uv);
-			N2 = vec4(P2.uv) - vec4(P0.uv);
-			M1 = vec4(P1.position) - vec4(P0.position);
-			M2 = vec4(P2.position) - vec4(P0.position);
-
-			float f = 1.0f / (N1.x * N2.y - N2.x * N1.y);
-			vec4 tan = vec4(P0.tangent);
-			tan = f * (M1 * N2.y - M2 * N1.y);
-			vec4 v = XMVector3Normalize(tan);
-			P0.tangent = v.f3;
-
-			if (P0.HaveToSetTangent()) {
-				// why tangent is nan???
-				XMVECTOR NorV = XMVectorSet(P0.normal.x, P0.normal.y, P0.normal.z, 1.0f);
-				XMVECTOR TanV = XMVectorSet(0, 0, 0, 0);
-				XMVECTOR BinV = XMVectorSet(0, 0, 0, 0);
-				BinV = XMVector3Cross(NorV, M1);
-				TanV = XMVector3Cross(NorV, BinV);
-				P0.tangent = { 1, 0, 0 };
-			}
-		}
-	};
+	typedef RayTracingMesh::Vertex Vertex;
 
 	BumpMesh();
 	virtual ~BumpMesh();
-	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds);
-	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
+	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, bool include_DXR = true);
+	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true, bool include_DXR = true);
+
 	static BumpMesh* MakeTerrainMeshFromHeightMap(const char* HeightMapTexFilename, float bumpScale, float Unit, int& XN, int& ZN, byte8** Heightmap);
 	void MakeTessTerrainMeshFromHeightMap(float EdgeLen, int xdiv, int zdiv);
+
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
 	virtual void Release();
 };
@@ -2066,7 +2096,6 @@ struct Model {
 
 	unsigned int mNumMeshes;
 	Mesh** mMeshes;
-	RayTracingMesh** mRayMeshes;
 	vector<BumpMesh::Vertex>* vertice = nullptr;
 	vector<TriangleIndex>* indice = nullptr;
 
@@ -2100,8 +2129,8 @@ struct Model {
 	vec4 OBB_Ext;
 
 	//void SaveModelFile(string filename);
-	void LoadModelFile(string filename, bool include_DXR = false);
-	void LoadModelFile2(string filename);
+	void LoadModelFile(string filename, bool include_DXR = true);
+	void LoadModelFile2(string filename, bool include_DXR = true);
 
 	void BakeAABB();
 	BoundingOrientedBox GetOBB();
@@ -2115,6 +2144,7 @@ struct RaytracingGameObject {
 
 	Model* pModel = nullptr;
 	matrix worldMat;
+
 	float** worldMatInput = nullptr; // nodecount 만큼 있음.
 	matrix* nodeWorldMats = nullptr; // nodecount 만큼 있음.
 
@@ -2163,7 +2193,13 @@ struct GameObject {
 	vec4 tickAVelocity;
 	vec4 LastQuerternion;
 
-	matrix* transforms_innerModel;
+	matrix* transforms_innerModel; // nodecount 만큼 있음.
+	float** worldMatInput = nullptr; 
+	// model -> (float*) * nodecount 만큼 있음.
+	// mesh -> float** 가 아니고 float*임.
+
+	void RaytracingUpdateTransform();
+	void RaytracingUpdateTransform(ModelNode* node, matrix parent);
 
 	GameObject();
 	virtual ~GameObject();
@@ -2431,6 +2467,9 @@ public:
 	}
 	~Hierarchy_Object(){}
 
+	void RaytracingUpdateTransformOnlyMe(matrix world);
+	void RaytracingUpdateTransform(matrix parent);
+
 	void Render_Inherit(matrix parent_world, Shader::ShadowRegisterEnum sre = Shader::ShadowRegisterEnum::RenderWithShadow);
 	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
@@ -2468,7 +2507,7 @@ struct GameMap {
 	unsigned int TextureTableStart = 0;
 	unsigned int MaterialTableStart = 0;
 
-	void LoadMap(const char* MapName);
+	void LoadMap(const char* MapName, bool include_DXR = true);
 };
 
 class Game {

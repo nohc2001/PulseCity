@@ -1791,7 +1791,25 @@ void RayTracingDevice::CreateCameraCB()
 	XMMATRIX viewProj = view * proj;
 
 	MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
-	MappedCB->lightPosition = vec4(0.0f, 1.8f, -3.0f, 0.0f);
+	//MappedCB->lightPosition = vec4(0.0f, 1.8f, -3.0f, 0.0f);
+	MappedCB->DirLight_color = XMFLOAT3(1.0f, 1.0f, 1.0f);
+	MappedCB->DirLight_intencity = 1.0f;
+	vec4 dir = vec4(1, 1, 1, 0);
+	dir /= dir.len3;
+	MappedCB->DirLight_invDirection = dir.f3;
+}
+
+void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up)
+{
+	vec4 at = CameraPos + look;
+
+	gd.raytracing.MappedCB->cameraPosition = CameraPos;
+	float fovAngleY = 60.0f;
+	XMMATRIX view = XMMatrixLookAtLH(CameraPos, at, up);
+	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 1000.0f);
+	XMMATRIX viewProj = view * proj;
+	gd.raytracing.MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
 }
 
 float* RayTracingShader::push_rins_immortal(RayTracingMesh* mesh, matrix mat, LocalRootSigData LRSdata)
@@ -1899,14 +1917,40 @@ void RayTracingShader::CreateGlobalRootSignature()
 	srvIB.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2); // t2
 	CD3DX12_DESCRIPTOR_RANGE ranges[2] = { srvVB, srvIB };
 
-	constexpr int ParamCount = 4;
+	CD3DX12_DESCRIPTOR_RANGE srvSkyBox;
+	srvSkyBox.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3); // t3
+	CD3DX12_DESCRIPTOR_RANGE ranges1[1] = { srvSkyBox };
+
+	constexpr int ParamCount = 5;
 	CD3DX12_ROOT_PARAMETER rootParameters[ParamCount];
 	rootParameters[0].InitAsDescriptorTable(1, &UAVDescriptor); // OutputView u0
 	rootParameters[1].InitAsShaderResourceView(0); // AS t0
 	rootParameters[2].InitAsConstantBufferView(0, 0); // Camera CBV b0
 	rootParameters[3].InitAsDescriptorTable(2, ranges); // Vertex / IndexBuffers t1 t2
+	rootParameters[4].InitAsDescriptorTable(1, ranges1); // SkyBoxCubeMap
+
+	/// default sampler
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	// sampler register index.
+	sampler.ShaderRegister = 0;
+	// setting
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler.MipLODBias = 0.0f;
+	sampler.MaxAnisotropy = 16;
+	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+	sampler.MinLOD = -FLT_MAX;
+	sampler.MaxLOD = D3D12_FLOAT32_MAX;
+	sampler.RegisterSpace = 0;
+	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
 
 	CD3DX12_ROOT_SIGNATURE_DESC globalRootSignatureDesc(ARRAYSIZE(rootParameters), rootParameters);
+	globalRootSignatureDesc.NumStaticSamplers = 1;
+	globalRootSignatureDesc.pStaticSamplers = &sampler;
 	gd.raytracing.SerializeAndCreateRaytracingRootSignature(globalRootSignatureDesc, &pGlobalRootSignature);
 }
 
@@ -2168,27 +2212,52 @@ void RayTracingShader::PrepareRender()
 void RayTracingMesh::StaticInit()
 {
 	auto uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto VbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(VertexBufferCapacity);
+	auto VbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(Upload_VertexBufferCapacity);
 	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
 		&uploadHeapProperties,
 		D3D12_HEAP_FLAG_NONE,
 		&VbufferDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(&vertexBuffer)));
-	vertexBuffer->SetName(L"SceneVertexBuffer");
-	vertexBuffer->Map(0, nullptr, (void**) & pVBMappedStart);
+		IID_PPV_ARGS(&Upload_vertexBuffer)));
+	Upload_vertexBuffer->SetName(L"UploadVertexBuffer");
+	Upload_vertexBuffer->Map(0, nullptr, (void**)&pVBMappedStart);
 
-	auto IbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(IndexBufferCapacity);
+	auto IbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(Upload_IndexBufferCapacity);
 	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
 		&uploadHeapProperties,
 		D3D12_HEAP_FLAG_NONE,
 		&IbufferDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
+		IID_PPV_ARGS(&Upload_indexBuffer)));
+	Upload_indexBuffer->SetName(L"UploadSceneIndexBuffer");
+	Upload_indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
+
+	////////////////
+
+	auto defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto DefaultVbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(VertexBufferCapacity);
+	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
+		&defaultHeapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&DefaultVbufferDesc,
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&vertexBuffer)));
+	vertexBuffer->SetName(L"SceneVertexBuffer");
+	//vertexBuffer->Map(0, nullptr, (void**) & pVBMappedStart);
+
+	auto DefaultIbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(IndexBufferCapacity);
+	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
+		&defaultHeapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&DefaultIbufferDesc,
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+		nullptr,
 		IID_PPV_ARGS(&indexBuffer)));
 	indexBuffer->SetName(L"SceneIndexBuffer");
-	indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
+	//indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
 
 	//Make SRV Table Of Vertex And Index Buffer
 	gd.ShaderVisibleDescPool.ImmortalAllocDescriptorTable(&VBIB_DescHandle.hcpu, &VBIB_DescHandle.hgpu, 2);
@@ -2208,15 +2277,20 @@ void RayTracingMesh::StaticInit()
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_IB = {};
 	srvDesc_IB.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 	srvDesc_IB.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc_IB.Buffer.NumElements = IndexBufferCapacity / sizeof(TriangleIndex);
-	srvDesc_IB.Format = DXGI_FORMAT_R32_TYPELESS;
-	srvDesc_IB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
-	srvDesc_IB.Buffer.StructureByteStride = 0;
+	srvDesc_IB.Buffer.NumElements = IndexBufferCapacity / sizeof(unsigned int);
+	srvDesc_IB.Format = DXGI_FORMAT_UNKNOWN;//DXGI_FORMAT_R32_TYPELESS;
+	srvDesc_IB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;//D3D12_BUFFER_SRV_FLAG_RAW;
+	srvDesc_IB.Buffer.StructureByteStride = sizeof(unsigned int);//0;
 	gd.pDevice->CreateShaderResourceView(indexBuffer, &srvDesc_IB, descHandle.hcpu);
 }
 
 void RayTracingMesh::AllocateRaytracingMesh(vector<RayTracingMesh::Vertex> vbarr, vector<TriangleIndex> ibarr)
 {
+	static bool VBisFulling = false;
+	static UINT RequireByteVB = 0;
+	static bool IBisFulling = false;
+	static UINT RequireByteIB = 0;
+
 	if (vertexBuffer == nullptr) {
 		RayTracingMesh::StaticInit();
 	}
@@ -2230,14 +2304,57 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<RayTracingMesh::Vertex> vbarr
 	bool vb_con = VertexBufferByteSize + addtionalVB_Bytesiz <= VertexBufferCapacity;
 	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
 	if (vb_con && ib_con) {
+
 		// Create New Mesh
 		VBStartOffset = VertexBufferByteSize;
 		IBStartOffset = IndexBufferByteSize;
-		pVBMapped = &pVBMappedStart[VBStartOffset];
-		pIBMapped = &pIBMappedStart[IBStartOffset];
+		pVBMapped = &pVBMappedStart[0];
+		pIBMapped = &pIBMappedStart[0];
 		// Copy Mesh Data
 		memcpy(pVBMapped, vbarr.data(), addtionalVB_Bytesiz);
 		memcpy(pIBMapped, ibarr.data(), addtionalIB_Bytesiz);
+
+		//Build BLAS
+		ID3D12Device5* device = gd.raytracing.dxrDevice;
+		ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
+		ID3D12CommandQueue* commandQueue = gd.pCommandQueue;
+		ID3D12CommandAllocator* commandAllocator = gd.pCommandAllocator;
+
+		bool initialCmdStateClose = gd.isCmdClose;
+		if (gd.isCmdClose) {
+			gd.CmdReset(commandList, commandAllocator);
+		}
+
+		D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+		commandList->ResourceBarrier(1, &barrier);
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_vertexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		commandList->ResourceBarrier(1, &barrier);
+
+		//dbglog1(L"VBSiz : %d \n", addtionalVB_Bytesiz);
+		commandList->CopyBufferRegion(vertexBuffer, VBStartOffset, Upload_vertexBuffer, 0, addtionalVB_Bytesiz);
+		
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		commandList->ResourceBarrier(1, &barrier);
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_vertexBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		commandList->ResourceBarrier(1, &barrier);
+
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(indexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+		commandList->ResourceBarrier(1, &barrier);
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_indexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		commandList->ResourceBarrier(1, &barrier);
+		
+		//dbglog1(L"IBSiz : %d \n", addtionalIB_Bytesiz);
+		commandList->CopyBufferRegion(indexBuffer, IBStartOffset, Upload_indexBuffer, 0, addtionalIB_Bytesiz);
+		
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(indexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		commandList->ResourceBarrier(1, &barrier);
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_indexBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		commandList->ResourceBarrier(1, &barrier);
+		
+		gd.CmdClose(commandList);
+		ID3D12CommandList* commandLists[] = { commandList };
+		gd.pCommandQueue->ExecuteCommandLists(ARRAYSIZE(commandLists), commandLists);
+		gd.WaitGPUComplete();
 
 		//Geometry
 		GeometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
@@ -2274,22 +2391,6 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<RayTracingMesh::Vertex> vbarr
 		bottomLevelBuildDesc.ScratchAccelerationStructureData = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
 		bottomLevelBuildDesc.DestAccelerationStructureData = BLAS->GetGPUVirtualAddress();
 
-		//Build BLAS
-		ID3D12Device5* device = gd.raytracing.dxrDevice;
-		ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
-		ID3D12CommandQueue* commandQueue = gd.pCommandQueue;
-		ID3D12CommandAllocator* commandAllocator = gd.pCommandAllocator;
-
-		/*if (gd.isCmdClose == false)
-		{
-			gd.CmdClose(commandList);
-			ID3D12CommandList* ppd3dCommandLists[] = { commandList };
-			commandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
-			gd.WaitGPUComplete();
-		}
-		gd.CmdReset(commandList, commandAllocator);*/
-
-		bool initialCmdStateClose = gd.isCmdClose;
 		if (gd.isCmdClose) {
 			gd.CmdReset(commandList, commandAllocator);
 		}
@@ -2309,12 +2410,46 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<RayTracingMesh::Vertex> vbarr
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
 
+		constexpr UINT64 VBAlign = 768; //2816;
 		VertexBufferByteSize += addtionalVB_Bytesiz;
-		IndexBufferByteSize += addtionalIB_Bytesiz;
+		VertexBufferByteSize = VBAlign * (1 + ((VertexBufferByteSize - 1) / VBAlign));
+		//VertexBufferByteSize = ((VertexBufferByteSize + 255) & ~255);
 
+		constexpr UINT64 IBAlign = 256;//768;
+		IndexBufferByteSize += addtionalIB_Bytesiz;
+		IndexBufferByteSize = IBAlign * (1 + ((IndexBufferByteSize - 1) / IBAlign));
+		//IndexBufferByteSize = ((IndexBufferByteSize + 255) & ~255);
 		/*if (initialCmdStateClose == false) {
 			gd.CmdReset(commandList, commandAllocator);
 		}*/
+	}
+	else {
+		if (vb_con == false) {
+			if (VBisFulling) {
+				RequireByteVB += addtionalVB_Bytesiz;
+				dbglog1(L"Raytracing VB additional capacity require! %d \n", RequireByteVB);
+			}
+			else {
+				dbglog1(L"Raytracing VB additional capacity require! %d \n", VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacity);
+				RequireByteVB += VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacity;
+				VBisFulling = true;
+			}
+		}
+		if (RequireByteIB > 0) {
+			if (IBisFulling) {
+				RequireByteIB += addtionalIB_Bytesiz;
+				dbglog1(L"Raytracing IB additional capacity require! %d \n", RequireByteIB);
+			}
+		}
+		else {
+			if (IBisFulling == false) {
+				IBisFulling = true;
+				RequireByteIB = IndexBufferByteSize + addtionalIB_Bytesiz - IndexBufferCapacity;
+			}
+			else {
+				RequireByteIB += addtionalIB_Bytesiz;
+			}
+		}
 	}
 }
 
@@ -2333,9 +2468,9 @@ void RayTracingMesh::CreateTriangleRayMesh(){
 	float offset = 0.7f;
 	Vertex vertices[] =
 	{
-		Vertex({ 0, -offset, depthValue }, {0, 0, 0}),
-		Vertex({ -offset, offset, depthValue }, {0, 0, 0}),
-		Vertex({ offset, offset, depthValue }, {0, 0, 0})
+		Vertex({ 0, -offset, depthValue }, {0, 0, 0}, {0, 0}, {0, 0, 0}),
+		Vertex({ -offset, offset, depthValue }, {0, 0, 0}, {0, 0}, {0, 0, 0}),
+		Vertex({ offset, offset, depthValue }, {0, 0, 0}, {0, 0}, {0, 0, 0})
 	};
 
 	AllocateUploadBuffer(gd.raytracing.dxrDevice, vertices, sizeof(vertices), &vertexBuffer);
@@ -2425,35 +2560,35 @@ void RayTracingMesh::CreateCubeMesh()
 	// Cube vertices positions and corresponding triangle normals.
 	Vertex vertices[] =
 	{
-		Vertex(XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)),
-		Vertex(XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)),
-		Vertex(XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)),
-		Vertex(XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f)),
+		Vertex(XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(0.0f, 0.0f, 1.0f)),
+		Vertex(XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(0.0f, 0.0f, 1.0f)),
+		Vertex(XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(0.0f, 0.0f, 1.0f)),
+		Vertex(XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(0.0f, 0.0f, 1.0f)),
 
-		Vertex(XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f)),
-		Vertex(XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f)),
-		Vertex(XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f)),
-		Vertex(XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f)),
+		Vertex(XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(0.0f, 0.0f, -1.0f)),
+		Vertex(XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(0.0f, 0.0f, -1.0f)),
+		Vertex(XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(0.0f, 0.0f, -1.0f)),
+		Vertex(XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(0.0f, 0.0f, -1.0f)),
 
-		Vertex( XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) ),
-		Vertex( XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) ),
-		Vertex( XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) ),
-		Vertex( XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) ),
+		Vertex( XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(0.0f, -1.0f, 0.0f)),
+		Vertex( XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1, 0), XMFLOAT3(0.0f, -1.0f, 0.0f)),
+		Vertex( XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(0.0f, -1.0f, 0.0f)),
+		Vertex( XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(0.0f, -1.0f, 0.0f)),
 
-		Vertex( XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) ),
-		Vertex( XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) ),
-		Vertex(XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) ),
-		Vertex(XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) ),
+		Vertex( XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0, 0), XMFLOAT3(0.0f, 1.0f, 0.0f)),
+		Vertex( XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) , XMFLOAT2(1, 0), XMFLOAT3(0.0f, 1.0f, 0.0f)),
+		Vertex(XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1, 1), XMFLOAT3(0.0f, 1.0f, 0.0f)),
+		Vertex(XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0, 1), XMFLOAT3(0.0f, 1.0f, 0.0f)),
 
-		Vertex(XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) ),
-		Vertex(XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) ),
-		Vertex(XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) ),
-		Vertex(XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) ),
+		Vertex(XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) , XMFLOAT2(0, 0), XMFLOAT3(-1.0f, 0.0f, 0.0f)),
+		Vertex(XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) , XMFLOAT2(1, 0), XMFLOAT3(-1.0f, 0.0f, 0.0f)),
+		Vertex(XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f)  , XMFLOAT2(1, 1), XMFLOAT3(-1.0f, 0.0f, 0.0f)),
+		Vertex(XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) , XMFLOAT2(0, 1), XMFLOAT3(-1.0f, 0.0f, 0.0f)),
 
-		Vertex(XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) ),
-		Vertex(XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) ),
-		Vertex(XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) ),
-		Vertex(XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) )
+		Vertex(XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) , XMFLOAT2(0, 0), XMFLOAT3(1.0f, 0.0f, 0.0f)),
+		Vertex(XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) , XMFLOAT2(1, 0), XMFLOAT3(1.0f, 0.0f, 0.0f)),
+		Vertex(XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) , XMFLOAT2(1, 1), XMFLOAT3(1.0f, 0.0f, 0.0f)),
+		Vertex(XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) , XMFLOAT2(0, 1), XMFLOAT3(1.0f, 0.0f, 0.0f))
 	};
 
 	vector<RayTracingMesh::Vertex> vbarr;
@@ -2545,13 +2680,7 @@ void Game::Init()
 	MirrorMaterial.ti.Diffuse = TextureTable.size() - 1;
 	MirrorMaterial.SetDescTable();
 	game.MaterialTable.push_back(MirrorMaterial);
-
-	Model* model = new Model;
-	model->LoadModelFile("Resources/Model/thunderbolt.model");
-
-	Map = new GameMap();
-	Map->LoadMap("The_Port");
-
+	
 	SetLight();
 	MyShader = new Shader();
 	MyShader->InitShader();
@@ -2591,8 +2720,15 @@ void Game::Init()
 	MyRayTracingShader = new RayTracingShader();
 	MyRayTracingShader->Init();
 
+	//////////////////////////////////////
 	
-	
+	Model* model = new Model;
+
+	model->LoadModelFile("Resources/Model/thunderbolt.model");
+
+	Map = new GameMap();
+	Map->LoadMap("The_Port");
+
 	TextMesh = new UVMesh();
 	TextMesh->CreateTextRectMesh();
 
@@ -2600,7 +2736,7 @@ void Game::Init()
 	MytestTesselationMesh->CreateTesslationTestMesh(10, 5);
 
 	TestMirrorMesh = new BumpMesh();
-	TestMirrorMesh->ReadMeshFromFile_OBJ("Resources/Mesh/Mirror001.obj", vec4(1, 1, 1, 1), false);
+	//TestMirrorMesh->ReadMeshFromFile_OBJ("Resources/Mesh/Mirror001.obj", vec4(1, 1, 1, 1), false);
 
 	MySpotLight.ShadowMap = MyShadowMappingShader->CreateShadowMap(4096, 4096, 0);
 	MySpotLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
@@ -2622,24 +2758,23 @@ void Game::Init()
 	Model* AW101 = new Model();
 	AW101->LoadModelFile("Resources/Model/AW101.model", true);
 
-	// Raytracing Static Scene Set
-	{
-		RGO_AW101 = new RaytracingGameObject();
-		RGO_AW101->SetModel(AW101);
-		RGO_AW101->worldMat.Id();
+	//// Raytracing Static Scene Set
+	//{
+	//	RGO_AW101 = new RaytracingGameObject();
+	//	RGO_AW101->SetModel(AW101);
+	//	RGO_AW101->worldMat.Id();
 
-		//mesh001 = new RayTracingMesh();
-		mesh002 = new RayTracingMesh();
-		//mesh001->CreateCubeMesh();
-		mesh002->CreateCubeMesh();
-		matrix matId;
-		matId.Id();
-		//int vid = mesh001->VBStartOffset / sizeof(RayTracingMesh::Vertex);
-		//DXRObjWorld001 = MyRayTracingShader->push_rins_immortal(mesh001, matId, LocalRootSigData(vid, mesh001->IBStartOffset));
-		matId.pos.x += 3;
-		int vid = mesh002->VBStartOffset / sizeof(RayTracingMesh::Vertex);
-		DXRObjWorld002 = MyRayTracingShader->push_rins_immortal(mesh002, matId, LocalRootSigData(vid, mesh002->IBStartOffset));
-	}
+	//	//mesh001 = new RayTracingMesh();
+	//	mesh002 = new RayTracingMesh();
+	//	//mesh001->CreateCubeMesh();
+	//	mesh002->CreateCubeMesh();
+	//	matrix matId;
+	//	matId.Id();
+	//	//int vid = mesh001->VBStartOffset / sizeof(RayTracingMesh::Vertex);
+	//	//DXRObjWorld001 = MyRayTracingShader->push_rins_immortal(mesh001, matId, LocalRootSigData(vid, mesh001->IBStartOffset));
+	//	matId.pos.x += 3;
+	//	DXRObjWorld002 = MyRayTracingShader->push_rins_immortal(mesh002, matId, LocalRootSigData(mesh002->VBStartOffset / sizeof(RayTracingMesh::Vertex), mesh002->IBStartOffset / sizeof(TriangleIndex)));
+	//}
 
 	Player* MyPlayer = new Player(&pKeyBuffer[0]);
 
@@ -3154,6 +3289,7 @@ void Game::Render_RayTracing()
 	commandList->SetComputeRootShaderResourceView(1, MyRayTracingShader->TLAS->GetGPUVirtualAddress()); // AS SRV
 	commandList->SetComputeRootConstantBufferView(2, gd.raytracing.CameraCB->GetGPUVirtualAddress()); // Camera CB CBV
 	commandList->SetComputeRootDescriptorTable(3, RayTracingMesh::VBIB_DescHandle.hgpu); // Vertex, IndexBuffer SRV
+	commandList->SetComputeRootDescriptorTable(4, MySkyBoxShader->CurrentSkyBox.hGpu); // SkyBox SRV
 
 	commandList->SetPipelineState1(MyRayTracingShader->RTPSO);
 
@@ -3355,11 +3491,11 @@ void Game::Update()
 
 			gd.raytracing.MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
 
-			float secondsToRotateAround2 = 48.0f;
+			/*float secondsToRotateAround2 = 48.0f;
 			float angleToRotateBy2 = -360.0f * (elapsedTime / secondsToRotateAround2);
 			XMMATRIX rotate2 = XMMatrixRotationY(XMConvertToRadians(angleToRotateBy2));
 			const XMVECTOR& prevLightPosition = gd.raytracing.MappedCB->lightPosition;
-			gd.raytracing.MappedCB->lightPosition = XMVector3Transform(prevLightPosition, rotate2);
+			gd.raytracing.MappedCB->lightPosition = XMVector3Transform(prevLightPosition, rotate2);*/
 		}
 
 		//matrix mat;
@@ -3367,7 +3503,7 @@ void Game::Update()
 		//mat.transpose();
 		//memcpy(DXRObjWorld001, &mat, sizeof(float) * 12);
 
-		matrix mat;
+		/*matrix mat;
 		mat.Id();
 		mat = XMMatrixRotationAxis(vec4(1, 1, 1, 0), stackF);
 		mat.pos = vec4(3 * sinf(stackF), 0, 3 * cosf(stackF), 1);
@@ -3387,7 +3523,7 @@ void Game::Update()
 		RGO_AW101->nodeWorldMats[2].pos = vec4(0, 0, 0, 1);
 		RGO_AW101->nodeWorldMats[2] *= XMMatrixRotationX(17 * DeltaTime);
 		RGO_AW101->nodeWorldMats[2].pos = pos;
-		RGO_AW101->UpdateTransform();
+		RGO_AW101->UpdateTransform();*/
 	}
 
 	//CameraUpdate
@@ -3422,6 +3558,9 @@ void Game::Update()
 	XMFLOAT3 Up = { 0, 1, 0 };
 	gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
 	gd.viewportArr[0].Camera_Pos = peye;
+	if (gd.isRaytracingRender) {
+		gd.raytracing.SetRaytracingCamera(peye, pat - peye);
+	}
 
 	// spotLight Move
 	//static float StackTime0 = 0;
@@ -7727,33 +7866,50 @@ BumpMesh::~BumpMesh()
 {
 }
 
-void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds)
+void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, bool include_DXR)
 {
 	int m_nVertices = vert.size();
 	int m_nStride = sizeof(Vertex);
 
-	VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, vert.size() * sizeof(Vertex), 1);
-	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, vert.size() * sizeof(Vertex), 1);
-	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &vert[0], &VertexUploadBuffer, &VertexBuffer, true);
-	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
-	VertexBufferView.StrideInBytes = m_nStride;
-	VertexBufferView.SizeInBytes = m_nStride * m_nVertices;
+	if (include_DXR) {
+		rmesh.AllocateRaytracingMesh(vert, inds);
 
-	IndexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * inds.size(), 1);
-	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * inds.size(), 1);
-	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &inds[0], &IndexUploadBuffer, &IndexBuffer, true);
-	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
-	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
-	IndexBufferView.SizeInBytes = sizeof(TriangleIndex) * inds.size();
+		VertexBufferView.BufferLocation = RayTracingMesh::vertexBuffer->GetGPUVirtualAddress() + rmesh.VBStartOffset;
+		VertexBufferView.StrideInBytes = m_nStride;
+		VertexBufferView.SizeInBytes = m_nStride * m_nVertices;
 
-	IndexNum = inds.size() * 3;
-	VertexNum = vert.size();
-	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		IndexBufferView.BufferLocation = RayTracingMesh::indexBuffer->GetGPUVirtualAddress() + rmesh.IBStartOffset;
+		IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+		IndexBufferView.SizeInBytes = sizeof(TriangleIndex) * inds.size();
+
+		IndexNum = inds.size() * 3;
+		VertexNum = vert.size();
+		topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	}
+	else {
+		VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, vert.size() * sizeof(Vertex), 1);
+		VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, vert.size() * sizeof(Vertex), 1);
+		gd.UploadToCommitedGPUBuffer(gd.pCommandList, &vert[0], &VertexUploadBuffer, &VertexBuffer, true);
+		VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+		VertexBufferView.StrideInBytes = m_nStride;
+		VertexBufferView.SizeInBytes = m_nStride * m_nVertices;
+
+		IndexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * inds.size(), 1);
+		IndexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(TriangleIndex) * inds.size(), 1);
+		gd.UploadToCommitedGPUBuffer(gd.pCommandList, &inds[0], &IndexUploadBuffer, &IndexBuffer, true);
+		IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+		IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+		IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+		IndexBufferView.SizeInBytes = sizeof(TriangleIndex) * inds.size();
+
+		IndexNum = inds.size() * 3;
+		VertexNum = vert.size();
+		topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	}
 }
 
-void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
+void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering, bool include_DXR)
 {
 	std::vector< Vertex > temp_vertices;
 	std::vector< TriangleIndex > TrianglePool;
@@ -7876,7 +8032,8 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 
 	// error.. why vertex buffer and index buffer do not input? 
 	// maybe.. State Error.
-	VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
+	CreateMesh_FromVertexAndIndexData(temp_vertices, TrianglePool, include_DXR);
+	/*VertexBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
 	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(gd.pCommandList, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, temp_vertices.size() * sizeof(Vertex), 1);
 	gd.UploadToCommitedGPUBuffer(gd.pCommandList, &temp_vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
 	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
@@ -7894,7 +8051,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 
 	IndexNum = TrianglePool.size() * 3;
 	VertexNum = temp_vertices.size();
-	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;*/
 	/*MeshOBB = BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));*/
 }
 
@@ -8032,20 +8189,24 @@ void BumpMesh::MakeTessTerrainMeshFromHeightMap(float EdgeLen, int xdiv, int zdi
 	for (int xi = 0; xi < xdiv; ++xi) {
 		for (int zi = 0; zi < zdiv; ++zi) {
 			Vertex v[4];
-			v[0].position = {MinX + xi * W, 0, MinX + zi * H};
-			v[0].uv = { uvdeltaX * xi, uvdeltaZ * zi};
-			v[0].normal = {0, 1, 0};
-			v[0].tangent = {1, 0, 0};
+			v[0].position = { MinX + xi * W, 0, MinX + zi * H };
+			v[0].u = uvdeltaX * xi;
+			v[0].v = uvdeltaZ * zi;
+			v[0].normal = { 0, 1, 0 };
+			v[0].tangent = { 1, 0, 0 };
 			v[1].position = { v[0].position.x + W, 0, v[0].position.z };
-			v[1].uv = { v[0].uv.x + uvdeltaX, v[0].uv.y };
+			v[1].u = v[0].u + uvdeltaX; 
+			v[1].v = v[0].v;
 			v[1].normal = { 0, 1, 0 };
 			v[1].tangent = { 1, 0, 0 };
 			v[2].position = { v[0].position.x + W, 0, v[0].position.z + H };
-			v[2].uv = { v[0].uv.x + uvdeltaX, v[0].uv.y + uvdeltaZ };
+			v[2].u = v[0].u + uvdeltaX;  
+			v[2].v = v[0].v + uvdeltaZ;
 			v[2].normal = { 0, 1, 0 };
 			v[2].tangent = { 1, 0, 0 };
 			v[3].position = { v[0].position.x, 0, v[0].position.z + H };
-			v[3].uv = { v[0].uv.x, v[0].uv.y + uvdeltaZ };
+			v[3].u = v[0].u;
+			v[3].v = v[0].v + uvdeltaZ;
 			v[3].normal = { 0, 1, 0 };
 			v[3].tangent = { 1, 0, 0 };
 
@@ -8404,6 +8565,57 @@ GameObject::~GameObject()
 {
 }
 
+void GameObject::RaytracingUpdateTransform() {
+	if (worldMatInput) {
+		if (rmod == eRenderMeshMod::single_Mesh) {
+			matrix mat = m_worldMatrix;
+			mat.transpose();
+			memcpy(((float*)worldMatInput), &mat, sizeof(float) * 12);
+		}
+		else {
+			RaytracingUpdateTransform(pModel->RootNode, m_worldMatrix);
+		}
+	}
+}
+
+void Hierarchy_Object::RaytracingUpdateTransformOnlyMe(matrix world)
+{
+	if (worldMatInput) {
+		if (rmod == eRenderMeshMod::single_Mesh) {
+			matrix mat = world;
+			mat.transpose();
+			memcpy(((float*)worldMatInput), &mat, sizeof(float) * 12);
+		}
+		else {
+			GameObject::RaytracingUpdateTransform(pModel->RootNode, world);
+		}
+	}
+}
+
+void Hierarchy_Object::RaytracingUpdateTransform(matrix parent)
+{
+	matrix sav = m_worldMatrix * parent;
+	RaytracingUpdateTransformOnlyMe(sav);
+	for (int i = 0; i < childs.size(); ++i) {
+		childs[i]->RaytracingUpdateTransform(sav);
+	}
+}
+
+void GameObject::RaytracingUpdateTransform(ModelNode* node, matrix parent) {
+	int nodeIndex = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+	matrix mat = transforms_innerModel[nodeIndex];
+	mat *= parent;
+
+	for (int i = 0; i < node->numChildren; ++i) {
+		RaytracingUpdateTransform(node->Childrens[i], mat);
+	}
+
+	if (worldMatInput[nodeIndex] != nullptr) {
+		mat.transpose();
+		memcpy(worldMatInput[nodeIndex], &mat, sizeof(float) * 12);
+	}
+}
+
 void GameObject::Update(float delatTime)
 {
 }
@@ -8469,16 +8681,33 @@ void GameObject::Release()
 void GameObject::SetMesh(Mesh* pMesh)
 {
 	m_pMesh = pMesh;
+	BumpMesh* bumpMesh = (BumpMesh*)m_pMesh;
+	worldMatInput = (float**)game.MyRayTracingShader->push_rins_immortal(&bumpMesh->rmesh, m_worldMatrix, LocalRootSigData(bumpMesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bumpMesh->rmesh.IBStartOffset / sizeof(unsigned int)));
+	RaytracingUpdateTransform();
 }
 
 void GameObject::SetModel(Model* ptrModel)
 {
 	rmod = _Model;
 	pModel = ptrModel;
+
+	worldMatInput = new float* [pModel->nodeCount];
+	matrix idmat;
+	idmat.Id();
+	for (int i = 0; i < pModel->nodeCount; ++i) {
+		worldMatInput[i] = nullptr;
+		if (pModel->Nodes[i].numMesh > 0) {
+			BumpMesh* mesh = (BumpMesh*)pModel->mMeshes[pModel->Nodes[i].Meshes[0]];
+			worldMatInput[i] = game.MyRayTracingShader->push_rins_immortal(&mesh->rmesh, idmat, LocalRootSigData(mesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), mesh->rmesh.IBStartOffset / sizeof(unsigned int)));
+		}
+	}
+
 	transforms_innerModel = new matrix[pModel->nodeCount];
 	for (int i = 0; i < pModel->nodeCount; ++i) {
 		transforms_innerModel[i] = pModel->Nodes[i].transform;
 	}
+
+	RaytracingUpdateTransform();
 }
 
 void GameObject::SetShader(Shader* pShader)
@@ -8750,8 +8979,18 @@ void GameObject::OnLazerHit()
 }
 
 bool godmod = true;
+float StackT = 0;
 void Player::Update(float deltaTime)
 {
+	StackT += 100 * game.DeltaTime;
+
+	if (game.bFirstPersonVision == false) {
+		transforms_innerModel[0] = XMMatrixRotationAxis(vec4(0, 0, 1, 0), 3.141952f) * pModel->Nodes[0].transform;
+		transforms_innerModel[3] = XMMatrixRotationAxis(vec4(0, 1, 0, 0), StackT) * pModel->Nodes[3].transform;
+		transforms_innerModel[2] = XMMatrixRotationAxis(vec4(1, 0, 0, 0), StackT) * pModel->Nodes[2].transform;
+	}
+	RaytracingUpdateTransform();
+
 	if (godmod == false) {
 		if (m_worldMatrix.pos.fast_square_of_len3 > 100000000) {
 			m_worldMatrix.pos = vec4(0, 10, 0, 1);
@@ -8814,15 +9053,9 @@ void Player::Update(float deltaTime)
 	}
 }
 
-float StackT = 0;
 void Player::Render()
 {
-	StackT += 100 * game.DeltaTime;
-
 	if (game.bFirstPersonVision == false) {
-		transforms_innerModel[0] = XMMatrixRotationAxis(vec4(0, 0, 1, 0), 3.141952f) * pModel->Nodes[0].transform;
-		transforms_innerModel[3] = XMMatrixRotationAxis(vec4(0, 1, 0, 0), StackT) * pModel->Nodes[3].transform;
-		transforms_innerModel[2] = XMMatrixRotationAxis(vec4(1, 0, 0, 0), StackT) * pModel->Nodes[2].transform;
 		pModel->Render(gd.pCommandList, m_worldMatrix, Shader::ShadowRegisterEnum::RenderWithShadow, this);
 	}
 }
@@ -9266,9 +9499,6 @@ void Model::LoadModelFile(string filename, bool include_DXR)
 	ifstream ifs{ filename, ios_base::binary };
 	ifs.read((char*)&mNumMeshes, sizeof(unsigned int));
 	mMeshes = new Mesh * [mNumMeshes];
-	if (include_DXR) {
-		mRayMeshes = new RayTracingMesh * [mNumMeshes];
-	}
 	vertice = new vector<BumpMesh::Vertex>[mNumMeshes];
 	indice = new vector<TriangleIndex>[mNumMeshes];
 
@@ -9298,17 +9528,16 @@ void Model::LoadModelFile(string filename, bool include_DXR)
 
 		vector<BumpMesh::Vertex>& vertices = vertice[i];
 		vector<TriangleIndex>& indices = indice[i];
-		vector<RayTracingMesh::Vertex> rvb;
 		vertices.reserve(vertSiz); vertices.resize(vertSiz);
-		rvb.reserve(vertSiz); rvb.resize(vertSiz);
 		indices.reserve(indexSiz); indices.resize(indexSiz);
 
 		for (int k = 0; k < vertSiz; ++k) {
 			ifs.read((char*)&vertice[i][k].position, sizeof(XMFLOAT3));
-			rvb[k].pos = vertice[i][k].position;
-			ifs.read((char*)&vertice[i][k].uv, sizeof(XMFLOAT2));
+			XMFLOAT2 uv;
+			ifs.read((char*)&uv, sizeof(XMFLOAT2));
+			vertice[i][k].u = uv.x;
+			vertice[i][k].v = uv.y;
 			ifs.read((char*)&vertice[i][k].normal, sizeof(XMFLOAT3));
-			rvb[k].normal = vertice[i][k].normal;
 			ifs.read((char*)&vertice[i][k].tangent, sizeof(XMFLOAT3));
 
 			// non use
@@ -9318,14 +9547,8 @@ void Model::LoadModelFile(string filename, bool include_DXR)
 		for (int k = 0; k < indexSiz; ++k) {
 			ifs.read((char*)&indice[i][k], sizeof(TriangleIndex));
 		}
-
-		mesh->CreateMesh_FromVertexAndIndexData(vertices, indices);
+		mesh->CreateMesh_FromVertexAndIndexData(vertices, indices, include_DXR);
 		mMeshes[i] = mesh;
-
-		if (include_DXR) {
-			mRayMeshes[i] = new RayTracingMesh();
-			mRayMeshes[i]->AllocateRaytracingMesh(rvb, indices);
-		}
 	}
 
 	/*gd.pCommandList->Close();
@@ -9458,7 +9681,7 @@ void Model::LoadModelFile(string filename, bool include_DXR)
 	delete[] indice;
 }
 
-void Model::LoadModelFile2(string filename)
+void Model::LoadModelFile2(string filename, bool include_DXR)
 {
 	ifstream ifs{ filename, ios_base::binary };
 	ifs.read((char*)&mNumMeshes, sizeof(unsigned int));
@@ -9508,8 +9731,15 @@ void Model::LoadModelFile2(string filename)
 			if (MAABB[1].y < vertices[k].position.y) MAABB[1].y = vertices[k].position.y;
 			if (MAABB[1].z < vertices[k].position.z) MAABB[1].z = vertices[k].position.z;
 
-			ifs.read((char*)&vertices[k].uv, sizeof(XMFLOAT2));
+			XMFLOAT2 uv;
+			ifs.read((char*)&uv, sizeof(XMFLOAT2));
+			vertices[k].u = uv.x;
+			vertices[k].v = uv.y;
 			ifs.read((char*)&vertices[k].normal, sizeof(XMFLOAT3));
+			vec4 norm = vertices[k].normal;
+			norm /= norm.len3;
+			vertices[k].normal = norm.f3;
+
 			ifs.read((char*)&vertices[k].tangent, sizeof(XMFLOAT3));
 
 			// non use
@@ -9521,13 +9751,13 @@ void Model::LoadModelFile2(string filename)
 		}
 
 		float unitMulRate = 1 * AABB[0].x / MAABB[0].x;
+		dbgbreak(unitMulRate < 0.5f);
 		for (int k = 0; k < vertSiz; ++k) {
 			vertices[k].position.x *= unitMulRate;
 			vertices[k].position.y *= unitMulRate;
 			vertices[k].position.z *= unitMulRate;
 		}
-
-		mesh->CreateMesh_FromVertexAndIndexData(vertices, indices);
+		mesh->CreateMesh_FromVertexAndIndexData(vertices, indices, include_DXR);
 		mMeshes[i] = mesh;
 	}
 
@@ -10316,7 +10546,7 @@ JUMP001:
 	IsCollision = AddRangeArr<ui32, bool>(0, Ranges);
 }
 
-void GameMap::LoadMap(const char* MapName)
+void GameMap::LoadMap(const char* MapName, bool include_DXR)
 {
 	GameMap* map = this;
 
@@ -10402,7 +10632,12 @@ void GameMap::LoadMap(const char* MapName)
 		indexs.resize(tricnt);
 		for (int k = 0; k < vertCnt; ++k) {
 			ifs2.read((char*)&verts[k].position, sizeof(float) * 3);
-			ifs2.read((char*)&verts[k].uv, sizeof(float) * 2);
+
+			XMFLOAT2 uv;
+			ifs2.read((char*)&uv, sizeof(float) * 2);
+			verts[k].u = uv.x;
+			verts[k].v = uv.y;
+
 			ifs2.read((char*)&verts[k].normal, sizeof(float) * 3);
 			ifs2.read((char*)&verts[k].tangent, sizeof(float) * 3);
 			float w = 0; // bitangent direction??
@@ -10416,7 +10651,7 @@ void GameMap::LoadMap(const char* MapName)
 		}
 
 		ifs2.close();
-		mesh->CreateMesh_FromVertexAndIndexData(verts, indexs);
+		mesh->CreateMesh_FromVertexAndIndexData(verts, indexs, include_DXR);
 		//mesh->ReadMeshFromFile_OBJ(filename.c_str(), vec4(1, 1, 1, 1), false);
 
 		ifs.read((char*)&mesh->OBB_Tr, sizeof(float) * 3);
@@ -10670,7 +10905,7 @@ void GameMap::LoadMap(const char* MapName)
 				ifs.read((char*)&materialNum, sizeof(int));
 			}
 			else {
-				go->m_pMesh = map->meshes[meshid];
+				go->SetMesh(map->meshes[meshid]);
 				ifs.read((char*)&materialNum, sizeof(int));
 				for (int k = 0; k < materialNum; ++k) {
 					ifs.read((char*)&materialId, sizeof(int));
@@ -10687,7 +10922,7 @@ void GameMap::LoadMap(const char* MapName)
 				go->pModel = nullptr;
 			}
 			else {
-				go->pModel = map->models[ModelID];
+				go->SetModel(map->models[ModelID]);
 			}
 		}
 
@@ -10710,6 +10945,7 @@ void GameMap::LoadMap(const char* MapName)
 		map->MapObjects[i] = go;
 	}
 
+	map->MapObjects[0]->RaytracingUpdateTransform(XMMatrixIdentity());
 	//BakeStaticCollision();
 }
 
@@ -11668,8 +11904,8 @@ void RaytracingGameObject::SetModel(Model* model) {
 	for (int i = 0; i < pModel->nodeCount; ++i) {
 		worldMatInput[i] = nullptr;
 		if (pModel->Nodes[i].numMesh > 0) {
-			RayTracingMesh* rmesh = pModel->mRayMeshes[pModel->Nodes[i].Meshes[0]];
-			worldMatInput[i] = game.MyRayTracingShader->push_rins_immortal(rmesh, idmat, LocalRootSigData(rmesh->VBStartOffset / sizeof(RayTracingMesh::Vertex), rmesh->IBStartOffset));
+			BumpMesh* mesh = (BumpMesh*)pModel->mMeshes[pModel->Nodes[i].Meshes[0]];
+			worldMatInput[i] = game.MyRayTracingShader->push_rins_immortal(&mesh->rmesh, idmat, LocalRootSigData(mesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), mesh->rmesh.IBStartOffset / sizeof(unsigned int)));
 		}
 	}
 	nodeWorldMats = new matrix [pModel->nodeCount];
