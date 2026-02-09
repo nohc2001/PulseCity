@@ -1,0 +1,3557 @@
+{
+    "Person001": {
+        "Version": "1.30.1707.1",
+        "Scene": {
+            "Name": true,
+            "SupportShaderSelect": true
+        },
+        "Export Directory": "D:/Model",
+        "Object": {
+            "Person001": {
+                "Physics": {
+                    "Collision Shapes": {
+                        "CC_Base_Hip": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 2.0,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -4.771182060241699,
+                                    -0.3615541458129883,
+                                    102.18828582763672
+                                ],
+                                "WorldRotationQ": [
+                                    0.8121441006660461,
+                                    0.07486677914857865,
+                                    -0.10692083090543747,
+                                    0.5686693787574768
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.0000001192092896,
+                                    1.0000001192092896
+                                ],
+                                "Radius": 9.317655563354493,
+                                "Capsule Length": 29.37289047241211
+                            },
+                            "Capsule(0)": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 2.0,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    4.771190643310547,
+                                    -0.3615541458129883,
+                                    102.18829345703125
+                                ],
+                                "WorldRotationQ": [
+                                    0.8121441006660461,
+                                    -0.07486677914857865,
+                                    0.10692083090543747,
+                                    0.5686693787574768
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.0000001192092896,
+                                    1.0000001192092896
+                                ],
+                                "Radius": 9.317655563354493,
+                                "Capsule Length": 29.37289047241211
+                            }
+                        },
+                        "CC_Base_Pelvis": {},
+                        "CC_Base_L_Thigh": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    9.944059371948243,
+                                    -0.9687795639038086,
+                                    70.84591674804688
+                                ],
+                                "WorldRotationQ": [
+                                    -0.03219209983944893,
+                                    0.7452159523963928,
+                                    -0.6650968194007874,
+                                    -0.03553996607661247
+                                ],
+                                "WorldScale": [
+                                    0.9999997615814209,
+                                    0.9999999403953552,
+                                    1.0000003576278687
+                                ],
+                                "Radius": 7.776857376098633,
+                                "Capsule Length": 36.16934585571289
+                            }
+                        },
+                        "CC_Base_L_Calf": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    8.637473106384278,
+                                    2.901440382003784,
+                                    27.6586971282959
+                                ],
+                                "WorldRotationQ": [
+                                    -0.008310684934258461,
+                                    0.7208105325698853,
+                                    -0.6930269598960877,
+                                    -0.008757205680012703
+                                ],
+                                "WorldScale": [
+                                    1.0000001192092896,
+                                    1.0,
+                                    1.0000001192092896
+                                ],
+                                "Radius": 6.300427436828613,
+                                "Capsule Length": 31.77495002746582
+                            }
+                        },
+                        "CC_Base_L_Foot": {},
+                        "CC_Base_L_ToeBaseShareBone": {},
+                        "CC_Base_L_ToeBase": {},
+                        "CC_Base_L_PinkyToe1": {},
+                        "CC_Base_L_RingToe1": {},
+                        "CC_Base_L_MidToe1": {},
+                        "CC_Base_L_IndexToe1": {},
+                        "CC_Base_L_BigToe1": {},
+                        "CC_Base_L_CalfTwist01": {},
+                        "CC_Base_L_CalfTwist02": {},
+                        "CC_Base_L_KneeShareBone": {},
+                        "CC_Base_L_ThighTwist01": {},
+                        "CC_Base_L_ThighTwist02": {},
+                        "CC_Base_R_Thigh": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -9.933892250061036,
+                                    -0.9532530307769775,
+                                    70.8433837890625
+                                ],
+                                "WorldRotationQ": [
+                                    0.032389748841524127,
+                                    0.7455028891563416,
+                                    -0.6647534370422363,
+                                    0.035766396671533588
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    0.9999999403953552,
+                                    0.9999999403953552
+                                ],
+                                "Radius": 7.743026256561279,
+                                "Capsule Length": 36.232154846191409
+                            }
+                        },
+                        "CC_Base_R_Calf": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -8.657666206359864,
+                                    2.9300284385681154,
+                                    27.6572265625
+                                ],
+                                "WorldRotationQ": [
+                                    0.008293075487017632,
+                                    0.7204011678695679,
+                                    -0.6934528350830078,
+                                    0.008747303858399392
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.000000238418579,
+                                    1.0000001192092896
+                                ],
+                                "Radius": 6.289603233337402,
+                                "Capsule Length": 31.79661750793457
+                            }
+                        },
+                        "CC_Base_R_KneeShareBone": {},
+                        "CC_Base_R_Foot": {},
+                        "CC_Base_R_ToeBase": {},
+                        "CC_Base_R_BigToe1": {},
+                        "CC_Base_R_PinkyToe1": {},
+                        "CC_Base_R_RingToe1": {},
+                        "CC_Base_R_IndexToe1": {},
+                        "CC_Base_R_MidToe1": {},
+                        "CC_Base_R_ToeBaseShareBone": {},
+                        "CC_Base_R_CalfTwist01": {},
+                        "CC_Base_R_CalfTwist02": {},
+                        "CC_Base_R_ThighTwist01": {},
+                        "CC_Base_R_ThighTwist02": {},
+                        "CC_Base_Waist": {},
+                        "CC_Base_Spine01": {
+                            "Capsule(1)": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Z",
+                                "Margin": 2.0,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    0.0038771815598011019,
+                                    -0.8774628639221191,
+                                    123.72531127929688
+                                ],
+                                "WorldRotationQ": [
+                                    0.4627421200275421,
+                                    0.535096287727356,
+                                    0.46229082345962527,
+                                    0.5346297025680542
+                                ],
+                                "WorldScale": [
+                                    1.000000238418579,
+                                    1.0000001192092896,
+                                    1.0
+                                ],
+                                "Radius": 12.288165092468262,
+                                "Capsule Length": 7.279165267944336
+                            }
+                        },
+                        "CC_Base_Spine02": {},
+                        "CC_Base_NeckTwist01": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    0.013150731101632119,
+                                    0.7921586036682129,
+                                    153.22454833984376
+                                ],
+                                "WorldRotationQ": [
+                                    0.7491176724433899,
+                                    -0.00148252013605088,
+                                    -0.00619294261559844,
+                                    0.662406325340271
+                                ],
+                                "WorldScale": [
+                                    0.9999998807907105,
+                                    1.0,
+                                    1.0
+                                ],
+                                "Radius": 6.322977542877197,
+                                "Capsule Length": 5.078064918518066
+                            },
+                            "Capsule(0)": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Z",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -0.10206995904445648,
+                                    -1.0818322896957398,
+                                    139.74697875976563
+                                ],
+                                "WorldRotationQ": [
+                                    0.5340852737426758,
+                                    0.4673437178134918,
+                                    0.5253271460533142,
+                                    0.4694403111934662
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.0,
+                                    0.9999998807907105
+                                ],
+                                "Radius": 12.242305755615235,
+                                "Capsule Length": 18.268756866455079
+                            },
+                            "Capsule(1)": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -7.164688587188721,
+                                    -5.411823272705078,
+                                    137.66976928710938
+                                ],
+                                "WorldRotationQ": [
+                                    0.28731366991996767,
+                                    0.6489284634590149,
+                                    0.2784879803657532,
+                                    0.6471377015113831
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.0,
+                                    0.9999999403953552
+                                ],
+                                "Radius": 8.725176811218262,
+                                "Capsule Length": 13.646366119384766
+                            },
+                            "Capsule(2)": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    6.834173679351807,
+                                    -5.557783126831055,
+                                    137.56735229492188
+                                ],
+                                "WorldRotationQ": [
+                                    0.28731366991996767,
+                                    0.6489284634590149,
+                                    0.2784879803657532,
+                                    0.6471377015113831
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.0,
+                                    0.9999999403953552
+                                ],
+                                "Radius": 8.725176811218262,
+                                "Capsule Length": 13.646366119384766
+                            }
+                        },
+                        "CC_Base_NeckTwist02": {},
+                        "CC_Base_Head": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    0.012778062373399735,
+                                    -1.9065507650375367,
+                                    166.08624267578126
+                                ],
+                                "WorldRotationQ": [
+                                    0.7077192068099976,
+                                    -0.0004323433095123619,
+                                    0.0014616688713431359,
+                                    0.7064921855926514
+                                ],
+                                "WorldScale": [
+                                    1.0000001192092896,
+                                    1.0,
+                                    1.0000001192092896
+                                ],
+                                "Radius": 7.371970176696777,
+                                "Capsule Length": 6.928251266479492
+                            }
+                        },
+                        "CC_Base_FacialBone": {},
+                        "CC_Base_JawRoot": {},
+                        "CC_Base_Tongue01": {},
+                        "CC_Base_Tongue02": {},
+                        "CC_Base_Tongue03": {},
+                        "CC_Base_Teeth02": {},
+                        "CC_Base_R_Eye": {},
+                        "CC_Base_L_Eye": {},
+                        "CC_Base_UpperJaw": {},
+                        "CC_Base_Teeth01": {},
+                        "CC_Base_L_Clavicle": {},
+                        "CC_Base_L_Upperarm": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    28.973678588867189,
+                                    6.100521564483643,
+                                    142.41775512695313
+                                ],
+                                "WorldRotationQ": [
+                                    0.4932158887386322,
+                                    0.5214828848838806,
+                                    -0.47882917523384097,
+                                    0.505486249923706
+                                ],
+                                "WorldScale": [
+                                    1.0000001192092896,
+                                    1.000000238418579,
+                                    1.000000238418579
+                                ],
+                                "Radius": 5.932333469390869,
+                                "Capsule Length": 21.63135528564453
+                            }
+                        },
+                        "CC_Base_L_Forearm": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    56.34125518798828,
+                                    6.336221218109131,
+                                    143.59031677246095
+                                ],
+                                "WorldRotationQ": [
+                                    0.5077550411224365,
+                                    0.5073501467704773,
+                                    -0.49511879682540896,
+                                    0.4895282983779907
+                                ],
+                                "WorldScale": [
+                                    1.0000001192092896,
+                                    1.0000001192092896,
+                                    1.0000003576278687
+                                ],
+                                "Radius": 4.922185897827148,
+                                "Capsule Length": 20.675765991210939
+                            }
+                        },
+                        "CC_Base_L_ForearmTwist01": {},
+                        "CC_Base_L_ForearmTwist02": {},
+                        "CC_Base_L_ElbowShareBone": {},
+                        "CC_Base_L_Hand": {
+                            "Capsule": {
+                                "Bone Active": false,
+                                "Bound Type": "Box",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    75.50260925292969,
+                                    4.931709289550781,
+                                    143.32315063476563
+                                ],
+                                "WorldRotationQ": [
+                                    0.5046902298927307,
+                                    0.5097674131393433,
+                                    -0.4907679557800293,
+                                    0.49454206228256228
+                                ],
+                                "WorldScale": [
+                                    1.0000001192092896,
+                                    1.0000001192092896,
+                                    1.000000238418579
+                                ],
+                                "Extent": [
+                                    5.4495978355407719,
+                                    11.581486701965332,
+                                    9.724223136901856
+                                ]
+                            }
+                        },
+                        "CC_Base_L_Pinky1": {},
+                        "CC_Base_L_Pinky2": {},
+                        "CC_Base_L_Pinky3": {},
+                        "CC_Base_L_Ring1": {},
+                        "CC_Base_L_Ring2": {},
+                        "CC_Base_L_Ring3": {},
+                        "CC_Base_L_Mid1": {},
+                        "CC_Base_L_Mid2": {},
+                        "CC_Base_L_Mid3": {},
+                        "CC_Base_L_Index1": {},
+                        "CC_Base_L_Index2": {},
+                        "CC_Base_L_Index3": {},
+                        "CC_Base_L_Thumb1": {},
+                        "CC_Base_L_Thumb2": {},
+                        "CC_Base_L_Thumb3": {},
+                        "CC_Base_L_UpperarmTwist01": {},
+                        "CC_Base_L_UpperarmTwist02": {},
+                        "CC_Base_L_RibsTwist": {},
+                        "CC_Base_L_Breast": {},
+                        "CC_Base_R_RibsTwist": {},
+                        "CC_Base_R_Breast": {},
+                        "CC_Base_R_Clavicle": {},
+                        "CC_Base_R_Upperarm": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -28.973346710205079,
+                                    6.116333961486816,
+                                    142.42404174804688
+                                ],
+                                "WorldRotationQ": [
+                                    0.4932536482810974,
+                                    -0.5213384032249451,
+                                    0.4789865016937256,
+                                    0.5054492950439453
+                                ],
+                                "WorldScale": [
+                                    1.000000238418579,
+                                    1.0,
+                                    1.0000001192092896
+                                ],
+                                "Radius": 5.932051658630371,
+                                "Capsule Length": 21.64571189880371
+                            }
+                        },
+                        "CC_Base_R_Forearm": {
+                            "Capsule": {
+                                "Bone Active": true,
+                                "Bound Type": "Capsule",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -56.32624053955078,
+                                    6.546008110046387,
+                                    143.6013641357422
+                                ],
+                                "WorldRotationQ": [
+                                    -0.5036168098449707,
+                                    0.5113869905471802,
+                                    -0.49106234312057497,
+                                    -0.4936712980270386
+                                ],
+                                "WorldScale": [
+                                    1.0000001192092896,
+                                    1.0000001192092896,
+                                    1.0
+                                ],
+                                "Radius": 4.922019004821777,
+                                "Capsule Length": 20.660846710205079
+                            }
+                        },
+                        "CC_Base_R_ElbowShareBone": {},
+                        "CC_Base_R_ForearmTwist01": {},
+                        "CC_Base_R_ForearmTwist02": {},
+                        "CC_Base_R_Hand": {
+                            "Capsule": {
+                                "Bone Active": false,
+                                "Bound Type": "Box",
+                                "Bound Axis": "Y",
+                                "Margin": 0.800000011920929,
+                                "Friction": 0.05000000074505806,
+                                "Elasticity": 0.5,
+                                "WorldTranslate": [
+                                    -75.52596282958985,
+                                    5.253413677215576,
+                                    143.3435516357422
+                                ],
+                                "WorldRotationQ": [
+                                    -0.5038219690322876,
+                                    0.5107337832450867,
+                                    -0.48639675974845889,
+                                    -0.49873101711273196
+                                ],
+                                "WorldScale": [
+                                    1.0,
+                                    1.0000001192092896,
+                                    1.000000238418579
+                                ],
+                                "Extent": [
+                                    6.403728485107422,
+                                    11.583085060119629,
+                                    9.874728202819825
+                                ]
+                            }
+                        },
+                        "CC_Base_R_Ring1": {},
+                        "CC_Base_R_Ring2": {},
+                        "CC_Base_R_Ring3": {},
+                        "CC_Base_R_Mid1": {},
+                        "CC_Base_R_Mid2": {},
+                        "CC_Base_R_Mid3": {},
+                        "CC_Base_R_Thumb1": {},
+                        "CC_Base_R_Thumb2": {},
+                        "CC_Base_R_Thumb3": {},
+                        "CC_Base_R_Index1": {},
+                        "CC_Base_R_Index2": {},
+                        "CC_Base_R_Index3": {},
+                        "CC_Base_R_Pinky1": {},
+                        "CC_Base_R_Pinky2": {},
+                        "CC_Base_R_Pinky3": {},
+                        "CC_Base_R_UpperarmTwist01": {},
+                        "CC_Base_R_UpperarmTwist02": {}
+                    }
+                },
+                "Type": "Avatar",
+                "Generation": "RL_CC3_Plus",
+                "ExpressionSet": "6",
+                "Expression": {
+                    "V_None": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Open": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.8360879039391876e-8,
+                                    -6.64502294966951e-7,
+                                    0.13918864727020265,
+                                    0.9902660250663757
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    -0.0000030994415283203127,
+                                    0.0000152587890625,
+                                    -8.344650268554688e-7
+                                ],
+                                "Rotation": [
+                                    -1.553125912323594e-7,
+                                    1.5037221601232887e-7,
+                                    -7.222479325719178e-7,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    2.384185791015625e-7,
+                                    -0.0000152587890625,
+                                    -7.748603820800781e-7
+                                ],
+                                "Rotation": [
+                                    -6.760529913663049e-8,
+                                    -5.424226401373744e-8,
+                                    1.1864085536217317e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Explosive": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Dental_Lip": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tight_O": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tight": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Wide": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Affricate": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Lip_Open": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_up": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_Raise": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_Out": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_Narrow": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_Lower": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_Curl_U": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "V_Tongue_Curl_D": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    1.3231874618213625e-7,
+                                    -6.042537279427052e-7,
+                                    -0.0000016987740991680767,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000016689300537109376,
+                                    0.0000152587890625,
+                                    -4.470348358154297e-7
+                                ],
+                                "Rotation": [
+                                    -1.4169199857860804e-7,
+                                    3.314744390081614e-8,
+                                    -6.515099926218682e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    -4.172325134277344e-7
+                                ],
+                                "Rotation": [
+                                    -1.0370270331350184e-7,
+                                    1.4872057363390923e-8,
+                                    1.3460498848871794e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Down_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Down_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Lateral_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Lateral_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Raise_In_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Raise_In_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Raise_Outer_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Brow_Raise_Outer_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Blink_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Blink_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Widen_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Widen_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Squint_Inner_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Squint_Inner_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Cheek_Raise_L": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    4.76837158203125e-7,
+                                    3.2782554626464846e-7
+                                ],
+                                "Rotation": [
+                                    6.515256245620549e-8,
+                                    -5.371548468247056e-7,
+                                    -0.0000016987701201287564,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_R_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.000003337860107421875,
+                                    0.0000021457672119140627
+                                ],
+                                "Rotation": [
+                                    -0.0000016689300537109376,
+                                    5.960464477539063e-8,
+                                    -5.727633833885193e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Head": {
+                                "Translate": [
+                                    3.5762786865234377e-7,
+                                    0.0000152587890625,
+                                    0.0
+                                ],
+                                "Rotation": [
+                                    -0.0000012666196198551916,
+                                    5.921174306422472e-8,
+                                    1.885928213596344e-8,
+                                    0.9999999403953552
+                                ]
+                            },
+                            "CC_Base_L_Eye": {
+                                "Translate": [
+                                    0.0000152587890625,
+                                    0.0000019073486328125,
+                                    0.0000011920928955078126
+                                ],
+                                "Rotation": [
+                                    -0.0000016968697309494019,
+                                    -5.960464477539063e-8,
+                                    5.811452865600586e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Tongue01": {
+                                "Translate": [
+                                    0.0000021457672119140627,
+                                    0.0000152587890625,
+                                    5.960464477539063e-8
+                                ],
+                                "Rotation": [
+                                    -1.2696546036750079e-7,
+                                    7.922608347143978e-9,
+                                    -6.478289833466988e-7,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_FacialBone": {
+                                "Translate": [
+                                    5.960464477539063e-8,
+                                    -0.0000152587890625,
+                                    0.000001191161572933197
+                                ],
+                                "Rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    1.0
+                                ]
+                            },
+                            "CC_Base_Teeth02": {
+                                "Translate": [
+                                    0.0000026226043701171877,
+                                    -0.000030517578125,
+                                    1.7881393432617188e-7
+                                ],
+                                "Rotation": [
+                                    -2.8881688152182506e-8,
+                                    1.0408257367089391e-7,
+                                    3.771560841414612e-8,
+                                    1.0
+                                ]
+                            }
+                        }
+                    },
+                    "Eye_Cheek_Raise_R": {
+                        "Bones": {
+                            "CC_Base_JawRoot": {
+                                "Translate": [
+                                    -2.2219085693359377,
+                                    -

@@ -1356,9 +1356,12 @@ void Game::Init()
 	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);
 
 	Model* model = new Model;
-	model->GetModelFromAssimp("Resources/Model/minigun_m134/scene.gltf", 1);
+	//model->GetModelFromAssimp("Resources/Model/minigun_m134/scene.gltf", 1);
 	/*model->SaveModelFile("Resources/Model/minigun_m134.model");
 	model->LoadModelFile("Resources/Model/minigun_m134.model");*/
+	WalkingAnim = new Model;
+	//WalkingAnim->GetModelFromAssimp("Resources/Model/Walking.fbx", 0.01);
+	model->GetModelFromAssimp("Resources/Model/Breakdance 1990.fbx", 0.01f);
 
 	MyShader = new Shader();
 	MyShader->InitShader();
@@ -3652,6 +3655,9 @@ void GameObject::Update(float delatTime)
 {
 	if (rmod == _Model && pModel->mNumAnimations > 0) {
 		if (pModel->mAnimations[0] != nullptr) {
+			for (int i = 0; i < pModel->nodeCount; ++i) {
+				NodeLocalMatrixs[i].Id();
+			}
 			pModel->mAnimations[0]->GetBoneLocalMatrixAtTime(NodeLocalMatrixs, 30 * stack);
 			for (int i = 0; i < pModel->nodeCount; ++i) {
 				NodeLocalMatrixs[i] *= pModel->DefaultNodelocalTr[i];
@@ -3760,7 +3766,7 @@ void GameObject::SetModel(Model* model)
 	RootBoneMatrixs_PerSkinMesh.reserve(pModel->mNumSkinMesh);
 	for (int i = 0; i < model->nodeCount; ++i) {
 		NodeLocalMatrixs[i] = model->Nodes[i].transform;
-		//NodeLocalMatrixs[i].Id();
+		NodeLocalMatrixs[i].Id();
 	}
 
 	if (pModel->mNumSkinMesh > 0) {
@@ -5064,6 +5070,30 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 	if (mNumSkinMesh > 0) {
 		DefaultNodelocalTr = new matrix[nodeCount];
 	}
+
+	NodeOffsetMatrixArr = new matrix[nodeCount];
+	for (int i = 0; i < mNumSkinMesh; ++i) {
+		BumpSkinMesh* bsm = mBumpSkinMeshs[i];
+		for (int k = 0; k < bsm->MatrixCount; ++k) {
+			matrix invBoneWorld = bsm->OffsetMatrixs[k];
+			int nodeindex = bsm->toNodeIndex[k];
+			NodeOffsetMatrixArr[nodeindex] = invBoneWorld;
+		}
+	}
+	matrix IdMat;
+	for (int i = 0; i < nodeCount; ++i) {
+		if (NodeOffsetMatrixArr[i].pos == IdMat.pos && NodeOffsetMatrixArr[i].look == IdMat.look
+			&& NodeOffsetMatrixArr[i].right == IdMat.right && NodeOffsetMatrixArr[i].up == IdMat.up) {
+			// offset 행렬이 단위행렬일때
+			ModelNode* node = Nodes[i].parent;
+			if (node == nullptr) {
+				continue;
+			}
+			int parentNodeindex = ((char*)node - (char*)Nodes) / sizeof(ModelNode);
+			NodeOffsetMatrixArr[i] = NodeOffsetMatrixArr[parentNodeindex];
+		}
+	}
+	
 	for (int i = 0; i < mNumSkinMesh; ++i) {
 		BumpSkinMesh* bsm = mBumpSkinMeshs[i];
 		for (int k = 0; k < bsm->MatrixCount; ++k) {
@@ -5077,13 +5107,16 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 
 			while (node != nullptr) {
 				int parentindex = ((char*)node - (char*)Nodes) / sizeof(ModelNode);
-				for (int u = 0; u < bsm->MatrixCount; ++u) {
+				parentBoneOffset = NodeOffsetMatrixArr[parentindex];
+				parentBoneOffset.transpose();
+				goto SET_NODELOCALMAT;
+				/*for (int u = 0; u < bsm->MatrixCount; ++u) {
 					if (parentindex == bsm->toNodeIndex[u]) {
 						parentBoneOffset = bsm->OffsetMatrixs[u];
 						parentBoneOffset.transpose();
 						goto SET_NODELOCALMAT;
 					}
-				}
+				}*/
 				node = node->parent;
 			}
 
@@ -5091,6 +5124,7 @@ void Model::GetModelFromAssimp(string filename, float posmul)
 			DefaultNodelocalTr[nodeindex] = invBoneWorld * parentBoneOffset;
 		}
 	}
+	cout << endl;
 }
 
 ColorMesh* Model::Assimp_ReadMesh(aiMesh* mesh, const aiScene* scene, int meshindex)
@@ -6203,7 +6237,7 @@ matrix NodeAnim::GetLocalMatrixAtTime(float time, matrix original)
 	}*/
 
 	matrix mat =
-		XMMatrixScaling(scale.x, scale.y, scale.z) *
+		//XMMatrixScaling(scale.x, scale.y, scale.z) *
 		XMMatrixRotationQuaternion(rotQ) *
 		XMMatrixTranslation(pos.x, pos.y, pos.z);
 

@@ -1184,6 +1184,7 @@ struct Model {
 	unsigned int mNumSkinMesh;
 	BumpSkinMesh** mBumpSkinMeshs;
 	matrix* DefaultNodelocalTr;
+	matrix* NodeOffsetMatrixArr;
 
 	void Rearrange1(ModelNode* node);
 	void Rearrange2();
@@ -1362,6 +1363,7 @@ public:
 	GPUResource DefaultTex;
 	GPUResource DefaultAmbientTex;
 	GPUResource DefaultNoramlTex;
+	Model* WalkingAnim;
 
 	vecset<BulletRay> bulletRays;
 
