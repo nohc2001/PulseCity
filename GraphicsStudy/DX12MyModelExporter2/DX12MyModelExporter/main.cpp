@@ -5813,11 +5813,11 @@ void Model::SaveModelFile(string filename)
 	ofstream ofs{ filename, ios_base::binary };
 	ofs.write((char*)&mNumMeshes, sizeof(unsigned int));
 	ofs.write((char*)&nodeCount, sizeof(unsigned int));
-	
+
 	//new0
 	ofs.write((char*)&mNumTextures, sizeof(unsigned int));
 	ofs.write((char*)&mNumMaterials, sizeof(unsigned int));
-	
+
 	for (int i = 0; i < mNumMeshes; ++i) {
 		XMFLOAT3 AABB[2];
 		AABB[0] = vec4(vec4(mMeshes[i]->OBB_Tr) - vec4(mMeshes[i]->OBB_Ext)).f3;
@@ -5881,7 +5881,61 @@ void Model::SaveModelFile(string filename)
 	}
 
 	for (int i = 0; i < mNumMaterials; ++i) {
-		ofs.write((char*)mMaterials[i], sizeof(Material));
+		Material* mat = mMaterials[i];
+
+		dbglog1a("--- Saving Material Index: %d ---\n", i);
+		dbglog1a("Name: %s\n", mat->name.c_str());
+		dbglog1a("Metallic: %f\n", mat->metallicFactor);
+		dbglog1a("Roughness: %f\n", mat->roughnessFactor);
+		dbglog1a("File Offset: %d\n", (int)ofs.tellp());
+
+		char nameBuf[40] = { 0 };
+		if (!mat->name.empty()) {
+			strncpy_s(nameBuf, mat->name.c_str(), 39);
+		}
+		ofs.write(nameBuf, 40);
+
+		unsigned __int64 dummy = 0;
+		ofs.write((char*)&dummy, 8);
+
+		ofs.write((char*)&mat->clr.blending, sizeof(bool));
+		ofs.write((char*)&mat->clr.bumpscaling, sizeof(float));
+		ofs.write((char*)&mat->clr.ambient, sizeof(XMFLOAT4));
+		ofs.write((char*)&mat->clr.base, sizeof(XMFLOAT4));
+		ofs.write((char*)&mat->clr.emissive, sizeof(XMFLOAT4));
+		ofs.write((char*)&mat->clr.reflective, sizeof(XMFLOAT4));
+		ofs.write((char*)&mat->clr.specular, sizeof(XMFLOAT4));
+		ofs.write((char*)&mat->clr.transparent, sizeof(float));
+
+		ofs.write((char*)&mat->ti.Diffuse, sizeof(int));
+		ofs.write((char*)&mat->ti.Specular, sizeof(int));
+		ofs.write((char*)&mat->ti.Ambient, sizeof(int));
+		ofs.write((char*)&mat->ti.Emissive, sizeof(int));
+		ofs.write((char*)&mat->ti.Normal, sizeof(int));
+		ofs.write((char*)&mat->ti.Shineness, sizeof(int));
+		ofs.write((char*)&mat->ti.Opacity, sizeof(int));
+		ofs.write((char*)&mat->ti.LightMap, sizeof(int));
+		ofs.write((char*)&mat->ti.Reflection, sizeof(int));
+		ofs.write((char*)&mat->ti.Sheen, sizeof(int));
+		ofs.write((char*)&mat->ti.ClearCoat, sizeof(int));
+		ofs.write((char*)&mat->ti.Transmission, sizeof(int));
+		ofs.write((char*)&mat->ti.Anisotropy, sizeof(int));
+
+		ofs.write((char*)&mat->pipelineC.twosided, sizeof(bool));
+		ofs.write((char*)&mat->pipelineC.wireframe, sizeof(bool));
+		ofs.write((char*)&mat->pipelineC.TextureSementicSelector, sizeof(unsigned short));
+
+		ofs.write((char*)&mat->metallicFactor, sizeof(float));
+		ofs.write((char*)&mat->roughnessFactor, sizeof(float));
+		ofs.write((char*)&mat->shininess, sizeof(float));
+		ofs.write((char*)&mat->opacity, sizeof(float));
+		ofs.write((char*)&mat->specularFactor, sizeof(float));
+		ofs.write((char*)&mat->clearcoat_factor, sizeof(float));
+		ofs.write((char*)&mat->clearcoat_roughnessFactor, sizeof(float));
+
+		int alphaMode = (int)mat->gltf_alphaMode;
+		ofs.write((char*)&alphaMode, sizeof(int));
+		ofs.write((char*)&mat->gltf_alpha_cutoff, sizeof(float));
 	}
 
 	ofs.close();
