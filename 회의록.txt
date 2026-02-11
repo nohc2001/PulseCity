@@ -336,3 +336,22 @@
  - RayTrace 텍스쳐링과 Skin Animation 넣기 => Pulse City 아바타 한마리 WSAD로 이동
 5. 다음미팅
  - 2월 9일 월요일 오후7시
+
+2026-02-09
+-------------
+0. 결석 : 임동건 : 제주도 귀향
+1. 진행상황
+ - (X) 머신건, 스나이퍼 건 => 스나이핑 모드 없음, 머신건이 자동으로 스나이퍼로 바뀌는 버그가 있음.
+ - (X) 던전 1층 Unity에서 Export 해서 적용
+ - (X) 인던 입장 구현
+ - (X) BUG 수정 => NPC가 계속 까맣다.
+ - (X) RayTrace 텍스쳐링과 Skin Animation 넣기 => Pulse City 아바타 한마리 WSAD로 이동
+2. ToDo
+ - 머신건, 스나이퍼 건
+ - 던전 1층 Unity에서 Export 해서 적용 
+ - 인던 입장 구현 => (같은 서버 내에서 이동부터 구현)
+ - BUG 수정
+ - RayTrace 텍스쳐링과 Skin Animation 넣기 => Pulse City 아바타 한마리 WSAD로 이동
+3. 다음미팅
+ - 3월 3일 화요일 저녁 7시
+ - 
