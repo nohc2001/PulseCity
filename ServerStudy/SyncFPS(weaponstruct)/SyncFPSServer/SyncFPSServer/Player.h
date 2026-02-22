@@ -7,8 +7,6 @@
 */
 struct Player : public GameObject {
 
-	int m_currentWeaponType = 0;
-
 	//HP
 	float HP;
 	//최대HP
@@ -29,6 +27,8 @@ struct Player : public GameObject {
 	float HealSkillCooldown = 10.0f;
 	// 쿨타임 타이머
 	float HealSkillCooldownFlow = 0.0f;  
+
+	int m_currentWeaponType = 0;
 
 	//마우스가 얼마나 움직였는지를 나타낸다.
 	//<클라이언트가 해야 할 일을 서버가 하고 있다.. 고쳐야 할 필요가 있다.>

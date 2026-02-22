@@ -50,7 +50,16 @@ public:
 	Model* SniperModel = nullptr;
 
 	Model* MachineGunModel = nullptr;
+
+	Model* ShotGunModel = nullptr;
+
+	Model* RifleModel = nullptr;
+
+	Model* PistolModel = nullptr;
+
 	std::vector<int> MG_BarrelIndices;
+	std::vector<int> SG_PumpIndices;
+	std::vector<int> Pistol_SlideIndices;
 
 	// GameObject ¹è¿­
 	std::vector<GameObject*> m_gameObjects;

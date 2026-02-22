@@ -12,10 +12,6 @@ struct ModelNode;
 */
 class Player : public GameObject {
 public:
-
-	// 현재 무기 타입
-	int m_currentWeaponType = 0;
-
 	//HP
 	float HP;
 	//최대HP
@@ -36,6 +32,9 @@ public:
 	float HealSkillCooldown = 10.0f;
 	// 쿨타임 타이머
 	float HealSkillCooldownFlow = 0.0f;
+
+	// 현재 무기 타입
+	int m_currentWeaponType = 0;
 
 	//마우스가 얼마나 움직였는지를 나타낸다.
 	//<클라이언트가 해야 할 일을 서버가 하고 있다.. 고쳐야 할 필요가 있다.>
@@ -72,6 +71,10 @@ public:
 
 	float m_yaw = 0.0f;
 	float m_pitch = 0.0f;
+
+	bool  m_isZooming = false;
+	float m_currentFov = 60.0f;  // 현재 FOV
+	float m_targetFov = 60.0f;   // 목표 FOV
 
 	Player() : HP{ 100 } {
 		m_pWeapon = new Weapon(WeaponType::Sniper);

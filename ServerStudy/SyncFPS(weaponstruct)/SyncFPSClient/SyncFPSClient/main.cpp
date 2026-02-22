@@ -204,6 +204,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		break;
 		case '1':
 		case '2':
+		case '3':
+		case '4':
+		case '5':
 		{
 			if (!(lParam & (1 << 30))) {
 				char input[3] = { (char)wParam, 'D', 0 }; 

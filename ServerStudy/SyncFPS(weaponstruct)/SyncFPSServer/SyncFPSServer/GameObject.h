@@ -579,7 +579,7 @@ struct GameMap {
 	void LoadMap(const char* MapName);
 };
 
-enum class WeaponType { MachineGun, Sniper, Shotgun, Pistol, Rifle, Max };
+enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
 
 struct WeaponData {
 	WeaponType type;
@@ -592,8 +592,11 @@ struct WeaponData {
 };
 
 static WeaponData GWeaponTable[] = {
-	{ WeaponType::MachineGun, 0.1f, 5.0f, 0.2f, 10.0f, 100, 4.0f },
+	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
 	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
+	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
+	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
+	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
 	// 
 };
 

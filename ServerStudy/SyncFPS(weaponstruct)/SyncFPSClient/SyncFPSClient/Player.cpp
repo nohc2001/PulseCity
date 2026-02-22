@@ -37,6 +37,19 @@ void Player::ClientUpdate(float deltaTime)
 			float f = m_pWeapon->m_info.recoilVelocity * 10.0f * (recoilT - 0.7f) * deltaTime;
 			game.DeltaMousePos.y -= f;
 		}
+
+		if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) m_isZooming = true;
+		else m_isZooming = false;
+
+		float targetFov = 60.0f;
+		if (m_isZooming) {
+			if ((WeaponType)m_currentWeaponType == WeaponType::Sniper) targetFov = 9.0f;
+			else if ((WeaponType)m_currentWeaponType == WeaponType::Rifle) targetFov = 30.0f;
+		}
+
+		m_currentFov += (targetFov - m_currentFov) * 15.0f * deltaTime;
+		gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(m_currentFov), 
+			(float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 	}
 
 	gunMatrix_firstPersonView.Id();
@@ -48,14 +61,20 @@ void Player::ClientUpdate(float deltaTime)
 	case WeaponType::Pistol:
 	{
 		// --- ±ÇÃÑ ·ÎÁ÷ ---
-		float shootrate = powf(m_pWeapon->m_shootFlow / m_pWeapon->m_info.shootDelay, 5);
-		if (shootrate > 1.0f) shootrate = 1.0f;
+		float recoilT = m_pWeapon->GetRecoilAlpha();
 
-		gunMatrix_firstPersonView.pos.z = 0.3f + 0.2f * shootrate;
-		constexpr float RotHeight = 1.5f * 10;
+		float zOffset = 0.3f - (0.0f * powf(recoilT, 3.0f));
+		float pitchAngle = 15.0f * powf(recoilT, 2.0f);
+		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.02f * recoilT, zOffset);
 
-		if (0 <= shootrate && shootrate <= 1) {
-			gunMatrix_firstPersonView.LookAt(vec4(0, RotHeight - RotHeight * shootrate, 5) - gunMatrix_firstPersonView.pos);
+		float slideMove = -0.3f * powf(recoilT, 2.0f); 
+
+		if (game.PistolModel && !game.Pistol_SlideIndices.empty()) {
+			XMMATRIX slideTrans = XMMatrixTranslation(0, slideMove, 0);
+
+			for (int idx : game.Pistol_SlideIndices) {
+				game.PistolModel->Nodes[idx].transform = slideTrans * game.PistolModel->BindPose[idx];
+			}
 		}
 	}
 	break;
@@ -108,7 +127,64 @@ void Player::ClientUpdate(float deltaTime)
 	}
 	break;
 
+	case WeaponType::Shotgun:
+	{
+		float currentFlow = m_pWeapon->m_shootFlow;
+		float shootDelay = m_pWeapon->m_info.shootDelay;
+
+		float recoilT = m_pWeapon->GetRecoilAlpha();
+		float zOffset = 0.3f;
+		float pitchAngle = 0.0f;
+
+		if (recoilT > 0.0f) {
+			zOffset -= 0.25f * powf(recoilT, 2.0f);
+			pitchAngle = m_pWeapon->m_info.recoilVelocity * recoilT;
+		}
+		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.0f, zOffset);
+
+		float pumpZ = 0.0f;
+		float pumpStart = 0.3f;
+		float pumpEnd = 0.7f;
+
+		if (currentFlow > pumpStart && currentFlow < pumpEnd) {
+			float t = (currentFlow - pumpStart) / (pumpEnd - pumpStart);
+
+			float curve = sinf(t * XM_PI);
+
+			pumpZ = 120.0f * curve;
+		}
+
+		if (game.ShotGunModel && !game.SG_PumpIndices.empty()) {
+			XMMATRIX pumpTrans = XMMatrixTranslation(pumpZ, 0, 0);
+			for (int idx : game.SG_PumpIndices) {
+				game.ShotGunModel->Nodes[idx].transform = pumpTrans * game.ShotGunModel->BindPose[idx];
+			}
+		}
+	}
+	break;
 	
+	case WeaponType::Rifle:
+	{
+		float recoilT = m_pWeapon->GetRecoilAlpha();
+		float zOffset = 0.3f;    
+		float pitchAngle = 0.0f; 
+		float shakeX = 0.0f;     
+
+		if (recoilT > 0.0f) {
+			zOffset -= 0.07f * powf(recoilT, 1.0f);
+
+			pitchAngle = (m_pWeapon->m_info.recoilVelocity * 0.1f) * recoilT;
+
+			shakeX = sinf(recoilT * XM_PI * 1.0f) * 0.010f;
+		}
+
+		XMMATRIX rotMat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle));
+		XMMATRIX transMat = XMMatrixTranslation(shakeX, 0.0f, zOffset);
+
+		gunMatrix_firstPersonView.mat = rotMat * transMat;
+	}
+	break;
+
 	}
 
 	if (m_pWeapon->m_shootFlow < 0) {
@@ -172,7 +248,9 @@ void Player::Render_AfterDepthClear()
 		{
 		case WeaponType::Sniper:     pTargetModel = game.SniperModel; break;
 		case WeaponType::MachineGun: pTargetModel = game.MachineGunModel; break;
-		//case WeaponType::Pistol:     pTargetModel = game.GunModel; break; 
+		case WeaponType::Shotgun:     pTargetModel = game.ShotGunModel; break;
+		case WeaponType::Rifle:     pTargetModel = game.RifleModel; break;
+		case WeaponType::Pistol:     pTargetModel = game.PistolModel; break; 
 		}
 
 		if (pTargetModel) {
@@ -187,21 +265,64 @@ void Player::Render_AfterDepthClear()
 				gunmat.pos.z += 0.90f;
 				break;
 			case WeaponType::Sniper:
-				gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
-				gunmat.pos.y -= 0.40f;
-				gunmat.pos.x += 0.60f;
-				gunmat.pos.z += 1.90f;
+				if (m_isZooming && m_currentFov < 25.0f) {
+					pTargetModel = nullptr;
+				}
+				else {
+					gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+					gunmat.pos.y -= 0.40f;
+					gunmat.pos.x += 0.60f;
+					gunmat.pos.z += 1.90f;
+				}
+				break;
+			case WeaponType::Pistol:
+				gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
+				gunmat.pos.y -= 1.20f;
+				gunmat.pos.x += 1.00f;
+				gunmat.pos.z += 1.40f;
+				break;
+			case WeaponType::Rifle:
+			{
+				matrix modelFix = XMMatrixScaling(1.2f, 1.2f, 1.2f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+
+				float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f); 
+				if (zoomAlpha < 0) zoomAlpha = 0;
+				if (zoomAlpha > 1) zoomAlpha = 1;
+
+				float targetX = 0.0f;
+				float targetY = -0.35f;
+				float targetZ = 1.80f;
+
+				gunmat.pos.x += (0.90f * (1.0f - zoomAlpha)) + (targetX * zoomAlpha);
+				gunmat.pos.y -= (0.65f * (1.0f - zoomAlpha)) + (abs(targetY) * zoomAlpha);
+				gunmat.pos.z += (1.50f * (1.0f - zoomAlpha)) + (targetZ * zoomAlpha);
 				break;
 			}
-
-			gunmat *= viewmat;
-
-			if (Game::renderViewPort == &game.MySpotLight.viewport) {
-				pTargetModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
-				return; 
+			case WeaponType::Shotgun:
+			{
+				matrix modelFix = XMMatrixScaling(0.15f, 0.15f, 0.15f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+				gunmat.pos.y -= 0.70f;
+				gunmat.pos.x += 0.75f;
+				gunmat.pos.z += 1.70f;
+				break;
 			}
-			else {
-				pTargetModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderWithShadow);
+			}
+
+
+			if (pTargetModel) {
+				gunmat *= viewmat;
+
+				if (Game::renderViewPort == &game.MySpotLight.viewport) {
+					pTargetModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
+					return;
+				}
+				else {
+					pTargetModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderWithShadow);
+				}
 			}
 		}
 	}

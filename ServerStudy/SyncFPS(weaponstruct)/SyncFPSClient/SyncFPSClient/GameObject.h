@@ -295,7 +295,7 @@ struct SphereLODObject : public GameObject {
 /*
 * 설명 : 무기 타입 enum
 */
-enum class WeaponType { MachineGun, Sniper, Shotgun, Pistol, Rifle, Max };
+enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
 
 /*
 * 설명 : 무기 타입 구조체
@@ -311,8 +311,11 @@ struct WeaponData {
 };
 
 static WeaponData GWeaponTable[] = {
-	{ WeaponType::MachineGun, 0.1f, 5.0f, 0.2f, 10.0f, 100, 4.0f },
+	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
 	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
+	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
+	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
+	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
 	// 
 };
 
@@ -339,7 +342,7 @@ public:
 	}
 
 	/*
-	* 설명 : obb를 맵 청크 내에 담는다.
+	* 설명 
 	* 현재 반동이 얼마나 진행되었는지 0~1 사이 값으로 반환
 	*/
 	float GetRecoilAlpha() const {

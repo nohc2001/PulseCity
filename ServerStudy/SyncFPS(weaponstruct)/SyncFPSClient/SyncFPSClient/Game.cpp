@@ -275,6 +275,34 @@ void Game::Init()
 	game.SniperModel = new Model;
 	game.SniperModel->LoadModelFile("Resources/Model/sniper.model");
 
+	// ¶óÀÌÇÃ ¸ðµ¨ ·Îµå
+	game.RifleModel = new Model;
+	game.RifleModel->LoadModelFile("Resources/Model/Rifle.model");
+
+	// ±ÇÃÑ ¸ðµ¨ ·Îµå
+	game.PistolModel = new Model;
+	game.PistolModel->LoadModelFile("Resources/Model/pistol.model");
+	game.PistolModel->DebugPrintHierarchy(game.PistolModel->RootNode);
+
+	game.Pistol_SlideIndices.clear();
+	int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
+	if (upperIdx >= 0) {
+		game.Pistol_SlideIndices.push_back(upperIdx);
+		game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
+	}
+
+	// ¼¦°Ç ¸ðµ¨ ·Îµå
+	game.ShotGunModel = new Model;
+	game.ShotGunModel->LoadModelFile("Resources/Model/shootgun.model");
+	//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
+
+	game.SG_PumpIndices.clear();
+	int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
+	if (pumpIdx >= 0) {
+		game.SG_PumpIndices.push_back(pumpIdx);
+		game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
+	}
+
 	// ¸Ó½Å°Ç(¹Ì´Ï°Ç) ¸ðµ¨ ·Îµå
 	game.MachineGunModel = new Model;
 	game.MachineGunModel->LoadModelFile("Resources/Model/minigun.model");

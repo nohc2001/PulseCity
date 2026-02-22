@@ -223,17 +223,17 @@ void World::Init() {
 	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
 	AddClientOffset(GameObjectType::_Player, 64, 144); // pos
 
-	AddClientOffset(GameObjectType::_Player, 128, 176); // m_currentWeaponType
-	AddClientOffset(GameObjectType::_Player, 140, 188); // HP
-	AddClientOffset(GameObjectType::_Player, 144, 192); // MaxHP
+	AddClientOffset(GameObjectType::_Player, 164, 212); // m_currentWeaponType
+	AddClientOffset(GameObjectType::_Player, 128, 176); // HP
+	AddClientOffset(GameObjectType::_Player, 132, 180); // MaxHP
 
-	AddClientOffset(GameObjectType::_Player, 148, 196); // Bullets
-	AddClientOffset(GameObjectType::_Player, 152, 200); // KillCount
-	AddClientOffset(GameObjectType::_Player, 156, 204); // DeathCount
-	AddClientOffset(GameObjectType::_Player, 160, 208); // HeatGauge
-	AddClientOffset(GameObjectType::_Player, 164, 212); // MaxHeatGauge
-	AddClientOffset(GameObjectType::_Player, 168, 216); // HealSkillCooldown
-	AddClientOffset(GameObjectType::_Player, 172, 220); // HealSkillCooldownFlow
+	AddClientOffset(GameObjectType::_Player, 136, 184); // Bullets
+	AddClientOffset(GameObjectType::_Player, 140, 188); // KillCount
+	AddClientOffset(GameObjectType::_Player, 144, 192); // DeathCount
+	AddClientOffset(GameObjectType::_Player, 148, 196); // HeatGauge
+	AddClientOffset(GameObjectType::_Player, 152, 200); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 156, 204); // HealSkillCooldown
+	AddClientOffset(GameObjectType::_Player, 160, 208); // HealSkillCooldownFlow
 
 	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
 	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
@@ -250,17 +250,17 @@ void World::Init() {
 	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
 	AddClientOffset(GameObjectType::_Player, 64, 144); // pos
 
-	AddClientOffset(GameObjectType::_Player, 128, 176); // m_currentWeaponType
-	AddClientOffset(GameObjectType::_Player, 140, 188); // HP
-	AddClientOffset(GameObjectType::_Player, 144, 192); // MaxHP
+	AddClientOffset(GameObjectType::_Player, 164, 212); // m_currentWeaponType
+	AddClientOffset(GameObjectType::_Player, 128, 176); // HP
+	AddClientOffset(GameObjectType::_Player, 132, 180); // MaxHP
 
-	AddClientOffset(GameObjectType::_Player, 148, 196); // Bullets
-	AddClientOffset(GameObjectType::_Player, 152, 200); // KillCount
-	AddClientOffset(GameObjectType::_Player, 156, 204); // DeathCount
-	AddClientOffset(GameObjectType::_Player, 160, 208); // HeatGauge
-	AddClientOffset(GameObjectType::_Player, 164, 212); // MaxHeatGauge
-	AddClientOffset(GameObjectType::_Player, 168, 216); // HealSkillCooldown
-	AddClientOffset(GameObjectType::_Player, 172, 220); // HealSkillCooldownFlow
+	AddClientOffset(GameObjectType::_Player, 136, 184); // Bullets
+	AddClientOffset(GameObjectType::_Player, 140, 188); // KillCount
+	AddClientOffset(GameObjectType::_Player, 144, 192); // DeathCount
+	AddClientOffset(GameObjectType::_Player, 148, 196); // HeatGauge
+	AddClientOffset(GameObjectType::_Player, 152, 200); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 156, 204); // HealSkillCooldown
+	AddClientOffset(GameObjectType::_Player, 160, 208); // HealSkillCooldownFlow
 
 	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
 	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
@@ -612,22 +612,29 @@ int World::Receiving(int clientIndex, char* rBuffer) {
 	else {
 		if (rBuffer[1] == 'D') {
 			char key = rBuffer[0];
-			if (key == '1' || key == '2') {
-				int targetType = (key == '1') ? (int)WeaponType::Sniper : (int)WeaponType::MachineGun;
+			if (key == '1' || key == '2' || key == '3' || key == '4' || key == '5') {
 
-				if (p->m_currentWeaponType != targetType) {
-					p->m_currentWeaponType = targetType;
+				WeaponType targetType;
+				if (key == '1') targetType = WeaponType::MachineGun;
+				else if (key == '2') targetType = WeaponType::Sniper;
+				else if (key == '3') targetType = WeaponType::Shotgun;
+				else if (key == '4') targetType = WeaponType::Rifle;
+				else targetType = WeaponType::Pistol; 
+
+				if (p->m_currentWeaponType != (int)targetType) {
+					p->m_currentWeaponType = (int)targetType;
 
 					if (p->m_pWeapon) delete p->m_pWeapon;
-					p->m_pWeapon = new Weapon((WeaponType)targetType);
+					p->m_pWeapon = new Weapon(targetType);
 
 					int datacap = Sending_ChangeGameObjectMember(
 						client.objindex, p, GameObjectType::_Player,
 						&p->m_currentWeaponType, sizeof(int));
-
 					gameworld.SendToAllClient(datacap);
 
-					std::cout << "[Weapon Change] Switched to " << (key == '1' ? "Sniper" : "MachineGun") << std::endl;
+					std::cout << "[Weapon Change] Key: " << key
+						<< " -> Type: " << (int)targetType
+						<< " Damage: " << p->m_pWeapon->m_info.damage << std::endl;
 				}
 				return 2;
 			}

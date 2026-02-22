@@ -2,7 +2,7 @@
 
 #include "stdafx.h"
 
-#define FRAME_BUFFER_WIDTH 1280
+#define FRAME_BUFFER_WIDTH 1200
 #define FRAME_BUFFER_HEIGHT 720
 
 extern HINSTANCE g_hInst;
@@ -30,6 +30,9 @@ enum InputID {
 	KeyboardD = 'D',
 	Keyboard1 = '1',
 	Keyboard2 = '2',
+	Keyboard3 = '3',
+	Keyboard4 = '4',
+	Keyboard5 = '5',
 	KeyboardSpace = VK_SPACE,
 	MouseLbutton = 5,
 	MouseRbutton = 6,
