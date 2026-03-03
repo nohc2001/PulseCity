@@ -1,6 +1,6 @@
 #pragma once
 
-//#define PIX_DEBUGING
+#define PIX_DEBUGING
 
 #include <Windows.h>
 #include <d3d12.h>
@@ -724,8 +724,8 @@ struct RayTracingMesh {
 	struct Vertex {
 		XMFLOAT3 position;
 		float u;
-		XMFLOAT3 normal;
 		float v;
+		XMFLOAT3 normal;
 		XMFLOAT3 tangent;
 		float padding;
 

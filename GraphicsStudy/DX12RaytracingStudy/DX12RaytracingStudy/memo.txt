@@ -1,5 +1,44 @@
 /*
 
+레스터로 옮길 것들 
+DXC Nuget Pakage
+
+//
+
+왜 Texture가 잘 안힙혀지는가?
+//48byte (768 바이트 정렬)
+struct Vertex
+{
+    float3 position; float u;
+    float3 normal; float v;
+    float3 tangent; float extra;
+};
+버택스 포맷이 달라서 그럼.
+>> 인풋 레이아웃으로 전달하기 위해 다음과 같이 포멧을 바꾸어야 한다.
+struct Vertex
+{
+    float3 position; float u;
+    float v; float3 normal;
+    float3 tangent; float extra;
+};
+struct Vertex { 
+    float3 position; 
+    float2 uv; 
+    float3 normal; 
+    float3 tangent; 
+    float extra; 
+};
+이렇게 바꾸자.
+어디를 바꾸어야 하는가?
+0. 구조체를 바꾸기
+1. Mesh를 구성하는 코드에서 바꾸기
+2. 파이프라인 인풋 레이아웃을 바꾸기
+3. 레이트레이싱 hlsl의 코드 바꾸기
+
+백업은 해놨으니 안심하고 설계 ㄱㄱ
+
+//////////////////
+
 공부할 자료
 https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html#shader-tables
 

@@ -28,7 +28,7 @@ struct SceneConstantBuffer
 struct Vertex
 {
     float3 position; float u;
-    float3 normal; float v;
+    float v; float3 normal;
     float3 tangent; float extra;
 };
 
