@@ -248,7 +248,7 @@ void GlobalDevice::Init()
 {
 	HRESULT hr;
 #ifdef PIX_DEBUGING
-	LoadLibrary(L"C:/Program Files/Microsoft PIX/2509.25/WinPixGpuCapturer.dll");
+	LoadLibrary(L"C:/Program Files/Microsoft PIX/2601.15/WinPixGpuCapturer.dll");
 #endif
 
 	//Font Loading
@@ -335,12 +335,12 @@ void GlobalDevice::Init()
 		goto DXGI_ADAPTER_VERSION_CHECK;
 	}
 	adapter->QueryInterface(__uuidof(IDXGIAdapter3), (void**)&pd3dAdapter3);
-	if (pd3dAdapter4 != nullptr) {
+	if (pd3dAdapter3 != nullptr) {
 		adapterVersion = 3;
 		goto DXGI_ADAPTER_VERSION_CHECK;
 	}
 	adapter->QueryInterface(__uuidof(IDXGIAdapter2), (void**)&pd3dAdapter2);
-	if (pd3dAdapter4 != nullptr) {
+	if (pd3dAdapter2 != nullptr) {
 		adapterVersion = 2;
 		goto DXGI_ADAPTER_VERSION_CHECK;
 	}
@@ -3013,76 +3013,79 @@ void Game::Render() {
 
 	stackff += game.DeltaTime;
 
-	//mirror Start
-	
-	vec4 rot = vec4(0, stackff, 0, 1);
-	vec4 pos = vec4(0, 0, 0, 1);
-	for (int i = 0; i < 16; ++i) {
-		matrix mat = XMMatrixIdentity();
-		mat = XMMatrixRotationY(stackff);
-		mat.pos = MirrorPoses[i];
-		mat.pos.x += 0.03f * cosf(-stackff);
-		mat.pos.z += 0.03f * sinf(-stackff);
-		mat.transpose();
-		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &mat, 0);
-		TestMirrorMesh->Render(gd.pCommandList, 1);
-	}
-	
-	gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle, D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-
-	//mirror stencil render
-	game.MyPBRShader1->Add_RegisterShaderCommand(gd.pCommandList, Shader::ShadowRegisterEnum::RenderStencil);
-	gd.pCommandList->OMSetStencilRef(1);
-
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
-	int materialIndex = 0;
-	Material& material = game.MaterialTable[materialIndex];
-	gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
-	gd.pCommandList->SetGraphicsRootDescriptorTable(3, material.hGPU);
-	gd.pCommandList->SetGraphicsRootDescriptorTable(4, material.CB_Resource.hGpu);
-
-	for (int i = 0; i < 16; ++i) {
-		matrix mat2 = XMMatrixScaling(0.9f, 0.9f, 0.9f);
-		mat2 *= XMMatrixRotationY(stackff);
-		mat2.pos = MirrorPoses[i];
-		mat2.transpose();
-		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &mat2, 0);
-		TestMirrorMesh->Render(gd.pCommandList, 1);
-	}
-
-	gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
-
-	// render inner mirror;
-	gd.pCommandList->OMSetStencilRef(1);
-	game.MyPBRShader1->Add_RegisterShaderCommand(gd.pCommandList, Shader::ShadowRegisterEnum::RenderInnerMirror);
-
-	int selection = 0;
-	float minLen = 99999999999999;
-	for (int i = 0; i < 16; ++i) {
-		vec4 playerpos = player->m_worldMatrix.pos;
-		playerpos.w = 0;
-		float len = vec4(playerpos - MirrorPoses[i]).len3;
-		if (len < minLen) {
-			minLen = len;
-			selection = i;
+	//mirror
+	if(false)
+	{
+		//mirror Start
+		vec4 rot = vec4(0, stackff, 0, 1);
+		vec4 pos = vec4(0, 0, 0, 1);
+		for (int i = 0; i < 16; ++i) {
+			matrix mat = XMMatrixIdentity();
+			mat = XMMatrixRotationY(stackff);
+			mat.pos = MirrorPoses[i];
+			mat.pos.x += 0.03f * cosf(-stackff);
+			mat.pos.z += 0.03f * sinf(-stackff);
+			mat.transpose();
+			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &mat, 0);
+			TestMirrorMesh->Render(gd.pCommandList, 1);
 		}
+
+		gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle, D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+		//mirror stencil render
+		game.MyPBRShader1->Add_RegisterShaderCommand(gd.pCommandList, Shader::ShadowRegisterEnum::RenderStencil);
+		gd.pCommandList->OMSetStencilRef(1);
+
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
+		int materialIndex = 0;
+		Material& material = game.MaterialTable[materialIndex];
+		gd.pCommandList->SetGraphicsRootConstantBufferView(2, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
+		gd.pCommandList->SetGraphicsRootDescriptorTable(3, material.hGPU);
+		gd.pCommandList->SetGraphicsRootDescriptorTable(4, material.CB_Resource.hGpu);
+
+		for (int i = 0; i < 16; ++i) {
+			matrix mat2 = XMMatrixScaling(0.9f, 0.9f, 0.9f);
+			mat2 *= XMMatrixRotationY(stackff);
+			mat2.pos = MirrorPoses[i];
+			mat2.transpose();
+			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &mat2, 0);
+			TestMirrorMesh->Render(gd.pCommandList, 1);
+		}
+
+		gd.pCommandList->ClearDepthStencilView(d3dDsvCPUDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
+
+		// render inner mirror;
+		gd.pCommandList->OMSetStencilRef(1);
+		game.MyPBRShader1->Add_RegisterShaderCommand(gd.pCommandList, Shader::ShadowRegisterEnum::RenderInnerMirror);
+
+		int selection = 0;
+		float minLen = 99999999999999;
+		for (int i = 0; i < 16; ++i) {
+			vec4 playerpos = player->m_worldMatrix.pos;
+			playerpos.w = 0;
+			float len = vec4(playerpos - MirrorPoses[i]).len3;
+			if (len < minLen) {
+				minLen = len;
+				selection = i;
+			}
+		}
+		mirrorPlane = XMPlaneFromPointNormal(MirrorPoses[selection], vec4(cosf(stackff), 0, sinf(stackff)));
+
+		matrix reflect = XMMatrixReflect(mirrorPlane);
+		matrix sav = gd.viewportArr[0].ViewMatrix;
+		//gd.viewportArr[0].ViewMatrix = sav * reflect;
+
+		view = gd.viewportArr[0].ViewMatrix;
+		view *= gd.viewportArr[0].ProjectMatrix;
+		view.transpose();
+		gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
+		//gd.viewportArr[0].UpdateFrustum();
+
+		obj->Render_Inherit(reflect, Shader::ShadowRegisterEnum::RenderInnerMirror);
+		//gd.viewportArr[0].ViewMatrix = sav;
+		//gd.viewportArr[0].UpdateFrustum();
 	}
-	mirrorPlane = XMPlaneFromPointNormal(MirrorPoses[selection], vec4(cosf(stackff), 0, sinf(stackff)));
 	
-	matrix reflect = XMMatrixReflect(mirrorPlane);
-	matrix sav = gd.viewportArr[0].ViewMatrix;
-	//gd.viewportArr[0].ViewMatrix = sav * reflect;
-
-	view = gd.viewportArr[0].ViewMatrix;
-	view *= gd.viewportArr[0].ProjectMatrix;
-	view.transpose();
-	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
-	//gd.viewportArr[0].UpdateFrustum();
-
-	obj->Render_Inherit(reflect, Shader::ShadowRegisterEnum::RenderInnerMirror);
-	//gd.viewportArr[0].ViewMatrix = sav;
-	//gd.viewportArr[0].UpdateFrustum();
-
 	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);
 
 	matrix proj = gd.viewportArr[0].ProjectMatrix;
@@ -5895,12 +5898,14 @@ void PBRShader1::CreatePipelineState_withShadow()
 
 	//Input Asm
 	gPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	D3D12_INPUT_ELEMENT_DESC inputElementDesc[4] = {
+	D3D12_INPUT_ELEMENT_DESC inputElementDesc[5] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // pos vec3
-		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // normal vec3
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},// uv vec2
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},// uv vec2
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // normal vec3
 		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 		// float3 tangent
+		{ "EXTRA", 0, DXGI_FORMAT_R32_FLOAT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+		// float3 extra
 	};
 	gPipelineStateDesc.InputLayout.NumElements = sizeof(inputElementDesc) / sizeof(D3D12_INPUT_ELEMENT_DESC);
 	gPipelineStateDesc.InputLayout.pInputElementDescs = inputElementDesc;
