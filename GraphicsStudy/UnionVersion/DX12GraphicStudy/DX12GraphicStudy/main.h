@@ -375,7 +375,7 @@ HINSTANCE g_hInst;
 HWND hWnd;
 LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
-int resolutionLevel = 3;
+int resolutionLevel = 0;
 
 #define QUERYPERFORMANCE_HZ 10000000//Hz
 static inline ui64 GetTicks()

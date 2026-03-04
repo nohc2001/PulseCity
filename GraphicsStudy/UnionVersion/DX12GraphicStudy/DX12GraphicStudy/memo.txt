@@ -25,6 +25,23 @@ https://codeonwort.tistory.com/389
 <비동기 렌더링>
 <Raytracing 붙이기 / PBR / SkinMesh BLAS Build>
 
+오늘 내 노트북이 고장나서 강의실의 환경을 빌리고 있다.
+이제 PBR을 만들 차례다.
+그럴려면 다음과 같은 과정을 거쳐야 할 것 같다.
+
+2. 해당 LocalRootSig 가 들어가도록 hlsl 셰이더를 구성한다. (완)
+1. LocalRootSig 에 SRV, CBV 제작 (ShaderRecord에 적제한다.)
+	- 여기에서 문제는 SRV, CBV는 SVDescHeap에 있어서 나중에 위치가 옮겨질 수 있음.
+	- 결국 ShaderRecord들의 실제 데이터들을 돌아가면서 SRV, CBV 데이터를 Expend시에 이격해야 한다.
+	- 다만 결국 ShaderIdentifyer 가 어떤 해당 SRV, CBV들을 포함시킬지에 대한 여부를 결정하기 때문에..
+	- 이걸 constexpr 로 두고 나중에 바꿀 수 있게 만드는 것이 좋다.
+
+	ShaderTable에 Record들이 적제되는 원리를 찾아야 한다.
+	ShaderTable내부의 Record들은 그 크기가 동일하고 LocalRootSignature 구조도 동일한 것 같다. 
+	때문에 RaytracingShader::shaderIdentifierSize만큼 이격한 Offset들을 LRS로 보고, 그곳에서 SRV, CBV Offset을 찾아 Desc를 이격할 수 있다.
+
+///////////
+
 왜 보이지 않는지알아냈다.
 TLAS instance를 만들때 VBOffset이 이상하게 되어있다.
 그리고 그 이상한 VBOffset으로 그냥 만든다.

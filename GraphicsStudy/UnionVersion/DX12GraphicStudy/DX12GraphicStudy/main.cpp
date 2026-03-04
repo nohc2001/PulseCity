@@ -52,7 +52,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	gd.Factory_Adaptor_Output_Init();
 
 	testData.SetTestValue();
-
+	resolutionLevel = (int)((float)gd.EnableFullScreenMode_Resolusions.size() * 0.75f);
 	gd.ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
 	gd.ClientFrameHeight = gd.EnableFullScreenMode_Resolusions[resolutionLevel].height;
 	
