@@ -9,6 +9,7 @@
 #include <mutex>
 #include <conio.h>
 #include <sstream>
+#include "vecset.h"
 
 #pragma comment(lib, "ws2_32")
 
@@ -25,7 +26,7 @@ static inline int64_t GetTicks()
 }
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
-constexpr int clientCount = 1023;
+constexpr int clientCount = 2047;
 struct Client {
 	float x = 0;
 	float y = 0;
@@ -79,7 +80,7 @@ struct SOCKETINFO {
 	int rbuf_offset = 0;
 };
 int nTotalSockets = 0;
-SOCKETINFO* SocketInfoArray[clientCount + 1];
+vecset<SOCKETINFO> SocketInfoArray;//[clientCount + 1];
 
 stringstream  serverLog;
 
@@ -88,7 +89,8 @@ bool AddSocketInfo(SOCKET sock) {
 		serverLog << "cannot add client socket cause sock max number in selectmodel" << endl;
 		return false;
 	}
-	SOCKETINFO* ptr = new SOCKETINFO;
+	int newindex = SocketInfoArray.Alloc();
+	SOCKETINFO* ptr = &SocketInfoArray[newindex];
 	if (ptr == NULL) {
 		serverLog << "memeory starvation." << endl;
 		return false;
@@ -97,12 +99,12 @@ bool AddSocketInfo(SOCKET sock) {
 	ptr->sock = sock;
 	ptr->recvbytes = 0;
 	ptr->sendbytes = 0;
-	SocketInfoArray[nTotalSockets++] = ptr;
 	return true;
 }
 
 void RemoveSocketInfo(int nindex) {
-	SOCKETINFO* ptr = SocketInfoArray[nindex];
+	SocketInfoArray.Free(nindex);
+	SOCKETINFO* ptr = &SocketInfoArray[nindex];
 
 	struct sockaddr_in clientaddr;
 	int addrlen = sizeof(clientaddr);
@@ -110,10 +112,9 @@ void RemoveSocketInfo(int nindex) {
 
 	char addr[INET_ADDRSTRLEN] = {};
 	inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-	serverLog << "[TCP 서버] 클라이언트 종료 : IP주소 = " << addr << ", 포트번호 = " << ntohs(clientaddr.sin_port) << endl;
+	serverLog << "[TCP 서버] 클라이언트 종료 : IP주소 = " << addr << ", 포트번호 = " << ntohs(clientaddr.sin_port) << "\n";
 
 	closesocket(ptr->sock);
-	delete ptr;
 
 	if (nindex != nTotalSockets - 1) {
 		SocketInfoArray[nindex] = SocketInfoArray[nTotalSockets - 1];
@@ -127,6 +128,7 @@ constexpr int SelectSetCount = ((clientCount) >> 6) + 1;
 fd_set rset[SelectSetCount], wset[SelectSetCount];
 
 int main() {
+	SocketInfoArray.Init(clientCount + 1);
 	Commonly_send_data.reserve(BUFSIZ);
 
 	cout << "Initialize WinSock...";
@@ -198,8 +200,14 @@ int main() {
 		int64_t deltaft = GetTicks();
 		float deltaTime = (double)(deltaft - DeltaTick) / (double)(QUERYPERFORMANCE_HZ);
 		char data[12];
-		for (int i = 0; i < nTotalSockets; ++i) {
-			SocketInfoArray[i]->clientdata.Update(deltaTime);
+
+		indexRange irange[(clientCount+1) / 2];
+		int outlen = 0;
+		SocketInfoArray.GetTourPairs(irange, &outlen);
+		for (int i = 0; i < outlen; ++i) {
+			for (int k = irange[i].start; k <= irange[i].end; ++k) {
+				SocketInfoArray[k].clientdata.Update(deltaTime);
+			}
 		}
 		DeltaTick = deltaft;
 
@@ -212,34 +220,25 @@ int main() {
 
 		stack += 1;
 		stack = stack & 1;
-		for (int i = 0; i < nTotalSockets; ++i) {
-			int setindex = ((i + 1) >> 6);
 
-			if (StackTime > 0.05f) {
-				*(int*)&data = i;
-				*(float*)&data[sizeof(int)] = SocketInfoArray[i]->clientdata.x;
-				*(float*)&data[sizeof(int) + sizeof(float)] = SocketInfoArray[i]->clientdata.y;
-				Client::CommonSend(data, 12);
+		for (int k = 0; k < outlen; ++k) {
+			for (int i = irange[k].start; i <= irange[k].end; ++i) {
+				int setindex = ((i + 1) >> 6);
+
+				if (StackTime > 0.05f) {
+					*(int*)&data = i;
+					*(float*)&data[sizeof(int)] = SocketInfoArray[i].clientdata.x;
+					*(float*)&data[sizeof(int) + sizeof(float)] = SocketInfoArray[i].clientdata.y;
+					Client::CommonSend(data, 12);
 #ifdef VAR_INITSET
-				FD_SET(SocketInfoArray[i]->sock, &wset[setindex]);
+					FD_SET(SocketInfoArray[i].sock, &wset[setindex]);
+#endif
+				}
+
+#ifdef VAR_INITSET
+				FD_SET(SocketInfoArray[i].sock, &rset[setindex]);
 #endif
 			}
-
-#ifdef VAR_INITSET
-			FD_SET(SocketInfoArray[i]->sock, &rset[setindex]);
-#endif
-			/*if (stack) {
-				FD_SET(SocketInfoArray[i]->sock, &wset);
-			}
-			else {
-				FD_SET(SocketInfoArray[i]->sock, &rset);
-			}*/
-			/*if (SocketInfoArray[i]->recvbytes > SocketInfoArray[i]->sendbytes) {
-				FD_SET(SocketInfoArray[i]->sock, &wset);
-			}
-			else {
-				FD_SET(SocketInfoArray[i]->sock, &rset);
-			}*/
 		}
 		if (StackTime > 0.05f) {
 			StackTime = 0;
@@ -274,123 +273,123 @@ int main() {
 			if (--nready <= 0) continue;
 		}
 
+		for (int k = 0; k < outlen; ++k) {
+			for (int i = irange[k].start; i <= irange[k].end; ++i) {
+				int setindex = ((i + 1) >> 6);
+				SOCKETINFO* ptr = &SocketInfoArray[i];
+				if (FD_ISSET(ptr->sock, &rset[setindex])) {
+					//recv data
+				Recv_Again:
+					int retval = recv(ptr->sock, &ptr->buf[ptr->rbuf_offset], BUFSIZ - (ptr->rbuf_offset), 0);
 
-		for (int i = 0; i < nTotalSockets; ++i) {
-			int setindex = ((i + 1) >> 6);
-			SOCKETINFO* ptr = SocketInfoArray[i];
-			if (FD_ISSET(ptr->sock, &rset[setindex])) {
-				//recv data
-			Recv_Again:
-				int retval = recv(ptr->sock, &ptr->buf[ptr->rbuf_offset], BUFSIZ - (ptr->rbuf_offset), 0);
-
-				if (retval == SOCKET_ERROR) {
-					if (WSAGetLastError() == WSAEWOULDBLOCK) {
-						goto END_RECV;
+					if (retval == SOCKET_ERROR) {
+						if (WSAGetLastError() == WSAEWOULDBLOCK) {
+							goto END_RECV;
+						}
+						else {
+							goto Recv_Again;
+						}
+					}
+					else if (retval == 0) { // normal exit.
+						RemoveSocketInfo(i);
+						continue;
 					}
 					else {
-						goto Recv_Again;
-					}
-				}
-				else if (retval == 0) { // normal exit.
-					RemoveSocketInfo(i);
-					continue;
-				}
-				else {
-					retval += ptr->rbuf_offset;
-					ptr->recvbytes = retval;
-					addrlen = sizeof(clientaddr);
-					getpeername(ptr->sock, (sockaddr*)&clientaddr, &addrlen);
-					ptr->buf[ptr->recvbytes] = 0;
-					char addr[INET_ADDRSTRLEN] = {};
-					inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-					serverLog << "[TCP/" << addr << ":" << ntohs(clientaddr.sin_port) << "] : ";
+						retval += ptr->rbuf_offset;
+						ptr->recvbytes = retval;
+						addrlen = sizeof(clientaddr);
+						getpeername(ptr->sock, (sockaddr*)&clientaddr, &addrlen);
+						ptr->buf[ptr->recvbytes] = 0;
+						char addr[INET_ADDRSTRLEN] = {};
+						inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
+						serverLog << "[TCP/" << addr << ":" << ntohs(clientaddr.sin_port) << "] : ";
 
-					if (retval >= 10) errorCount += 1;
+						if (retval >= 10) errorCount += 1;
 
-					int sro = 0;
-					int ro = 0;
-					for (; ro + 2 < retval; ro += 2) {
-						char key = *(char*)&ptr->buf[ro];
-						bool isdown = ('D' == *(char*)&ptr->buf[ro + sizeof(char)]);
-						char isdownC = *(char*)&ptr->buf[ro + sizeof(char)];
-						serverLog << key << isdownC;
-						switch (key) {
-						case 'W':
-							ptr->clientdata.W = isdown;
-							break;
-						case 'S':
-							ptr->clientdata.S = isdown;
-							break;
-						case 'A':
-							ptr->clientdata.A = isdown;
-							break;
-						case 'D':
-							ptr->clientdata.D = isdown;
-							break;
+						int sro = 0;
+						int ro = 0;
+						for (; ro + 2 < retval; ro += 2) {
+							char key = *(char*)&ptr->buf[ro];
+							bool isdown = ('D' == *(char*)&ptr->buf[ro + sizeof(char)]);
+							char isdownC = *(char*)&ptr->buf[ro + sizeof(char)];
+							serverLog << key << isdownC;
+							switch (key) {
+							case 'W':
+								ptr->clientdata.W = isdown;
+								break;
+							case 'S':
+								ptr->clientdata.S = isdown;
+								break;
+							case 'A':
+								ptr->clientdata.A = isdown;
+								break;
+							case 'D':
+								ptr->clientdata.D = isdown;
+								break;
+							}
 						}
-					}
-					sro = ro;
-					if (sro != retval) {
-						int remain_len = retval - sro;
-						for (int copyi = 0; copyi < remain_len; ++copyi) {
-							ptr->buf[copyi] = ptr->buf[sro + copyi];
+						sro = ro;
+						if (sro != retval) {
+							int remain_len = retval - sro;
+							for (int copyi = 0; copyi < remain_len; ++copyi) {
+								ptr->buf[copyi] = ptr->buf[sro + copyi];
+							}
+							ptr->rbuf_offset = remain_len;
 						}
-						ptr->rbuf_offset = remain_len;
+						else ptr->rbuf_offset = 0;
+						serverLog << endl;
 					}
-					else ptr->rbuf_offset = 0;
-					serverLog << endl;
+					goto Recv_Again;
 				}
-				goto Recv_Again;
-			}
 
-		END_RECV:
+			END_RECV:
 
-			if (FD_ISSET(ptr->sock, &wset[setindex])) {
+				if (FD_ISSET(ptr->sock, &wset[setindex])) {
 
-				//Commonly Send Data
-				if (Commonly_send_data.size() != 0) {
-					int k = 0;
-					for (; k + BUFSIZ < Commonly_send_data.size(); k += BUFSIZ) {
+					//Commonly Send Data
+					if (Commonly_send_data.size() != 0) {
+						int k = 0;
+						for (; k + BUFSIZ < Commonly_send_data.size(); k += BUFSIZ) {
+							char* buf = Commonly_send_data.data() + k;
+						common_Send_Again_inloop:
+							retval = send(ptr->sock, buf, BUFSIZ, 0);
+							if (retval == SOCKET_ERROR) {
+								goto common_Send_Again_inloop;
+							}
+						}
+						int len = Commonly_send_data.size() & (BUFSIZ - 1);
 						char* buf = Commonly_send_data.data() + k;
-					common_Send_Again_inloop:
-						retval = send(ptr->sock, buf, BUFSIZ, 0);
+					common_Send_Again:
+						retval = send(ptr->sock, buf, len, 0);
 						if (retval == SOCKET_ERROR) {
-							goto common_Send_Again_inloop;
+							goto common_Send_Again;
 						}
 					}
-					int len = Commonly_send_data.size() & (BUFSIZ - 1);
-					char* buf = Commonly_send_data.data() + k;
-				common_Send_Again:
-					retval = send(ptr->sock, buf, len, 0);
-					if (retval == SOCKET_ERROR) {
-						goto common_Send_Again;
-					}
-				}
 
 
-				//personal Send Data
-				if (ptr->clientdata.wbuf.size() != 0) {
-					int k = 0;
-					for (; k + BUFSIZ < ptr->clientdata.wbuf.size(); k += BUFSIZ) {
-						char* buf = ptr->clientdata.wbuf.data() + k;
-					Send_Again_inloop:
-						retval = send(ptr->sock, buf, BUFSIZ, 0);
-						if (retval == SOCKET_ERROR) {
-							goto Send_Again_inloop;
+					//personal Send Data
+					if (ptr->clientdata.wbuf.size() != 0) {
+						int k = 0;
+						for (; k + BUFSIZ < ptr->clientdata.wbuf.size(); k += BUFSIZ) {
+							char* buf = ptr->clientdata.wbuf.data() + k;
+						Send_Again_inloop:
+							retval = send(ptr->sock, buf, BUFSIZ, 0);
+							if (retval == SOCKET_ERROR) {
+								goto Send_Again_inloop;
+							}
 						}
+						int len2 = ptr->clientdata.wbuf.size() & (BUFSIZ - 1);
+						char* buf2 = ptr->clientdata.wbuf.data() + k;
+					Send_Again:
+						retval = send(ptr->sock, buf2, len2, 0);
+						if (retval == SOCKET_ERROR) {
+							goto Send_Again;
+						}
+						ptr->clientdata.wbuf.clear();
 					}
-					int len2 = ptr->clientdata.wbuf.size() & (BUFSIZ - 1);
-					char* buf2 = ptr->clientdata.wbuf.data() + k;
-				Send_Again:
-					retval = send(ptr->sock, buf2, len2, 0);
-					if (retval == SOCKET_ERROR) {
-						goto Send_Again;
-					}
-					ptr->clientdata.wbuf.clear();
 				}
 			}
 		}
-
 		Commonly_send_data.clear();
 
 		int64_t et = GetTicks();

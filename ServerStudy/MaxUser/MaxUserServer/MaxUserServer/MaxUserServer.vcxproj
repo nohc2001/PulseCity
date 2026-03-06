@@ -133,6 +133,12 @@
     </ClCompile>
     <ClCompile Include="select.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="memo.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="vecset.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
