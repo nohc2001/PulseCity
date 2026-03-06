@@ -1,0 +1,52 @@
+문제중 하나임.
+Select Model
+	- 단점은 한 스레드에서 여러 유저를 돌리려면 
+	(유저수 / 64) 개의 fd_set을 일일히 select. 
+	- 아마 순수한 작동시간은 빠르겠지만, 
+	- select호출때마다 syscall.
+Poll Model
+	- 스레드당 입력 출력 무제한 이긴 한데, 
+	- 타임아웃 정밀도 떨어짐.
+IOCP Model
+	- Core 개수만큼 스레드 설정 + affinity 설정 필요.
+	- 각 Core들이 Completion Queue 에서 
+	- 완료된 입력들을 읽을 수 있다. 
+	- 때문에 스레드 깨우고 재우는 것 때문에 딜레이가 잘 안생김. 걱정 ㄴㄴ
+	- 내부적으로 LockFree (Stack + Queue 방식 구현?)
+	- IOCP 동작 과정
+		1. 서버 초기화 할때, 코어개수만큼 스레드 만들고 어피니티, 프라이오리티 설정.
+		2. CreateIoCompletionPort로 서버의 포트 설정
+		3. listen - accept 로 클라이언트 접속을 받아서 
+		 - CreateIoCompletionPort함수 호출 + 유저 정보를 CompletionKey로 넘겨야 한다.
+		 - 또한 WSARecv를 호출하여 이 소켓에 데이터가 오면 큐에 쓰고 알려줘! 신호 보내기
+		4. WorkerThread가 동작하면서 GetQueuedCompletionStatus을 호출하여 입력을 받는다.
+		 - 
+>> 셋다 해보자. >> 오늘안에..
+
+>> IOCP가 더 빠른지 느린지는 실험이 필요.
+>> MaxUser 에서 시험하자.
+MaxUser
+>> 동접 성능 테스트도 가능하나,
+>> 추가적으로 접속 / 연결종료 처리도 실시간으로 이루어 지면 좋겠다. (안정성)
+
+SyncFPS
+main
+>> 문제점. 주석 처리가 애매하고 동작을 한눈에 보기 어려움.
+1. 오프셋 출력
+2. 소켓 생성
+	- recv buffer  2page
+3. 리스닝 소켓으로 논블럭킹 설정
+4. 게임 초기화 (game.Init)
+5. gameloop
+	5-1. DeltaFlow가 0.016 이상일시 게임업데이트
+	5-2. Poll을 위해 pushback 들을 함. >> select 보단 성능이 좋다고 함.
+	접속처리
+		#define MAX_PLAYER 1024
+		vecset<twoPage> recvBufferPool; >> 이걸로 new 지우셈.
+	성능상 결국 어디가 병목인지 알아보기 위해서는 시간을 재는게 좋다.
+	다만 지금은 안정성 이야기를 하고 있음. 그럼 일단 돌려보는 것도 좋음.
+		
+
+SyncFPS 실험할 것들.
+ 1. 무작위 시간동안 접속하고 이동하는 사용자 시뮬레이션. - 어디까지 버팀?
+ 2. 

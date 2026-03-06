@@ -25,7 +25,7 @@ static inline int64_t GetTicks()
 }
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
-constexpr int clientCount = 511;
+constexpr int clientCount = 1023;
 struct Client {
 	float x = 0;
 	float y = 0;

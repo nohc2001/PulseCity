@@ -53,6 +53,12 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	// sus 버전에 따라 안될 수 있으니 예외처리 필요.
 	hr = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory4), (void
 		**)&pFactory);
+	if (FAILED(hr)) hr = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory3), (void
+		**)&pFactory);
+	if (FAILED(hr)) hr = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory2), (void
+		**)&pFactory);
+	if (FAILED(hr)) hr = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory1), (void
+		**)&pFactory);
 	if (FAILED(hr)) {
 		OutputDebugStringA("[ERROR] : Create Factory Error.\n");
 		return;
@@ -113,7 +119,7 @@ void GlobalDevice::Init()
 	};
 
 	IDXGIAdapter1* pd3dAdapter1 = NULL;
-	for (int i = 0; i < 11; ++i) {
+	for (int k = 0; k < 11; ++k) {
 		// Find GPU that support DirectX 12_2
 		for (UINT i = 0; DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(i, &pd3dAdapter1); i++)
 		{
@@ -122,7 +128,7 @@ void GlobalDevice::Init()
 			pd3dAdapter1->GetDesc1(&dxgiAdapterDesc);
 			pd3dAdapter1->QueryInterface(__uuidof(IDXGIAdapter4), (void**)&pd3dAdapter4);
 			if (dxgiAdapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
-			if (SUCCEEDED(D3D12CreateDevice(pd3dAdapter4, FeatureLevelPriority[i],
+			if (SUCCEEDED(D3D12CreateDevice(pd3dAdapter4, FeatureLevelPriority[k],
 				_uuidof(ID3D12Device), (void**)&pDevice))) {
 
 				pd3dAdapter4->Release();

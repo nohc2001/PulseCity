@@ -36,6 +36,7 @@ int main() {
 			DeltaFlow = 0;
 		}
 
+		// fix : vector 의 공간 할당이 매 프레임마다 있다. 개느릴듯.
 		readFds.reserve(gameworld.clients.size + 1);
 		readFds.clear();
 
@@ -43,7 +44,7 @@ int main() {
 		item2.m_pollfd.events = POLLRDNORM;
 		item2.m_pollfd.fd = listenSocket.m_fd;
 		item2.m_pollfd.revents = 0;
-		readFds.push_back(item2); // first is listen socket.
+		readFds.push_back(item2); // 0번째에 리슨소켓
 		for (int i = 0; i < gameworld.clients.size; ++i)
 		{
 			PollFD item;
@@ -57,11 +58,12 @@ int main() {
 		Poll(readFds.data(), (int)readFds.size(), 50);
 
 		int num = 0;
+		constexpr int listenSockIndex = 0;
 		for (auto readFd : readFds)
 		{
 			if (readFd.m_pollfd.revents != 0)
 			{
-				if (num == 0) {
+				if (num == listenSockIndex) {
 					// 4
 					Socket tcpConnection;
 					string ignore;
@@ -73,6 +75,7 @@ int main() {
 						gameworld.clients[newindex].socket.SetNonblocking();
 						if (gameworld.clients[newindex].socket.m_receiveBuffer == nullptr) {
 							gameworld.clients[newindex].socket.SetReceiveBuffer(new twoPage, 4096 * 2);
+							// new에도 syscall이 든다. 이걸 줄이기 위해 메모리 풀을 사용하자.
 						}
 
 						// player index sending

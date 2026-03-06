@@ -40,7 +40,7 @@ static inline int64_t GetTicks()
 //#define VAR_RECVSKIP
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
-constexpr int clientCount = 511;
+constexpr int clientCount = 1023;
 SOCKET sock[clientCount] = {};
 
 //c++ 렌덤엔진
