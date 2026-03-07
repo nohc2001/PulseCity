@@ -26,7 +26,7 @@ static inline int64_t GetTicks()
 }
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
-constexpr int clientCount = 2047;
+constexpr int clientCount = 511;
 struct Client {
 	float x = 0;
 	float y = 0;
@@ -99,13 +99,23 @@ bool AddSocketInfo(SOCKET sock) {
 	ptr->sock = sock;
 	ptr->recvbytes = 0;
 	ptr->sendbytes = 0;
+
+	struct sockaddr_in clientaddr;
+	int addrlen = sizeof(clientaddr);
+	getpeername(ptr->sock, (sockaddr*)&clientaddr, &addrlen);
+
+	char addr[INET_ADDRSTRLEN] = {};
+	inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
+	serverLog << "[TCP 서버] 클라이언트 접속 : IP주소 = " << addr << ", 포트번호 = " << ntohs(clientaddr.sin_port) << "\n";
 	return true;
 }
 
 void RemoveSocketInfo(int nindex) {
 	SocketInfoArray.Free(nindex);
 	SOCKETINFO* ptr = &SocketInfoArray[nindex];
-
+	ptr->clientdata.wbuf.clear(); ptr->rbuf_offset = 0;
+	ptr->recvbytes = 0;
+	ptr->sendbytes = 0;
 	struct sockaddr_in clientaddr;
 	int addrlen = sizeof(clientaddr);
 	getpeername(ptr->sock, (sockaddr*)&clientaddr, &addrlen);
@@ -116,10 +126,10 @@ void RemoveSocketInfo(int nindex) {
 
 	closesocket(ptr->sock);
 
-	if (nindex != nTotalSockets - 1) {
-		SocketInfoArray[nindex] = SocketInfoArray[nTotalSockets - 1];
-		--nTotalSockets;
-	}
+	//if (nindex != nTotalSockets - 1) {
+	//	SocketInfoArray[nindex] = SocketInfoArray[nTotalSockets - 1];
+	//	--nTotalSockets;
+	//}
 }
 
 #define VAR_INITSET
@@ -276,6 +286,7 @@ int main() {
 		for (int k = 0; k < outlen; ++k) {
 			for (int i = irange[k].start; i <= irange[k].end; ++i) {
 				int setindex = ((i + 1) >> 6);
+				bool isContinue = false;
 				SOCKETINFO* ptr = &SocketInfoArray[i];
 				if (FD_ISSET(ptr->sock, &rset[setindex])) {
 					//recv data
@@ -287,7 +298,9 @@ int main() {
 							goto END_RECV;
 						}
 						else {
-							goto Recv_Again;
+							RemoveSocketInfo(i);
+							goto END_RECV;
+							//goto Recv_Again;
 						}
 					}
 					else if (retval == 0) { // normal exit.
@@ -345,7 +358,6 @@ int main() {
 			END_RECV:
 
 				if (FD_ISSET(ptr->sock, &wset[setindex])) {
-
 					//Commonly Send Data
 					if (Commonly_send_data.size() != 0) {
 						int k = 0;
@@ -354,7 +366,18 @@ int main() {
 						common_Send_Again_inloop:
 							retval = send(ptr->sock, buf, BUFSIZ, 0);
 							if (retval == SOCKET_ERROR) {
-								goto common_Send_Again_inloop;
+								if (WSAGetLastError() == WSAEWOULDBLOCK) {
+									goto common_Send_END;
+								}
+								else {
+									// 클라이언트가 강제종료를 한 상황.
+									RemoveSocketInfo(i);
+									isContinue = true;
+									goto common_Send_END;
+								}
+							}
+							else if (retval != BUFSIZ) {
+								__debugbreak();
 							}
 						}
 						int len = Commonly_send_data.size() & (BUFSIZ - 1);
@@ -362,20 +385,47 @@ int main() {
 					common_Send_Again:
 						retval = send(ptr->sock, buf, len, 0);
 						if (retval == SOCKET_ERROR) {
+							if (WSAGetLastError() == WSAEWOULDBLOCK) {
+								goto common_Send_END;
+							}
+							else {
+								// 클라이언트가 강제종료를 한 상황.
+								RemoveSocketInfo(i);
+								isContinue = true;
+								continue;
+							}
 							goto common_Send_Again;
 						}
+						else if (retval != len) {
+							__debugbreak();
+						}
 					}
-
+				common_Send_END:
+					if (isContinue)
+						continue;
 
 					//personal Send Data
-					if (ptr->clientdata.wbuf.size() != 0) {
+					if (ptr->clientdata.wbuf.size() != 0)
+					{
 						int k = 0;
 						for (; k + BUFSIZ < ptr->clientdata.wbuf.size(); k += BUFSIZ) {
 							char* buf = ptr->clientdata.wbuf.data() + k;
 						Send_Again_inloop:
 							retval = send(ptr->sock, buf, BUFSIZ, 0);
 							if (retval == SOCKET_ERROR) {
-								goto Send_Again_inloop;
+								if (WSAGetLastError() == WSAEWOULDBLOCK) {
+									goto Send_END;
+								}
+								else {
+									// 클라이언트가 강제종료를 한 상황.
+									RemoveSocketInfo(i);
+									isContinue = true;
+									goto Send_END;
+								}
+								//goto Send_Again_inloop;
+							}
+							else if (retval != BUFSIZ) {
+								__debugbreak();
 							}
 						}
 						int len2 = ptr->clientdata.wbuf.size() & (BUFSIZ - 1);
@@ -383,10 +433,25 @@ int main() {
 					Send_Again:
 						retval = send(ptr->sock, buf2, len2, 0);
 						if (retval == SOCKET_ERROR) {
+							if (WSAGetLastError() == WSAEWOULDBLOCK) {
+								goto Send_END;
+							}
+							else {
+								// 클라이언트가 강제종료를 한 상황.
+								RemoveSocketInfo(i);
+								isContinue = true;
+								continue;
+							}
 							goto Send_Again;
+						}
+						else if (retval != len2) {
+							__debugbreak();
 						}
 						ptr->clientdata.wbuf.clear();
 					}
+				Send_END:
+					if (isContinue)
+						continue;
 				}
 			}
 		}

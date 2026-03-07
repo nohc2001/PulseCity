@@ -17,6 +17,24 @@ char* SERVERIP = (char*)"127.0.0.1";
 #define SERVERPORT 9000
 #define BUFSIZE    512
 
+constexpr bool isdebug = true;
+int dbgc[128] = {};
+__forceinline void dbgbreak(bool condition) {
+	if constexpr (isdebug) {
+		if (condition) {
+			__debugbreak();
+		}
+	}
+}
+enum edbg {
+	ConnectFailedCount = 0,
+	NWErrorWhenRecvFromServer = 1,
+	ConnectedCountImmediate = 2,
+	UserShutDown = 3,
+	ConnectedCountDelayed = 4,
+	DataCombineError = 5,
+};
+
 void err_display(const char* msg) {
 	//cout << "last window error code : " << WSAGetLastError() << endl;
 	char* errorMessageBuffer = nullptr;
@@ -42,7 +60,7 @@ static inline int64_t GetTicks()
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
 // 시뮬레이션할 클라이언트 개수
-constexpr int clientCount = 2047;
+constexpr int clientCount = 511;
 // 해당 클라이언트 만큼의 소켓 영역 할당.
 vecset<SOCKET> sock = {};
 
@@ -62,14 +80,20 @@ float randomRangef(float min, float max) {
 	return min + r * (max - min) / 1000000.0f;
 }
 
+enum ConnectState {
+	Trying = 0,
+	Connected = 1
+};
+
 // 클라이언트의 정보를 나타내는 상태
+// 그냥 컴퓨터 하나라고 보면 됨.
 struct ClientState {
 	//위치
 	float x;
 	float y;
 
 	// 데이터 통신에 사용할 변수
-	char rbuf[BUFSIZE + 1];
+	char rbuf[BUFSIZE];
 	vector<char> wbuf;
 	// 잘린 데이터 복원에 사용되기 위해 사용됨.
 	int rbuf_offset = 0;
@@ -87,21 +111,28 @@ struct ClientState {
 
 	// 현재 클라이언트가 서버와 연결되었는지의 여부
 	int sockindex = 0;
+	float playtime = 0;
+	ConnectState connectState = Trying;
 	bool isConnectToServer = true;
 
 	__forceinline void ConnetToServer() {
-		int newindex = sock.Alloc();
+		rbuf_offset = 0;
+		ZeroMemory(rbuf, BUFSIZ);
+		wbuf.clear();
+		sockindex  = sock.Alloc();
+		playtime = 0;
 
 		// 소켓 생성
 		u_long on = 1;
-		sock[newindex] = socket(AF_INET, SOCK_STREAM, 0);
-		if (sock[newindex] == INVALID_SOCKET) err_quit("socket()");
+		sock[sockindex] = socket(AF_INET, SOCK_STREAM, 0);
+		if (sock[sockindex] == INVALID_SOCKET) err_quit("socket()");
 
 		// 넌블럭킹 모드 설정
 		u_long mode = 1;  // 0 = blocking, 1 = non-blocking
-		int result = ioctlsocket(sock[newindex], FIONBIO, &mode);
+		int result = ioctlsocket(sock[sockindex], FIONBIO, &mode);
 		if (result != NO_ERROR) {
 			std::cerr << "ioctlsocket() failed\n";
+			DisConnectToServer();
 			return;
 		}
 
@@ -111,15 +142,28 @@ struct ClientState {
 		serveraddr.sin_family = AF_INET;
 		inet_pton(AF_INET, SERVERIP, &serveraddr.sin_addr);
 		serveraddr.sin_port = htons(SERVERPORT);
-		int retval = connect(sock[newindex], (struct sockaddr*)&serveraddr, sizeof(serveraddr));
-		if (retval < 0 && errno != EINPROGRESS) {
-			perror("connect failed");
+		int retval = connect(sock[sockindex], (struct sockaddr*)&serveraddr, sizeof(serveraddr));
+		int error = WSAGetLastError();
+		if (retval < 0 && error != WSAEWOULDBLOCK) {
+			//perror("connect failed");
+			DisConnectToServer();
+			dbgc[edbg::ConnectFailedCount] += 1;
+			return;
 		}
-		sockindex = newindex;
+		else if (retval < 0 && errno == EINPROGRESS) {
+			connectState = Trying;
+		}
+		else {
+			connectState = Connected;
+		}
+		dbgc[edbg::ConnectedCountImmediate] += 1;
 		isConnectToServer = true;
 	}
 
 	__forceinline void DisConnectToServer() {
+		rbuf_offset = 0;
+		wbuf.clear();
+		ZeroMemory(rbuf, BUFSIZ);
 		isConnectToServer = false;
 		sock.Free(sockindex);
 		closesocket(sock[sockindex]);
@@ -142,6 +186,7 @@ struct ClientState {
 
 	//플레이어 판단 로직
 	void Decide() {
+		
 		if ((W & 1) == 1) W += 1;
 		W = W & 3;
 		if ((A & 1) == 1) A += 1;
@@ -153,6 +198,9 @@ struct ClientState {
 
 		int64_t ft = GetTicks();
 		flow -= (ft - lastTick);
+		unsigned int del = (unsigned int)(ft - lastTick);
+		float deltaTime = (float)((double)del / (double)QUERYPERFORMANCE_HZ);
+		playtime += deltaTime;
 		if (flow <= 0) {
 			flow = (float)delay * randomRangef(0.5f, 2.0f);
 			if (randomRangef(0, 100.0f) < 10.0f) {
@@ -222,42 +270,61 @@ int main(int argc, char* argv[])
 	while (1) {
 		// 보여지는 페이지 넘기기
 		if (_kbhit()) {
-			coutPage += 1;
-			if (coutPage * 64 > clientCount) coutPage = 0;
-			_getch();
+			char c = _getch();
+			if (c == 'E' || c == 'e') {
+				coutPage += 1;
+				if (coutPage * 64 > clientCount) coutPage = 0;
+			}
+			else if (c == 'C' || c == 'c') {
+				system("cls");
+			}
 		}
 
-		SetIndexd = 0;
+		SetIndexd = -SetIndexInc;
 		COORD pos = { 0, 0 }; // (x=0, y=0) 좌표
 		SetConsoleCursorPosition(hConsole, pos);
 		cout << fixed << setprecision(2);
-
 		for (int i = 0; i < clientCount; ++i) {
 			ClientState& client = clientStateArr[i];
+			SetIndexd += SetIndexInc;
 
-			// 클라이언트가 접속상태를 2퍼센트로 바꾼다.
-			if (client.isConnectToServer == false)
-			{
-				if (rand() % 100 <= 1) {
-					client.ConnetToServer();
+			if (client.isConnectToServer == true && client.connectState == Connected) {
+				// 클라이언트 정보 적제 syscall 아님.
+				int setIndex = (int)SetIndexd;
+				if (setIndex == coutPage) {
+					cout << "pos " << i << " : \t(" << client.x << ", " << client.y;
+					if ((i & 3) == 3) cout << ")\n";
+					else cout << ")\t";
 				}
-				continue;
-			}
-			else {
-				if (rand() % 100 <= 1) {
+
+				if (rand() % 10000 <= (int)client.playtime && client.playtime > 5.0f) {
 					client.DisConnectToServer();
+					dbgc[edbg::UserShutDown] += 1;
+					//dbgbreak(dbgc[edbg::UserShutDown] > 100);
+					SetIndexd += SetIndexInc;
 					continue;
 				}
 			}
-
-			// 클라이언트 정보 적제 syscall 아님.
-			int setIndex = (int)SetIndexd;
-			if (setIndex == coutPage) {
-				cout << "pos " << i << " : \t(" << client.x << ", " << client.y;
-				if ((i & 3) == 3) cout << ")\n";
-				else cout << ")\t";
+			else {
+				int setIndex = (int)SetIndexd;
+				if (setIndex == coutPage) {
+					cout << "pos " << i << " : \tdisconnected";
+					if ((i & 3) == 3) cout << "\n";
+					else cout << "\t";
+				}
 			}
-			SetIndexd += SetIndexInc;
+
+			// 클라이언트가 접속상태를 2퍼센트로 바꾼다.
+			if (client.isConnectToServer == false ||
+				client.isConnectToServer == true && client.connectState == Trying)
+			{
+				if (client.isConnectToServer == false) {
+					if (rand() % 1000 == 0) {
+						client.ConnetToServer();
+					}
+					continue;
+				}
+			}
 
 			int sockindex = client.sockindex;
 
@@ -291,9 +358,19 @@ int main(int argc, char* argv[])
 					else {
 						// 네트워크 오류가 발생되었거나 서버가 죽은 상황
 						//goto Recv_Again;
-						client.DisConnectToServer();
-						continue;
+						if (client.connectState == Connected) {
+							client.DisConnectToServer();
+							dbgc[edbg::NWErrorWhenRecvFromServer] += 1;
+							//dbgbreak(dbgc[edbg::NWErrorWhenRecvFromServer] > 100);
+							continue;
+						}
+						goto END_RECV;
 					}
+				}
+				else if (retval == 0) {
+					// 서버가 종료됨.
+					client.DisConnectToServer();
+					continue;
 				}
 
 				retval += client.rbuf_offset;
@@ -301,10 +378,20 @@ int main(int argc, char* argv[])
 				// 읽은 데이터를 처리 (클라이언트의 움직임.)
 				int sro = 0;
 				int ro = 0;
-				for (; ro + 12 <= retval; ro += 12) {
+				for (; ro + 12 < retval; ro += 12) {
 					int clientId = *(int*)&client.rbuf[ro];
-					clientStateArr[clientId].x = *(float*)&client.rbuf[ro + sizeof(int)];
-					clientStateArr[clientId].y = *(float*)&client.rbuf[ro + sizeof(int) + sizeof(float)];
+					// 왜 잘못되는가?
+					//1091379118
+					//1085350625
+					if (clientId > clientCount || clientId < 0) {
+						dbgc[edbg::DataCombineError] += 1;
+						ro += 4;
+						continue;
+					}
+					else {
+						clientStateArr[clientId].x = *(float*)&client.rbuf[ro + sizeof(int)];
+						clientStateArr[clientId].y = *(float*)&client.rbuf[ro + sizeof(int) + sizeof(float)];
+					}
 				}
 				sro = ro;
 				if (sro != retval) {
@@ -321,7 +408,28 @@ int main(int argc, char* argv[])
 		END_RECV:
 
 			if (FD_ISSET(sock[sockindex], &writefds[i])) {
-				//connect 되어있는지 확인?
+				//connect 되어있는지 확인? getsockopt??
+				if (client.connectState == Trying) {
+					// [중요] 접속 중이었던 소켓이 쓰기 가능해짐 -> 접속 완료 시도
+					int error = 0;
+					socklen_t len = sizeof(error);
+
+					// 실제로 접속이 성공했는지, 에러가 났는지 확인
+					if (getsockopt(sock[sockindex], SOL_SOCKET, SO_ERROR, (char*)&error, &len) < 0) {
+						// getsockopt 자체 실패
+						client.DisConnectToServer();
+					}
+					else if (error != 0) {
+						// 접속 실패 (서버 거부 등)
+						client.DisConnectToServer();
+					}
+					else {
+						// 접속 성공!
+						client.connectState = Connected;
+						dbgc[edbg::ConnectedCountDelayed] += 1;
+						//dbgbreak(dbgc[edbg::ConnectedCountDelayed] > 100);
+					}
+				}
 
 				if (client.wbuf.size() != 0) {
 					// 쓰기 가능한 소켓의 상태.
@@ -344,7 +452,15 @@ int main(int argc, char* argv[])
 					client.wbuf.clear();
 				}
 			}
+			else {
+				// 만약 쓸 수 없는데 wbuf가 있을 경우 (접속종료)
+				client.DisConnectToServer();
+			}
 		}
+
+		cout << "ERROR : ConnectFailedCount : " << dbgc[edbg::ConnectFailedCount] << " \n";
+		cout << "ERROR : NWErrorWhenRecvFromServer : " << dbgc[edbg::NWErrorWhenRecvFromServer] << " \n";
+		cout << "CRITICAL ERROR : DataCombineError : " << dbgc[edbg::DataCombineError] << " \n";
 		cout << endl;
 	}
 

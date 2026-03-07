@@ -2,10 +2,6 @@ GraphicsStudy/GraduationProject000/.vs/
 GraphicsStudy/GraduationProject000/x64/
 GraphicsStudy/GraduationProject000/GraduationProject001/x64/
 
-GraphicsStudy/UnionVersion/DX12GraphicStudy/.vs
-GraphicsStudy/UnionVersion/DX12GraphicStudy/x64
-GraphicsStudy/UnionVersion/DX12GraphicStudy/DX12GraphicStudy/x64/
-
 GraphicsStudy/GraduationProject001/.vs/
 GraphicsStudy/GraduationProject001/x64/
 GraphicsStudy/GraduationProject001/GraduationProject001/x64/
@@ -131,11 +127,11 @@ GraphicsStudy/DX12MyModelExporter2/DX12MyModelExporter/x64/
 
 ServerStudy/MaxUser/MaxUserServer/x64/
 ServerStudy/MaxUser/MaxUserServer/.vs/
-ServerStudy/MaxUser/MaxUserServer/MaxUserServer/.vs/
+ServerStudy/MaxUser/MaxUserServer/MaxUserServer/x64/
 
 ServerStudy/MaxUser/MaxUserClient/x64/
 ServerStudy/MaxUser/MaxUserClient/.vs/
-ServerStudy/MaxUser/MaxUserClient/MaxUserClient/.vs/
+ServerStudy/MaxUser/MaxUserClient/MaxUserClient/x64/
 
 ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/.vs/
 ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/x64/
@@ -145,7 +141,11 @@ ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/.vs/
 ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/x64/
 ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/SyncFPSServer/x64/
 
+*.vsidx
 *.log
+*.iobj
+*.ipdb
+*.pdb
 *.pch
 *.ipch
 *.VC.db
