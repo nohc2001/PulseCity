@@ -2,6 +2,10 @@ GraphicsStudy/GraduationProject000/.vs/
 GraphicsStudy/GraduationProject000/x64/
 GraphicsStudy/GraduationProject000/GraduationProject001/x64/
 
+GraphicsStudy/UnionVersion/DX12GraphicStudy/.vs
+GraphicsStudy/UnionVersion/DX12GraphicStudy/x64
+GraphicsStudy/UnionVersion/DX12GraphicStudy/DX12GraphicStudy/x64/
+
 GraphicsStudy/GraduationProject001/.vs/
 GraphicsStudy/GraduationProject001/x64/
 GraphicsStudy/GraduationProject001/GraduationProject001/x64/
@@ -113,14 +117,6 @@ ServerStudy/SyncFPS_lastest3/SyncFPSServer/.vs/
 ServerStudy/SyncFPS_lastest3/SyncFPSServer/x64/
 ServerStudy/SyncFPS_lastest3/SyncFPSServer/SyncFPSServer/x64/
 
-ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/.vs/
-ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/x64/
-ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/SyncFPSClient/x64/
-
-ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/.vs/
-ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/x64/
-ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/SyncFPSServer/x64/
-
 Utill/VisualStudioProjectNameChanger/.vs/
 Utill/VisualStudioProjectNameChanger/x64/
 Utill/VisualStudioProjectNameChanger/VisualStudioProjectNameChanger/x64/
@@ -140,6 +136,14 @@ ServerStudy/MaxUser/MaxUserServer/MaxUserServer/.vs/
 ServerStudy/MaxUser/MaxUserClient/x64/
 ServerStudy/MaxUser/MaxUserClient/.vs/
 ServerStudy/MaxUser/MaxUserClient/MaxUserClient/.vs/
+
+ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/.vs/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/x64/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPSClient/SyncFPSClient/x64/
+
+ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/.vs/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/x64/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/SyncFPSServer/x64/
 
 *.log
 *.pch
