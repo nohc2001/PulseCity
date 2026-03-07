@@ -9,6 +9,7 @@
 #include <mutex>
 #include <conio.h>
 #include <sstream>
+#include <format> // C++20 필수
 #include "vecset.h"
 
 #pragma comment(lib, "ws2_32")
@@ -25,8 +26,25 @@ static inline int64_t GetTicks()
 	return ticks.QuadPart;
 }
 
+constexpr bool isdebug = true;
+int dbgc[128] = {};
+__forceinline void dbgbreak(bool condition) {
+	if constexpr (isdebug) {
+		if (condition) {
+			__debugbreak();
+		}
+	}
+}
+enum edbg {
+	SelectError = 0,
+	AcceptError_InvalidSocket = 1,
+	IDLE_Recv = 2,
+	IDLE_Send = 3,
+	ClientForcedDisconnet = 4,
+};
+
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
-constexpr int clientCount = 511;
+constexpr int clientCount = 2047;
 struct Client {
 	float x = 0;
 	float y = 0;
@@ -84,9 +102,11 @@ vecset<SOCKETINFO> SocketInfoArray;//[clientCount + 1];
 
 stringstream  serverLog;
 
+void RemoveSocketInfo(int nindex);
+
 bool AddSocketInfo(SOCKET sock) {
 	if (nTotalSockets >= clientCount) {
-		serverLog << "cannot add client socket cause sock max number in selectmodel" << endl;
+		serverLog << "cannot add client socket cause sock max number in selectmodel" << "\n";
 		return false;
 	}
 	int newindex = SocketInfoArray.Alloc();
@@ -107,6 +127,28 @@ bool AddSocketInfo(SOCKET sock) {
 	char addr[INET_ADDRSTRLEN] = {};
 	inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 	serverLog << "[TCP 서버] 클라이언트 접속 : IP주소 = " << addr << ", 포트번호 = " << ntohs(clientaddr.sin_port) << "\n";
+	
+	//서버vecset 내의 클라이언트 데이터의 인덱스를 클라이언트도 알 수 있도록 보내준다.
+	int sendsize = sizeof(int);
+	char sbuf[4];
+	char* sptr = sbuf;
+	*(int*)sptr = newindex;
+	RESEND:
+	int retval = send(ptr->sock, sptr, sendsize, 0);
+	if (retval == SOCKET_ERROR) {
+		if (WSAGetLastError() == WSAEWOULDBLOCK) {
+			goto RESEND;
+		}
+		else {
+			RemoveSocketInfo(newindex);
+			return false;
+		}
+	}
+	else if (retval != sendsize) {
+		sendsize -= retval;
+		sptr += retval;
+		goto RESEND;
+	}
 	return true;
 }
 
@@ -136,6 +178,7 @@ void RemoveSocketInfo(int nindex) {
 
 constexpr int SelectSetCount = ((clientCount) >> 6) + 1;
 fd_set rset[SelectSetCount], wset[SelectSetCount];
+ui64 lastTimeRecord = 0;
 
 int main() {
 	SocketInfoArray.Init(clientCount + 1);
@@ -146,18 +189,18 @@ int main() {
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 		return 1;
-	cout << "WSAStartup() Success. " << endl;
+	cout << "WSAStartup() Success. " << "\n";
 
 	SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (listen_sock == INVALID_SOCKET) {
-		cout << "listen socket init error" << endl;
+		cout << "listen socket init error" << "\n";
 		return 0;
 	}
 
 	u_long on = 1;
 	int retval = ioctlsocket(listen_sock, FIONBIO, &on);
 	if (retval == SOCKET_ERROR) {
-		cout << "listen socket non blocking mode error" << endl;
+		cout << "listen socket non blocking mode error" << "\n";
 		return 0;
 	}
 
@@ -179,7 +222,7 @@ int main() {
 
 	retval = listen(listen_sock, SOMAXCONN);
 	if (retval == SOCKET_ERROR) {
-		cout << "listen Error" << endl;
+		cout << "listen Error" << "\n";
 		return 0;
 	}
 
@@ -197,29 +240,37 @@ int main() {
 	int errorCount = 0;
 
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	constexpr double fixedDelta = 0.05f;
 	while (1) {
+		int64_t deltaft = GetTicks();
+		double deltaTime = (double)(deltaft - DeltaTick) / (double)(QUERYPERFORMANCE_HZ);
+		char data[12];
+		DeltaTick = deltaft;
+		StackTime += deltaTime;
+
+		indexRange irange[(clientCount + 1) / 2];
+		int outlen = 0;
+		SocketInfoArray.GetTourPairs(irange, &outlen);
+
+		bool isUpdated = false;
+		if (StackTime > fixedDelta) {
+			isUpdated = true;
+			for (int i = 0; i < outlen; ++i) {
+				for (int k = irange[i].start; k <= irange[i].end; ++k) {
+					SocketInfoArray[k].clientdata.Update(fixedDelta);
+				}
+			}
+			StackTime -= fixedDelta;
+		}
+		
 		if (serverLog.str().size() > 0) {
 			COORD pos = { 0, 0 }; // (x=0, y=0) 좌표
 			SetConsoleCursorPosition(hConsole, pos);
 			cout << serverLog.str();
-			cout << errorCount << endl;
+			cout << errorCount << "\n";
 			serverLog.str("");
 			serverLog.clear();
 		}
-
-		int64_t deltaft = GetTicks();
-		float deltaTime = (double)(deltaft - DeltaTick) / (double)(QUERYPERFORMANCE_HZ);
-		char data[12];
-
-		indexRange irange[(clientCount+1) / 2];
-		int outlen = 0;
-		SocketInfoArray.GetTourPairs(irange, &outlen);
-		for (int i = 0; i < outlen; ++i) {
-			for (int k = irange[i].start; k <= irange[i].end; ++k) {
-				SocketInfoArray[k].clientdata.Update(deltaTime);
-			}
-		}
-		DeltaTick = deltaft;
 
 		//sock set init
 		for (int i = 0; i < SelectSetCount; ++i) {
@@ -234,8 +285,7 @@ int main() {
 		for (int k = 0; k < outlen; ++k) {
 			for (int i = irange[k].start; i <= irange[k].end; ++i) {
 				int setindex = ((i + 1) >> 6);
-
-				if (StackTime > 0.05f) {
+				if (isUpdated) {
 					*(int*)&data = i;
 					*(float*)&data[sizeof(int)] = SocketInfoArray[i].clientdata.x;
 					*(float*)&data[sizeof(int) + sizeof(float)] = SocketInfoArray[i].clientdata.y;
@@ -244,17 +294,13 @@ int main() {
 					FD_SET(SocketInfoArray[i].sock, &wset[setindex]);
 #endif
 				}
-
 #ifdef VAR_INITSET
 				FD_SET(SocketInfoArray[i].sock, &rset[setindex]);
 #endif
 			}
 		}
-		if (StackTime > 0.05f) {
-			StackTime = 0;
-		}
 
-		int64_t ft = GetTicks();
+		ui64 ft = GetTicks();
 
 		timeval t;
 		t.tv_sec = 0;
@@ -262,27 +308,34 @@ int main() {
 		for (int i = 0; i < SelectSetCount; ++i) {
 			retval = select(0, &rset[i], &wset[i], NULL, &t);
 			if (retval == SOCKET_ERROR) {
-				serverLog << "select error" << endl;
+				dbgc[edbg::SelectError] += 1;
 			}
 		}
+		serverLog << "select error : " << dbgc[edbg::SelectError] << "\n";
 
 		//accept
 		if (FD_ISSET(listen_sock, &rset[0])) {
 			addrlen = sizeof(clientaddr);
 			client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
 			if (client_sock == INVALID_SOCKET) {
-				serverLog << "accept error. invalid socket." << endl;
+				dbgc[edbg::AcceptError_InvalidSocket] += 1;
 			}
 			else {
-				serverLog << "accept success! " << nTotalSockets << endl;
-				// when client accept success.
-
-				if (!AddSocketInfo(client_sock)) closesocket(client_sock);
+				if (AddSocketInfo(client_sock)) {
+				} 
+				else {
+					dbgc[edbg::AcceptError_InvalidSocket] += 1;
+					closesocket(client_sock);
+				}
 			}
 
 			if (--nready <= 0) continue;
 		}
-
+		serverLog << "accept error. invalid socket. : " << dbgc[edbg::AcceptError_InvalidSocket] << "\n";
+		serverLog << "IDLE_Recv : " << dbgc[edbg::IDLE_Recv] << "\n";
+		serverLog << "IDLE_Send : " << dbgc[edbg::IDLE_Send] << "\n";
+		serverLog << "ClientForcedDisconnet : " << dbgc[edbg::ClientForcedDisconnet] << "\n";
+		
 		for (int k = 0; k < outlen; ++k) {
 			for (int i = irange[k].start; i <= irange[k].end; ++i) {
 				int setindex = ((i + 1) >> 6);
@@ -295,6 +348,7 @@ int main() {
 
 					if (retval == SOCKET_ERROR) {
 						if (WSAGetLastError() == WSAEWOULDBLOCK) {
+							dbgc[edbg::IDLE_Recv] += 1;
 							goto END_RECV;
 						}
 						else {
@@ -350,7 +404,7 @@ int main() {
 							ptr->rbuf_offset = remain_len;
 						}
 						else ptr->rbuf_offset = 0;
-						serverLog << endl;
+						serverLog << "\n";
 					}
 					goto Recv_Again;
 				}
@@ -367,10 +421,12 @@ int main() {
 							retval = send(ptr->sock, buf, BUFSIZ, 0);
 							if (retval == SOCKET_ERROR) {
 								if (WSAGetLastError() == WSAEWOULDBLOCK) {
+									dbgc[edbg::IDLE_Send] += 1;
 									goto common_Send_END;
 								}
 								else {
 									// 클라이언트가 강제종료를 한 상황.
+									dbgc[edbg::ClientForcedDisconnet] += 1;
 									RemoveSocketInfo(i);
 									isContinue = true;
 									goto common_Send_END;
@@ -386,10 +442,12 @@ int main() {
 						retval = send(ptr->sock, buf, len, 0);
 						if (retval == SOCKET_ERROR) {
 							if (WSAGetLastError() == WSAEWOULDBLOCK) {
+								dbgc[edbg::IDLE_Send] += 1;
 								goto common_Send_END;
 							}
 							else {
 								// 클라이언트가 강제종료를 한 상황.
+								dbgc[edbg::ClientForcedDisconnet] += 1;
 								RemoveSocketInfo(i);
 								isContinue = true;
 								continue;
@@ -414,10 +472,12 @@ int main() {
 							retval = send(ptr->sock, buf, BUFSIZ, 0);
 							if (retval == SOCKET_ERROR) {
 								if (WSAGetLastError() == WSAEWOULDBLOCK) {
+									dbgc[edbg::IDLE_Send] += 1;
 									goto Send_END;
 								}
 								else {
 									// 클라이언트가 강제종료를 한 상황.
+									dbgc[edbg::ClientForcedDisconnet] += 1;
 									RemoveSocketInfo(i);
 									isContinue = true;
 									goto Send_END;
@@ -434,10 +494,12 @@ int main() {
 						retval = send(ptr->sock, buf2, len2, 0);
 						if (retval == SOCKET_ERROR) {
 							if (WSAGetLastError() == WSAEWOULDBLOCK) {
+								dbgc[edbg::IDLE_Send] += 1;
 								goto Send_END;
 							}
 							else {
 								// 클라이언트가 강제종료를 한 상황.
+								dbgc[edbg::ClientForcedDisconnet] += 1;
 								RemoveSocketInfo(i);
 								isContinue = true;
 								continue;
@@ -456,11 +518,6 @@ int main() {
 			}
 		}
 		Commonly_send_data.clear();
-
-		int64_t et = GetTicks();
-		AverageSelectTime = (double)(et - ft) / (double)(QUERYPERFORMANCE_HZ);
-		//serverLog << "Loop Speed : " << AverageSelectTime << endl;
-		StackTime += AverageSelectTime;
 	}
 
 	closesocket(listen_sock);

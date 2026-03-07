@@ -7,6 +7,7 @@
 #include <random>
 #include <iomanip>
 #include <conio.h>
+#include <format> // C++20 필수
 #include "vecset.h"
 
 #pragma comment(lib, "ws2_32") // ws2_32.lib 링크
@@ -32,7 +33,7 @@ enum edbg {
 	ConnectedCountImmediate = 2,
 	UserShutDown = 3,
 	ConnectedCountDelayed = 4,
-	DataCombineError = 5,
+	DataCombineError = 5, // 지금 이 에러가 일어나는 원인 : 서버에서 특정 주기마다 일어나며, 클라가 많던 적던 상관없이 일어남.
 };
 
 void err_display(const char* msg) {
@@ -60,7 +61,7 @@ static inline int64_t GetTicks()
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
 // 시뮬레이션할 클라이언트 개수
-constexpr int clientCount = 511;
+constexpr int clientCount = 2047;
 // 해당 클라이언트 만큼의 소켓 영역 할당.
 vecset<SOCKET> sock = {};
 
@@ -80,9 +81,11 @@ float randomRangef(float min, float max) {
 	return min + r * (max - min) / 1000000.0f;
 }
 
+int ConnectedClientCount = 0;
 enum ConnectState {
 	Trying = 0,
-	Connected = 1
+	WaitForDecideServerIndex = 1,
+	Connected = 2,
 };
 
 // 클라이언트의 정보를 나타내는 상태
@@ -111,11 +114,13 @@ struct ClientState {
 
 	// 현재 클라이언트가 서버와 연결되었는지의 여부
 	int sockindex = 0;
+	int serverindex = 0;
 	float playtime = 0;
 	ConnectState connectState = Trying;
 	bool isConnectToServer = true;
 
 	__forceinline void ConnetToServer() {
+		ConnectedClientCount += 1;
 		rbuf_offset = 0;
 		ZeroMemory(rbuf, BUFSIZ);
 		wbuf.clear();
@@ -154,13 +159,14 @@ struct ClientState {
 			connectState = Trying;
 		}
 		else {
-			connectState = Connected;
+			connectState = WaitForDecideServerIndex;
 		}
 		dbgc[edbg::ConnectedCountImmediate] += 1;
 		isConnectToServer = true;
 	}
 
 	__forceinline void DisConnectToServer() {
+		ConnectedClientCount -= 1;
 		rbuf_offset = 0;
 		wbuf.clear();
 		ZeroMemory(rbuf, BUFSIZ);
@@ -286,35 +292,56 @@ int main(int argc, char* argv[])
 		cout << fixed << setprecision(2);
 		for (int i = 0; i < clientCount; ++i) {
 			ClientState& client = clientStateArr[i];
-			SetIndexd += SetIndexInc;
+			//SetIndexd += SetIndexInc;
+			
+			if (client.isConnectToServer == true) {
+				if (client.connectState == Connected) {
+					// 클라이언트에서 입력
+					client.Decide();
 
-			if (client.isConnectToServer == true && client.connectState == Connected) {
-				// 클라이언트 정보 적제 syscall 아님.
-				int setIndex = (int)SetIndexd;
-				if (setIndex == coutPage) {
-					cout << "pos " << i << " : \t(" << client.x << ", " << client.y;
-					if ((i & 3) == 3) cout << ")\n";
-					else cout << ")\t";
+					// 클라이언트 정보 적제 syscall 아님.
+					//int setIndex = (int)SetIndexd;
+					if (i>>6 == coutPage) {
+						char inputdata[5] = "____";
+						inputdata[0] = (client.W == 2) ? 'W' : '_';
+						inputdata[1] = (client.A == 2) ? 'A' : '_';
+						inputdata[2] = (client.S == 2) ? 'S' : '_';
+						inputdata[3] = (client.D == 2) ? 'D' : '_';
+						cout << format("client{:<5} Input{:<5} Pos({:<7.2},{:<7.2})", i, inputdata, client.x, client.y);
+						//cout << "pos " << i << " : \t(" << client.x << ", " << client.y;
+						if ((i & 1) == 1) cout << "\n";
+						else cout << "\t";
+					}
+
+					if (rand() % 10000 <= (int)client.playtime && client.playtime > 5.0f) {
+						client.DisConnectToServer();
+						dbgc[edbg::UserShutDown] += 1;
+						//dbgbreak(dbgc[edbg::UserShutDown] > 100);
+						continue;
+					}
 				}
-
-				if (rand() % 10000 <= (int)client.playtime && client.playtime > 5.0f) {
-					client.DisConnectToServer();
-					dbgc[edbg::UserShutDown] += 1;
-					//dbgbreak(dbgc[edbg::UserShutDown] > 100);
-					SetIndexd += SetIndexInc;
-					continue;
+				else if (client.connectState == WaitForDecideServerIndex) {
+					// 클라이언트 정보 적제 syscall 아님.
+					//int setIndex = (int)SetIndexd;
+					if (i>>6 == coutPage) {
+						cout << format("client{:<5} WaitForDecideServerIndex       ", i);
+						//cout << "pos " << i << " : \tWaitAllocIndex";
+						if ((i & 1) == 1) cout << "\n";
+						else cout << "\t";
+					}
 				}
 			}
 			else {
-				int setIndex = (int)SetIndexd;
-				if (setIndex == coutPage) {
-					cout << "pos " << i << " : \tdisconnected";
-					if ((i & 3) == 3) cout << "\n";
+				//int setIndex = (int)SetIndexd;
+				if (i>>6 == coutPage) {
+					cout << format("client{:<5} DisConnect                     ", i);
+					//cout << "pos " << i << " : \tdisconnected";
+					if ((i & 1) == 1) cout << "\n";
 					else cout << "\t";
 				}
 			}
 
-			// 클라이언트가 접속상태를 2퍼센트로 바꾼다.
+			// 2퍼센트로 클라이언트가 접속상태를 바꾼다.
 			if (client.isConnectToServer == false ||
 				client.isConnectToServer == true && client.connectState == Trying)
 			{
@@ -327,9 +354,6 @@ int main(int argc, char* argv[])
 			}
 
 			int sockindex = client.sockindex;
-
-			// 클라이언트에서 입력
-			client.Decide();
 
 			//select
 			FD_ZERO(&readfds[i]);
@@ -375,34 +399,54 @@ int main(int argc, char* argv[])
 
 				retval += client.rbuf_offset;
 
-				// 읽은 데이터를 처리 (클라이언트의 움직임.)
-				int sro = 0;
-				int ro = 0;
-				for (; ro + 12 < retval; ro += 12) {
-					int clientId = *(int*)&client.rbuf[ro];
-					// 왜 잘못되는가?
-					//1091379118
-					//1085350625
-					if (clientId > clientCount || clientId < 0) {
-						dbgc[edbg::DataCombineError] += 1;
-						ro += 4;
-						continue;
+				if (client.connectState == WaitForDecideServerIndex) {
+					client.serverindex = *(int*)&client.rbuf[0];
+					int sro = 4;
+					if (sro != retval) {
+						int remain_len = retval - sro;
+						for (int copyi = 0; copyi < remain_len; ++copyi) {
+							client.rbuf[copyi] = client.rbuf[sro + copyi];
+						}
+						client.rbuf_offset = remain_len;
 					}
-					else {
-						clientStateArr[clientId].x = *(float*)&client.rbuf[ro + sizeof(int)];
-						clientStateArr[clientId].y = *(float*)&client.rbuf[ro + sizeof(int) + sizeof(float)];
-					}
+					else client.rbuf_offset = 0;
+					client.connectState = Connected;
+					goto Recv_Again;
 				}
-				sro = ro;
-				if (sro != retval) {
-					int remain_len = retval - sro;
-					for (int copyi = 0; copyi < remain_len; ++copyi) {
-						client.rbuf[copyi] = client.rbuf[sro + copyi];
+				else if (client.connectState == Connected) {
+					// 읽은 데이터를 처리 (클라이언트의 움직임.)
+					int sro = 0;
+					int ro = 0;
+					for (; ro + 12 < retval; ro += 12) {
+						int clientId = *(int*)&client.rbuf[ro];
+						// 왜 잘못되는가?
+						if (clientId > clientCount || clientId < 0) {
+							dbgc[edbg::DataCombineError] += 1;
+							ro += 4;
+							continue;
+						}
+						else {
+							if (clientId == client.serverindex) {
+								client.x = *(float*)&client.rbuf[ro + sizeof(int)];
+								client.y = *(float*)&client.rbuf[ro + sizeof(int) + sizeof(float)];
+							}
+							else {
+								// 본래는 클라이언트는 자신의 RAM 안의 버퍼에 주변 모든 플레이어 데이터를 저장해야 한다.
+								// 하지만 이 프로그램에서는 여러 클라이언트를 돌리기 때문에 생략한다.
+							}
+						}
 					}
-					client.rbuf_offset = remain_len;
+					sro = ro;
+					if (sro != retval) {
+						int remain_len = retval - sro;
+						for (int copyi = 0; copyi < remain_len; ++copyi) {
+							client.rbuf[copyi] = client.rbuf[sro + copyi];
+						}
+						client.rbuf_offset = remain_len;
+					}
+					else client.rbuf_offset = 0;
+					goto Recv_Again;
 				}
-				else client.rbuf_offset = 0;
-				goto Recv_Again;
 			}
 
 		END_RECV:
@@ -461,6 +505,7 @@ int main(int argc, char* argv[])
 		cout << "ERROR : ConnectFailedCount : " << dbgc[edbg::ConnectFailedCount] << " \n";
 		cout << "ERROR : NWErrorWhenRecvFromServer : " << dbgc[edbg::NWErrorWhenRecvFromServer] << " \n";
 		cout << "CRITICAL ERROR : DataCombineError : " << dbgc[edbg::DataCombineError] << " \n";
+		cout << "동시접속자 : " << ConnectedClientCount << "\n";
 		cout << endl;
 	}
 
