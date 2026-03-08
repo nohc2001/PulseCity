@@ -26,6 +26,7 @@ static inline int64_t GetTicks()
 	return ticks.QuadPart;
 }
 
+#pragma region DBGMaterial
 constexpr bool isdebug = true;
 int dbgc[128] = {};
 __forceinline void dbgbreak(bool condition) {
@@ -43,8 +44,29 @@ enum edbg {
 	ClientForcedDisconnet = 4,
 };
 
+ui64 dbgt[128] = {};
+double dbg_avgt[128] = {};
+double dbg_totalt[128] = {};
+int dbg_avgt_cnt[128] = {};
+constexpr int dbgtAvgSampleCount = 1024;
+void dbgtStart(int index) {
+	dbgt[index] = GetTicks();
+}
+double dbgtEnd(int index) {
+	double interval = (double)(GetTicks() - dbgt[index]) / (double)QUERYPERFORMANCE_HZ;
+	dbg_totalt[index] += interval;
+	dbg_avgt_cnt[index] += 1;
+	if (dbg_avgt_cnt[index] == dbgtAvgSampleCount) {
+		dbg_avgt[index] = dbg_totalt[index] / (double)dbgtAvgSampleCount;
+		dbg_avgt_cnt[index] = 0;
+		dbg_totalt[index] = 0;
+	}
+	return dbg_avgt[index];
+}
+#pragma endregion
+
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
-constexpr int clientCount = 2047;
+constexpr int clientCount = 1023;
 struct Client {
 	float x = 0;
 	float y = 0;
@@ -103,16 +125,50 @@ vecset<SOCKETINFO> SocketInfoArray;//[clientCount + 1];
 stringstream  serverLog;
 
 void RemoveSocketInfo(int nindex);
+int serverlogcnt = 0;
+int coutpage = 0;
+constexpr int maxServerLog = 128;
+constexpr int maxServerLog_log2 = 7;
+__forceinline void AddServerLogInput(char* addr, unsigned short port, char* inputptr) {
+	if (serverlogcnt >> maxServerLog_log2 == coutpage) {
+		cout << format("{:<15}:{:<5}>{:<16}", addr, port, inputptr);
+		serverlogcnt += 1;
+		if ((serverlogcnt & 3) == 0) {
+			cout << "\n";
+		}
+	}
+	else serverlogcnt += 1;
+}
+__forceinline void AddServerLogConnect(char* addr, unsigned short port) {
+	if (serverlogcnt >> maxServerLog_log2 == coutpage) {
+		cout << format("{:<15}:{:<5}>{:<16}", addr, port, "connect");
+		serverlogcnt += 1;
+		if ((serverlogcnt & 3) == 0) {
+			cout << "\n";
+		}
+	}
+	else serverlogcnt += 1;
+}
+__forceinline void AddServerLogDisconnect(char* addr, unsigned short port) {
+	if (serverlogcnt >> maxServerLog_log2 == coutpage) {
+		cout << format("{:<15}:{:<5}>{:<16}", addr, port, "disconnect");
+		serverlogcnt += 1;
+		if ((serverlogcnt & 3) == 0) {
+			cout << "\n";
+		}
+	}
+	else serverlogcnt += 1;
+}
 
 bool AddSocketInfo(SOCKET sock) {
 	if (nTotalSockets >= clientCount) {
-		serverLog << "cannot add client socket cause sock max number in selectmodel" << "\n";
+		cout << "cannot add client socket cause sock max number in selectmodel" << "\n";
 		return false;
 	}
 	int newindex = SocketInfoArray.Alloc();
 	SOCKETINFO* ptr = &SocketInfoArray[newindex];
 	if (ptr == NULL) {
-		serverLog << "memeory starvation." << endl;
+		cout << "memeory starvation." << "\n";;
 		return false;
 	}
 
@@ -126,9 +182,11 @@ bool AddSocketInfo(SOCKET sock) {
 
 	char addr[INET_ADDRSTRLEN] = {};
 	inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-	serverLog << "[TCP 서버] 클라이언트 접속 : IP주소 = " << addr << ", 포트번호 = " << ntohs(clientaddr.sin_port) << "\n";
-	
+	AddServerLogConnect(addr, ntohs(clientaddr.sin_port));
+
 	//서버vecset 내의 클라이언트 데이터의 인덱스를 클라이언트도 알 수 있도록 보내준다.
+	dbgtEnd(0);
+	dbgtStart(0);
 	int sendsize = sizeof(int);
 	char sbuf[4];
 	char* sptr = sbuf;
@@ -164,7 +222,7 @@ void RemoveSocketInfo(int nindex) {
 
 	char addr[INET_ADDRSTRLEN] = {};
 	inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-	serverLog << "[TCP 서버] 클라이언트 종료 : IP주소 = " << addr << ", 포트번호 = " << ntohs(clientaddr.sin_port) << "\n";
+	AddServerLogDisconnect(addr, ntohs(clientaddr.sin_port));
 
 	closesocket(ptr->sock);
 
@@ -232,21 +290,42 @@ int main() {
 	char buf[BUFSIZ + 1];
 
 	int stack = 0;
-	serverLog << "Server Start" << endl;
+	cout << "Server Start" << "\n";
 	double AverageSelectTime = 0;
 	double StackTime = 0;
 	int64_t DeltaTick = 0;
 
-	int errorCount = 0;
+	int DelayCount = 0;
 
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	constexpr double fixedDelta = 0.05f;
 	while (1) {
+		// 보여지는 페이지 넘기기
+		if (_kbhit()) {
+			char c = _getch();
+			if (c == 'E' || c == 'e') {
+				coutpage += 1;
+				if (coutpage * maxServerLog > clientCount) coutpage = 0;
+				system("cls");
+			}
+			if (c == 'Q' || c == 'q') {
+				coutpage -= 1;
+				if (coutpage < 0) coutpage = clientCount >> maxServerLog_log2;
+				system("cls");
+			}
+			else if (c == 'C' || c == 'c') {
+				system("cls");
+			}
+		}
 		int64_t deltaft = GetTicks();
 		double deltaTime = (double)(deltaft - DeltaTick) / (double)(QUERYPERFORMANCE_HZ);
 		char data[12];
 		DeltaTick = deltaft;
 		StackTime += deltaTime;
+
+		COORD pos = { 0, 0 }; // (x=0, y=0) 좌표
+		SetConsoleCursorPosition(hConsole, pos);
+		cout << endl;
 
 		indexRange irange[(clientCount + 1) / 2];
 		int outlen = 0;
@@ -261,15 +340,6 @@ int main() {
 				}
 			}
 			StackTime -= fixedDelta;
-		}
-		
-		if (serverLog.str().size() > 0) {
-			COORD pos = { 0, 0 }; // (x=0, y=0) 좌표
-			SetConsoleCursorPosition(hConsole, pos);
-			cout << serverLog.str();
-			cout << errorCount << "\n";
-			serverLog.str("");
-			serverLog.clear();
 		}
 
 		//sock set init
@@ -311,31 +381,35 @@ int main() {
 				dbgc[edbg::SelectError] += 1;
 			}
 		}
-		serverLog << "select error : " << dbgc[edbg::SelectError] << "\n";
+		cout << "select error : " << dbgc[edbg::SelectError] << "\t";
+		cout << "accept interval : " << dbg_avgt[0] << "\n";
+		cout << "accept error. invalid socket. : " << dbgc[edbg::AcceptError_InvalidSocket] << "\n";
+		cout << "IDLE_Recv : " << dbgc[edbg::IDLE_Recv] << "\t";
+		cout << "IDLE_Send : " << dbgc[edbg::IDLE_Send] << "\n";
+		cout << "ClientForcedDisconnet : " << dbgc[edbg::ClientForcedDisconnet] << "\t";
+		cout << "Delay Count : " << DelayCount << "\n";
+		cout << "LogPage : " << coutpage << endl;
 
 		//accept
-		if (FD_ISSET(listen_sock, &rset[0])) {
+		serverlogcnt = 0;
+		while (FD_ISSET(listen_sock, &rset[0])) {
 			addrlen = sizeof(clientaddr);
 			client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
 			if (client_sock == INVALID_SOCKET) {
 				dbgc[edbg::AcceptError_InvalidSocket] += 1;
+				break;
 			}
 			else {
 				if (AddSocketInfo(client_sock)) {
-				} 
+				}
 				else {
 					dbgc[edbg::AcceptError_InvalidSocket] += 1;
 					closesocket(client_sock);
+					break;
 				}
 			}
-
-			if (--nready <= 0) continue;
 		}
-		serverLog << "accept error. invalid socket. : " << dbgc[edbg::AcceptError_InvalidSocket] << "\n";
-		serverLog << "IDLE_Recv : " << dbgc[edbg::IDLE_Recv] << "\n";
-		serverLog << "IDLE_Send : " << dbgc[edbg::IDLE_Send] << "\n";
-		serverLog << "ClientForcedDisconnet : " << dbgc[edbg::ClientForcedDisconnet] << "\n";
-		
+
 		for (int k = 0; k < outlen; ++k) {
 			for (int i = irange[k].start; i <= irange[k].end; ++i) {
 				int setindex = ((i + 1) >> 6);
@@ -369,17 +443,21 @@ int main() {
 						ptr->buf[ptr->recvbytes] = 0;
 						char addr[INET_ADDRSTRLEN] = {};
 						inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-						serverLog << "[TCP/" << addr << ":" << ntohs(clientaddr.sin_port) << "] : ";
 
-						if (retval >= 10) errorCount += 1;
+						if (retval >= 10) DelayCount += 1;
 
 						int sro = 0;
 						int ro = 0;
+						char inputprintBuff[32] = {};
 						for (; ro + 2 < retval; ro += 2) {
 							char key = *(char*)&ptr->buf[ro];
 							bool isdown = ('D' == *(char*)&ptr->buf[ro + sizeof(char)]);
 							char isdownC = *(char*)&ptr->buf[ro + sizeof(char)];
-							serverLog << key << isdownC;
+							if (ro + 2 < 32) {
+								inputprintBuff[ro] = key;
+								inputprintBuff[ro + 1] = isdownC;
+								inputprintBuff[ro + 2] = 0;
+							}
 							switch (key) {
 							case 'W':
 								ptr->clientdata.W = isdown;
@@ -404,7 +482,7 @@ int main() {
 							ptr->rbuf_offset = remain_len;
 						}
 						else ptr->rbuf_offset = 0;
-						serverLog << "\n";
+						AddServerLogInput(addr, ntohs(clientaddr.sin_port), inputprintBuff);
 					}
 					goto Recv_Again;
 				}
