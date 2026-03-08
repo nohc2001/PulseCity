@@ -61,7 +61,7 @@ static inline int64_t GetTicks()
 
 // 2의 거듭제곱 - 1 형태면 좋다. (64의 배수 - 1)
 // 시뮬레이션할 클라이언트 개수
-constexpr int clientCount = 2047;
+constexpr int clientCount = 1023;
 // 해당 클라이언트 만큼의 소켓 영역 할당.
 vecset<SOCKET> sock = {};
 
@@ -281,6 +281,10 @@ int main(int argc, char* argv[])
 				coutPage += 1;
 				if (coutPage * 64 > clientCount) coutPage = 0;
 			}
+			if (c == 'Q' || c == 'q') {
+				coutPage -= 1;
+				if (coutPage < 0) coutPage = clientCount >> 6;
+			}
 			else if (c == 'C' || c == 'c') {
 				system("cls");
 			}
@@ -313,7 +317,7 @@ int main(int argc, char* argv[])
 						else cout << "\t";
 					}
 
-					if (rand() % 10000 <= (int)client.playtime && client.playtime > 5.0f) {
+					if (rand() % 1000 == 0 && client.playtime > 30.0f) {
 						client.DisConnectToServer();
 						dbgc[edbg::UserShutDown] += 1;
 						//dbgbreak(dbgc[edbg::UserShutDown] > 100);
