@@ -7,75 +7,803 @@
 Mesh* BulletRay::mesh = nullptr;
 ViewportData* Game::renderViewPort = nullptr;
 
+void GameObject::StaticInit()
+{
+	StaticGameObject sgo;
+	Vptr<StaticGameObject> = *(void**)&sgo;
+	DynamicGameObject dgo;
+	Vptr<DynamicGameObject> = *(void**)&dgo;
+	SkinMeshGameObject smgo;
+	Vptr<SkinMeshGameObject> = *(void**)&smgo;
+}
+
+template <typename T> bool GameObject::IsType(GameObject* go) {
+	return Vptr<T> == *(void**)go;
+}
+
 GameObject::GameObject()
 {
-	isExist = true;
-	tickLVelocity = vec4(0, 0, 0, 0);
 }
 
 GameObject::~GameObject()
 {
+	if (shape.isMesh()) {
+		if (material) {
+			delete[] material;
+			material = nullptr;
+		}
+	}
+	else {
+		if (transforms_innerModel) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+	}
 }
 
-void GameObject::Update(float delatTime)
+matrix GameObject::GetWorld() {
+	return worldMat;
+}
+
+void GameObject::SetWorld(matrix localWorldMat)
+{
+	worldMat = localWorldMat;
+}
+
+void GameObject::Render(matrix parent)
+{
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	BoundingOrientedBox obb_local, obb;
+	bool b;
+	matrix world = GetWorld();
+	world *= parent;
+
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	else if (model != nullptr) obb_local = model->GetOBB();
+	else return;
+
+	/*obb_local.Transform(obb, world);
+	b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
+	if (b == false) return;*/
+
+	if (mesh != nullptr) {
+		matrix rootWorld = world;
+		rootWorld.transpose();
+		BumpMesh* Bmesh = (BumpMesh*)mesh;
+		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &rootWorld, 0);
+		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
+			Material& Mat = game.MaterialTable[material[i]];
+			using PBRRPI = PBRShader1::RootParamId;
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, Mat.CB_Resource.descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, Mat.TextureSRVTableIndex.hRender.hgpu);
+		}
+		mesh->Render(gd.gpucmd, 1);
+	}
+	else {
+		model->Render(gd.gpucmd, world, this);
+	}
+}
+
+void GameObject::PushRenderBatch(matrix parent)
+{
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	BoundingOrientedBox obb_local, obb;
+	bool b;
+	matrix world = GetWorld();
+	world *= parent;
+
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	else if (model != nullptr) obb_local = model->GetOBB();
+	else return;
+
+	/*obb_local.Transform(obb, world);
+	b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
+	if (b == false) return;*/
+
+	if (mesh != nullptr) {
+		matrix rootWorld = world;
+		rootWorld.transpose();
+		BumpMesh* Bmesh = (BumpMesh*)mesh;
+		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
+			Bmesh->InstanceData[i].PushInstance(RenderInstanceData(rootWorld, material[i]));
+		}
+	}
+	else {
+		model->PushRenderBatch(world, this);
+	}
+}
+
+void GameObject::Release()
+{
+	tag[GameObjectTag::Tag_Enable] = false;
+	if (transforms_innerModel) {
+		delete[] transforms_innerModel;
+	}
+}
+
+BoundingOrientedBox GameObject::GetOBB()
+{
+	BoundingOrientedBox obb_local;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	if (model != nullptr) obb_local = model->GetOBB();
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, worldMat);
+	return obb_world;
+}
+
+void GameObject::SetShape(Shape _shape)
+{
+	static LocalRootSigData tempLRSSaver[1024] = {};
+	shape = _shape;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (model != nullptr) {
+		transforms_innerModel = new matrix[model->nodeCount];
+		for (int i = 0; i < model->nodeCount; ++i) {
+			transforms_innerModel[i] = model->Nodes[i].transform;
+		}
+
+		if (gd.isSupportRaytracing) {
+			RaytracingWorldMatInput_Model = new float** [model->nodeCount];
+			for (int i = 0; i < model->nodeCount; ++i) {
+				RaytracingWorldMatInput_Model[i] = nullptr;
+				if (model->Nodes[i].numMesh > 0) {
+					BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
+					for (int k = 0; k < bmesh->subMeshNum; ++k) {
+						tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
+					}
+
+					float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
+					RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
+					for (int k = 0; k < bmesh->subMeshNum; ++k) {
+						RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
+					}
+				}
+			}
+			RaytracingUpdateTransform();
+		}
+	}
+	if (mesh != nullptr) {
+		material = new int[mesh->subMeshNum];
+		for (int i = 0; i < mesh->subMeshNum; ++i) {
+			material[i] = 0;
+		}
+		if (gd.isSupportRaytracing) {
+			BumpMesh* bmesh = (BumpMesh*)mesh;
+			for (int i = 0; i < bmesh->subMeshNum; ++i) {
+				tempLRSSaver[i] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[i] / sizeof(unsigned int));
+			}
+			float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
+			RaytracingWorldMatInput = new float* [bmesh->subMeshNum];
+			for (int i = 0; i < bmesh->subMeshNum; ++i) {
+				RaytracingWorldMatInput[i] = WorldMatInputs[i];
+			}
+
+			RaytracingUpdateTransform();
+		}
+	}
+}
+
+void GameObject::SetShape(Model* _shape)
+{
+	SetShape(Shape(_shape));
+}
+
+void GameObject::SetShape(Mesh* _shape)
+{
+	SetShape(Shape(_shape));
+}
+
+void GameObject::DbgHieraky()
+{
+
+}
+
+void GameObject::OnRayHit(GameObject* rayFrom) {
+
+}
+
+void GameObject::RaytracingUpdateTransform()
+{
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (RaytracingWorldMatInput) {
+		if (mesh != nullptr) {
+			matrix mat = worldMat;
+			mat.transpose();
+			for (int i = 0; i < mesh->subMeshNum; ++i) {
+				memcpy(RaytracingWorldMatInput[i], &mat, sizeof(float) * 12);
+			}
+		}
+		else {
+			RaytracingUpdateTransform(model, model->RootNode, worldMat);
+		}
+	}
+}
+
+void GameObject::RaytracingUpdateTransform(Model* model, ModelNode* node, matrix parent)
+{
+	int nodeIndex = ((char*)node - (char*)model->Nodes) / sizeof(ModelNode);
+	matrix mat = transforms_innerModel[nodeIndex];
+	mat *= parent;
+
+	for (int i = 0; i < node->numChildren; ++i) {
+		RaytracingUpdateTransform(model, node->Childrens[i], mat);
+	}
+
+	if (RaytracingWorldMatInput_Model[nodeIndex] != nullptr) {
+		mat.transpose();
+		for (int i = 0; i < model->mMeshes[node->Meshes[0]]->subMeshNum; ++i) {
+			memcpy(RaytracingWorldMatInput_Model[nodeIndex][i], &mat, sizeof(float) * 12);
+		}
+	}
+}
+
+StaticGameObject::StaticGameObject()
+{
+}
+
+StaticGameObject::~StaticGameObject()
+{
+	aabbArr.clear();
+}
+
+matrix StaticGameObject::GetWorld() {
+	return worldMat;
+}
+
+void StaticGameObject::SetWorld(matrix localWorldMat)
+{
+	matrix sav = localWorldMat;
+	GameObject* obj = parent;
+	if (obj != nullptr) {
+		sav *= obj->worldMat;
+	}
+	worldMat = sav;
+}
+
+void StaticGameObject::Render(matrix parent)
+{
+	GameObject::Render(parent);
+	//XMMATRIX sav = XMMatrixMultiply(worldMat, parent);
+	//BoundingOrientedBox obb = GetOBBw(sav);
+	//bool b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
+	//if (obb.Extents.x > 0 && b) {
+	//	Mesh* mesh = nullptr;
+	//	Model* model = nullptr;
+	//	shape.GetRealShape(mesh, model);
+	//	if (model != nullptr) {
+	//		model->Render(gd.gpucmd, sav);
+	//	}
+	//	else if (mesh != nullptr) {
+	//		matrix m = sav;
+	//		m.transpose();
+
+	//		//set world matrix in shader
+	//		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+	//		//set texture in shader
+	//		//game.MyPBRShader1->SetTextureCommand()
+	//		int materialIndex = Mesh_materialIndex;
+	//		Material& mat = game.MaterialTable[materialIndex];
+
+	//		gd.gpucmd->SetGraphicsRootDescriptorTable(3, mat.hGPU);
+	//		gd.gpucmd->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
+	//		mesh->Render(gd.gpucmd, 1);
+	//	}
+	//}
+
+	//StaticGameObject* obj = (StaticGameObject*)childs;
+	//while (obj != nullptr) {
+	//	obj->Render(sav);
+	//	obj = (StaticGameObject*)obj->sibling;
+	//}
+}
+
+void StaticGameObject::PushRenderBatch(matrix parent)
+{
+	GameObject::PushRenderBatch(parent);
+}
+
+bool StaticGameObject::Collision_Inherit(matrix parent_world, BoundingBox bb)
+{
+	XMMATRIX sav = XMMatrixMultiply(worldMat, parent_world);
+	BoundingOrientedBox obb = GetOBBw(sav);
+	if (obb.Extents.x > 0 && obb.Intersects(bb)) {
+		return true;
+	}
+
+	StaticGameObject* obj = (StaticGameObject*)childs;
+	while (obj != nullptr) {
+		if (obj->Collision_Inherit(sav, bb)) return true;
+		obj = (StaticGameObject*)obj->sibling;
+	}
+
+	return false;
+}
+
+void StaticGameObject::InitMapAABB_Inherit(void* origin, matrix parent_world)
+{
+	GameMap* map = (GameMap*)origin;
+
+	XMMATRIX sav = XMMatrixMultiply(worldMat, parent_world);
+	BoundingOrientedBox obb = GetOBBw(sav);
+	map->ExtendMapAABB(obb);
+
+	StaticGameObject* obj = (StaticGameObject*)childs;
+	while (obj != nullptr) {
+		obj->InitMapAABB_Inherit(origin, sav);
+		obj = (StaticGameObject*)obj->sibling;
+	}
+}
+
+BoundingOrientedBox StaticGameObject::GetOBB() {
+	return GameObject::GetOBB();
+}
+
+BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
+{
+	BoundingOrientedBox obb_local;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (model != nullptr) {
+		obb_local = model->GetOBB();
+	}
+	else if (mesh != nullptr) {
+		obb_local = mesh->GetOBB();
+	}
+	else {
+		obb_local.Extents.x = -1;
+		return obb_local;
+	}
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, worldMat);
+	return obb_world;
+}
+
+void StaticGameObject::Release() {
+	GameObject::Release();
+}
+
+void DynamicGameObject::InitialChunkSetting()
+{
+	if (chunkAllocIndexs == nullptr) {
+		BoundingOrientedBox obb = GetOBB();
+		vec4 ext = obb.Extents;
+		float len = ext.len3 / game.chunck_divide_Width;
+		chunkAllocIndexsCapacity = powf(2 * ceilf(len * 0.5f), 3);
+		chunkAllocIndexs = new int[chunkAllocIndexsCapacity];
+	}
+}
+
+matrix DynamicGameObject::GetWorld() {
+	matrix sav = worldMat;
+	GameObject* obj = parent;
+	while (obj != nullptr) {
+		sav *= obj->worldMat;
+		if (GameObject::IsType<StaticGameObject>(obj)) break;
+		obj = obj->parent;
+	}
+	return sav;
+}
+
+void DynamicGameObject::SetWorld(matrix localWorldMat)
+{
+	worldMat = localWorldMat;
+}
+
+void DynamicGameObject::Move(vec4 velocity, vec4 Q)
+{
+	int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	int up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				GameChunk* gc = game.chunck[ChunkIndex(ix, iy, iz)];
+				gc->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+				up += 1;
+			}
+		}
+	}
+
+	// 위치 이동 / 회전
+	vec4 pos = worldMat.pos;
+	worldMat.trQ(Q);
+	worldMat.pos = pos + velocity;
+	worldMat.pos.w = 1;
+
+	// 포함 청크 탐색
+	IncludeChunks = game.GetChunks_Include_OBB(GetOBB());
+
+	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				auto c = game.chunck.find(ChunkIndex(ix, iy, iz));
+				GameChunk* gc;
+				if (c == game.chunck.end()) {
+					// new game chunk
+					gc = new GameChunk();
+					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+					game.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+				}
+				else gc = c->second;
+				int allocN = gc->Dynamic_gameobjects.Alloc();
+				gc->Dynamic_gameobjects[allocN] = this;
+				chunkAllocIndexs[up] = allocN;
+				up += 1;
+			}
+		}
+	}
+}
+
+void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afterChunkInc)
+{
+	int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	int up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				game.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+				up += 1;
+			}
+		}
+	}
+
+	// 위치 이동 / 회전
+	vec4 pos = worldMat.pos;
+	worldMat.trQ(Q);
+	worldMat.pos = pos + velocity;
+	worldMat.pos.w = 1;
+
+	// 포함 청크 탐색
+	IncludeChunks = afterChunkInc;
+	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				auto c = game.chunck.find(ChunkIndex(ix, iy, iz));
+				GameChunk* gc;
+				if (c == game.chunck.end()) {
+					// new game chunk
+					gc = new GameChunk();
+					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+					game.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+				}
+				else gc = c->second;
+				int allocN = gc->Dynamic_gameobjects.Alloc();
+				gc->Dynamic_gameobjects[allocN] = this;
+				chunkAllocIndexs[up] = allocN;
+				up += 1;
+			}
+		}
+	}
+}
+
+void DynamicGameObject::Update(float delatTime) {
+
+}
+
+void DynamicGameObject::Render(matrix parent) {
+	GameObject::Render(parent);
+}
+
+void DynamicGameObject::PushRenderBatch(matrix parent)
+{
+	GameObject::PushRenderBatch(parent);
+}
+
+void DynamicGameObject::Event(WinEvent evt) {
+
+}
+
+void DynamicGameObject::Release() {
+	GameObject::Release();
+	if (chunkAllocIndexs) {
+		int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+		int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+		int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+		int up = 0;
+		for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+			for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+				for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+					game.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+					up += 1;
+				}
+			}
+		}
+		delete[] chunkAllocIndexs;
+	}
+}
+
+BoundingOrientedBox DynamicGameObject::GetOBB() {
+	BoundingOrientedBox obb_local;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	if (model != nullptr) obb_local = model->GetOBB();
+
+	matrix sav = GetWorld();
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, sav);
+
+	return obb_world;
+}
+
+void DynamicGameObject::LookAt(vec4 look, vec4 up)
+{
+	worldMat.LookAt(look, up);
+}
+
+void DynamicGameObject::CollisionMove(DynamicGameObject* gbj1, DynamicGameObject* gbj2)
+{
+	constexpr float epsillon = 0.01f;
+
+	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());/*
+	bool bia = XMColorEqual(gbj1->tickAVelocity, XMVectorZero());*/
+	bool bj = XMColorEqual(gbj2->tickLVelocity, XMVectorZero());/*
+	bool bja = XMColorEqual(gbj2->tickAVelocity, XMVectorZero());*/
+
+	DynamicGameObject* movObj = nullptr;
+	DynamicGameObject* colObj = nullptr;
+	BoundingOrientedBox obb1 = gbj1->GetOBB();
+	BoundingOrientedBox obb2 = gbj2->GetOBB();
+	//float len = vec4(gbj1->worldMat.pos - gbj2->worldMat.pos).len3;
+	//float distance = vec4(obb1.Extents).len3 + vec4(obb2.Extents).len3;
+	//if (len < distance) {
+	//Collision_By_Rotations:
+	//	if (!bia && bja) {
+	//		movObj = gbj1;
+	//		colObj = gbj2;
+	//		goto Collision_byRotation_static_vs_dynamic;
+	//	}
+	//	else if (bia && !bja) {
+	//		movObj = gbj2;
+	//		colObj = gbj1;
+	//		goto Collision_byRotation_static_vs_dynamic;
+	//	}
+	//	else if (!bia && !bja) {
+	//		goto Collision_By_Move;
+	//	}
+	//	else {
+	//		goto Collision_By_Move;
+	//	}
+	//Collision_byRotation_static_vs_dynamic:
+	//	OBB_vertexVector ovv = movObj->GetOBBVertexs();
+	//	movObj->worldMat.trQ(movObj->tickAVelocity);
+	//	obb1 = movObj->GetOBB();
+	//	OBB_vertexVector ovv_later = movObj->GetOBBVertexs();
+	//	movObj->worldMat.trQinv(movObj->tickAVelocity);
+	//	matrix imat = colObj->worldMat.RTInverse;
+	//	obb2 = colObj->GetOBB();
+	//	vec4 RayPos;
+	//	vec4 RayDir;
+	//	for (int xi = 0; xi < 2; ++xi) {
+	//		for (int yi = 0; yi < 2; ++yi) {
+	//			for (int zi = 0; zi < 2; ++zi) {
+	//				ovv_later.vertex[xi][yi][zi] *= imat;
+	//				if (obb2.Contains(ovv_later.vertex[xi][yi][zi])) {
+	//					ovv.vertex[xi][yi][zi] *= imat;
+	//					RayPos = ovv.vertex[xi][yi][zi];
+	//					RayDir = ovv_later.vertex[xi][yi][zi] - ovv.vertex[xi][yi][zi];
+	//					if (fabsf(RayDir.x) > epsillon) {
+	//						float Ex = obb2.Extents.x * (RayDir.x / fabsf(RayDir.x));
+	//						float A = (Ex - RayPos.x) / RayDir.x;
+	//						vec4 colpos = vec4(RayPos.x + RayDir.x, RayDir.y * A + RayPos.y, RayDir.z * A + RayPos.z);
+	//						vec4 bound; bound.f3 = obb2.Extents;
+	//						if (colpos.is_in_bound(bound)) {
+	//							movObj->tickLVelocity.x += colpos.x - Ex;
+	//							goto Collision_By_Move;
+	//						}
+	//					}
+	//					if (fabsf(RayDir.y) > epsillon) {
+	//						float Ex = obb2.Extents.y * (RayDir.y / fabsf(RayDir.y));
+	//						float A = (Ex - RayPos.y) / RayDir.y;
+	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayPos.y + RayDir.y, RayDir.z * A + RayPos.z);
+	//						vec4 bound; bound.f3 = obb2.Extents;
+	//						if (colpos.is_in_bound(bound)) {
+	//							movObj->tickLVelocity.y += colpos.y - Ex;
+	//							goto Collision_By_Move;
+	//						}
+	//					}
+	//					if (fabsf(RayDir.z) > epsillon) {
+	//						float Ex = obb2.Extents.z * (RayDir.z / fabsf(RayDir.z));
+	//						float A = (Ex - RayPos.z) / RayDir.z;
+	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayDir.y * A + RayPos.y, RayPos.z + RayDir.z);
+	//						vec4 bound; bound.f3 = obb2.Extents;
+	//						if (colpos.is_in_bound(bound)) {
+	//							movObj->tickLVelocity.z += colpos.z - Ex;
+	//							goto Collision_By_Move;
+	//						}
+	//					}
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
+
+Collision_By_Move:
+	//if (bia) {
+	//	gbj1->worldMat.trQ(gbj1->tickAVelocity);
+	//}
+	//if (bja) {
+	//	gbj2->worldMat.trQ(gbj2->tickAVelocity);
+	//}
+
+	if (!bi && bj) {
+		// i : moving GameObject
+		// j : Collision Check GameObject
+		movObj = gbj1;
+		colObj = gbj2;
+		goto Collision_By_Move_static_vs_dynamic;
+	}
+	else if (bi && !bj) {
+		// i : Collision Check GameObject
+		// j : moving GameObject
+		movObj = gbj2;
+		colObj = gbj1;
+		goto Collision_By_Move_static_vs_dynamic;
+	}
+	else if (!bi && !bj) {
+		// i : moving GameObject
+		// j : moving GameObject
+
+		float mul = 1.0f;
+		float rate = 0.5f;
+		float maxLen = XMVector3Length(gbj1->tickLVelocity).m128_f32[0];
+		float temp = XMVector3Length(gbj2->tickLVelocity).m128_f32[0];
+		if (maxLen < temp) maxLen = temp;
+
+	CMP_INTERSECT:
+		XMVECTOR v1 = mul * gbj1->tickLVelocity;
+		XMVECTOR v2 = mul * gbj2->tickLVelocity;
+		gbj1->worldMat.pos += v1;
+		obb1 = gbj1->GetOBB();
+		gbj1->worldMat.pos -= v1;
+		gbj2->worldMat.pos += v2;
+		obb2 = gbj2->GetOBB();
+		gbj2->worldMat.pos -= v2;
+		if (obb1.Intersects(obb2)) {
+			mul -= rate;
+			rate *= 0.5f;
+			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
+		}
+		else {
+			mul += rate;
+			rate *= 0.5f;
+			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
+		}
+
+		gbj1->tickLVelocity = v1;
+		gbj2->tickLVelocity = v2;
+
+		return;
+	}
+	else {
+		//no move
+		return;
+	}
+
+Collision_By_Move_static_vs_dynamic:
+	movObj->worldMat.pos += movObj->tickLVelocity;
+	obb1 = movObj->GetOBB();
+	movObj->worldMat.pos -= movObj->tickLVelocity;
+	obb2 = colObj->GetOBB();
+
+	if (obb1.Intersects(obb2)) {
+		movObj->OnCollision(colObj);
+		colObj->OnCollision(movObj);
+
+		XMMATRIX basemat = colObj->worldMat;
+		XMMATRIX invmat = colObj->worldMat.RTInverse;
+		invmat.r[3] = XMVectorSet(0, 0, 0, 1);
+		XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
+		movObj->tickLVelocity = XMVectorZero();
+
+		XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
+		movObj->tickLVelocity += MoveVector;
+		movObj->worldMat.pos += movObj->tickLVelocity;
+		obb1 = movObj->GetOBB();
+		movObj->worldMat.pos -= movObj->tickLVelocity;
+		if (obb1.Intersects(obb2)) {
+			movObj->tickLVelocity -= MoveVector;
+		}
+
+		MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
+		movObj->tickLVelocity += MoveVector;
+		movObj->worldMat.pos += movObj->tickLVelocity;
+		obb1 = movObj->GetOBB();
+		movObj->worldMat.pos -= movObj->tickLVelocity;
+		if (obb1.Intersects(obb2)) {
+			movObj->tickLVelocity -= MoveVector;
+		}
+
+		MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
+		movObj->tickLVelocity += MoveVector;
+		movObj->worldMat.pos += movObj->tickLVelocity;
+		obb1 = movObj->GetOBB();
+		movObj->worldMat.pos -= movObj->tickLVelocity;
+		if (obb1.Intersects(obb2)) {
+			movObj->tickLVelocity -= MoveVector;
+		}
+	}
+
+	//if (bia) {
+	//	gbj1->worldMat.trQinv(gbj1->tickAVelocity);
+	//}
+	//if (bja) {
+	//	gbj2->worldMat.trQinv(gbj2->tickAVelocity);
+	//}
+}
+
+void DynamicGameObject::OnCollision(GameObject* other)
+{
+	//GameObject Collision...
+}
+
+void DynamicGameObject::OnRayHit(GameObject* rayFrom)
+{
+}
+
+void DynamicGameObject::SetShape(Shape _shape)
+{
+	GameObject::SetShape(_shape);
+}
+
+bool godmod = true;
+DynamicGameObject::DynamicGameObject() :
+	chunkAllocIndexs{ nullptr }
+{
+	tickLVelocity = vec4(0, 0, 0, 0);
+	tickAVelocity = vec4(0, 0, 0, 0);
+	LastQuerternion = vec4(0, 0, 0, 0);
+	chunkAllocIndexsCapacity = 0;
+	ZeroMemory(&IncludeChunks, sizeof(GameObjectIncludeChunks));
+}
+
+DynamicGameObject::~DynamicGameObject()
+{
+	if (chunkAllocIndexs) {
+		delete[] chunkAllocIndexs;
+		chunkAllocIndexs = nullptr;
+	}
+}
+
+void DynamicGameObject::Update(float delatTime)
 {
 	PositionInterpolation(delatTime);
 }
 
-void GameObject::Render()
+void DynamicGameObject::LookAt(vec4 look, vec4 up)
 {
-	if (!m_pMesh || !m_pShader) {
-		static bool warned = false;
-		if (!warned) {
-			char dbg[256];
-			snprintf(dbg, sizeof(dbg),
-				"[RENDER][SKIP] obj=%p mesh=%p shader=%p (null -> not drawing)\n",
-				(void*)this, (void*)m_pMesh, (void*)m_pShader);
-			OutputDebugStringA(dbg);
-			warned = true;
-		}
-		return;
-	}
-
-	if (rmod == eRenderMeshMod::single_Mesh) {
-		XMFLOAT4X4 xmf4x4World;
-		XMStoreFloat4x4(&xmf4x4World, DirectX::XMMatrixTranspose(m_worldMatrix));
-
-		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &xmf4x4World, 0);
-
-		//game.MyDiffuseTextureShader->SetTextureCommand(&gd.GlobalTextureArr[diffuseTextureIndex]);
-		int materialIndex = MaterialIndex;
-		Material& mat = game.MaterialTable[materialIndex];
-		gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);
-		gd.pCommandList->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
-
-		m_pMesh->Render(gd.pCommandList, 1);
-	}
-	else {
-		//??
-	}
+	worldMat.LookAt(look, up);
 }
 
-void GameObject::SetMesh(Mesh* pMesh)
-{
-	m_pMesh = pMesh;
-}
-
-void GameObject::SetShader(Shader* pShader)
-{
-	m_pShader = pShader;
-}
-
-void GameObject::LookAt(vec4 look, vec4 up)
-{
-	m_worldMatrix.LookAt(look, up);
-}
-
-void GameObject::PositionInterpolation(float deltaTime)
+void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
 	float pow = deltaTime * 10;
 	Destpos.w = 1;
-	m_worldMatrix.pos = (1.0f - pow) * m_worldMatrix.pos + pow * Destpos;
+	worldMat.pos = (1.0f - pow) * worldMat.pos + pow * Destpos;
 }
 
 BulletRay::BulletRay()
@@ -115,139 +843,9 @@ void BulletRay::Render() {
 	if (direction.fast_square_of_len3 > 0) {
 		matrix mat = GetRayMatrix();
 		mat.transpose();
-		gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &mat, 0);
-		mesh->Render(gd.pCommandList, 1);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &mat, 0);
+		mesh->Render(gd.gpucmd, 1);
 	}
-}
-
-void Hierarchy_Object::Render_Inherit(matrix parent_world, Shader::RegisterEnum sre)
-{
-	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
-	BoundingOrientedBox obb = GetOBBw(sav);
-	if (obb.Extents.x > 0 && Game::renderViewPort->m_xmFrustumWorld.Intersects(obb)) {
-		if (rmod == GameObject::eRenderMeshMod::single_Mesh && m_pMesh != nullptr) {
-			matrix m = sav;
-			m.transpose();
-
-			//set world matrix in shader
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
-			//set texture in shader
-			//game.MyPBRShader1->SetTextureCommand()
-			int materialIndex = MaterialIndex;
-			Material& mat = game.MaterialTable[materialIndex];
-			/*GPUResource* diffuseTex = &game.DefaultTex;
-			if (mat.ti.Diffuse >= 0) diffuseTex = game.TextureTable[mat.ti.Diffuse];
-			GPUResource* normalTex = &game.DefaultNoramlTex;
-			if (mat.ti.Normal >= 0) normalTex = game.TextureTable[mat.ti.Normal];
-			GPUResource* ambientTex = &game.DefaultTex;
-			if (mat.ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[mat.ti.AmbientOcculsion];
-			GPUResource* MetalicTex = &game.DefaultAmbientTex;
-			if (mat.ti.Metalic >= 0) MetalicTex = game.TextureTable[mat.ti.Metalic];
-			GPUResource* roughnessTex = &game.DefaultAmbientTex;
-			if (mat.ti.Roughness >= 0) roughnessTex = game.TextureTable[mat.ti.Roughness];
-			game.MyPBRShader1->SetTextureCommand(diffuseTex, normalTex, ambientTex, MetalicTex, roughnessTex);*/
-
-			gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);
-			gd.pCommandList->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
-			m_pMesh->Render(gd.pCommandList, 1);
-		}
-		else if (rmod == GameObject::eRenderMeshMod::Model && pModel != nullptr) {
-			pModel->Render(gd.pCommandList, sav, sre);
-		}
-	}
-
-	for (int i = 0; i < childCount; ++i) {
-		childs[i]->Render_Inherit(sav, sre);
-	}
-}
-
-void Hierarchy_Object::Render_Inherit_CullingOrtho(matrix parent_world, Shader::RegisterEnum sre)
-{
-	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
-	BoundingOrientedBox obb = GetOBBw(sav);
-	if (obb.Extents.x > 0 && Game::renderViewPort->OrthoFrustum.Intersects(obb)) {
-		if (rmod == GameObject::eRenderMeshMod::single_Mesh && m_pMesh != nullptr) {
-			matrix m = sav;
-			m.transpose();
-
-			//set world matrix in shader
-			gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
-			//set texture in shader
-			//game.MyPBRShader1->SetTextureCommand()
-			int materialIndex = MaterialIndex;
-			Material& mat = game.MaterialTable[materialIndex];
-			/*GPUResource* diffuseTex = &game.DefaultTex;
-			if (mat.ti.Diffuse >= 0) diffuseTex = game.TextureTable[mat.ti.Diffuse];
-			GPUResource* normalTex = &game.DefaultNoramlTex;
-			if (mat.ti.Normal >= 0) normalTex = game.TextureTable[mat.ti.Normal];
-			GPUResource* ambientTex = &game.DefaultTex;
-			if (mat.ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[mat.ti.AmbientOcculsion];
-			GPUResource* MetalicTex = &game.DefaultAmbientTex;
-			if (mat.ti.Metalic >= 0) MetalicTex = game.TextureTable[mat.ti.Metalic];
-			GPUResource* roughnessTex = &game.DefaultAmbientTex;
-			if (mat.ti.Roughness >= 0) roughnessTex = game.TextureTable[mat.ti.Roughness];
-			game.MyPBRShader1->SetTextureCommand(diffuseTex, normalTex, ambientTex, MetalicTex, roughnessTex);*/
-
-			gd.pCommandList->SetGraphicsRootDescriptorTable(3, mat.hGPU);
-			gd.pCommandList->SetGraphicsRootDescriptorTable(4, mat.CB_Resource.hGpu);
-			m_pMesh->Render(gd.pCommandList, 1);
-		}
-		else if (rmod == GameObject::eRenderMeshMod::Model && pModel != nullptr) {
-			pModel->Render(gd.pCommandList, sav, sre);
-		}
-	}
-
-	for (int i = 0; i < childCount; ++i) {
-		childs[i]->Render_Inherit_CullingOrtho(sav, sre);
-	}
-}
-
-//bool Hierarchy_Object::Collision_Inherit(matrix parent_world, BoundingBox bb)
-//{
-//	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
-//	BoundingOrientedBox obb = GetOBBw(sav);
-//	if (obb.Extents.x > 0 && obb.Intersects(bb)) {
-//		return true;
-//	}
-//
-//	for (int i = 0; i < childCount; ++i) {
-//		if (childs[i]->Collision_Inherit(sav, bb)) return true;
-//	}
-//
-//	return false;
-//}
-//
-//void Hierarchy_Object::InitMapAABB_Inherit(void* origin, matrix parent_world)
-//{
-//	GameMap* map = (GameMap*)origin;
-//
-//	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
-//	BoundingOrientedBox obb = GetOBBw(sav);
-//	map->ExtendMapAABB(obb);
-//
-//	for (int i = 0; i < childCount; ++i) {
-//		childs[i]->InitMapAABB_Inherit(origin, sav);
-//	}
-//}
-
-BoundingOrientedBox Hierarchy_Object::GetOBBw(matrix worldMat)
-{
-	BoundingOrientedBox obb_local;
-	if (m_pMesh == nullptr) {
-		obb_local.Extents.x = -1;
-		return obb_local;
-	}
-	switch (rmod) {
-	case GameObject::eRenderMeshMod::single_Mesh:
-		obb_local = m_pMesh->GetOBB();
-		break;
-	case GameObject::eRenderMeshMod::Model:
-		obb_local = pModel->GetOBB();
-		break;
-	}
-	BoundingOrientedBox obb_world;
-	obb_local.Transform(obb_world, worldMat);
-	return obb_world;
 }
 
 void GameMap::ExtendMapAABB(BoundingOrientedBox obb)
@@ -334,44 +932,52 @@ void GameMap::LoadMap(const char* MapName)
 		BumpMesh* mesh = new BumpMesh();
 		ifstream ifs2{ filename, ios_base::binary };
 		int vertCnt = 0;
-		int indCnt = 0;
+		int subMeshCount = 0;
 		ifs2.read((char*)&vertCnt, sizeof(int));
-		ifs2.read((char*)&indCnt, sizeof(int));
+		ifs2.read((char*)&subMeshCount, sizeof(int));
 
 		vector<BumpMesh::Vertex> verts;
 		verts.reserve(vertCnt);
 		verts.resize(vertCnt);
-		vector<TriangleIndex> indexs;
-		int tricnt = (indCnt / 3);
-		indexs.reserve(tricnt);
-		indexs.resize(tricnt);
 		for (int k = 0; k < vertCnt; ++k) {
 			ifs2.read((char*)&verts[k].position, sizeof(float) * 3);
-			ifs2.read((char*)&verts[k].uv, sizeof(float) * 2);
+			ifs2.read((char*)&verts[k].u, sizeof(float));
+			ifs2.read((char*)&verts[k].v, sizeof(float));
 			ifs2.read((char*)&verts[k].normal, sizeof(float) * 3);
 			ifs2.read((char*)&verts[k].tangent, sizeof(float) * 3);
 			float w = 0; // bitangent direction??
 			ifs2.read((char*)&w, sizeof(float));
 		}
 
-		for (int k = 0; k < tricnt; ++k) {
-			ifs2.read((char*)&indexs[k].v[0], sizeof(UINT));
-			ifs2.read((char*)&indexs[k].v[1], sizeof(UINT));
-			ifs2.read((char*)&indexs[k].v[2], sizeof(UINT));
+		vector<TriangleIndex> indexs;
+		int stackSiz = 0;
+		int prevSiz = 0;
+		int* SubMeshSlots = new int[subMeshCount + 1];
+		SubMeshSlots[0] = 0;
+		for (int k = 0; k < subMeshCount; ++k) {
+			int indCnt = 0;
+			ifs2.read((char*)&indCnt, sizeof(int));
+			int tricnt = (indCnt / 3);
+			stackSiz += tricnt;
+			indexs.reserve(stackSiz);
+			indexs.resize(stackSiz);
+			for (int k = 0; k < tricnt; ++k) {
+				ifs2.read((char*)&indexs[prevSiz + k].v[0], sizeof(UINT));
+				ifs2.read((char*)&indexs[prevSiz + k].v[1], sizeof(UINT));
+				ifs2.read((char*)&indexs[prevSiz + k].v[2], sizeof(UINT));
+			}
+			prevSiz = stackSiz;
+			SubMeshSlots[k + 1] = prevSiz * 3;
 		}
 
 		ifs2.close();
-		mesh->CreateMesh_FromVertexAndIndexData(verts, indexs);
+		mesh->CreateMesh_FromVertexAndIndexData(verts, indexs, subMeshCount, SubMeshSlots);
 		//mesh->ReadMeshFromFile_OBJ(filename.c_str(), vec4(1, 1, 1, 1), false);
 
 		ifs.read((char*)&mesh->OBB_Tr, sizeof(float) * 3);
 		ifs.read((char*)&mesh->OBB_Ext, sizeof(float) * 3);
 		map->meshes[i] = mesh;
 	}
-	/*gd.pCommandList->Close();
-	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
-	gd.pCommandQueue->ExecuteCommandLists(1, ppCommandLists);
-	gd.WaitGPUComplete();*/
 
 	TextureTableStart = game.TextureTable.size();
 	MaterialTableStart = game.MaterialTable.size();
@@ -415,52 +1021,53 @@ void GameMap::LoadMap(const char* MapName)
 			ifs2.read((char*)pixels, width * height * 4);
 			ifs2.close();
 
-			char* isnormal = &filename[filename.size() - 10];
-			char* isnormalmap = &filename[filename.size() - 13];
-			char* isnormalDX = &filename[filename.size() - 12];
-			if ((strcmp(isnormal, "Normal.tex") == 0 ||
-				strcmp(isnormalDX, "NormalDX.tex") == 0) ||
-				strcmp(isnormalmap, "normalmap.tex") == 0) {
-				float xtotal = 0;
-				float ytotal = 0;
-				float ztotal = 0;
-				for (int ix = 0; ix < width; ++ix) {
-					int h = rand() % height;
-					BYTE* p = &pixels[h * width * 4 + ix * 4];
-					xtotal += p[0];
-					ytotal += p[1];
-					ztotal += p[2];
-				}
-				if (ztotal < ytotal) {
-					// x = z
-					// y = -x
-					// z = y
-					for (int ix = 0; ix < width; ++ix) {
-						for (int iy = 0; iy < height; ++iy) {
-							BYTE* p = &pixels[iy * width * 4 + ix * 4];
-							BYTE z = p[2];
-							BYTE y = p[1];
-							BYTE x = p[0];
-							p[0] = z;
-							p[1] = 255 - x;
-							p[2] = y;
-						}
-					}
-				}
-				if (ztotal < xtotal) {
-					// x = z
-					// y = y
-					// z = x
-					for (int ix = 0; ix < width; ++ix) {
-						for (int iy = 0; iy < height; ++iy) {
-							BYTE* p = &pixels[iy * width * 4 + ix * 4];
-							BYTE k = p[2];
-							p[2] = p[0];
-							p[0] = k;
-						}
-					}
-				}
-			}
+			//char* isnormal = &filename[filename.size() - 10];
+			//char* isnormalmap = &filename[filename.size() - 13];
+			//char* isnormalDX = &filename[filename.size() - 12];
+			//if ((strcmp(isnormal, "Normal.tex") == 0 ||
+			//	strcmp(isnormalDX, "NormalDX.tex") == 0) ||
+			//	strcmp(isnormalmap, "normalmap.tex") == 0) {
+
+			//	float xtotal = 0;
+			//	float ytotal = 0;
+			//	float ztotal = 0;
+			//	for (int ix = 0; ix < width; ++ix) {
+			//		int h = rand() % height;
+			//		BYTE* p = &pixels[h * width * 4 + ix * 4];
+			//		xtotal += p[0];
+			//		ytotal += p[1];
+			//		ztotal += p[2];
+			//	}
+			//	if (ztotal < ytotal) {
+			//		// x = z
+			//		// y = -x
+			//		// z = y
+			//		for (int ix = 0; ix < width; ++ix) {
+			//			for (int iy = 0; iy < height; ++iy) {
+			//				BYTE* p = &pixels[iy * width * 4 + ix * 4];
+			//				BYTE z = p[2];
+			//				BYTE y = p[1];
+			//				BYTE x = p[0];
+			//				p[0] = z;
+			//				p[1] = 255 - x;
+			//				p[2] = y;
+			//			}
+			//		}
+			//	}
+			//	if (ztotal < xtotal) {
+			//		// x = z
+			//		// y = y
+			//		// z = x
+			//		for (int ix = 0; ix < width; ++ix) {
+			//			for (int iy = 0; iy < height; ++iy) {
+			//				BYTE* p = &pixels[iy * width * 4 + ix * 4];
+			//				BYTE k = p[2];
+			//				p[2] = p[0];
+			//				p[0] = k;
+			//			}
+			//		}
+			//	}
+			//}
 			imgform::PixelImageObject pio;
 			pio.data = (imgform::RGBA_pixel*)pixels;
 			pio.width = width;
@@ -496,8 +1103,6 @@ void GameMap::LoadMap(const char* MapName)
 
 		game.TextureTable.push_back(texture);
 	}
-	/*gd.pCommandAllocator->Reset();
-	gd.pCommandList->Reset(gd.pCommandAllocator, NULL);*/
 
 	for (int i = 0; i < MaterialCount; ++i) {
 		Material mat;
@@ -578,11 +1183,11 @@ void GameMap::LoadMap(const char* MapName)
 	}
 
 	for (int i = 0; i < gameObjectCount; ++i) {
-		Hierarchy_Object* go = new Hierarchy_Object();
+		StaticGameObject* go = new StaticGameObject();
 		map->MapObjects[i] = go;
 	}
 	for (int i = 0; i < gameObjectCount; ++i) {
-		Hierarchy_Object* go = map->MapObjects[i];
+		StaticGameObject* go = map->MapObjects[i];
 		int nameId = 0;
 		ifs.read((char*)&nameId, sizeof(int));
 
@@ -594,87 +1199,163 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&scale, sizeof(float) * 3);
 
 		rot *= 3.141592f / 180.0f;
-		go->m_worldMatrix *= XMMatrixScaling(scale.x, scale.y, scale.z);
-		go->m_worldMatrix *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
-		go->m_worldMatrix.pos.f3 = pos.f3;
-		go->m_worldMatrix.pos.w = 1;
+		matrix world;
+		world.Id();
+		world *= XMMatrixScaling(scale.x, scale.y, scale.z);
+		world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
+		world.pos.f3 = pos.f3;
+		world.pos.w = 1;
+		go->SetWorld(world);
 
-		bool isMeshes = false;
-		ifs.read((char*)&isMeshes, sizeof(bool));
-		if (isMeshes) {
-			go->rmod = GameObject::eRenderMeshMod::single_Mesh;
+		char Mod = 'n';
+		ifs.read((char*)&Mod, sizeof(char));
+		if (Mod == 'n') { // ismesh
+			//dbgbreak(dbgc[0] == 7);
 			int meshid = 0;
 			int materialNum = 0;
 			int materialId = 0;
 			ifs.read((char*)&meshid, sizeof(int));
-			if (meshid == 75) {
-				cout << endl;
-			}
 			if (meshid < 0) {
-				go->m_pMesh = nullptr;
+				go->SetShape((Mesh*)nullptr);
 				ifs.read((char*)&materialNum, sizeof(int));
 			}
 			else {
-				go->m_pMesh = map->meshes[meshid];
+				go->SetShape(map->meshes[meshid]);
 				ifs.read((char*)&materialNum, sizeof(int));
+				go->material = new int[materialNum];
 				for (int k = 0; k < materialNum; ++k) {
 					ifs.read((char*)&materialId, sizeof(int));
-					go->MaterialIndex = MaterialTableStart + materialId;
+					if (materialId < 0) go->material[k] = 0;
+					else {
+						go->material[k] = MaterialTableStart + materialId;
+					}
 				}
 			}
+
+			int ColliderCount = 0;
+			ifs.read((char*)&ColliderCount, sizeof(int));
+			go->aabbArr.reserve(ColliderCount);
+			go->aabbArr.resize(ColliderCount);
+			for (int k = 0; k < ColliderCount; ++k) {
+				ifs.read((char*)&go->aabbArr[k].Center, sizeof(XMFLOAT3));
+				ifs.read((char*)&go->aabbArr[k].Extents, sizeof(XMFLOAT3));
+			}
 		}
-		else {
-			go->rmod = GameObject::eRenderMeshMod::Model;
+		else if (Mod == 'm') {
+			// is model
+			//go->rmod = GameObject::eRenderMeshMod::_Model;
 			//Model
+
 			int ModelID;
 			ifs.read((char*)&ModelID, sizeof(int));
 			if (ModelID < 0) {
-				go->pModel = nullptr;
+				go->SetShape((Model*)nullptr);
 			}
 			else {
-				go->pModel = map->models[ModelID];
+				go->SetShape(map->models[ModelID]);
+			}
+
+			int nodeCount = go->shape.GetModel()->nodeCount;
+			for (int k = 0; k < nodeCount; ++k) {
+				vec4 pos;
+				ifs.read((char*)&pos, sizeof(float) * 3);
+				vec4 rot = 0;
+				ifs.read((char*)&rot, sizeof(float) * 3);
+				vec4 scale = 0;
+				ifs.read((char*)&scale, sizeof(float) * 3);
+
+				rot *= 3.141592f / 180.0f;
+				matrix world;
+				world.Id();
+				world *= XMMatrixScaling(scale.x, scale.y, scale.z);
+				world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
+				world.pos.f3 = pos.f3;
+				world.pos.w = 1;
+				if (k != 0)
+					go->transforms_innerModel[k] = world;
+				else
+					go->transforms_innerModel[k].Id();
 			}
 		}
+		else if (Mod == 'l') {
+			// is light
+			LightType lt;
+			int n = 0;
+			ifs.read((char*)&n, sizeof(int));
+			lt = (LightType)n;
 
-		if (isMeshes) {
-			ifs.read((char*)&go->childCount, sizeof(int));
-			go->childs.reserve(go->childCount);
-			go->childs.resize(go->childCount);
-			for (int k = 0; k < go->childCount; ++k) {
+			go->SetShape((Mesh*)nullptr);
+			go->material = nullptr;
+
+			Light* lptr = new Light();
+			lptr->lightType = lt;
+			lptr->transform = go->worldMat;
+			ifs.read((char*)&lptr->range, sizeof(float));
+			ifs.read((char*)&lptr->intencity, sizeof(float));
+			ifs.read((char*)&lptr->spot_angle, sizeof(float));
+			lptr->GenerateLight();
+			game.PushLight(lptr);
+		}
+
+		if (Mod != 'm') { // is not model
+			int childCount = 0;
+			ifs.read((char*)&childCount, sizeof(int));
+			int cnt = 0;
+			GameObject** temp = &go->childs;
+			while (cnt < childCount) {
 				int childIndex = 0;
 				ifs.read((char*)&childIndex, sizeof(int));
-				go->childs[k] = map->MapObjects[childIndex];
+				*temp = map->MapObjects[childIndex];
+				(*temp)->parent = go;
+				temp = &(*temp)->sibling;
+				cnt += 1;
 			}
 		}
-		else {
-			go->childCount = 0;
-		}
-
-		go->m_pShader = game.MyPBRShader1;
-
 		map->MapObjects[i] = go;
+		if (gd.isSupportRaytracing) {
+			map->MapObjects[i]->RaytracingUpdateTransform();
+		}
 	}
+
+	map->MapObjects[0]->DbgHieraky();
 
 	//BakeStaticCollision();
 }
 
 void SphereLODObject::Update(float deltaTime)
 {
-	m_worldMatrix.pos = FixedPos;
+	worldMat.pos = FixedPos;
 }
 
-void SphereLODObject::Render()
+void SphereLODObject::Render(matrix parent = XMMatrixIdentity())
 {
 	if (MeshNear && MeshFar)
 	{
 		vec4 cam = gd.viewportArr[0].Camera_Pos;
-		vec4 pos = m_worldMatrix.pos;
+		vec4 pos = worldMat.pos;
 
 		vec4 d = cam - pos;
 		float dist = d.len3;
 
-		m_pMesh = (dist < SwitchDistance) ? MeshNear : MeshFar;
+		shape.SetMesh((dist < SwitchDistance) ? MeshNear : MeshFar);
 	}
 
 	GameObject::Render();
+}
+
+void GameChunk::SetChunkIndex(ChunkIndex ci) {
+	cindex = ci;
+	AABB = ci.GetAABB();
+}
+
+void Light::GenerateLight()
+{
+}
+
+BoundingBox ChunkIndex::GetAABB() {
+	BoundingBox AABB;
+	float halfW = game.chunck_divide_Width * 0.5f;
+	AABB.Center = XMFLOAT3(game.chunck_divide_Width * x + halfW, game.chunck_divide_Width * y + halfW, game.chunck_divide_Width * z + halfW);
+	AABB.Extents = XMFLOAT3(halfW, halfW, halfW);
+	return AABB;
 }

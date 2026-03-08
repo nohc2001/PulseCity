@@ -1,17 +1,504 @@
 #pragma once
 #include "stdafx.h"
 #include "GraphicDefs.h"
+#include "Shader.h"
 #include "ttfParser.h"
 #include "SpaceMath.h"
 #include "Mesh.h"
 
-
 using namespace TTFFontParser;
+
+struct GPUCmd {
+	ID3D12GraphicsCommandList* GraphicsCmdList;
+	ID3D12GraphicsCommandList4* DXRCmdList;
+	ID3D12CommandAllocator* pCommandAllocator;
+	ID3D12CommandQueue* pCommandQueue;
+	ID3D12Fence* pFence;
+	ui64 FenceValue;
+	HANDLE hFenceEvent;
+	bool isClose = true;
+
+	GPUCmd() {
+		isClose = true;
+		FenceValue = 0;
+	}
+	GPUCmd(ID3D12GraphicsCommandList* cmdlist, ID3D12CommandAllocator* alloc, ID3D12CommandQueue* que) : GraphicsCmdList{ cmdlist }, pCommandAllocator{ alloc },
+		pCommandQueue{ que }
+	{
+		isClose = true;
+		FenceValue = 0;
+	}
+	GPUCmd(ID3D12Device* pDevice, D3D12_COMMAND_LIST_TYPE type = D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_FLAGS flag = D3D12_COMMAND_QUEUE_FLAG_NONE) {
+		D3D12_COMMAND_QUEUE_DESC d3dCommandQueueDesc;
+		::ZeroMemory(&d3dCommandQueueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
+		d3dCommandQueueDesc.Flags = flag;
+		d3dCommandQueueDesc.Type = type;
+		HRESULT hResult = pDevice->CreateCommandQueue(&d3dCommandQueueDesc,
+			_uuidof(ID3D12CommandQueue), (void**)&pCommandQueue);
+		hResult = pDevice->CreateCommandAllocator(type,
+			__uuidof(ID3D12CommandAllocator), (void**)&pCommandAllocator);
+		hResult = pDevice->CreateCommandList(0, type,
+			pCommandAllocator, NULL, __uuidof(ID3D12GraphicsCommandList), (void**)&GraphicsCmdList);
+		isClose = true;
+
+		hResult = pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence),
+			(void**)&pFence);
+		FenceValue = 0;
+		hFenceEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+
+		GraphicsCmdList->QueryInterface(IID_PPV_ARGS(&DXRCmdList));
+	}
+
+	operator ID3D12GraphicsCommandList* () { return GraphicsCmdList; }
+	__forceinline ID3D12GraphicsCommandList* operator->() { return GraphicsCmdList; }
+
+	HRESULT Reset(bool dxr = false) {
+		isClose = false;
+		pCommandAllocator->Reset();
+		if (dxr) {
+			return DXRCmdList->Reset(pCommandAllocator, nullptr);
+		}
+		else {
+			return GraphicsCmdList->Reset(pCommandAllocator, nullptr);
+		}
+	}
+	HRESULT Close(bool dxr = false) {
+		isClose = true;
+		if (dxr) {
+			return DXRCmdList->Close();
+		}
+		else {
+			return GraphicsCmdList->Close();
+		}
+	}
+	void Execute(bool dxr = false) {
+		ID3D12CommandList* ppd3dCommandLists[] = { GraphicsCmdList };
+		if (dxr) {
+			ppd3dCommandLists[0] = DXRCmdList;
+		}
+		pCommandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
+	}
+
+	__forceinline void ResBarrierTr(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after, UINT subRes = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_BARRIER_FLAGS flag = D3D12_RESOURCE_BARRIER_FLAG_NONE) {
+		CD3DX12_RESOURCE_BARRIER resBarrier = CD3DX12_RESOURCE_BARRIER::Transition(res, before, after, subRes, flag);
+		GraphicsCmdList->ResourceBarrier(1, &resBarrier);
+	}
+
+	__forceinline void ResBarrierTr(GPUResource* res, D3D12_RESOURCE_STATES after) {
+		res->AddResourceBarrierTransitoinToCommand(GraphicsCmdList, after);
+	}
+
+	void SetShader(Shader* shader, ShaderType reg = ShaderType::RenderNormal);
+
+	void WaitGPUComplete() {
+		ID3D12CommandQueue* selectQueue;
+		if (pCommandQueue == nullptr) {
+			selectQueue = pCommandQueue;
+		}
+		else selectQueue = pCommandQueue;
+		FenceValue++;
+		const UINT64 nFence = FenceValue;
+		HRESULT hResult = selectQueue->Signal(pFence, nFence);
+		//Add Signal Command (it update gpu fence value.)
+		if (pFence->GetCompletedValue() < nFence)
+		{
+			//When GPU Fence is smaller than CPU FenceValue, Wait.
+			hResult = pFence->SetEventOnCompletion(nFence, hFenceEvent);
+			::WaitForSingleObject(hFenceEvent, INFINITE);
+		}
+	}
+
+	void Release() {
+		if (GraphicsCmdList) GraphicsCmdList->Release();
+		if (pCommandAllocator) pCommandAllocator->Release();
+		if (pCommandQueue) pCommandQueue->Release();
+		if (pFence) pFence->Release();
+	}
+};
+
+//Code From : megayuchi - DXR Sample Start
+typedef DXC_API_IMPORT HRESULT(__stdcall* DxcCreateInstanceT)(_In_ REFCLSID rclsid, _In_ REFIID riid, _Out_ LPVOID* ppv);
+
+#define		MAX_SHADER_NAME_BUFFER_LEN		256
+#define		MAX_SHADER_NAME_LEN				(MAX_SHADER_NAME_BUFFER_LEN-1)
+#define		MAX_SHADER_NUM					2048
+#define		MAX_CODE_SIZE					(1024*1024)
+
+/*
+* ShaderHandle Only Created by malloc.
+* size is always precalculate by ShaderBlobs;
+*
+* 4byte dwFlags
+* 4byte dwCodeSize
+* 4byte dwShaderNameLen
+* 2 * 256 byte wchShaderName
+* <ShaderByteCodeSize> byte pCodeBuffer
+*
+* sizeof ShaderHandle is not sizeof(SHADER_HANDLE).
+* that is <sizeof(SHADER_HANDLE) - sizeof(DWORD) + dwCodeSize>;
+*/
+struct SHADER_HANDLE
+{
+	DWORD dwFlags;
+	DWORD dwCodeSize;
+	DWORD dwShaderNameLen;
+	WCHAR wchShaderName[MAX_SHADER_NAME_BUFFER_LEN];
+	DWORD pCodeBuffer[1];
+};
+
+struct Viewport
+{
+	float left;
+	float top;
+	float right;
+	float bottom;
+};
+
+struct RayGenConstantBuffer
+{
+	Viewport viewport;
+	Viewport stencil;
+};
+//Code From : megayuchi - DXR Sample End
+
+struct GlobalDevice;
+
+struct RayTracingDevice {
+	struct CameraConstantBuffer
+	{
+		XMMATRIX projectionToWorld;
+		XMVECTOR cameraPosition;
+		XMFLOAT3 DirLight_invDirection;
+		float DirLight_intencity;
+		XMFLOAT3 DirLight_color;
+		float padding;
+	};
+
+	GlobalDevice* origin;
+	ID3D12Device5* dxrDevice;
+	ID3D12GraphicsCommandList4* dxrCommandList;
+
+	HMODULE hDXC;
+	IDxcLibrary* pDXCLib;
+	IDxcCompiler* pDXCCompiler;
+	IDxcIncludeHandler* pDSCIncHandle;
+
+	//1MB Scratch GPU Mem
+	inline static UINT64 ASBuild_ScratchResource_Maxsiz = 10485760 * 2;
+	ID3D12Resource* ASBuild_ScratchResource = nullptr;
+	UINT64 UsingScratchSize = 0; // 256의 배수여야함.
+
+	ID3D12Resource* RayTracingOutput = nullptr;
+	DescIndex RTO_UAV_index;
+
+	ID3D12Resource* CameraCB = nullptr;
+	CameraConstantBuffer* MappedCB = nullptr;
+
+	vec4 m_eye;
+	vec4 m_up;
+	vec4 m_at;
+
+	void Init(void* origin_gd);
+
+	//Raytracing이 지원되는 버전 부터는 디바이스 제거를 처리하는 애플리케이션이 스스로를 그렇게 할 수 있다고 선언이 필요한데, 그 작업을 한다.
+	void CheckDeviceSelfRemovable();
+
+	//Code From DirectX Raytracing HelloWorld Sample
+	// Returns bool whether the device supports DirectX Raytracing tier.
+	inline bool IsDirectXRaytracingSupported(IDXGIAdapter1* adapter);
+
+	void SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGNATURE_DESC& desc, ID3D12RootSignature** rootSig);
+
+	bool InitDXC();
+
+	SHADER_HANDLE* CreateShaderDXC(const wchar_t* shaderPath, const WCHAR* wchShaderFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, DWORD dwFlags);
+
+	void CreateSubRenderTarget();
+
+	void CreateCameraCB();
+
+	void SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up = vec4(0, 1, 0, 0));
+};
+
+#define SizeOfInUint32(obj) ((sizeof(obj) - 1) / sizeof(UINT32) + 1)
+
+//32 byte alignment require
+struct LocalRootSigData {
+	unsigned int VBOffset;
+	unsigned int IBOffset;
+	char padding[24];
+
+	LocalRootSigData() {}
+	LocalRootSigData(unsigned int VBOff, unsigned int IBOff) :
+		VBOffset{ VBOff }, IBOffset{ IBOff }
+	{
+	}
+	LocalRootSigData(const LocalRootSigData& ref) {
+		VBOffset = ref.VBOffset;
+		IBOffset = ref.IBOffset;
+	}
+
+	bool operator==(const LocalRootSigData& ref) const {
+		return ref.IBOffset == IBOffset && ref.VBOffset == VBOffset;
+	}
+};
+
+// [float3 position] [float3 normal] [float2 uv] [float3 tangent] (기본적으로 BumpMesh임)
+struct RayTracingMesh {
+	//--------------- 모든 메쉬들이 공유하는 변수----------------//
+	// 모든 메쉬들이 같이 공유하는 VB, IB (UploadBuffer)
+	// 업로드 버퍼이므로 GPU 접근이 상대적으로 느리다. 성능이 좋지 않다면, 변하지 않는 Mesh들을 따로 
+	// DefaultHeap으로 구성할 필요가 있다.
+	/*
+	* commandList->CopyBufferRegion(
+	defaultBuffer.Get(),   // 대상(Default Heap)
+	destOffset,            // 대상 오프셋
+	uploadBuffer.Get(),    // 원본(Upload Heap)
+	srcOffset,             // 원본 오프셋
+	sizeInBytes            // 복사할 크기
+	);
+	*/
+
+	//모든 메쉬들이 같이 공유하는 VB, IB (UploadBuffer)
+	inline static ID3D12Resource* vertexBuffer = nullptr; // SRV
+	inline static ID3D12Resource* indexBuffer = nullptr; // SRV
+	inline static ID3D12Resource* UAV_vertexBuffer = nullptr; // UAV, SRV
+
+	// VB, IB의 최대크기
+	static constexpr int VertexBufferCapacity = 52428800; // 50MB
+	static constexpr int IndexBufferCapacity = 52428800; // 10MB
+	static constexpr int UAV_VertexBufferCapacity = 52428800; // 50MB
+
+	// 업로드할 메쉬의 VB, IB 가 들어갈 데이터
+	inline static ID3D12Resource* Upload_vertexBuffer = nullptr;
+	inline static ID3D12Resource* Upload_indexBuffer = nullptr;
+	inline static ID3D12Resource* UAV_Upload_vertexBuffer = nullptr;
+
+	// 업로드 VB, IB의 최대크기
+	static constexpr int Upload_VertexBufferCapacity = 20971520; // 20MB
+	static constexpr int Upload_IndexBufferCapacity = 20971520; // 10MB
+	static constexpr int UAV_Upload_VertexBufferCapacity = 20971520; // 20MB
+
+	// 업로드 VB, IB가 매핑된 CPURAM 데이터의 주소
+	inline static char* pVBMappedStart = nullptr;
+	inline static char* pIBMappedStart = nullptr;
+	inline static char* pUAV_VBMappedStart = nullptr;
+
+	// VB, IB의 현재 크기
+	inline static int VertexBufferByteSize = 0;
+	inline static int IndexBufferByteSize = 0;
+	inline static int UAV_VertexBufferByteSize = 0;
+
+	// VB, IB를 가리키는 SRV Desc Handle
+	inline static DescIndex VBIB_DescIndex;
+	// UAV_VB, IB를 가리키는 SRV Desc Handle
+	inline static DescIndex UAV_VBIB_DescIndex;
+
+	//--------------- 메쉬들이 각각따로 소유한 변수---------------//
+	// 메쉬의 버택스 데이터, 엔덱스 데이터가 매핑된 CPURAM 데이터의 주소
+	char* pVBMapped = nullptr;
+	char* pIBMapped = nullptr;
+	char* pUAV_VBMapped = nullptr;
+
+	// Ray가 발사되고 BLAS를 통과해 물체와 만났을때, Mesh의 VB, IB를 접근할 수 있도록
+	// LocalRootSignature에 해당 메쉬의 VB, IB가 시작되는 바이트오프셋을 넣어 주어야 한다.
+	UINT64 VBStartOffset;
+	UINT64* IBStartOffset;
+	UINT64 UAV_VBStartOffset;
+
+	int subMeshCount = 1;
+
+	// 메쉬의 BLAS
+	ID3D12Resource* BLAS;
+	D3D12_RAYTRACING_GEOMETRY_DESC* GeometryDescs;
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS BLAS_Input;
+	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottomLevelPrebuildInfo = {};
+
+	// TLAS에 인스턴스를 추가할때 이 값을 사용해서 렌더링 인스턴스를 삽입.
+	D3D12_RAYTRACING_INSTANCE_DESC MeshDefaultInstanceData = {};
+
+	struct Vertex {
+		XMFLOAT3 position;
+		float u;
+		float v;
+		XMFLOAT3 normal;
+		XMFLOAT3 tangent;
+		float padding;
+
+		operator RayTracingMesh::Vertex() {
+			return RayTracingMesh::Vertex(position, normal, XMFLOAT2(u, v), tangent);
+		}
+
+		Vertex() {}
+		Vertex(XMFLOAT3 p, XMFLOAT3 nor, XMFLOAT2 _uv, XMFLOAT3 tan)
+			: position{ p }, normal{ nor }, u{ _uv.x }, v{ _uv.y }, tangent{ tan }
+		{
+		}
+
+		bool HaveToSetTangent() {
+			bool b = ((tangent.x == 0 && tangent.y == 0) && tangent.z == 0);
+			b |= ((isnan(tangent.x) || isnan(tangent.y)) || isnan(tangent.z));
+			return b;
+		}
+
+		static void CreateTBN(Vertex& P0, Vertex& P1, Vertex& P2) {
+			vec4 N1, N2, M1, M2;
+			//XMFLOAT3 N0, N1, M0, M1;
+			N1 = vec4(P1.u, P1.v, 0, 0) - vec4(P0.u, P0.v, 0, 0);
+			N2 = vec4(P2.u, P2.v, 0, 0) - vec4(P0.u, P0.v, 0, 0);
+			M1 = vec4(P1.position) - vec4(P0.position);
+			M2 = vec4(P2.position) - vec4(P0.position);
+
+			float f = 1.0f / (N1.x * N2.y - N2.x * N1.y);
+			vec4 tan = vec4(P0.tangent);
+			tan = f * (M1 * N2.y - M2 * N1.y);
+			vec4 v = XMVector3Normalize(tan);
+			P0.tangent = v.f3;
+
+			if (P0.HaveToSetTangent()) {
+				// why tangent is nan???
+				XMVECTOR NorV = XMVectorSet(P0.normal.x, P0.normal.y, P0.normal.z, 1.0f);
+				XMVECTOR TanV = XMVectorSet(0, 0, 0, 0);
+				XMVECTOR BinV = XMVectorSet(0, 0, 0, 0);
+				BinV = XMVector3Cross(NorV, M1);
+				TanV = XMVector3Cross(NorV, BinV);
+				P0.tangent = { 1, 0, 0 };
+			}
+		}
+	};
+
+	static void StaticInit();
+	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
+
+	// 생성된 인덱스를 참조하여 생성된다.
+	void AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
+
+	void AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
+
+	void UAV_BLAS_Refit();
+};
+
+struct RayTracingRenderInstance {
+	RayTracingMesh* pMesh;
+	matrix worldMat;
+};
+
+template<>
+class hash<ShaderRecord> {
+public:
+	// 상황에 맞는 헤쉬를 정의할 필요가 있다.
+	size_t operator()(const ShaderRecord& s) const {
+		size_t d0 = (reinterpret_cast<size_t>(s.shaderIdentifier.ptr) >> 8) << 8 + s.localRootArguments.size;
+		d0 = _pdep_u64(d0, 0x5555555555555555);
+		size_t d1 = 0;
+		for (int i = 0; i < s.localRootArguments.size / 8; ++i) {
+			d1 += ((size_t*)s.localRootArguments.ptr)[i];
+		}
+		d1 = _pdep_u64(d1, 0xAAAAAAAAAAAAAAAA);
+		return d0 | d1;
+	}
+};
+
+class SkinMeshModifyShader {
+public:
+	ID3D12PipelineState* pPipelineState = nullptr;
+	ID3D12RootSignature* pRootSignature = nullptr;
+
+	enum RootParamId {
+		Const_OutputVertexBufferSize = 0,
+		CBVTable_OffsetMatrixs_ToWorldMatrixs = 1,
+		SRVTable_SourceVertexAndBoneData = 2,
+		UAVTable_OutputVertexData = 3,
+		Normal_RootParamCapacity = 4,
+	};
+
+	void InitShader();
+	void CreateRootSignature();
+	void CreatePipelineState();
+	void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* cmd);
+	void Release();
+};
+
+struct RayTracingShader {
+	struct DefaultCB {
+		float data[8];
+	};
+
+	ID3D12RootSignature* pGlobalRootSignature = nullptr;
+	vector<ID3D12RootSignature*> pLocalRootSignature;
+	ID3D12StateObject* RTPSO = nullptr;
+	vector<RayTracingRenderInstance> RenderCommandList;
+
+	ID3D12Resource* TLAS;
+	ID3D12Resource* TLAS_InstanceDescs_Res; // UploadBuffer
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC TLASBuildDesc = {};
+
+	// 출력할 Mesh 물체의 개수
+	static constexpr int TLAS_InstanceDescs_Capacity = 1048576;
+	int TLAS_InstanceDescs_Size = 0;
+	int TLAS_InstanceDescs_ImmortalSize = 0;
+	D3D12_RAYTRACING_INSTANCE_DESC* TLAS_InstanceDescs_MappedData = nullptr;
+
+	// immortal 한 인스턴스는 clear가 된 후에 추가가 가능함. 안그럼 쌩뚱맞은 인스턴스가 immortal 영역으로 들어간다.
+	// 반환값은 해당 인스턴스의 월드행렬(3x4)를 가리키는 포인터를 반환한다.
+	// LRSdata는 LocalRootSignature의 배열이 들어가고, 배열의 크기는 mesh.subMeshCount이다.
+	//(서브메쉬마다 LocalRoot 변수들이 바인딩 된다.)
+	float** push_rins_immortal(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex = 0);
+	void clear_rins();
+	float** push_rins(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex = 0);
+
+	UINT shaderIdentifierSize;
+	ComPtr<ID3D12Resource> RayGenShaderTable = nullptr;
+	ComPtr<ID3D12Resource> MissShaderTable = nullptr;
+
+	void** hitGroupShaderIdentifier;
+	//같은 종류의 렌더메쉬의 개수
+	static constexpr int HitGroupShaderTableCapavity = 1048576;
+	int HitGroupShaderTableSize = 0;
+	int HitGroupShaderTableImmortalSize = 0;
+	ShaderTable hitGroupShaderTable;
+	ComPtr<ID3D12Resource> HitGroupShaderTable = nullptr;
+
+	// 셰이더 테이블의 Map.
+	// 셰이더 레코드의 값으로 해당 레코드가 어떤 위치에 있는지 확인가능하고,
+	// 해당 셰이더 레코드가 테이블에 존재하는지도 확인가능하다.
+	unordered_map<ShaderRecord, int> HitGroupShaderTableToIndex;
+	void InsertShaderRecord(ShaderRecord sr, int index);
+
+	SkinMeshModifyShader* MySkinMeshModifyShader;
+	vector<void*> RebuildBLASBuffer;
+
+
+	void Init();
+	void CreateGlobalRootSignature();
+	void CreateLocalRootSignatures();
+	void CreatePipelineState();
+	void InitAccelationStructure();
+	void BuildAccelationStructure();
+	void InitShaderTable();
+	void BuildShaderTable();
+	void SkinMeshModify();
+	void PrepareRender();
+};
 
 /*
 * 설명 : DirectX 12 활용을 위한 렌더링 관련 전역변수들을 모아놓은 구조체.
 */
 struct GlobalDevice {
+	ui32 DSVSize;
+	ui32 RTVSize;
+	ui32 SamplerDescSize;
+	union {
+		ui32 CBVSize;
+		ui32 SRVSize;
+		ui32 UAVSize;
+		ui32 CBVSRVUAVSize;
+	};
+
+	RayTracingDevice raytracing;
+	bool debugDXGI = false;
+	bool isSupportRaytracing = true;
+	bool isRaytracingRender = true;
 
 	//DXGI 객체를 만들기 위한 팩토리
 	IDXGIFactory7* pFactory;// question 002 : why dxgi 6, but is type limit 7 ??
@@ -45,12 +532,11 @@ struct GlobalDevice {
 	// DSV DESC 증가 사이즈
 	ui32 DsvDescriptorIncrementSize;
 
-	// 커맨드 큐
-	ID3D12CommandQueue* pCommandQueue;
-	// 커맨드 할당자
-	ID3D12CommandAllocator* pCommandAllocator;
-	// 커맨드 리스트
-	ID3D12GraphicsCommandList* pCommandList;
+	GPUCmd gpucmd;
+	GPUCmd CScmd;
+	ID3D12CommandQueue* pComputeCommandQueue;
+	ID3D12CommandAllocator* pComputeCommandAllocator;
+	ID3D12GraphicsCommandList* pComputeCommandList;
 
 	// 펜스
 	ID3D12Fence* pFence;
@@ -164,7 +650,7 @@ struct GlobalDevice {
 	// Immortal은 게속 유지되는 Res DESC, 
 	// Dynamic은 TextureDescriptorAllotter등의 또 다른 Non-ShaderVisible Desc Heap에 이미 존재하면서,
 	// 유동적으로 자리를 차지할 수 있는 공간이다.
-	ShaderVisibleDescriptorPool ShaderVisibleDescPool;
+	SVDescPool2 ShaderVisibleDescPool;
 
 	//Create GPU Heaps that contain RTV, DSV Datas
 	void Create_RTV_DSV_DescriptorHeaps();
@@ -243,7 +729,12 @@ struct GlobalDevice {
 	* 
 	* 반환 : 해당 GPU 리소스 공간을 만들어 GPUResource에게 전달, 그것을 반환한다.
 	*/
-	GPUResource CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat = DXGI_FORMAT_UNKNOWN, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	GPUResource CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, 
+		D3D12_RESOURCE_STATES d3dResourceStates, 
+		D3D12_RESOURCE_DIMENSION dimension, 
+		int Width, int Height, DXGI_FORMAT BufferFormat = DXGI_FORMAT_UNKNOWN, 
+		UINT DepthOrArraySize = 1, 
+		D3D12_RESOURCE_FLAGS AdditionalFlag = D3D12_RESOURCE_FLAG_NONE);
 
 	/*
 	* 설명 : (DEFAULT)copydestBuffer에 (UPLOAD)uploadBuffer를 사용해 ptr 부분의 CPU RAM 데이터를 
@@ -258,8 +749,9 @@ struct GlobalDevice {
 	* GPUResource* copydestBuffer : 업로드의 목적지가 될 DEFAULT HEAP
 	* bool StateReturning : uploadBuffer와 copydestBuffer가 복사를 완료하고 기존의 STATE로 되돌아갈 것인지 결정.
 	*/
-	void UploadToCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, void* ptr, GPUResource* uploadBuffer, GPUResource* copydestBuffer = nullptr, bool StateReturning = true);
-
+	void UploadToCommitedGPUBuffer(void* ptr, GPUResource* uploadBuffer, 
+		GPUResource* copydestBuffer = nullptr, bool StateReturning = true);
+	
 	/*
 	 설명 : ??
 	*/
@@ -405,6 +897,14 @@ struct GlobalDevice {
 		float r = urd(dre);
 		return min + r * (max - min) / 1000000.0f;
 	}
+
+	void CreateDefaultHeap_VB(void* ptr, GPUResource& VertexBuffer, GPUResource& VertexUploadBuffer, D3D12_VERTEX_BUFFER_VIEW& view, UINT VertexCount, UINT sizeofVertex);
+
+	// IndexCount는 TriangleIndex의 size() * 3.
+	template <int indexByteSize>
+	void CreateDefaultHeap_IB(void* ptr, GPUResource& IndexBuffer, GPUResource& IndexUploadBuffer, D3D12_INDEX_BUFFER_VIEW& view, UINT IndexCount);
+
+	GPUResource CreateShadowMap(int width, int height, int DSVoffset, SpotLight& spotLight);
 };
 
 extern GlobalDevice gd;

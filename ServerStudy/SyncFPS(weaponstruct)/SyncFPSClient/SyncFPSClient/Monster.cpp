@@ -17,13 +17,13 @@ void Monster::Update(float deltaTime)
 	matrix hpBarWorldMat;
 	hpBarWorldMat.Id();
 	hpBarWorldMat.LookAt(cameraWorldMat.right);
-	hpBarWorldMat.pos = this->m_worldMatrix.pos + vec4(0.0f, 1.0f, 0.0f, 0);
+	hpBarWorldMat.pos = this->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0);
 	hpBarWorldMat.look *= 2 * HP / MaxHP;
 
 	game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
 }
 
-void Monster::Render()
+void Monster::Render(matrix parent = XMMatrixIdentity());
 {
 	if (isDead) {
 		return;
@@ -33,6 +33,6 @@ void Monster::Render()
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
 {
-	m_worldMatrix = (initialWorldMatrix);
-	//m_homePos = m_worldMatrix.pos;
+	worldMat = (initialWorldMatrix);
+	//m_homePos = worldMat.pos;
 }
