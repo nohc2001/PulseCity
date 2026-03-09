@@ -2,12 +2,13 @@
 #include "main.h"
 #include "Game.h"
 #include "Render.h"
-#include "Shader.h"
-#include "Mesh.h"
 #include "GameObject.h"
 #include "NetworkDefs.h"
-#include "Player.h"
-#include "Monster.h"
+
+extern int dbgc[128];
+void dbgbreak(bool condition) {
+	if (condition) __debugbreak();
+}
 
 template <typename T> void* GetVptr() {
 	T a;
@@ -18,6 +19,9 @@ template <typename T> void* GetVptr() {
 #ifndef SERVER_RELEASE
 #define SERVER_DEBUG
 #endif
+
+extern GlobalDevice gd;
+Game game;
 
 union GameObjectType {
 	static constexpr int ObjectTypeCount = 3;
@@ -105,6 +109,141 @@ void Game::SetLight()
 void Game::AddMesh(Mesh* mesh)
 {
 	MeshTable.push_back(mesh);
+}
+
+GameObjectIncludeChunks Game::GetChunks_Include_OBB(BoundingOrientedBox obb)
+{
+	GameObjectIncludeChunks ret;
+	XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];
+	obb.GetCorners(corners);
+
+	vec4 c[8];
+	c[0].f3 = corners[0];
+	vec4 minpos = c[0];
+	vec4 maxpos = c[0];
+	for (int i = 1; i < 8; ++i) {
+		c[i].f3 = corners[i];
+		minpos = _mm_min_ps(c[i], minpos);
+		maxpos = _mm_max_ps(c[i], maxpos);
+	}
+
+	ret.xmin = floor(minpos.x / chunck_divide_Width);
+	ret.xlen = floor(maxpos.x / chunck_divide_Width) - ret.xmin;
+	ret.ymin = floor(minpos.y / chunck_divide_Width);
+	ret.ylen = floor(maxpos.y / chunck_divide_Width) - ret.ymin;
+	ret.zmin = floor(minpos.z / chunck_divide_Width);
+	ret.zlen = floor(maxpos.z / chunck_divide_Width) - ret.zmin;
+	return ret;
+}
+
+GameChunk* Game::GetChunkFromPos(vec4 pos) {
+	int ix = floor(pos.x / chunck_divide_Width);
+	int iy = floor(pos.y / chunck_divide_Width);
+	int iz = floor(pos.z / chunck_divide_Width);
+	ChunkIndex ci = ChunkIndex(ix, iy, iz);
+	auto gc = chunck.find(ci);
+	if (gc != chunck.end()) {
+		return gc->second;
+	}
+	else {
+		return nullptr;
+	}
+}
+
+void Game::PushGameObject(GameObject* go)
+{
+	if (GameObject::IsType<StaticGameObject>(go)) {
+		// static game object
+		StaticGameObject* sgo = (StaticGameObject*)go;
+		GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(sgo->GetOBB());
+		int xmax = chunkIds.xmin + chunkIds.xlen;
+		int ymax = chunkIds.ymin + chunkIds.ylen;
+		int zmax = chunkIds.zmin + chunkIds.zlen;
+		bool pushing = false;
+		for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+			for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+				for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+					auto c = chunck.find(ChunkIndex(ix, iy, iz));
+					GameChunk* gc;
+					if (c == chunck.end()) {
+						// new game chunk
+						gc = new GameChunk();
+						gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+						chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+					}
+					else gc = c->second;
+
+					int allocN = gc->Static_gameobjects.Alloc();
+					gc->Static_gameobjects[allocN] = sgo;
+					pushing = true;
+				}
+			}
+		}
+	}
+	else {
+		if (GameObject::IsType<SkinMeshGameObject>(go)) {
+			// dynamic game object
+			SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
+			smgo->InitialChunkSetting();
+			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
+			int xmax = chunkIds.xmin + chunkIds.xlen;
+			int ymax = chunkIds.ymin + chunkIds.ylen;
+			int zmax = chunkIds.zmin + chunkIds.zlen;
+			int up = 0;
+			for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+				for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+					for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+						auto c = chunck.find(ChunkIndex(ix, iy, iz));
+						GameChunk* gc;
+						if (c == chunck.end()) {
+							// new game chunk
+							gc = new GameChunk();
+							gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+							chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+						}
+						else gc = c->second;
+						int allocN = gc->SkinMesh_gameobjects.Alloc();
+						gc->SkinMesh_gameobjects[allocN] = smgo;
+						smgo->chunkAllocIndexs[up] = allocN;
+						up += 1;
+					}
+				}
+			}
+		}
+		else {
+			// dynamic game object
+			DynamicGameObject* dgo = (DynamicGameObject*)go;
+			dgo->InitialChunkSetting();
+			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
+			int xmax = chunkIds.xmin + chunkIds.xlen;
+			int ymax = chunkIds.ymin + chunkIds.ylen;
+			int zmax = chunkIds.zmin + chunkIds.zlen;
+			int up = 0;
+			for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+				for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+					for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+						auto c = chunck.find(ChunkIndex(ix, iy, iz));
+						GameChunk* gc;
+						if (c == chunck.end()) {
+							// new game chunk
+							gc = new GameChunk();
+							gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+							chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+						}
+						else gc = c->second;
+						int allocN = gc->Dynamic_gameobjects.Alloc();
+						gc->Dynamic_gameobjects[allocN] = dgo;
+						dgo->chunkAllocIndexs[up] = allocN;
+						up += 1;
+					}
+				}
+			}
+		}
+	}
+}
+
+void Game::PushLight(Light* light)
+{
 }
 
 void Game::InitParticlePool(ParticlePool& pool, UINT count)
@@ -275,18 +414,17 @@ void Game::Init()
 	//game.GunModel->LoadModelFile("Resources/Model/sniper.model");
 	//game.GunModel->DebugPrintHierarchy(game.GunModel->RootNode);
 	
-	
 	// ½º³ªÀÌÆÛ ¸ðµ¨ ·Îµå
 	game.SniperModel = new Model;
-	game.SniperModel->LoadModelFile("Resources/Model/sniper.model");
+	game.SniperModel->LoadModelFile2("Resources/Model/sniper.model");
 
 	// ¶óÀÌÇÃ ¸ðµ¨ ·Îµå
 	game.RifleModel = new Model;
-	game.RifleModel->LoadModelFile("Resources/Model/Rifle.model");
+	game.RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
 
 	// ±ÇÃÑ ¸ðµ¨ ·Îµå
 	game.PistolModel = new Model;
-	game.PistolModel->LoadModelFile("Resources/Model/pistol.model");
+	game.PistolModel->LoadModelFile2("Resources/Model/pistol.model");
 	game.PistolModel->DebugPrintHierarchy(game.PistolModel->RootNode);
 
 	game.Pistol_SlideIndices.clear();
@@ -298,7 +436,7 @@ void Game::Init()
 
 	// ¼¦°Ç ¸ðµ¨ ·Îµå
 	game.ShotGunModel = new Model;
-	game.ShotGunModel->LoadModelFile("Resources/Model/shootgun.model");
+	game.ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
 	//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
 
 	game.SG_PumpIndices.clear();
@@ -310,7 +448,7 @@ void Game::Init()
 
 	// ¸Ó½Å°Ç(¹Ì´Ï°Ç) ¸ðµ¨ ·Îµå
 	game.MachineGunModel = new Model;
-	game.MachineGunModel->LoadModelFile("Resources/Model/minigun.model");
+	game.MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
 
 	game.MG_BarrelIndices.clear();
 	auto addBarrel = [&](const char* name) {
@@ -458,14 +596,6 @@ void Game::Render() {
 			ItemTable[DropedItems[i].itemDrop.id].MeshInInventory->Render(gd.gpucmd, 1);
 		}
 	}
-
-	//Render Static Map
-	Hierarchy_Object* obj = Map->MapObjects[0];
-	matrix mat2 = XMMatrixIdentity();
-	//mat2.pos.y -= 1.75f;
-	Game::renderViewPort = &gd.viewportArr[0];
-	obj->Render_Inherit(mat2, ShaderType::RenderWithShadow);
-
 
 	// Particle Render
 	FireCS->Dispatch(gd.gpucmd, &FirePool.Buffer, FirePool.Count, DeltaTime);
@@ -784,7 +914,8 @@ void Game::Render_ShadowPass()
 	//Clear Depth Stencil Buffer Command Addtion
 	D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
 		gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	gd.gpucmd->OMSetRenderTargets(0, nullptr, TRUE, &game.MySpotLight.ShadowMap.descindex.hRender.hcpu);
+	D3D12_CPU_DESCRIPTOR_HANDLE hcpu = game.MySpotLight.ShadowMap.descindex.hRender.hcpu;
+	gd.gpucmd->OMSetRenderTargets(0, nullptr, TRUE, &hcpu);
 	//there is no render target only depth map. ??
 	gd.gpucmd->ClearDepthStencilView(game.MySpotLight.ShadowMap.descindex.hRender.hcpu,
 		D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
@@ -815,8 +946,8 @@ void Game::Render_ShadowPass()
 	//game.MySpotLight.viewport.ProjectMatrix = XMMatrixOrthographicLH(rate * ShadowResolusion * 2, rate * ShadowResolusion * 2, 0.1f, 1000.0f);
 	//game.MySpotLight.viewport.UpdateFrustum();
 	game.MySpotLight.viewport.UpdateOrthoFrustum(0.1f, 1000.0f);
-	Game::renderViewPort = &game.MySpotLight.viewport;
-	game.Map->MapObjects[0]->Render_Inherit_CullingOrtho(mat2, ShaderType::RenderShadowMap);
+	//Game::renderViewPort = &game.MySpotLight.viewport;
+	//game.Map->MapObjects[0]->Render_Inherit_CullingOrtho(mat2, ShaderType::RenderShadowMap);
 
 	//render Objects
 	for (int i = 0; i < m_gameObjects.size(); ++i) {
@@ -834,6 +965,40 @@ void Game::Render_ShadowPass()
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
 	gd.WaitGPUComplete();
+}
+
+void Game::SetRenderMod(bool isbatch)
+{
+	CurrentRenderBatch = isbatch;
+	if (CurrentRenderBatch) {
+		GameObject::CurrentRenderFunc = &GameObject::PushRenderBatch;
+		StaticGameObject::CurrentRenderFunc = &StaticGameObject::PushRenderBatch;
+		DynamicGameObject::CurrentRenderFunc = &DynamicGameObject::PushRenderBatch;
+		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::PushRenderBatch;
+	}
+	else {
+		GameObject::CurrentRenderFunc = &GameObject::Render;
+		StaticGameObject::CurrentRenderFunc = &StaticGameObject::Render;
+		DynamicGameObject::CurrentRenderFunc = &DynamicGameObject::Render;
+		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::Render;
+	}
+}
+
+void Game::ClearAllMeshInstancing()
+{
+	for (int i = 0; i < MeshTable.size(); ++i) {
+		for (int k = 0; k < MeshTable[i]->subMeshNum; ++k) {
+			//dbglog3(L"Instancing %d %d : %d \n", i, k, MeshTable[i]->InstanceData[k].Capacity);
+			MeshTable[i]->InstanceData[k].ClearInstancing();
+		}
+	}
+}
+
+void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
+{
+	for (int i = 0; i < MeshTable.size(); ++i) {
+		MeshTable[i]->BatchRender(cmd);
+	}
 }
 
 void Game::Update()
@@ -963,7 +1128,6 @@ void Game::Update()
 			}
 		}
 	}
-
 }
 
 int Game::Receiving(char* ptr, int totallen)

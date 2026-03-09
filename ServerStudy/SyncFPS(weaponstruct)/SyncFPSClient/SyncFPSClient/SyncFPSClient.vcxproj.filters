@@ -25,6 +25,12 @@
     <Filter Include="헤더 파일\Utill">
       <UniqueIdentifier>{2770ff0b-714f-4b8d-8635-37c6d85abd50}</UniqueIdentifier>
     </Filter>
+    <Filter Include="헤더 파일\UtillHeader">
+      <UniqueIdentifier>{3db8c133-5398-4ce7-8634-09b0564e0eb8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\UtillSource">
+      <UniqueIdentifier>{f1bfc38d-fea9-4402-ba7c-e90f23f8c06f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -39,22 +45,7 @@
     <ClCompile Include="Game.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Mesh.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="GameObject.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Shader.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="GraphicDefs.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Player.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Monster.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="DDSTextureLoader12.cpp">
@@ -66,15 +57,12 @@
     <ClCompile Include="D3D_Util\ShaderUtil.cpp">
       <Filter>소스 파일\Utill</Filter>
     </ClCompile>
+    <ClCompile Include="SpaceMath.cpp">
+      <Filter>소스 파일\UtillSource</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="main.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="SpaceMath.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="vecset.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="NWLib\CustomNWLib.h">
@@ -110,52 +98,19 @@
     <ClInclude Include="NWLib\targetver.h">
       <Filter>헤더 파일\NWLib</Filter>
     </ClInclude>
-    <ClInclude Include="stb_image.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="ttfParser.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="GraphicDefs.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="Render.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Shader.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Mesh.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="Game.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="Player.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="GameObject.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Monster.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="NetworkDefs.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="stdafx.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="d3dx12.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="DDSTextureLoader12.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Utill_ImageFormating.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="RangeArr.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="D3D_Util\D3DUtil.h">
@@ -172,6 +127,27 @@
     </ClInclude>
     <ClInclude Include="D3D_Util\ShaderUtil.h">
       <Filter>헤더 파일\Utill</Filter>
+    </ClInclude>
+    <ClInclude Include="d3dx12.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="DDSTextureLoader12.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="SpaceMath.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="ttfParser.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="Utill_ImageFormating.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="vecset.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

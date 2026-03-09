@@ -1,9 +1,8 @@
 #pragma once
 #include "stdafx.h"
 #include "main.h"
+#include "Render.h"
 #include "NetworkDefs.h"
-#include "GraphicDefs.h"
-#include "Shader.h"
 #include "GameObject.h"
 
 extern Socket* ClientSocket;
@@ -231,6 +230,136 @@ public:
 	* 설명 : 쉐도우 맵을 렌더링한다.
 	*/
 	void Render_ShadowPass();
+
+	UINT TourID = 0;
+	// 렌더링을 할때 배치처리 렌더링 사용 여부
+	bool SceneRenderBatch = false;
+	// 렌더커맨드를 삽입할때 오브젝트의 렌더링 함수를 교체하는 bool 변수
+	bool CurrentRenderBatch = false;
+	void SetRenderMod(bool isbatch);
+	void ClearAllMeshInstancing();
+
+	template <bool isSkinMesh>
+	void RenderTour()
+	{
+		matrix idmat;
+		idmat.Id();
+		renderViewPort->UpdateFrustum();
+		PresentChunkSeekDepth = 0;
+		SameDepthChunkArr[0].clear();
+		SameDepthChunkArr[1].clear();
+		GameChunk* gc = GetChunkFromPos(renderViewPort->Camera_Pos);
+		int SDCAIndex = PresentChunkSeekDepth & 1;
+		int SDCANextIndex = (PresentChunkSeekDepth + 1) & 1;
+		TourID += 1;
+		if (gc == nullptr) goto GAMEOBJECTS_RENDER_END;
+		SameDepthChunkArr[0].push_back(gc);
+		while (gc != nullptr) {
+			SDCAIndex = PresentChunkSeekDepth & 1;
+			SDCANextIndex = (PresentChunkSeekDepth + 1) & 1;
+
+			if (SameDepthChunkArr[SDCAIndex].size() == 0) break;
+			for (int k = 0; k < SameDepthChunkArr[SDCAIndex].size(); ++k) {
+				gc = SameDepthChunkArr[SDCAIndex][k];
+				if (gc != nullptr) {
+					if constexpr (isSkinMesh == false) {
+						for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
+							if (gc->Static_gameobjects.isnull(i)) continue;
+							if (gc->Static_gameobjects[i]->TourID != TourID) {
+								(gc->Static_gameobjects[i]->*StaticGameObject::CurrentRenderFunc)(idmat);
+								gc->Static_gameobjects[i]->TourID = TourID;
+							}
+						}
+
+						for (int i = 0; i < gc->Dynamic_gameobjects.size; ++i) {
+							if (gc->Dynamic_gameobjects.isnull(i)) continue;
+							if (gc->Dynamic_gameobjects[i]->TourID != TourID) {
+								(gc->Dynamic_gameobjects[i]->*DynamicGameObject::CurrentRenderFunc)(idmat);
+								gc->Dynamic_gameobjects[i]->TourID = TourID;
+							}
+						}
+					}
+					else {
+						for (int i = 0; i < gc->SkinMesh_gameobjects.size; ++i) {
+							if (gc->SkinMesh_gameobjects.isnull(i)) continue;
+							if (gc->SkinMesh_gameobjects[i]->TourID != TourID) {
+								(gc->SkinMesh_gameobjects[i]->*SkinMeshGameObject::CurrentRenderFunc)(idmat);
+								gc->SkinMesh_gameobjects[i]->TourID = TourID;
+							}
+						}
+					}
+				}
+
+				for (int ix = -1; ix < 2; ix += 2) {
+					ChunkIndex ci = gc->cindex;
+				IX_CHUNKFIND:
+					ci.x += ix;
+					auto gci = chunck.find(ci);
+					if (gci != chunck.end()) {
+						GameChunk* gc0 = gci->second;
+						if (gc0->TourID != TourID) {
+							if (renderViewPort->m_xmFrustumWorld.Intersects(gc->AABB)) {
+								SameDepthChunkArr[SDCANextIndex].push_back(gc0);
+							}
+							gc0->TourID = TourID;
+						}
+					}
+					else {
+						if (renderViewPort->m_xmFrustumWorld.Intersects(ci.GetAABB())) {
+							goto IX_CHUNKFIND;
+						}
+					}
+				}
+				for (int iy = -1; iy < 2; iy += 2) {
+					ChunkIndex ci = gc->cindex;
+				IY_CHUNKFIND:
+					ci.y += iy;
+					auto gci = chunck.find(ci);
+					if (gci != chunck.end()) {
+						GameChunk* gc0 = gci->second;
+						if (gc0->TourID != TourID) {
+							if (renderViewPort->m_xmFrustumWorld.Intersects(gc->AABB)) {
+								SameDepthChunkArr[SDCANextIndex].push_back(gc0);
+							}
+							gc0->TourID = TourID;
+						}
+					}
+					else {
+						if (renderViewPort->m_xmFrustumWorld.Intersects(ci.GetAABB())) {
+							goto IY_CHUNKFIND;
+						}
+					}
+				}
+				for (int iz = -1; iz < 2; iz += 2) {
+					ChunkIndex ci = gc->cindex;
+				IZ_CHUNKFIND:
+					ci.z += iz;
+					auto gci = chunck.find(ci);
+					if (gci != chunck.end()) {
+						GameChunk* gc0 = gci->second;
+						if (gc0->TourID != TourID) {
+							if (renderViewPort->m_xmFrustumWorld.Intersects(gc->AABB)) {
+								SameDepthChunkArr[SDCANextIndex].push_back(gc0);
+							}
+							gc0->TourID = TourID;
+						}
+					}
+					else {
+						if (renderViewPort->m_xmFrustumWorld.Intersects(ci.GetAABB())) {
+							goto IZ_CHUNKFIND;
+						}
+					}
+				}
+			}
+			PresentChunkSeekDepth += 1;
+			SameDepthChunkArr[SDCAIndex].clear();
+		}
+	GAMEOBJECTS_RENDER_END:
+		return;
+	}
+
+	void BatchRender(ID3D12GraphicsCommandList* cmd);
+
 	/*
 	* 설명 : 게임을 업데이트 한다.
 	*/
@@ -263,5 +392,76 @@ public:
 	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
 };
 
-// 게임
 extern Game game;
+extern GlobalDevice gd;
+//template 함수 구현부
+template <bool isSkinMesh>
+void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* pGameobject)
+{
+	Model* pModel = (Model*)model;
+	XMMATRIX sav;
+	GameObject* obj = (GameObject*)pGameobject;
+	if (obj == nullptr) sav = XMMatrixMultiply(transform, parentMat);
+	else {
+		int nodeindex = ((byte8*)this - (byte8*)pModel->Nodes) / sizeof(ModelNode);
+		sav = XMMatrixMultiply(obj->transforms_innerModel[nodeindex], parentMat);
+	}
+
+	if (numMesh != 0 && Meshes != nullptr) {
+		if constexpr (isSkinMesh == false) {
+			//bump mesh
+			matrix m = sav;
+			m.transpose();
+
+			cmd->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+			for (int i = 0; i < numMesh; ++i) {
+				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::BumpMesh) {
+					BumpMesh* Bmesh = (BumpMesh*)((BumpMesh*)pModel->mMeshes[Meshes[i]]);
+					for (int k = 0; k < Bmesh->subMeshNum; ++k) {
+						using PBRRPI = PBRShader1::RootParamId;
+						Material& mat = game.MaterialTable[materialIndex[k]];
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat.TextureSRVTableIndex.hRender.hgpu);
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat.CB_Resource.descindex.hRender.hgpu);
+						pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
+					}
+				}
+			}
+		}
+		else {
+			//skin mesh
+			SkinMeshGameObject* smgo = (SkinMeshGameObject*)pGameobject;
+			for (int i = 0; i < numMesh; ++i) {
+				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::SkinedBumpMesh) {
+					using PBRRPI = PBRShader1::RootParamId;
+					BumpSkinMesh* bmesh = (BumpSkinMesh*)((BumpSkinMesh*)pModel->mMeshes[Meshes[i]]);
+
+					//Set Offset
+					DescHandle OffsetMatrixCBVHandle;
+					gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);
+					gd.pDevice->CopyDescriptorsSimple(1, OffsetMatrixCBVHandle.hcpu, bmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+					cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshOffsetMatrix, OffsetMatrixCBVHandle.hgpu);
+
+					//Set ToWorld
+					DescHandle ToWorldMatrixCBVHandle;
+					gd.ShaderVisibleDescPool.DynamicAlloc(&ToWorldMatrixCBVHandle, 1);
+					gd.pDevice->CopyDescriptorsSimple(1, ToWorldMatrixCBVHandle.hcpu, smgo->BoneToWorldMatrixCB[Mesh_SkinMeshindex[i]].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+					cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
+
+					for (int k = 0; k < bmesh->subMeshNum; ++k) {
+						Material& mat = game.MaterialTable[materialIndex[k]];
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat.TextureSRVTableIndex.hRender.hgpu);
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat.CB_Resource.descindex.hRender.hgpu);
+
+						pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
+					}
+				}
+			}
+		}
+	}
+
+	if (numChildren != 0 && Childrens != nullptr) {
+		for (int i = 0; i < numChildren; ++i) {
+			Childrens[i]->Render<isSkinMesh>(model, cmd, sav, pGameobject);
+		}
+	}
+}
