@@ -156,6 +156,41 @@ void FireRingCS(uint3 id : SV_DispatchThreadID)
     ParticlesRW[i] = p;
 }
 
+cbuffer MuzzleCB : register(b1)
+{
+    float4 MuzzlePos; // xyz: 위치
+    float4 MuzzleDir; // xyz: 방향, w: MuzzleSpread 
+    float MuzzleBurst; // 발사 신호
+    float3 muzzle_pad; 
+};
+
+[numthreads(256, 1, 1)]
+void MuzzleFlashCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+
+    if (p.Life <= 0 && MuzzleBurst > 0.5f)
+    {
+        p.Age = 0;
+        p.Position = MuzzlePos.xyz;
+        
+        float spread = MuzzleDir.w;
+        float3 randDir = float3(rand(i) - 0.5, rand(i + 1) - 0.5, rand(i + 2) - 0.5) * spread;
+        
+        p.Velocity = normalize(MuzzleDir.xyz + randDir) * 20.0f;
+
+        p.Life = 0.1f + rand(i + 3) * 0.1f;
+        p.Size = 0.3f;
+    }
+
+    p.Position += p.Velocity * dt;
+    p.Age += dt;
+    p.Life -= dt;
+    
+    ParticlesRW[i] = p;
+}
+
 // Vertex Shader (SV_VertexID)
 // VS
 StructuredBuffer<Particle> Particles : register(t0);

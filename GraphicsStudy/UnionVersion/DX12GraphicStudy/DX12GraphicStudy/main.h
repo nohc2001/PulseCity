@@ -510,8 +510,6 @@ struct GPUResource {
 
 		return(pd3dTexture);
 	}
-
-	void CreateBuffer_withUpload(int sizeOfByte, GPUResource* outUploadResource);
 };
 
 struct DescriptorAllotter {

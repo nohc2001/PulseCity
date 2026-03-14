@@ -1572,6 +1572,35 @@ void Player::ClientUpdate(float deltaTime)
 		XMMATRIX dropMat = XMMatrixTranslation(0, -drop, 0);
 		gunMatrix_firstPersonView.mat = gunMatrix_firstPersonView.mat * dropMat;
 	}
+
+	if (m_pWeapon->m_shootFlow < deltaTime)
+	{
+		XMVECTOR lookQuat = XMQuaternionRotationRollPitchYaw(m_pitch, m_yaw, 0);
+		vec4 clook = XMVector3Rotate(XMVectorSet(0, 0, 1, 0), lookQuat);
+
+		XMMATRIX viewInv = XMMatrixInverse(nullptr, gd.viewportArr[0].ViewMatrix);
+		XMMATRIX worldGunMat = (XMMATRIX)gunMatrix_firstPersonView * viewInv;
+
+		vec4 localMuzzle = m_pWeapon->m_info.muzzleOffset;
+		localMuzzle.w = 1.0f;
+		vec4 muzzleWorldPos = XMVector4Transform(localMuzzle, worldGunMat);
+
+		MuzzleCB mData;
+		mData.MuzzlePos = muzzleWorldPos;
+		mData.MuzzleDir = clook;
+		mData.MuzzleDir.w = 0.15f; 
+		mData.MuzzleBurst = 1.0f; 
+
+		mData.pad[0] = 0.0f; mData.pad[1] = 0.0f; mData.pad[2] = 0.0f;
+
+		game.MuzzleFlashCS->DispatchMuzzle(
+			gd.gpucmd,
+			&game.MuzzlePool.Buffer,
+			game.MuzzlePool.Count,
+			mData,
+			deltaTime 
+		);
+	}
 }
 
 void Player::Render()

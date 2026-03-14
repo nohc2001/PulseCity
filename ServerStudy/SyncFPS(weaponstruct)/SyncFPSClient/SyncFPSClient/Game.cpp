@@ -1127,6 +1127,7 @@ void Game::Update()
 				bulletRays.Free(i);
 			}
 		}
+
 	}
 }
 
