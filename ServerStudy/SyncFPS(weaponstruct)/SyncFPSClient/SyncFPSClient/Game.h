@@ -5,7 +5,7 @@
 #include "NetworkDefs.h"
 #include "GameObject.h"
 
-extern Socket* ClientSocket;
+extern Client client;
 
 class UVMesh;
 class Player;
@@ -24,8 +24,6 @@ public:
 	Shader* MyShader;
 	//3D 공간에서 빛처리를 하지 않고, 색만 보여주는 셰이더
 	OnlyColorShader* MyOnlyColorShader;
-	//Diffuse 텍스쳐와 빛 처리만 하는 셰이더
-	DiffuseTextureShader* MyDiffuseTextureShader;
 	//RECT를 받아 텍스쳐를 화면상에 영역에 그리는 셰이더. 글자를 출력할때 많이 쓰인다.
 	ScreenCharactorShader* MyScreenCharactorShader;
 	//PBR 렌더링을 하는 첫번째 셰이더.
@@ -63,7 +61,8 @@ public:
 	std::vector<int> Pistol_SlideIndices;
 
 	// GameObject 배열
-	std::vector<GameObject*> m_gameObjects;
+	std::vector<StaticGameObject*> StaticGameObjects;
+	std::vector<DynamicGameObject*> DynmaicGameObjects;
 
 	// 드롭된 아이템의 배열
 	vector<ItemLoot> DropedItems;
@@ -138,9 +137,6 @@ public:
 	bool isPreparedGo = false;
 	// 준비 타이머
 	float preparedFlow = 0;
-
-	// PACK 프로토콜의 패킷을 받기 위한 팩토리
-	DataPackFactory pack_factory;
 
 	// 플레이어 인벤토리 창이 열렸는지 여부
 	bool isInventoryOpen = false;
@@ -226,6 +222,9 @@ public:
 	* 설명 : 게임을 렌더링 한다.
 	*/
 	void Render();
+
+	void Render_RayTracing();
+
 	/*
 	* 설명 : 쉐도우 맵을 렌더링한다.
 	*/
@@ -364,6 +363,7 @@ public:
 	* 설명 : 게임을 업데이트 한다.
 	*/
 	void Update();
+	
 	/*
 	* 설명 : 서버에서 받은 데이터를 해석해 클라이언트의 동기화를 한다.
 	* 매개변수 : 
@@ -373,6 +373,7 @@ public:
 	* 현재 읽기를 완료한 바이트 수를 반환.
 	*/
 	int Receiving(char* ptr, int totallen = 0);
+
 	/*
 	* 설명 : 마우스 움직임이 일어났을때, DeltaMousePos에 적용시키는 함수.
 	* 매개변수 : 

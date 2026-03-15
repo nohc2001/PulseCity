@@ -20,8 +20,16 @@ void GameObject::StaticInit()
 	Vptr<SkinMeshGameObject> = *(void**)&smgo;
 }
 
+void GameObject::STATICINIT(int typeindex) {
+	for (int i = 0; i < GameObject::g_members.size();++i) {
+		GameObjectType::Server_STCMembers[typeindex].push_back(GameObject::g_members[i]);
+	}
+}
+
 GameObject::GameObject()
 {
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = false;
 }
 
 GameObject::~GameObject()
@@ -247,8 +255,47 @@ void GameObject::RaytracingUpdateTransform(Model* model, ModelNode* node, matrix
 	}
 }
 
+void GameObject::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	shape = Shape::ShapeTable[stcsod.shapeindex];
+	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	worldMat = stcsod.worldMatrix;
+	offset += sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < materialCount;++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < NodeCount;++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
+}
+
+void StaticGameObject::STATICINIT(int typeindex) {
+	for (int i = 0; i < GameObject::g_members.size();++i) {
+		GameObjectType::Server_STCMembers[typeindex].push_back(GameObject::g_members[i]);
+	}
+}
+
 StaticGameObject::StaticGameObject()
 {
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = false;
 }
 
 StaticGameObject::~StaticGameObject()
@@ -371,6 +418,56 @@ BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
 
 void StaticGameObject::Release() {
 	GameObject::Release();
+}
+
+void StaticGameObject::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	shape = Shape::ShapeTable[stcsod.shapeindex];
+	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	worldMat = stcsod.worldMatrix;
+	offset += sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < materialCount;++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < NodeCount;++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
+
+	int& aabbCount = *(int*)(data + offset);
+	offset += sizeof(int);
+	aabbArr.reserve(aabbCount);
+	aabbArr.resize(aabbCount);
+	for (int i = 0;i < aabbCount;++i) {
+		XMFLOAT3& Center = *(XMFLOAT3*)(data + offset);
+		offset += sizeof(XMFLOAT3);
+		XMFLOAT3& Extents = *(XMFLOAT3*)(data + offset);
+		offset += sizeof(XMFLOAT3);
+		aabbArr[i] = BoundingBox(Center, Extents);
+	}
+}
+
+void DynamicGameObject::STATICINIT(int typeindex) {
+	GameObject::STATICINIT(typeindex);
+	for (int i = 0; i < DynamicGameObject::g_members.size();++i) {
+		GameObjectType::Server_STCMembers[typeindex].push_back(DynamicGameObject::g_members[i]);
+	}
 }
 
 void DynamicGameObject::InitialChunkSetting()
@@ -550,206 +647,206 @@ void DynamicGameObject::LookAt(vec4 look, vec4 up)
 	worldMat.LookAt(look, up);
 }
 
-void DynamicGameObject::CollisionMove(DynamicGameObject* gbj1, DynamicGameObject* gbj2)
-{
-	constexpr float epsillon = 0.01f;
-
-	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());/*
-	bool bia = XMColorEqual(gbj1->tickAVelocity, XMVectorZero());*/
-	bool bj = XMColorEqual(gbj2->tickLVelocity, XMVectorZero());/*
-	bool bja = XMColorEqual(gbj2->tickAVelocity, XMVectorZero());*/
-
-	DynamicGameObject* movObj = nullptr;
-	DynamicGameObject* colObj = nullptr;
-	BoundingOrientedBox obb1 = gbj1->GetOBB();
-	BoundingOrientedBox obb2 = gbj2->GetOBB();
-	//float len = vec4(gbj1->worldMat.pos - gbj2->worldMat.pos).len3;
-	//float distance = vec4(obb1.Extents).len3 + vec4(obb2.Extents).len3;
-	//if (len < distance) {
-	//Collision_By_Rotations:
-	//	if (!bia && bja) {
-	//		movObj = gbj1;
-	//		colObj = gbj2;
-	//		goto Collision_byRotation_static_vs_dynamic;
-	//	}
-	//	else if (bia && !bja) {
-	//		movObj = gbj2;
-	//		colObj = gbj1;
-	//		goto Collision_byRotation_static_vs_dynamic;
-	//	}
-	//	else if (!bia && !bja) {
-	//		goto Collision_By_Move;
-	//	}
-	//	else {
-	//		goto Collision_By_Move;
-	//	}
-	//Collision_byRotation_static_vs_dynamic:
-	//	OBB_vertexVector ovv = movObj->GetOBBVertexs();
-	//	movObj->worldMat.trQ(movObj->tickAVelocity);
-	//	obb1 = movObj->GetOBB();
-	//	OBB_vertexVector ovv_later = movObj->GetOBBVertexs();
-	//	movObj->worldMat.trQinv(movObj->tickAVelocity);
-	//	matrix imat = colObj->worldMat.RTInverse;
-	//	obb2 = colObj->GetOBB();
-	//	vec4 RayPos;
-	//	vec4 RayDir;
-	//	for (int xi = 0; xi < 2; ++xi) {
-	//		for (int yi = 0; yi < 2; ++yi) {
-	//			for (int zi = 0; zi < 2; ++zi) {
-	//				ovv_later.vertex[xi][yi][zi] *= imat;
-	//				if (obb2.Contains(ovv_later.vertex[xi][yi][zi])) {
-	//					ovv.vertex[xi][yi][zi] *= imat;
-	//					RayPos = ovv.vertex[xi][yi][zi];
-	//					RayDir = ovv_later.vertex[xi][yi][zi] - ovv.vertex[xi][yi][zi];
-	//					if (fabsf(RayDir.x) > epsillon) {
-	//						float Ex = obb2.Extents.x * (RayDir.x / fabsf(RayDir.x));
-	//						float A = (Ex - RayPos.x) / RayDir.x;
-	//						vec4 colpos = vec4(RayPos.x + RayDir.x, RayDir.y * A + RayPos.y, RayDir.z * A + RayPos.z);
-	//						vec4 bound; bound.f3 = obb2.Extents;
-	//						if (colpos.is_in_bound(bound)) {
-	//							movObj->tickLVelocity.x += colpos.x - Ex;
-	//							goto Collision_By_Move;
-	//						}
-	//					}
-	//					if (fabsf(RayDir.y) > epsillon) {
-	//						float Ex = obb2.Extents.y * (RayDir.y / fabsf(RayDir.y));
-	//						float A = (Ex - RayPos.y) / RayDir.y;
-	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayPos.y + RayDir.y, RayDir.z * A + RayPos.z);
-	//						vec4 bound; bound.f3 = obb2.Extents;
-	//						if (colpos.is_in_bound(bound)) {
-	//							movObj->tickLVelocity.y += colpos.y - Ex;
-	//							goto Collision_By_Move;
-	//						}
-	//					}
-	//					if (fabsf(RayDir.z) > epsillon) {
-	//						float Ex = obb2.Extents.z * (RayDir.z / fabsf(RayDir.z));
-	//						float A = (Ex - RayPos.z) / RayDir.z;
-	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayDir.y * A + RayPos.y, RayPos.z + RayDir.z);
-	//						vec4 bound; bound.f3 = obb2.Extents;
-	//						if (colpos.is_in_bound(bound)) {
-	//							movObj->tickLVelocity.z += colpos.z - Ex;
-	//							goto Collision_By_Move;
-	//						}
-	//					}
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-
-Collision_By_Move:
-	//if (bia) {
-	//	gbj1->worldMat.trQ(gbj1->tickAVelocity);
-	//}
-	//if (bja) {
-	//	gbj2->worldMat.trQ(gbj2->tickAVelocity);
-	//}
-
-	if (!bi && bj) {
-		// i : moving GameObject
-		// j : Collision Check GameObject
-		movObj = gbj1;
-		colObj = gbj2;
-		goto Collision_By_Move_static_vs_dynamic;
-	}
-	else if (bi && !bj) {
-		// i : Collision Check GameObject
-		// j : moving GameObject
-		movObj = gbj2;
-		colObj = gbj1;
-		goto Collision_By_Move_static_vs_dynamic;
-	}
-	else if (!bi && !bj) {
-		// i : moving GameObject
-		// j : moving GameObject
-
-		float mul = 1.0f;
-		float rate = 0.5f;
-		float maxLen = XMVector3Length(gbj1->tickLVelocity).m128_f32[0];
-		float temp = XMVector3Length(gbj2->tickLVelocity).m128_f32[0];
-		if (maxLen < temp) maxLen = temp;
-
-	CMP_INTERSECT:
-		XMVECTOR v1 = mul * gbj1->tickLVelocity;
-		XMVECTOR v2 = mul * gbj2->tickLVelocity;
-		gbj1->worldMat.pos += v1;
-		obb1 = gbj1->GetOBB();
-		gbj1->worldMat.pos -= v1;
-		gbj2->worldMat.pos += v2;
-		obb2 = gbj2->GetOBB();
-		gbj2->worldMat.pos -= v2;
-		if (obb1.Intersects(obb2)) {
-			mul -= rate;
-			rate *= 0.5f;
-			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
-		}
-		else {
-			mul += rate;
-			rate *= 0.5f;
-			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
-		}
-
-		gbj1->tickLVelocity = v1;
-		gbj2->tickLVelocity = v2;
-
-		return;
-	}
-	else {
-		//no move
-		return;
-	}
-
-Collision_By_Move_static_vs_dynamic:
-	movObj->worldMat.pos += movObj->tickLVelocity;
-	obb1 = movObj->GetOBB();
-	movObj->worldMat.pos -= movObj->tickLVelocity;
-	obb2 = colObj->GetOBB();
-
-	if (obb1.Intersects(obb2)) {
-		movObj->OnCollision(colObj);
-		colObj->OnCollision(movObj);
-
-		XMMATRIX basemat = colObj->worldMat;
-		XMMATRIX invmat = colObj->worldMat.RTInverse;
-		invmat.r[3] = XMVectorSet(0, 0, 0, 1);
-		XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
-		movObj->tickLVelocity = XMVectorZero();
-
-		XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
-		movObj->tickLVelocity += MoveVector;
-		movObj->worldMat.pos += movObj->tickLVelocity;
-		obb1 = movObj->GetOBB();
-		movObj->worldMat.pos -= movObj->tickLVelocity;
-		if (obb1.Intersects(obb2)) {
-			movObj->tickLVelocity -= MoveVector;
-		}
-
-		MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
-		movObj->tickLVelocity += MoveVector;
-		movObj->worldMat.pos += movObj->tickLVelocity;
-		obb1 = movObj->GetOBB();
-		movObj->worldMat.pos -= movObj->tickLVelocity;
-		if (obb1.Intersects(obb2)) {
-			movObj->tickLVelocity -= MoveVector;
-		}
-
-		MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
-		movObj->tickLVelocity += MoveVector;
-		movObj->worldMat.pos += movObj->tickLVelocity;
-		obb1 = movObj->GetOBB();
-		movObj->worldMat.pos -= movObj->tickLVelocity;
-		if (obb1.Intersects(obb2)) {
-			movObj->tickLVelocity -= MoveVector;
-		}
-	}
-
-	//if (bia) {
-	//	gbj1->worldMat.trQinv(gbj1->tickAVelocity);
-	//}
-	//if (bja) {
-	//	gbj2->worldMat.trQinv(gbj2->tickAVelocity);
-	//}
-}
+//void DynamicGameObject::CollisionMove(DynamicGameObject* gbj1, DynamicGameObject* gbj2)
+//{
+//	constexpr float epsillon = 0.01f;
+//
+//	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());/*
+//	bool bia = XMColorEqual(gbj1->tickAVelocity, XMVectorZero());*/
+//	bool bj = XMColorEqual(gbj2->tickLVelocity, XMVectorZero());/*
+//	bool bja = XMColorEqual(gbj2->tickAVelocity, XMVectorZero());*/
+//
+//	DynamicGameObject* movObj = nullptr;
+//	DynamicGameObject* colObj = nullptr;
+//	BoundingOrientedBox obb1 = gbj1->GetOBB();
+//	BoundingOrientedBox obb2 = gbj2->GetOBB();
+//	//float len = vec4(gbj1->worldMat.pos - gbj2->worldMat.pos).len3;
+//	//float distance = vec4(obb1.Extents).len3 + vec4(obb2.Extents).len3;
+//	//if (len < distance) {
+//	//Collision_By_Rotations:
+//	//	if (!bia && bja) {
+//	//		movObj = gbj1;
+//	//		colObj = gbj2;
+//	//		goto Collision_byRotation_static_vs_dynamic;
+//	//	}
+//	//	else if (bia && !bja) {
+//	//		movObj = gbj2;
+//	//		colObj = gbj1;
+//	//		goto Collision_byRotation_static_vs_dynamic;
+//	//	}
+//	//	else if (!bia && !bja) {
+//	//		goto Collision_By_Move;
+//	//	}
+//	//	else {
+//	//		goto Collision_By_Move;
+//	//	}
+//	//Collision_byRotation_static_vs_dynamic:
+//	//	OBB_vertexVector ovv = movObj->GetOBBVertexs();
+//	//	movObj->worldMat.trQ(movObj->tickAVelocity);
+//	//	obb1 = movObj->GetOBB();
+//	//	OBB_vertexVector ovv_later = movObj->GetOBBVertexs();
+//	//	movObj->worldMat.trQinv(movObj->tickAVelocity);
+//	//	matrix imat = colObj->worldMat.RTInverse;
+//	//	obb2 = colObj->GetOBB();
+//	//	vec4 RayPos;
+//	//	vec4 RayDir;
+//	//	for (int xi = 0; xi < 2; ++xi) {
+//	//		for (int yi = 0; yi < 2; ++yi) {
+//	//			for (int zi = 0; zi < 2; ++zi) {
+//	//				ovv_later.vertex[xi][yi][zi] *= imat;
+//	//				if (obb2.Contains(ovv_later.vertex[xi][yi][zi])) {
+//	//					ovv.vertex[xi][yi][zi] *= imat;
+//	//					RayPos = ovv.vertex[xi][yi][zi];
+//	//					RayDir = ovv_later.vertex[xi][yi][zi] - ovv.vertex[xi][yi][zi];
+//	//					if (fabsf(RayDir.x) > epsillon) {
+//	//						float Ex = obb2.Extents.x * (RayDir.x / fabsf(RayDir.x));
+//	//						float A = (Ex - RayPos.x) / RayDir.x;
+//	//						vec4 colpos = vec4(RayPos.x + RayDir.x, RayDir.y * A + RayPos.y, RayDir.z * A + RayPos.z);
+//	//						vec4 bound; bound.f3 = obb2.Extents;
+//	//						if (colpos.is_in_bound(bound)) {
+//	//							movObj->tickLVelocity.x += colpos.x - Ex;
+//	//							goto Collision_By_Move;
+//	//						}
+//	//					}
+//	//					if (fabsf(RayDir.y) > epsillon) {
+//	//						float Ex = obb2.Extents.y * (RayDir.y / fabsf(RayDir.y));
+//	//						float A = (Ex - RayPos.y) / RayDir.y;
+//	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayPos.y + RayDir.y, RayDir.z * A + RayPos.z);
+//	//						vec4 bound; bound.f3 = obb2.Extents;
+//	//						if (colpos.is_in_bound(bound)) {
+//	//							movObj->tickLVelocity.y += colpos.y - Ex;
+//	//							goto Collision_By_Move;
+//	//						}
+//	//					}
+//	//					if (fabsf(RayDir.z) > epsillon) {
+//	//						float Ex = obb2.Extents.z * (RayDir.z / fabsf(RayDir.z));
+//	//						float A = (Ex - RayPos.z) / RayDir.z;
+//	//						vec4 colpos = vec4(RayDir.x * A + RayPos.x, RayDir.y * A + RayPos.y, RayPos.z + RayDir.z);
+//	//						vec4 bound; bound.f3 = obb2.Extents;
+//	//						if (colpos.is_in_bound(bound)) {
+//	//							movObj->tickLVelocity.z += colpos.z - Ex;
+//	//							goto Collision_By_Move;
+//	//						}
+//	//					}
+//	//				}
+//	//			}
+//	//		}
+//	//	}
+//	//}
+//
+//Collision_By_Move:
+//	//if (bia) {
+//	//	gbj1->worldMat.trQ(gbj1->tickAVelocity);
+//	//}
+//	//if (bja) {
+//	//	gbj2->worldMat.trQ(gbj2->tickAVelocity);
+//	//}
+//
+//	if (!bi && bj) {
+//		// i : moving GameObject
+//		// j : Collision Check GameObject
+//		movObj = gbj1;
+//		colObj = gbj2;
+//		goto Collision_By_Move_static_vs_dynamic;
+//	}
+//	else if (bi && !bj) {
+//		// i : Collision Check GameObject
+//		// j : moving GameObject
+//		movObj = gbj2;
+//		colObj = gbj1;
+//		goto Collision_By_Move_static_vs_dynamic;
+//	}
+//	else if (!bi && !bj) {
+//		// i : moving GameObject
+//		// j : moving GameObject
+//
+//		float mul = 1.0f;
+//		float rate = 0.5f;
+//		float maxLen = XMVector3Length(gbj1->tickLVelocity).m128_f32[0];
+//		float temp = XMVector3Length(gbj2->tickLVelocity).m128_f32[0];
+//		if (maxLen < temp) maxLen = temp;
+//
+//	CMP_INTERSECT:
+//		XMVECTOR v1 = mul * gbj1->tickLVelocity;
+//		XMVECTOR v2 = mul * gbj2->tickLVelocity;
+//		gbj1->worldMat.pos += v1;
+//		obb1 = gbj1->GetOBB();
+//		gbj1->worldMat.pos -= v1;
+//		gbj2->worldMat.pos += v2;
+//		obb2 = gbj2->GetOBB();
+//		gbj2->worldMat.pos -= v2;
+//		if (obb1.Intersects(obb2)) {
+//			mul -= rate;
+//			rate *= 0.5f;
+//			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
+//		}
+//		else {
+//			mul += rate;
+//			rate *= 0.5f;
+//			if (maxLen * rate > epsillon) goto CMP_INTERSECT;
+//		}
+//
+//		gbj1->tickLVelocity = v1;
+//		gbj2->tickLVelocity = v2;
+//
+//		return;
+//	}
+//	else {
+//		//no move
+//		return;
+//	}
+//
+//Collision_By_Move_static_vs_dynamic:
+//	movObj->worldMat.pos += movObj->tickLVelocity;
+//	obb1 = movObj->GetOBB();
+//	movObj->worldMat.pos -= movObj->tickLVelocity;
+//	obb2 = colObj->GetOBB();
+//
+//	if (obb1.Intersects(obb2)) {
+//		movObj->OnCollision(colObj);
+//		colObj->OnCollision(movObj);
+//
+//		XMMATRIX basemat = colObj->worldMat;
+//		XMMATRIX invmat = colObj->worldMat.RTInverse;
+//		invmat.r[3] = XMVectorSet(0, 0, 0, 1);
+//		XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
+//		movObj->tickLVelocity = XMVectorZero();
+//
+//		XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
+//		movObj->tickLVelocity += MoveVector;
+//		movObj->worldMat.pos += movObj->tickLVelocity;
+//		obb1 = movObj->GetOBB();
+//		movObj->worldMat.pos -= movObj->tickLVelocity;
+//		if (obb1.Intersects(obb2)) {
+//			movObj->tickLVelocity -= MoveVector;
+//		}
+//
+//		MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
+//		movObj->tickLVelocity += MoveVector;
+//		movObj->worldMat.pos += movObj->tickLVelocity;
+//		obb1 = movObj->GetOBB();
+//		movObj->worldMat.pos -= movObj->tickLVelocity;
+//		if (obb1.Intersects(obb2)) {
+//			movObj->tickLVelocity -= MoveVector;
+//		}
+//
+//		MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
+//		movObj->tickLVelocity += MoveVector;
+//		movObj->worldMat.pos += movObj->tickLVelocity;
+//		obb1 = movObj->GetOBB();
+//		movObj->worldMat.pos -= movObj->tickLVelocity;
+//		if (obb1.Intersects(obb2)) {
+//			movObj->tickLVelocity -= MoveVector;
+//		}
+//	}
+//
+//	//if (bia) {
+//	//	gbj1->worldMat.trQinv(gbj1->tickAVelocity);
+//	//}
+//	//if (bja) {
+//	//	gbj2->worldMat.trQinv(gbj2->tickAVelocity);
+//	//}
+//}
 
 void DynamicGameObject::OnCollision(GameObject* other)
 {
@@ -769,9 +866,11 @@ bool godmod = true;
 DynamicGameObject::DynamicGameObject() :
 	chunkAllocIndexs{ nullptr }
 {
-	tickLVelocity = vec4(0, 0, 0, 0);
-	tickAVelocity = vec4(0, 0, 0, 0);
-	LastQuerternion = vec4(0, 0, 0, 0);
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	//tickLVelocity = vec4(0, 0, 0, 0);
+	//tickAVelocity = vec4(0, 0, 0, 0);
+	//LastQuerternion = vec4(0, 0, 0, 0);
 	chunkAllocIndexsCapacity = 0;
 	ZeroMemory(&IncludeChunks, sizeof(GameObjectIncludeChunks));
 }
@@ -792,8 +891,843 @@ void DynamicGameObject::Update(float delatTime)
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
 	float pow = deltaTime * 10;
-	Destpos.w = 1;
-	worldMat.pos = (1.0f - pow) * worldMat.pos + pow * Destpos;
+	vec4 flowScale, flowRot, flowPos;
+	XMMatrixDecompose((XMVECTOR*)&flowScale, (XMVECTOR*)&flowRot, (XMVECTOR*)&flowPos, worldMat);
+	vec4 renderScale = (1.0f - pow) * flowScale + pow * DestScale;
+	vec4 renderRot = vec4::Qlerp(flowRot, DestRot, pow);
+	vec4 renderPos = (1.0f - pow) * flowPos + pow * DestPos;
+	matrix mat = XMMatrixScaling(renderScale.x, renderScale.y, renderScale.z) * XMMatrixRotationQuaternion(renderRot);
+	mat.pos = renderPos;
+	worldMat = mat;
+}
+
+void DynamicGameObject::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	shape = Shape::ShapeTable[stcsod.shapeindex];
+	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
+	LVelocity = stcsod.LVelocity;
+
+	offset += sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < materialCount;++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < NodeCount;++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
+}
+
+void SkinMeshGameObject::STATICINIT(int typeindex) {
+	DynamicGameObject::STATICINIT(typeindex);
+	for (int i = 0; i < SkinMeshGameObject::g_members.size();++i) {
+		GameObjectType::Server_STCMembers[typeindex].push_back(SkinMeshGameObject::g_members[i]);
+	}
+}
+
+SkinMeshGameObject::SkinMeshGameObject()
+{
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	chunkAllocIndexsCapacity = 0;
+	ZeroMemory(&IncludeChunks, sizeof(GameObjectIncludeChunks));
+}
+
+SkinMeshGameObject::~SkinMeshGameObject()
+{
+}
+
+void SkinMeshGameObject::InitRootBoneMatrixs()
+{
+	Model* pModel = shape.GetModel();
+	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
+		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
+		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255); //256의 배수
+		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		BoneToWorldMatrixCB.push_back(res);
+		matrix* mapped = nullptr;
+		D3D12_RANGE range;
+		range.Begin = 0;
+		range.End = boneNum * sizeof(matrix);
+		BoneToWorldMatrixCB[i].resource->Map(0, &range, (void**)&mapped);
+		RootBoneMatrixs_PerSkinMesh.push_back(mapped);
+	}
+
+	SetRootMatrixs();
+
+	for (int i = 0; i < pModel->mNumSkinMesh; ++i)
+	{
+		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
+		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255);
+		int n = gd.TextureDescriptorAllotter.Alloc();
+		D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+		cbvDesc.BufferLocation = BoneToWorldMatrixCB[i].resource->GetGPUVirtualAddress();
+		cbvDesc.SizeInBytes = ncbElementBytes;
+		gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
+		BoneToWorldMatrixCB[i].descindex.Set(false, n);
+	}
+}
+
+void SkinMeshGameObject::SetRootMatrixs()
+{
+	Model* pModel = shape.GetModel();
+	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
+		matrix* marr = RootBoneMatrixs_PerSkinMesh[i];
+		BumpSkinMesh* bsm = pModel->mBumpSkinMeshs[i];
+		for (int k = 0; k < bsm->MatrixCount; ++k) {
+			int nodeindex = bsm->toNodeIndex[k];
+			ModelNode* node = &pModel->Nodes[nodeindex];
+			int ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+
+			RootBoneMatrixs_PerSkinMesh[i][k].Id();
+			while (node != nullptr) {
+				RootBoneMatrixs_PerSkinMesh[i][k] *= transforms_innerModel[ni];
+
+				node = node->parent;
+				ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+			}
+			RootBoneMatrixs_PerSkinMesh[i][k].transpose();
+		}
+	}
+}
+
+void SkinMeshGameObject::PushHumanoidAnimation(HumanoidAnimation* hanim) {
+	HumanoidAnimationArr.push_back(hanim);
+}
+
+void SkinMeshGameObject::GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time)
+{
+	float t = time;
+	constexpr bool isLoop = true;
+	if (isLoop) {
+		t = time - floor(time / (float)hanim->Duration) * (float)hanim->Duration;
+	}
+	Model* pModel = shape.GetModel();
+	for (int i = 0; i < pModel->nodeCount; ++i) {
+		int n = pModel->Humanoid_retargeting[i];
+		if (n >= 0) {
+			out[i] = hanim->channels[n].GetLocalMatrixAtTime(t, out[i]);
+		}
+	}
+}
+
+void SkinMeshGameObject::SetShape(Shape _shape)
+{
+	static LocalRootSigData tempLRSSaver[1024] = {};
+
+	shape = _shape;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (model != nullptr) {
+		transforms_innerModel = new matrix[model->nodeCount];
+		for (int i = 0; i < model->nodeCount; ++i) {
+			transforms_innerModel[i] = model->Nodes[i].transform;
+		}
+
+		InitRootBoneMatrixs();
+
+		if (gd.isSupportRaytracing) {
+			modifyMeshes = new RayTracingMesh[model->mNumSkinMesh];
+			OutVertexUAV = new DescIndex[model->mNumSkinMesh];
+			for (int i = 0; i < model->mNumSkinMesh; ++i) {
+				// 수정할 버택스만 만들어 rmesh에 저장. 출력시 LRS에서 버택스는 여기에서, 인덱스는 원본메쉬에서 가져온다.
+				modifyMeshes[i].AllocateRaytracingUAVMesh(model->mBumpSkinMeshs[i]->vertexData, model->mBumpSkinMeshs[i]->rmesh.IBStartOffset, model->mBumpSkinMeshs[i]->subMeshNum, model->mBumpSkinMeshs[i]->SubMeshIndexStart);
+				modifyMeshes[i].IBStartOffset = new UINT64[model->mBumpSkinMeshs[i]->subMeshNum + 1];
+				modifyMeshes[i].subMeshCount = model->mBumpSkinMeshs[i]->subMeshNum;
+				for (int k = 0; k < model->mBumpSkinMeshs[i]->subMeshNum + 1; ++k) {
+					modifyMeshes[i].IBStartOffset[k] = model->mBumpSkinMeshs[i]->rmesh.IBStartOffset[k];
+				}
+
+				//Compute Geometry 변형을 위한 UAV 생성
+				int index = gd.TextureDescriptorAllotter.Alloc();
+				OutVertexUAV[i] = DescIndex(false, index);
+				D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+				uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+				uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+				uavDesc.Buffer.FirstElement = modifyMeshes[i].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex);
+				uavDesc.Buffer.NumElements = model->mBumpSkinMeshs[i]->vertexData.size();
+				uavDesc.Buffer.StructureByteStride = sizeof(RayTracingMesh::Vertex);
+				uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+				gd.pDevice->CreateUnorderedAccessView(RayTracingMesh::UAV_vertexBuffer, nullptr, &uavDesc, OutVertexUAV[i].hCreation.hcpu);
+			}
+
+			RaytracingWorldMatInput_Model = new float** [model->nodeCount];
+			for (int i = 0; i < model->nodeCount; ++i) {
+				RaytracingWorldMatInput_Model[i] = nullptr;
+				if (model->Nodes[i].Mesh_SkinMeshindex != nullptr) {
+					for (int k = 0; k < model->Nodes[i].numMesh; ++k) {
+						if (model->Nodes[i].Mesh_SkinMeshindex != nullptr && model->Nodes[i].Mesh_SkinMeshindex[k] >= 0) {
+							int skinmeshIndex = model->Nodes[i].Mesh_SkinMeshindex[k];
+							BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[skinmeshIndex];
+							for (int k = 0; k < bsmesh->subMeshNum; ++k) {
+								tempLRSSaver[k] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
+							}
+
+							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&modifyMeshes[skinmeshIndex], worldMat, tempLRSSaver, 1);
+							RaytracingWorldMatInput_Model[i] = new float* [bsmesh->subMeshNum];
+							for (int k = 0; k < bsmesh->subMeshNum; ++k) {
+								RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
+							}
+						}
+						else {
+							// BumpMesh 처리.
+							BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
+							for (int k = 0; k < bmesh->subMeshNum; ++k) {
+								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
+							}
+
+							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
+							RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
+							for (int k = 0; k < bmesh->subMeshNum; ++k) {
+								RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
+							}
+						}
+					}
+				}
+				else {
+					if (model->Nodes[i].numMesh > 0) {
+						BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
+						for (int k = 0; k < bmesh->subMeshNum; ++k) {
+							tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
+						}
+
+						float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
+						RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
+						for (int k = 0; k < bmesh->subMeshNum; ++k) {
+							RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
+						}
+					}
+				}
+			}
+			RaytracingUpdateTransform();
+		}
+	}
+	if (mesh != nullptr) {
+		shape.SetModel(nullptr);
+	}
+}
+
+void SkinMeshGameObject::Update(float delatTime)
+{
+	constexpr float frameSpeed = 1;
+	Model* pModel = shape.GetModel();
+	AnimationFlowTime += delatTime * frameSpeed;
+	for (int i = 0; i < pModel->nodeCount; ++i) {
+		transforms_innerModel[i].Id();
+	}
+	GetBoneLocalMatrixAtTime(HumanoidAnimationArr[0], transforms_innerModel, AnimationFlowTime);
+	for (int i = 0; i < pModel->nodeCount; ++i) {
+		transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
+	}//?
+	transforms_innerModel[0] = worldMat;
+	SetRootMatrixs();
+}
+
+void SkinMeshGameObject::Render(matrix parent) {
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	BoundingOrientedBox obb_local, obb;
+	bool b;
+	matrix world = GetWorld();
+	world *= parent;
+
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	else if (model != nullptr) obb_local = model->GetOBB();
+	else return;
+
+	if (mesh == nullptr) {
+		model->Render<true>(gd.gpucmd, world, this);
+	}
+}
+
+void SkinMeshGameObject::PushRenderBatch(matrix parent)
+{
+}
+
+void SkinMeshGameObject::ModifyVertexs(matrix parent)
+{
+	// ComputeShader가 이미 Set 되었다는 가정하에 함수가 실행된다.
+	Model* model = shape.GetModel();
+	for (int i = 0; i < model->mNumSkinMesh; ++i) {
+		BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[i];
+		unsigned int VertexSiz = bsmesh->vertexData.size();
+		using SMMSRPI = SkinMeshModifyShader::RootParamId;
+		gd.CScmd->SetComputeRoot32BitConstants(SMMSRPI::Const_OutputVertexBufferSize, 1, &VertexSiz, 0);
+
+		DescHandle hCBV;
+		gd.ShaderVisibleDescPool.DynamicAlloc(&hCBV, 2);
+		gd.pDevice->CopyDescriptorsSimple(1, hCBV[0].hcpu, bsmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, hCBV[1].hcpu, BoneToWorldMatrixCB[i].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::CBVTable_OffsetMatrixs_ToWorldMatrixs, hCBV.hgpu);
+
+		DescHandle hSRV;
+		gd.ShaderVisibleDescPool.DynamicAlloc(&hSRV, 2);
+		gd.pDevice->CopyDescriptorsSimple(1, hSRV[0].hcpu, bsmesh->VertexSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, hSRV[1].hcpu, bsmesh->BoneSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::SRVTable_SourceVertexAndBoneData, hSRV.hgpu);
+
+		DescHandle hUAV;
+		gd.ShaderVisibleDescPool.DynamicAlloc(&hUAV, 1);
+		gd.pDevice->CopyDescriptorsSimple(1, hUAV[0].hcpu, OutVertexUAV[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::UAVTable_OutputVertexData, hUAV.hgpu);
+
+		int disPatchW = (VertexSiz / 768) + 1;
+		gd.CScmd->Dispatch(disPatchW, 1, 1);
+	}
+	// BLAS를 수행할 오브젝트를 수집한다.
+	game.MyRayTracingShader->RebuildBLASBuffer.push_back(this);
+}
+
+void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	shape = Shape::ShapeTable[stcsod.shapeindex];
+	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
+	LVelocity = stcsod.LVelocity;
+	AnimationFlowTime = stcsod.AnimationFlowTime;
+	PlayingAnimationIndex = stcsod.PlayingAnimationIndex;
+	offset += sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < materialCount;++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < NodeCount;++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
+}
+
+void Monster::STATICINIT(int typeindex) {
+	SkinMeshGameObject::STATICINIT(typeindex);
+	for (int i = 0; i < Monster::g_members.size();++i) {
+		GameObjectType::Server_STCMembers[typeindex].push_back(Monster::g_members[i]);
+	}
+}
+
+void Monster::Update(float deltaTime)
+{
+	PositionInterpolation(deltaTime);
+
+	if (this->HPBarIndex < 0) return;
+
+	matrix viewMatrix = XMLoadFloat4x4((XMFLOAT4X4*)&gd.viewportArr[0].ViewMatrix);
+	matrix invViewMatrix = viewMatrix.RTInverse;
+	matrix cameraWorldMat = invViewMatrix;
+
+	matrix hpBarWorldMat;
+	hpBarWorldMat.Id();
+	hpBarWorldMat.LookAt(cameraWorldMat.right);
+	hpBarWorldMat.pos = this->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0);
+	hpBarWorldMat.look *= 2 * HP / MaxHP;
+
+	game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
+}
+
+void Monster::Render(matrix parent)
+{
+	if (isDead) {
+		return;
+	}
+	GameObject::Render();
+}
+
+void Monster::Init(const XMMATRIX& initialWorldMatrix)
+{
+	worldMat = (initialWorldMatrix);
+	//m_homePos = worldMat.pos;
+}
+
+void Monster::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	shape = Shape::ShapeTable[stcsod.shapeindex];
+	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
+	LVelocity = stcsod.LVelocity;
+	AnimationFlowTime = stcsod.AnimationFlowTime;
+	PlayingAnimationIndex = stcsod.PlayingAnimationIndex;
+	HP = stcsod.HP;
+	MaxHP = stcsod.MaxHP;
+	isDead = stcsod.isDead;
+	offset += sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < materialCount;++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < NodeCount;++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
+}
+
+Player::Player() : HP{ 100 } {
+	weapon = Weapon(WeaponType::Sniper);
+}
+
+Player::~Player() {
+}
+
+void Player::STATICINIT(int typeindex) {
+	SkinMeshGameObject::STATICINIT(typeindex);
+	for (int i = 0; i < Player::g_members.size();++i) {
+		GameObjectType::Server_STCMembers[typeindex].push_back(Player::g_members[i]);
+	}
+}
+
+void Player::Update(float deltaTime)
+{
+	PositionInterpolation(deltaTime);
+}
+
+void Player::ClientUpdate(float deltaTime)
+{
+	if ((int)weapon.m_info.type != m_currentWeaponType)
+	{
+		weapon = Weapon((WeaponType)m_currentWeaponType);
+
+	}
+
+	weapon.Update(deltaTime);
+
+	if (game.player == this) {
+		float recoilT = weapon.GetRecoilAlpha();
+		if (recoilT > 0.7f) {
+			float f = weapon.m_info.recoilVelocity * 10.0f * (recoilT - 0.7f) * deltaTime;
+			game.DeltaMousePos.y -= f;
+		}
+
+		if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) m_isZooming = true;
+		else m_isZooming = false;
+
+		float targetFov = 60.0f;
+		if (m_isZooming) {
+			if ((WeaponType)m_currentWeaponType == WeaponType::Sniper) targetFov = 9.0f;
+			else if ((WeaponType)m_currentWeaponType == WeaponType::Rifle) targetFov = 30.0f;
+		}
+
+		m_currentFov += (targetFov - m_currentFov) * 15.0f * deltaTime;
+		gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(m_currentFov),
+			(float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
+	}
+
+	gunMatrix_firstPersonView.Id();
+
+	WeaponType currentType = weapon.m_info.type;
+
+	switch (currentType)
+	{
+	case WeaponType::Pistol:
+	{
+		// --- 권총 로직 ---
+		float recoilT = weapon.GetRecoilAlpha();
+
+		float zOffset = 0.3f - (0.0f * powf(recoilT, 3.0f));
+		float pitchAngle = 15.0f * powf(recoilT, 2.0f);
+		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.02f * recoilT, zOffset);
+
+		float slideMove = -0.3f * powf(recoilT, 2.0f);
+
+		if (game.PistolModel && !game.Pistol_SlideIndices.empty()) {
+			XMMATRIX slideTrans = XMMatrixTranslation(0, slideMove, 0);
+
+			for (int idx : game.Pistol_SlideIndices) {
+				game.PistolModel->Nodes[idx].transform = slideTrans * game.PistolModel->BindPose[idx];
+			}
+		}
+	}
+	break;
+
+	case WeaponType::MachineGun:
+	{
+		// --- 머신건 로직 ---
+		float shootrate = powf(weapon.m_shootFlow / weapon.m_info.shootDelay, 3);
+		if (shootrate > 1.0f) shootrate = 1.0f;
+
+		float recoilAmount = 1.0f - shootrate;
+		gunMatrix_firstPersonView.pos.z = 0.3f + 0.02f * recoilAmount;
+
+		// 회전 로직
+		gunBarrelSpeed = 150.0f;
+		if (shootrate < 1.0f) {
+			float spinRate = powf(1.0f - shootrate, 2);
+			gunBarrelAngle += gunBarrelSpeed * spinRate * deltaTime;
+			if (gunBarrelAngle > XM_2PI) gunBarrelAngle -= XM_2PI;
+		}
+		UpdateGunBarrelNodes();
+	}
+	break;
+
+	case WeaponType::Sniper:
+	{
+		// --- 스나이퍼 로직 ---
+		float recoilT = weapon.GetRecoilAlpha();
+		float zOffset = 0.3f;
+		float pitchAngle = 0.0f;
+
+		if (recoilT > 0.70f) {
+			float stageT = (recoilT - 0.70f) / 0.30f;
+			float smoothT = sinf(stageT * XM_PIDIV2);
+			pitchAngle = weapon.m_info.recoilVelocity * smoothT;
+			zOffset -= 0.2f * smoothT;
+		}
+		else if (recoilT > 0.60f) {
+
+		}
+		else {
+			float stageT = recoilT / 0.60f;
+			float wobble = sinf(stageT * XM_PI * 2.0f) * 0.08f;
+			zOffset += wobble * stageT;
+		}
+
+		XMMATRIX rotMat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle));
+		XMMATRIX transMat = XMMatrixTranslation(0.0f, 0.0f, zOffset);
+		gunMatrix_firstPersonView.mat = rotMat * transMat;
+	}
+	break;
+
+	case WeaponType::Shotgun:
+	{
+		float currentFlow = weapon.m_shootFlow;
+		float shootDelay = weapon.m_info.shootDelay;
+
+		float recoilT = weapon.GetRecoilAlpha();
+		float zOffset = 0.3f;
+		float pitchAngle = 0.0f;
+
+		if (recoilT > 0.0f) {
+			zOffset -= 0.25f * powf(recoilT, 2.0f);
+			pitchAngle = weapon.m_info.recoilVelocity * recoilT;
+		}
+		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.0f, zOffset);
+
+		float pumpZ = 0.0f;
+		float pumpStart = 0.3f;
+		float pumpEnd = 0.7f;
+
+		if (currentFlow > pumpStart && currentFlow < pumpEnd) {
+			float t = (currentFlow - pumpStart) / (pumpEnd - pumpStart);
+
+			float curve = sinf(t * XM_PI);
+
+			pumpZ = 120.0f * curve;
+		}
+
+		if (game.ShotGunModel && !game.SG_PumpIndices.empty()) {
+			XMMATRIX pumpTrans = XMMatrixTranslation(pumpZ, 0, 0);
+			for (int idx : game.SG_PumpIndices) {
+				game.ShotGunModel->Nodes[idx].transform = pumpTrans * game.ShotGunModel->BindPose[idx];
+			}
+		}
+	}
+	break;
+
+	case WeaponType::Rifle:
+	{
+		float recoilT = weapon.GetRecoilAlpha();
+		float zOffset = 0.3f;
+		float pitchAngle = 0.0f;
+		float shakeX = 0.0f;
+
+		if (recoilT > 0.0f) {
+			zOffset -= 0.07f * powf(recoilT, 1.0f);
+
+			pitchAngle = (weapon.m_info.recoilVelocity * 0.1f) * recoilT;
+
+			shakeX = sinf(recoilT * XM_PI * 1.0f) * 0.005f;
+		}
+
+		XMMATRIX rotMat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle));
+		XMMATRIX transMat = XMMatrixTranslation(shakeX, 0.0f, zOffset);
+
+		gunMatrix_firstPersonView.mat = rotMat * transMat;
+	}
+	break;
+
+	}
+
+	if (weapon.m_shootFlow < 0) {
+		float reloadProgress = 1.0f - (abs(weapon.m_shootFlow) / weapon.m_info.reloadTime);
+		float drop = sinf(reloadProgress * XM_PI) * 0.5f;
+
+		XMMATRIX dropMat = XMMatrixTranslation(0, -drop, 0);
+		gunMatrix_firstPersonView.mat = gunMatrix_firstPersonView.mat * dropMat;
+	}
+}
+
+void Player::Render()
+{
+	if (game.player == this) {
+		if (game.bFirstPersonVision == false) {
+			GameObject::Render();
+
+			matrix gunmat = gunMatrix_thirdPersonView;
+
+			const float PI = 3.141592f;
+			gunmat *= XMMatrixRotationY(PI);
+
+			gunmat.pos.y -= 0.40f;
+			gunmat.pos.x += 0.55f;
+			gunmat.pos.z += 0.80f;
+
+			gunmat *= worldMat;
+			//gunmat.LookAt(worldMat.look);
+			//gunmat.transpose();
+
+			//gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
+			//Gun->Render(gd.gpucmd, 1);
+			if (Game::renderViewPort == &game.MySpotLight.viewport) {
+				//shadowMapping
+				if (GunModel) {
+
+					GunModel->Render(gd.gpucmd, gunmat, nullptr);
+				}
+			}
+			else {
+				if (GunModel) {
+					GunModel->Render(gd.gpucmd, gunmat, nullptr);
+				}
+			}
+
+		}
+	}
+	else {
+		GameObject::Render();
+	}
+}
+
+void Player::Render_AfterDepthClear()
+{
+	matrix viewmat = gd.viewportArr[0].ViewMatrix.RTInverse;
+
+	struct Model* pTargetModel = nullptr;
+
+	if (game.bFirstPersonVision)
+	{
+		switch ((WeaponType)m_currentWeaponType)
+		{
+		case WeaponType::Sniper:     pTargetModel = game.SniperModel; break;
+		case WeaponType::MachineGun: pTargetModel = game.MachineGunModel; break;
+		case WeaponType::Shotgun:     pTargetModel = game.ShotGunModel; break;
+		case WeaponType::Rifle:     pTargetModel = game.RifleModel; break;
+		case WeaponType::Pistol:     pTargetModel = game.PistolModel; break;
+		}
+
+		if (pTargetModel) {
+			matrix gunmat = gunMatrix_firstPersonView;
+
+			switch ((WeaponType)m_currentWeaponType)
+			{
+			case WeaponType::MachineGun:
+				gunmat *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
+				gunmat.pos.y -= 0.40f;
+				gunmat.pos.x += 0.35f;
+				gunmat.pos.z += 0.90f;
+				break;
+			case WeaponType::Sniper:
+				if (m_isZooming && m_currentFov < 25.0f) {
+					pTargetModel = nullptr;
+				}
+				else {
+					gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+					gunmat.pos.y -= 0.40f;
+					gunmat.pos.x += 0.60f;
+					gunmat.pos.z += 1.90f;
+				}
+				break;
+			case WeaponType::Pistol:
+				gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
+				gunmat.pos.y -= 1.20f;
+				gunmat.pos.x += 1.00f;
+				gunmat.pos.z += 1.40f;
+				break;
+			case WeaponType::Rifle:
+			{
+				matrix modelFix = XMMatrixScaling(1.2f, 1.2f, 1.2f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+
+				float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f);
+				if (zoomAlpha < 0) zoomAlpha = 0;
+				if (zoomAlpha > 1) zoomAlpha = 1;
+
+				float targetX = 0.0f;
+				float targetY = -0.35f;
+				float targetZ = 1.80f;
+
+				gunmat.pos.x += (0.90f * (1.0f - zoomAlpha)) + (targetX * zoomAlpha);
+				gunmat.pos.y -= (0.65f * (1.0f - zoomAlpha)) + (abs(targetY) * zoomAlpha);
+				gunmat.pos.z += (1.50f * (1.0f - zoomAlpha)) + (targetZ * zoomAlpha);
+				break;
+			}
+			case WeaponType::Shotgun:
+			{
+				matrix modelFix = XMMatrixScaling(0.15f, 0.15f, 0.15f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+				gunmat.pos.y -= 0.70f;
+				gunmat.pos.x += 0.75f;
+				gunmat.pos.z += 1.70f;
+				break;
+			}
+			}
+
+
+			if (pTargetModel) {
+				gunmat *= viewmat;
+
+				if (Game::renderViewPort == &game.MySpotLight.viewport) {
+					pTargetModel->Render(gd.gpucmd, gunmat);
+					return;
+				}
+				else {
+					pTargetModel->Render(gd.gpucmd, gunmat);
+				}
+			}
+		}
+	}
+
+	Shader* shader = (Shader*)game.MyOnlyColorShader;
+	shader->Add_RegisterShaderCommand(gd.gpucmd);
+
+	matrix vmat = gd.viewportArr[0].ViewMatrix;
+	vmat *= gd.viewportArr[0].ProjectMatrix;
+	vmat.transpose();
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &vmat, 0);
+
+	matrix spmat = viewmat;
+	spmat.pos += spmat.look * 10;
+	spmat.transpose();
+	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
+	ShootPointMesh->Render(gd.gpucmd, 1);
+
+	//HP = (ShootFlow / ShootDelay) * MaxHP;
+	matrix hpmat;
+	hpmat.pos.x = -6;
+	hpmat.pos.y = 2;
+	hpmat.pos.z = 6;
+	hpmat.LookAt(vec4(1, 0, 0));
+	hpmat.look *= 2 * HP / MaxHP;
+	hpmat *= viewmat;
+	hpmat.transpose();
+	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
+	HPBarMesh->Render(gd.gpucmd, 1);
+
+	//Heat Bar
+	matrix heatmat;
+	heatmat.pos.x = -5;
+	heatmat.pos.y = 1.5f;
+	heatmat.pos.z = 5;
+	heatmat.LookAt(vec4(1, 0, 0));
+	heatmat.look *= 2 * HeatGauge / 200;
+	heatmat *= viewmat;
+	heatmat.transpose();
+	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
+	HeatBarMesh->Render(gd.gpucmd, 1);
+}
+
+void Player::UpdateGunBarrelNodes()
+{
+	if ((WeaponType)m_currentWeaponType != WeaponType::MachineGun) return;
+	if (!game.MachineGunModel || game.MG_BarrelIndices.empty()) return;
+
+	matrix rot = XMMatrixRotationZ(gunBarrelAngle);
+
+	for (int idx : game.MG_BarrelIndices) {
+		game.MachineGunModel->Nodes[idx].transform = rot * game.MachineGunModel->BindPose[idx];
+	}
+}
+
+void Player::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	shape = Shape::ShapeTable[stcsod.shapeindex];
+	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
+	LVelocity = stcsod.LVelocity;
+	AnimationFlowTime = stcsod.AnimationFlowTime;
+	PlayingAnimationIndex = stcsod.PlayingAnimationIndex;
+	HP = stcsod.HP;
+	MaxHP = stcsod.MaxHP;
+	bullets = stcsod.bullets;
+	KillCount = stcsod.KillCount;
+	DeathCount = stcsod.DeathCount;
+	HeatGauge = stcsod.HeatGauge;
+	MaxHeatGauge = stcsod.MaxHeatGauge;
+	HealSkillCooldown = stcsod.HealSkillCooldown;
+	HealSkillCooldownFlow = stcsod.HealSkillCooldownFlow;
+	m_currentWeaponType = stcsod.m_currentWeaponType;
+	memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));
+	offset += sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < materialCount;++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		for (int i = 0;i < NodeCount;++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
 }
 
 BulletRay::BulletRay()
@@ -1350,661 +2284,3 @@ BoundingBox ChunkIndex::GetAABB() {
 	return AABB;
 }
 
-void Monster::Update(float deltaTime)
-{
-	PositionInterpolation(deltaTime);
-
-	if (this->HPBarIndex < 0) return;
-
-	matrix viewMatrix = XMLoadFloat4x4((XMFLOAT4X4*)&gd.viewportArr[0].ViewMatrix);
-	matrix invViewMatrix = viewMatrix.RTInverse;
-	matrix cameraWorldMat = invViewMatrix;
-
-	matrix hpBarWorldMat;
-	hpBarWorldMat.Id();
-	hpBarWorldMat.LookAt(cameraWorldMat.right);
-	hpBarWorldMat.pos = this->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0);
-	hpBarWorldMat.look *= 2 * HP / MaxHP;
-
-	game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
-}
-
-void Monster::Render(matrix parent)
-{
-	if (isDead) {
-		return;
-	}
-	GameObject::Render();
-}
-
-void Monster::Init(const XMMATRIX& initialWorldMatrix)
-{
-	worldMat = (initialWorldMatrix);
-	//m_homePos = worldMat.pos;
-}
-
-void Player::Update(float deltaTime)
-{
-	PositionInterpolation(deltaTime);
-}
-
-void Player::ClientUpdate(float deltaTime)
-{
-	if ((uintptr_t)m_pWeapon > 0x00007FFFFFFFFFFF) {
-		m_pWeapon = nullptr;
-	}
-
-	if (m_pWeapon == nullptr || (int)m_pWeapon->m_info.type != m_currentWeaponType)
-	{
-		if (m_pWeapon != nullptr) {
-			delete m_pWeapon;
-			m_pWeapon = nullptr;
-		}
-
-		m_pWeapon = new Weapon((WeaponType)m_currentWeaponType);
-
-	}
-
-	if (m_pWeapon == nullptr) return;
-
-	m_pWeapon->Update(deltaTime);
-
-	if (game.player == this) {
-		float recoilT = m_pWeapon->GetRecoilAlpha();
-		if (recoilT > 0.7f) {
-			float f = m_pWeapon->m_info.recoilVelocity * 10.0f * (recoilT - 0.7f) * deltaTime;
-			game.DeltaMousePos.y -= f;
-		}
-
-		if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) m_isZooming = true;
-		else m_isZooming = false;
-
-		float targetFov = 60.0f;
-		if (m_isZooming) {
-			if ((WeaponType)m_currentWeaponType == WeaponType::Sniper) targetFov = 9.0f;
-			else if ((WeaponType)m_currentWeaponType == WeaponType::Rifle) targetFov = 30.0f;
-		}
-
-		m_currentFov += (targetFov - m_currentFov) * 15.0f * deltaTime;
-		gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(m_currentFov),
-			(float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
-	}
-
-	gunMatrix_firstPersonView.Id();
-
-	WeaponType currentType = m_pWeapon->m_info.type;
-
-	switch (currentType)
-	{
-	case WeaponType::Pistol:
-	{
-		// --- 권총 로직 ---
-		float recoilT = m_pWeapon->GetRecoilAlpha();
-
-		float zOffset = 0.3f - (0.0f * powf(recoilT, 3.0f));
-		float pitchAngle = 15.0f * powf(recoilT, 2.0f);
-		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.02f * recoilT, zOffset);
-
-		float slideMove = -0.3f * powf(recoilT, 2.0f);
-
-		if (game.PistolModel && !game.Pistol_SlideIndices.empty()) {
-			XMMATRIX slideTrans = XMMatrixTranslation(0, slideMove, 0);
-
-			for (int idx : game.Pistol_SlideIndices) {
-				game.PistolModel->Nodes[idx].transform = slideTrans * game.PistolModel->BindPose[idx];
-			}
-		}
-	}
-	break;
-
-	case WeaponType::MachineGun:
-	{
-		// --- 머신건 로직 ---
-		float shootrate = powf(m_pWeapon->m_shootFlow / m_pWeapon->m_info.shootDelay, 3);
-		if (shootrate > 1.0f) shootrate = 1.0f;
-
-		float recoilAmount = 1.0f - shootrate;
-		gunMatrix_firstPersonView.pos.z = 0.3f + 0.02f * recoilAmount;
-
-		// 회전 로직
-		gunBarrelSpeed = 150.0f;
-		if (shootrate < 1.0f) {
-			float spinRate = powf(1.0f - shootrate, 2);
-			gunBarrelAngle += gunBarrelSpeed * spinRate * deltaTime;
-			if (gunBarrelAngle > XM_2PI) gunBarrelAngle -= XM_2PI;
-		}
-		UpdateGunBarrelNodes();
-	}
-	break;
-
-	case WeaponType::Sniper:
-	{
-		// --- 스나이퍼 로직 ---
-		float recoilT = m_pWeapon->GetRecoilAlpha();
-		float zOffset = 0.3f;
-		float pitchAngle = 0.0f;
-
-		if (recoilT > 0.70f) {
-			float stageT = (recoilT - 0.70f) / 0.30f;
-			float smoothT = sinf(stageT * XM_PIDIV2);
-			pitchAngle = m_pWeapon->m_info.recoilVelocity * smoothT;
-			zOffset -= 0.2f * smoothT;
-		}
-		else if (recoilT > 0.60f) {
-
-		}
-		else {
-			float stageT = recoilT / 0.60f;
-			float wobble = sinf(stageT * XM_PI * 2.0f) * 0.08f;
-			zOffset += wobble * stageT;
-		}
-
-		XMMATRIX rotMat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle));
-		XMMATRIX transMat = XMMatrixTranslation(0.0f, 0.0f, zOffset);
-		gunMatrix_firstPersonView.mat = rotMat * transMat;
-	}
-	break;
-
-	case WeaponType::Shotgun:
-	{
-		float currentFlow = m_pWeapon->m_shootFlow;
-		float shootDelay = m_pWeapon->m_info.shootDelay;
-
-		float recoilT = m_pWeapon->GetRecoilAlpha();
-		float zOffset = 0.3f;
-		float pitchAngle = 0.0f;
-
-		if (recoilT > 0.0f) {
-			zOffset -= 0.25f * powf(recoilT, 2.0f);
-			pitchAngle = m_pWeapon->m_info.recoilVelocity * recoilT;
-		}
-		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.0f, zOffset);
-
-		float pumpZ = 0.0f;
-		float pumpStart = 0.3f;
-		float pumpEnd = 0.7f;
-
-		if (currentFlow > pumpStart && currentFlow < pumpEnd) {
-			float t = (currentFlow - pumpStart) / (pumpEnd - pumpStart);
-
-			float curve = sinf(t * XM_PI);
-
-			pumpZ = 120.0f * curve;
-		}
-
-		if (game.ShotGunModel && !game.SG_PumpIndices.empty()) {
-			XMMATRIX pumpTrans = XMMatrixTranslation(pumpZ, 0, 0);
-			for (int idx : game.SG_PumpIndices) {
-				game.ShotGunModel->Nodes[idx].transform = pumpTrans * game.ShotGunModel->BindPose[idx];
-			}
-		}
-	}
-	break;
-
-	case WeaponType::Rifle:
-	{
-		float recoilT = m_pWeapon->GetRecoilAlpha();
-		float zOffset = 0.3f;
-		float pitchAngle = 0.0f;
-		float shakeX = 0.0f;
-
-		if (recoilT > 0.0f) {
-			zOffset -= 0.07f * powf(recoilT, 1.0f);
-
-			pitchAngle = (m_pWeapon->m_info.recoilVelocity * 0.1f) * recoilT;
-
-			shakeX = sinf(recoilT * XM_PI * 1.0f) * 0.005f;
-		}
-
-		XMMATRIX rotMat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle));
-		XMMATRIX transMat = XMMatrixTranslation(shakeX, 0.0f, zOffset);
-
-		gunMatrix_firstPersonView.mat = rotMat * transMat;
-	}
-	break;
-
-	}
-
-	if (m_pWeapon->m_shootFlow < 0) {
-		float reloadProgress = 1.0f - (abs(m_pWeapon->m_shootFlow) / m_pWeapon->m_info.reloadTime);
-		float drop = sinf(reloadProgress * XM_PI) * 0.5f;
-
-		XMMATRIX dropMat = XMMatrixTranslation(0, -drop, 0);
-		gunMatrix_firstPersonView.mat = gunMatrix_firstPersonView.mat * dropMat;
-	}
-}
-
-void Player::Render()
-{
-	if (game.player == this) {
-		if (game.bFirstPersonVision == false) {
-			GameObject::Render();
-
-			matrix gunmat = gunMatrix_thirdPersonView;
-
-			const float PI = 3.141592f;
-			gunmat *= XMMatrixRotationY(PI);
-
-			gunmat.pos.y -= 0.40f;
-			gunmat.pos.x += 0.55f;
-			gunmat.pos.z += 0.80f;
-
-			gunmat *= worldMat;
-			//gunmat.LookAt(worldMat.look);
-			//gunmat.transpose();
-
-			//gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
-			//Gun->Render(gd.gpucmd, 1);
-			if (Game::renderViewPort == &game.MySpotLight.viewport) {
-				//shadowMapping
-				if (GunModel) {
-					
-					GunModel->Render(gd.gpucmd, gunmat, nullptr);
-				}
-			}
-			else {
-				if (GunModel) {
-					GunModel->Render(gd.gpucmd, gunmat, nullptr);
-				}
-			}
-
-		}
-	}
-	else {
-		GameObject::Render();
-	}
-}
-
-void Player::Render_AfterDepthClear()
-{
-	matrix viewmat = gd.viewportArr[0].ViewMatrix.RTInverse;
-
-	struct Model* pTargetModel = nullptr;
-
-	if (game.bFirstPersonVision)
-	{
-		switch ((WeaponType)m_currentWeaponType)
-		{
-		case WeaponType::Sniper:     pTargetModel = game.SniperModel; break;
-		case WeaponType::MachineGun: pTargetModel = game.MachineGunModel; break;
-		case WeaponType::Shotgun:     pTargetModel = game.ShotGunModel; break;
-		case WeaponType::Rifle:     pTargetModel = game.RifleModel; break;
-		case WeaponType::Pistol:     pTargetModel = game.PistolModel; break;
-		}
-
-		if (pTargetModel) {
-			matrix gunmat = gunMatrix_firstPersonView;
-
-			switch ((WeaponType)m_currentWeaponType)
-			{
-			case WeaponType::MachineGun:
-				gunmat *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
-				gunmat.pos.y -= 0.40f;
-				gunmat.pos.x += 0.35f;
-				gunmat.pos.z += 0.90f;
-				break;
-			case WeaponType::Sniper:
-				if (m_isZooming && m_currentFov < 25.0f) {
-					pTargetModel = nullptr;
-				}
-				else {
-					gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
-					gunmat.pos.y -= 0.40f;
-					gunmat.pos.x += 0.60f;
-					gunmat.pos.z += 1.90f;
-				}
-				break;
-			case WeaponType::Pistol:
-				gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
-				gunmat.pos.y -= 1.20f;
-				gunmat.pos.x += 1.00f;
-				gunmat.pos.z += 1.40f;
-				break;
-			case WeaponType::Rifle:
-			{
-				matrix modelFix = XMMatrixScaling(1.2f, 1.2f, 1.2f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
-				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
-
-				float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f);
-				if (zoomAlpha < 0) zoomAlpha = 0;
-				if (zoomAlpha > 1) zoomAlpha = 1;
-
-				float targetX = 0.0f;
-				float targetY = -0.35f;
-				float targetZ = 1.80f;
-
-				gunmat.pos.x += (0.90f * (1.0f - zoomAlpha)) + (targetX * zoomAlpha);
-				gunmat.pos.y -= (0.65f * (1.0f - zoomAlpha)) + (abs(targetY) * zoomAlpha);
-				gunmat.pos.z += (1.50f * (1.0f - zoomAlpha)) + (targetZ * zoomAlpha);
-				break;
-			}
-			case WeaponType::Shotgun:
-			{
-				matrix modelFix = XMMatrixScaling(0.15f, 0.15f, 0.15f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
-				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
-				gunmat.pos.y -= 0.70f;
-				gunmat.pos.x += 0.75f;
-				gunmat.pos.z += 1.70f;
-				break;
-			}
-			}
-
-
-			if (pTargetModel) {
-				gunmat *= viewmat;
-
-				if (Game::renderViewPort == &game.MySpotLight.viewport) {
-					pTargetModel->Render(gd.gpucmd, gunmat);
-					return;
-				}
-				else {
-					pTargetModel->Render(gd.gpucmd, gunmat);
-				}
-			}
-		}
-	}
-
-	Shader* shader = (Shader*)game.MyOnlyColorShader;
-	shader->Add_RegisterShaderCommand(gd.gpucmd);
-
-	matrix vmat = gd.viewportArr[0].ViewMatrix;
-	vmat *= gd.viewportArr[0].ProjectMatrix;
-	vmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &vmat, 0);
-
-	matrix spmat = viewmat;
-	spmat.pos += spmat.look * 10;
-	spmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
-	ShootPointMesh->Render(gd.gpucmd, 1);
-
-	//HP = (ShootFlow / ShootDelay) * MaxHP;
-	matrix hpmat;
-	hpmat.pos.x = -6;
-	hpmat.pos.y = 2;
-	hpmat.pos.z = 6;
-	hpmat.LookAt(vec4(1, 0, 0));
-	hpmat.look *= 2 * HP / MaxHP;
-	hpmat *= viewmat;
-	hpmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
-	HPBarMesh->Render(gd.gpucmd, 1);
-
-	//Heat Bar
-	matrix heatmat;
-	heatmat.pos.x = -5;
-	heatmat.pos.y = 1.5f;
-	heatmat.pos.z = 5;
-	heatmat.LookAt(vec4(1, 0, 0));
-	heatmat.look *= 2 * HeatGauge / 200;
-	heatmat *= viewmat;
-	heatmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
-	HeatBarMesh->Render(gd.gpucmd, 1);
-}
-
-void Player::UpdateGunBarrelNodes()
-{
-	if ((WeaponType)m_currentWeaponType != WeaponType::MachineGun) return;
-	if (!game.MachineGunModel || game.MG_BarrelIndices.empty()) return;
-
-	matrix rot = XMMatrixRotationZ(gunBarrelAngle);
-
-	for (int idx : game.MG_BarrelIndices) {
-		game.MachineGunModel->Nodes[idx].transform = rot * game.MachineGunModel->BindPose[idx];
-	}
-}
-
-SkinMeshGameObject::SkinMeshGameObject()
-{
-}
-
-SkinMeshGameObject::~SkinMeshGameObject()
-{
-}
-
-void SkinMeshGameObject::InitRootBoneMatrixs()
-{
-	Model* pModel = shape.GetModel();
-	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
-		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255); //256의 배수
-		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-		BoneToWorldMatrixCB.push_back(res);
-		matrix* mapped = nullptr;
-		D3D12_RANGE range;
-		range.Begin = 0;
-		range.End = boneNum * sizeof(matrix);
-		BoneToWorldMatrixCB[i].resource->Map(0, &range, (void**)&mapped);
-		RootBoneMatrixs_PerSkinMesh.push_back(mapped);
-	}
-
-	SetRootMatrixs();
-
-	for (int i = 0; i < pModel->mNumSkinMesh; ++i)
-	{
-		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255);
-		int n = gd.TextureDescriptorAllotter.Alloc();
-		D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
-		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-		cbvDesc.BufferLocation = BoneToWorldMatrixCB[i].resource->GetGPUVirtualAddress();
-		cbvDesc.SizeInBytes = ncbElementBytes;
-		gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
-		BoneToWorldMatrixCB[i].descindex.Set(false, n);
-	}
-}
-
-void SkinMeshGameObject::SetRootMatrixs()
-{
-	Model* pModel = shape.GetModel();
-	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
-		matrix* marr = RootBoneMatrixs_PerSkinMesh[i];
-		BumpSkinMesh* bsm = pModel->mBumpSkinMeshs[i];
-		for (int k = 0; k < bsm->MatrixCount; ++k) {
-			int nodeindex = bsm->toNodeIndex[k];
-			ModelNode* node = &pModel->Nodes[nodeindex];
-			int ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
-
-			RootBoneMatrixs_PerSkinMesh[i][k].Id();
-			while (node != nullptr) {
-				RootBoneMatrixs_PerSkinMesh[i][k] *= transforms_innerModel[ni];
-
-				node = node->parent;
-				ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
-			}
-			RootBoneMatrixs_PerSkinMesh[i][k].transpose();
-		}
-	}
-}
-
-void SkinMeshGameObject::PushHumanoidAnimation(HumanoidAnimation* hanim) {
-	HumanoidAnimationArr.push_back(hanim);
-}
-
-void SkinMeshGameObject::GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time)
-{
-	float t = time;
-	constexpr bool isLoop = true;
-	if (isLoop) {
-		t = time - floor(time / (float)hanim->Duration) * (float)hanim->Duration;
-	}
-	Model* pModel = shape.GetModel();
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		int n = pModel->Humanoid_retargeting[i];
-		if (n >= 0) {
-			out[i] = hanim->channels[n].GetLocalMatrixAtTime(t, out[i]);
-		}
-	}
-}
-
-void SkinMeshGameObject::SetShape(Shape _shape)
-{
-	static LocalRootSigData tempLRSSaver[1024] = {};
-
-	shape = _shape;
-	Mesh* mesh = nullptr;
-	Model* model = nullptr;
-	shape.GetRealShape(mesh, model);
-	if (model != nullptr) {
-		transforms_innerModel = new matrix[model->nodeCount];
-		for (int i = 0; i < model->nodeCount; ++i) {
-			transforms_innerModel[i] = model->Nodes[i].transform;
-		}
-
-		InitRootBoneMatrixs();
-
-		if (gd.isSupportRaytracing) {
-			modifyMeshes = new RayTracingMesh[model->mNumSkinMesh];
-			OutVertexUAV = new DescIndex[model->mNumSkinMesh];
-			for (int i = 0; i < model->mNumSkinMesh; ++i) {
-				// 수정할 버택스만 만들어 rmesh에 저장. 출력시 LRS에서 버택스는 여기에서, 인덱스는 원본메쉬에서 가져온다.
-				modifyMeshes[i].AllocateRaytracingUAVMesh(model->mBumpSkinMeshs[i]->vertexData, model->mBumpSkinMeshs[i]->rmesh.IBStartOffset, model->mBumpSkinMeshs[i]->subMeshNum, model->mBumpSkinMeshs[i]->SubMeshIndexStart);
-				modifyMeshes[i].IBStartOffset = new UINT64[model->mBumpSkinMeshs[i]->subMeshNum + 1];
-				modifyMeshes[i].subMeshCount = model->mBumpSkinMeshs[i]->subMeshNum;
-				for (int k = 0; k < model->mBumpSkinMeshs[i]->subMeshNum + 1; ++k) {
-					modifyMeshes[i].IBStartOffset[k] = model->mBumpSkinMeshs[i]->rmesh.IBStartOffset[k];
-				}
-
-				//Compute Geometry 변형을 위한 UAV 생성
-				int index = gd.TextureDescriptorAllotter.Alloc();
-				OutVertexUAV[i] = DescIndex(false, index);
-				D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-				uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-				uavDesc.Format = DXGI_FORMAT_UNKNOWN;
-				uavDesc.Buffer.FirstElement = modifyMeshes[i].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex);
-				uavDesc.Buffer.NumElements = model->mBumpSkinMeshs[i]->vertexData.size();
-				uavDesc.Buffer.StructureByteStride = sizeof(RayTracingMesh::Vertex);
-				uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-				gd.pDevice->CreateUnorderedAccessView(RayTracingMesh::UAV_vertexBuffer, nullptr, &uavDesc, OutVertexUAV[i].hCreation.hcpu);
-			}
-
-			RaytracingWorldMatInput_Model = new float** [model->nodeCount];
-			for (int i = 0; i < model->nodeCount; ++i) {
-				RaytracingWorldMatInput_Model[i] = nullptr;
-				if (model->Nodes[i].Mesh_SkinMeshindex != nullptr) {
-					for (int k = 0; k < model->Nodes[i].numMesh; ++k) {
-						if (model->Nodes[i].Mesh_SkinMeshindex != nullptr && model->Nodes[i].Mesh_SkinMeshindex[k] >= 0) {
-							int skinmeshIndex = model->Nodes[i].Mesh_SkinMeshindex[k];
-							BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[skinmeshIndex];
-							for (int k = 0; k < bsmesh->subMeshNum; ++k) {
-								tempLRSSaver[k] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-							}
-
-							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&modifyMeshes[skinmeshIndex], worldMat, tempLRSSaver, 1);
-							RaytracingWorldMatInput_Model[i] = new float* [bsmesh->subMeshNum];
-							for (int k = 0; k < bsmesh->subMeshNum; ++k) {
-								RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-							}
-						}
-						else {
-							// BumpMesh 처리.
-							BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-							for (int k = 0; k < bmesh->subMeshNum; ++k) {
-								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-							}
-
-							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
-							RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
-							for (int k = 0; k < bmesh->subMeshNum; ++k) {
-								RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-							}
-						}
-					}
-				}
-				else {
-					if (model->Nodes[i].numMesh > 0) {
-						BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-						for (int k = 0; k < bmesh->subMeshNum; ++k) {
-							tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-						}
-
-						float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
-						RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
-						for (int k = 0; k < bmesh->subMeshNum; ++k) {
-							RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-						}
-					}
-				}
-			}
-			RaytracingUpdateTransform();
-		}
-	}
-	if (mesh != nullptr) {
-		shape.SetModel(nullptr);
-	}
-}
-
-void SkinMeshGameObject::Update(float delatTime)
-{
-	constexpr float frameSpeed = 1;
-	Model* pModel = shape.GetModel();
-	AnimationFlowTime += delatTime * frameSpeed;
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		transforms_innerModel[i].Id();
-	}
-	GetBoneLocalMatrixAtTime(HumanoidAnimationArr[0], transforms_innerModel, AnimationFlowTime);
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
-	}//?
-	transforms_innerModel[0] = worldMat;
-	SetRootMatrixs();
-}
-
-void SkinMeshGameObject::Render(matrix parent) {
-	Mesh* mesh = nullptr;
-	Model* model = nullptr;
-	BoundingOrientedBox obb_local, obb;
-	bool b;
-	matrix world = GetWorld();
-	world *= parent;
-
-	shape.GetRealShape(mesh, model);
-	if (mesh != nullptr) obb_local = mesh->GetOBB();
-	else if (model != nullptr) obb_local = model->GetOBB();
-	else return;
-
-	if (mesh == nullptr) {
-		model->Render<true>(gd.gpucmd, world, this);
-	}
-}
-
-void SkinMeshGameObject::PushRenderBatch(matrix parent)
-{
-}
-
-void SkinMeshGameObject::ModifyVertexs(matrix parent)
-{
-	// ComputeShader가 이미 Set 되었다는 가정하에 함수가 실행된다.
-	Model* model = shape.GetModel();
-	for (int i = 0; i < model->mNumSkinMesh; ++i) {
-		BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[i];
-		unsigned int VertexSiz = bsmesh->vertexData.size();
-		using SMMSRPI = SkinMeshModifyShader::RootParamId;
-		gd.CScmd->SetComputeRoot32BitConstants(SMMSRPI::Const_OutputVertexBufferSize, 1, &VertexSiz, 0);
-
-		DescHandle hCBV;
-		gd.ShaderVisibleDescPool.DynamicAlloc(&hCBV, 2);
-		gd.pDevice->CopyDescriptorsSimple(1, hCBV[0].hcpu, bsmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.pDevice->CopyDescriptorsSimple(1, hCBV[1].hcpu, BoneToWorldMatrixCB[i].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::CBVTable_OffsetMatrixs_ToWorldMatrixs, hCBV.hgpu);
-
-		DescHandle hSRV;
-		gd.ShaderVisibleDescPool.DynamicAlloc(&hSRV, 2);
-		gd.pDevice->CopyDescriptorsSimple(1, hSRV[0].hcpu, bsmesh->VertexSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.pDevice->CopyDescriptorsSimple(1, hSRV[1].hcpu, bsmesh->BoneSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::SRVTable_SourceVertexAndBoneData, hSRV.hgpu);
-
-		DescHandle hUAV;
-		gd.ShaderVisibleDescPool.DynamicAlloc(&hUAV, 1);
-		gd.pDevice->CopyDescriptorsSimple(1, hUAV[0].hcpu, OutVertexUAV[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::UAVTable_OutputVertexData, hUAV.hgpu);
-
-		int disPatchW = (VertexSiz / 768) + 1;
-		gd.CScmd->Dispatch(disPatchW, 1, 1);
-	}
-	// BLAS를 수행할 오브젝트를 수집한다.
-	game.MyRayTracingShader->RebuildBLASBuffer.push_back(this);
-}

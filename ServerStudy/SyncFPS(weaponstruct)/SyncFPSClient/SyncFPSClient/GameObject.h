@@ -1,6 +1,7 @@
 #pragma once
 #include "stdafx.h"
 #include "Render.h"
+#include "Game.h"
 #include "main.h"
 
 class Mesh;
@@ -79,12 +80,10 @@ struct Shape {
 	*/
 	static int AddShapeName(string meshName);
 
-	// Shape의 이름 배열
-	inline static vector<string> ShapeNameArr;
-	// 이름에서 Shape를 얻는 map
-	inline static unordered_map<string, Shape> StrToShapeMap;
-	// 인덱스에서 Shape를 얻는 map
-	inline static unordered_map<int, Shape> IndexToShapeMap;
+	// 이름에서 ShapeIndex를 얻는 map
+	static unordered_map<string, int> StrToShapeIndex;
+	static vector<Shape> ShapeTable;
+	static vector<string> ShapeStrTable;
 
 	/*
 	* 설명 : Mesh의 이름과 Mesh 포인터를 받아 Mesh를 추가하는 함수
@@ -147,6 +146,9 @@ enum GameObjectTag {
 };
 
 struct GameObject {
+#define STC_CurrentStruct GameObject
+	STC_STATICINIT_innerStruct;
+
 	inline static void* StaticVptr = nullptr;
 	inline static void* DynamicVptr = nullptr;
 	inline static void* SkinMeshVptr = nullptr;
@@ -165,7 +167,7 @@ struct GameObject {
 	* 게임오브젝트를 구분하고 탐색하기 위한 tag. 32개의 tag를 보유할 수 있다.
 	* 항상 tag의 첫번째 비트는 enable이다. (게임오브젝트가 활성화 되어있는지 여부)
 	*/
-	Tag tag;
+	STCDef(Tag, tag);
 
 	// appearance
 	Shape shape;
@@ -187,6 +189,8 @@ struct GameObject {
 	// transform
 	matrix worldMat;
 
+	//처음 생성 시에는 enable이 false. 업데이트를 하지 않는다. 
+	// 어느정도 초기화가 완료되어 게임루프에 들어갈 준비를 마치면 되면 그때 Enable을 한다.
 	GameObject();
 	virtual ~GameObject();
 
@@ -213,6 +217,23 @@ struct GameObject {
 	void RaytracingUpdateTransform(Model* model, ModelNode* node, matrix parent);
 
 	void DbgHieraky();
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix worldMatrix;
+	};
+#pragma pack(pop)
+	
+	// 헤더는 선행처리를 하셈.
+	virtual void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_GameObject);
+
+#undef STC_CurrentStruct
 };
 
 struct StaticGameObject : public GameObject {
@@ -235,6 +256,21 @@ struct StaticGameObject : public GameObject {
 	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
 	BoundingOrientedBox GetOBBw(matrix worldMat);
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		matrix worldMatrix;
+		int sibling;
+	};
+#pragma pack(pop)
+
+	// 헤더는 선행처리를 하셈.
+	__forceinline void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_StaticGameObject);
 };
 
 struct GameObjectIncludeChunks {
@@ -248,17 +284,20 @@ struct GameObjectIncludeChunks {
 };
 
 struct DynamicGameObject : public GameObject {
+#define STC_CurrentStruct DynamicGameObject
+	STC_STATICINIT_innerStruct;
+
 	DynamicGameObject();
 	virtual ~DynamicGameObject();
 
 	virtual matrix GetWorld();
 	virtual void SetWorld(matrix localWorldMat);
 
-	vec4 LVelocity;
-	vec4 tickLVelocity;
-	vec4 tickAVelocity;
-	vec4 LastQuerternion;
-	vec4 Destpos;
+	STCDef(vec4, LVelocity);
+	//dest world
+	STCDef(vec4, DestPos);
+	STCDef(vec4, DestRot);
+	STCDef(vec4, DestScale);
 
 	GameObjectIncludeChunks IncludeChunks;
 	int* chunkAllocIndexs = nullptr;
@@ -286,10 +325,34 @@ struct DynamicGameObject : public GameObject {
 	virtual void SetShape(Shape _shape);
 
 	void PositionInterpolation(float deltaTime);
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		vec4 LVelocity;
+	};
+#pragma pack(pop)
+
+	virtual void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_DynamicGameObject);
+
+	__forceinline static void SyncDestWolrd(GameObject* go, char* data, int len) {
+		matrix& destWorld = *(matrix*)data;
+		DynamicGameObject* dgo = (DynamicGameObject*)go;
+		XMMatrixDecompose((XMVECTOR*) & dgo->DestScale, (XMVECTOR*)&dgo->DestRot, (XMVECTOR*)&dgo->DestPos, destWorld);
+	}
+#undef STC_CurrentStruct
 };
 
 //skinMesh 의 경우 shader 자체가 다르기 때문에 배치처리를 할 시에 따로 렌더링을 수행해야 한다.
 struct SkinMeshGameObject : public DynamicGameObject {
+#define STC_CurrentStruct SkinMeshGameObject
+	STC_STATICINIT_innerStruct;
 	SkinMeshGameObject();
 	virtual ~SkinMeshGameObject();
 
@@ -298,8 +361,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	// [bone 0] [...] [bone N]
 	vector<GPUResource> BoneToWorldMatrixCB;
 	vector<HumanoidAnimation*> HumanoidAnimationArr;
-	float AnimationFlowTime = 0;
-
+	
 	// non shader visible desc heap에 위치함. 
 	// model->mNumSkinMesh 만큼 존재함.
 	DescIndex* OutVertexUAV;
@@ -307,6 +369,10 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	// 레이트레이싱을 할때 실제로 변형되는 메쉬.
 	// model의 skinmeshcount 만큼 존재함.
 	RayTracingMesh* modifyMeshes = nullptr;
+
+	float AnimationFlowTime = 0;
+	STCDef(float, DestAnimationFlowTime);
+	STCDef(int, PlayingAnimationIndex);
 
 	void InitRootBoneMatrixs();
 	void SetRootMatrixs();
@@ -324,6 +390,24 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	virtual void SetShape(Shape _shape);
 
 	virtual void Update(float delatTime);
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		vec4 LVelocity;
+		float AnimationFlowTime;
+		int PlayingAnimationIndex;
+	};
+#pragma pack(pop)
+
+	virtual void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_SkinMeshGameObject);
+#undef STC_CurrentStruct
 };
 
 /*
@@ -369,8 +453,8 @@ struct BulletRay {
 
 /*
 * 설명 : 아이템 정보
-* Sentinal Value : 
-* NULL = 
+* Sentinal Value :
+* NULL =
 */
 struct Item
 {
@@ -392,33 +476,6 @@ struct Item
 	{
 
 	}
-};
-
-typedef int ItemID;
-
-/*
-* 설명 : 인벤토리에 들어갈 아이템 스택 정보
-* Sentinal Value :
-* NULL : (ItemCount == 0)
-*/
-struct ItemStack {
-	//아이템 id
-	ItemID id;
-	//아이템의 개수
-	int ItemCount;
-};
-
-/*
-* 설명 : 드롭된 아이템을 나타내는 구조체
-* Sentinal Value : 
-* NULL = (itemDrop.ItemCount == 0)
-*/
-struct ItemLoot {
-	// 아이템 스택 정보
-	ItemStack itemDrop;
-	// 아이템 드롭 위치
-	// improve : <아이템이 바닥으로 중력이 작용되었으면 좋겠음.>
-	vec4 pos;
 };
 
 // 아이템의 원본 정보가 담긴 아이템들의 테이블
@@ -635,12 +692,13 @@ static WeaponData GWeaponTable[] = {
 	// 
 };
 
-
 class Weapon {
 public:
 	WeaponData m_info;      // GWeaponTable에서 가져온 수치
 	float m_shootFlow = 0;  // 다음 발사까지 남은 시간 계산
 	float m_recoilFlow = 0; // 반동 애니메이션/에임 상승 진행률
+
+	Weapon(){}
 
 	Weapon(WeaponType type) : m_info(GWeaponTable[(int)type]) {
 		m_shootFlow = m_info.shootDelay;
@@ -670,7 +728,9 @@ public:
 /*
 * 설명 : 간이 몬스터 클래스
 */
-class Monster : public DynamicGameObject {
+class Monster : public SkinMeshGameObject {
+#define STC_CurrentStruct Monster
+	STC_STATICINIT_innerStruct;
 private:
 	/*float m_speed = 2.0f;
 	float m_patrolRange = 20.0f;
@@ -690,13 +750,12 @@ private:
 	const float MAXHP = 30;*/
 
 public:
-	// 몬스터 사망 여부
-	bool isDead;
-
 	// 몬스터 HP
-	float HP = 30;
+	STCDef(float, HP);// = 30;
 	// 몬스터 최대 채력
-	float MaxHP = 30;
+	STCDef(float, MaxHP);// = 30;
+	// 몬스터 사망 여부
+	STCDef(bool, isDead);
 
 	// 여러 HP 바중 몇번째 HP 바인지. (렌더링 할때 중요.)
 	int HPBarIndex;
@@ -723,84 +782,101 @@ public:
 	* const XMMATRIX& initialWorldMatrix : 초기 월드 행렬
 	*/
 	void Init(const XMMATRIX& initialWorldMatrix);
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		vec4 LVelocity;
+		float AnimationFlowTime;
+		int PlayingAnimationIndex;
+
+		//STC 체력
+		float HP = 30;
+		//STC 최대체력
+		float MaxHP = 30;
+		//STC 현재 죽었는지 여부
+		bool isDead = false;
+	};
+#pragma pack(pop)
+
+	virtual void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_Monster);
+#undef STC_CurrentStruct
 };
 
 /*
 * 설명 : 플래이어 게임 오브젝트 구조체
 */
-class Player : public DynamicGameObject {
+class Player : public SkinMeshGameObject {
 public:
-	//HP
-	float HP;
-	//최대HP
-	float MaxHP = 100;
-	//현재총탄개수
-	int bullets;
-	//몬스터를 킬한 카운트 (임시 점수)
-	int KillCount = 0;
-	//죽음 카운트
-	int DeathCount = 0;
+#define STC_CurrentStruct Player
+	inline static vector<STCMemberInfo> g_members;
 
-	//이그니스 열기 게이지
-	float HeatGauge = 0;
-	//최대 열기 게이지
-	float MaxHeatGauge = 100;
+	//STC HP
+	STCDef(float, HP);
+	//STC 최대HP
+	STCDef(float, MaxHP);// = 100;
+	//STC 현재총탄개수
+	STCDef(int, bullets);
+	//STC 몬스터를 킬한 카운트 (임시 점수)
+	STCDef(int, KillCount);// = 0;
+	//STC 죽음 카운트
+	STCDef(int, DeathCount);// = 0;
+	//STC 이그니스 열기 게이지
+	STCDef(float, HeatGauge);// = 0;
+	//STC 최대 열기 게이지
+	STCDef(float, MaxHeatGauge);// = 100;
+	//STC 스킬 쿨타임
+	STCDef(float, HealSkillCooldown);// = 10.0f;
+	//STC 쿨타임 타이머
+	STCDef(float, HealSkillCooldownFlow);// = 0.0f;
+	//STC 현재 무기 타입
+	STCDef(int, m_currentWeaponType);// = 0;
+	//STC 인벤토리 데이터
+	static constexpr int maxItem = 36;
+	STCDefArr(ItemStack, Inventory, maxItem);
+	//STC 현재 들고 있는 무기
+	Weapon weapon;
 
-	//스킬 쿨타임
-	float HealSkillCooldown = 10.0f;
-	// 쿨타임 타이머
-	float HealSkillCooldownFlow = 0.0f;
-
-	// 현재 무기 타입
-	int m_currentWeaponType = 0;
-
-	//마우스가 얼마나 움직였는지를 나타낸다.
-	//<클라이언트가 해야 할 일을 서버가 하고 있다.. 고쳐야 할 필요가 있다.>
+	//ClientOnly 마우스가 얼마나 움직였는지를 나타낸다.
 	vec4 DeltaMousePos;
-
+	//ClientOnly
 	//Mesh* Gun;
-
-	// 현재 들고 있는 총의 모델
+	//ClientOnly 현재 들고 있는 총의 모델
 	::Model* GunModel;
-
-	// 조준점을 나타내는 메쉬
+	//ClientOnly 조준점을 나타내는 메쉬
 	Mesh* ShootPointMesh;
-	// 3인칭일대 총의 월드 행렬
+	//ClientOnly 3인칭일대 총의 월드 행렬
 	matrix gunMatrix_thirdPersonView;
-	//1인칭일때 총의 월드 행렬
+	//ClientOnly 1인칭일때 총의 월드 행렬
 	matrix gunMatrix_firstPersonView;
-
-	// HPBar를 표현하는 Mesh
+	//ClientOnly HPBar를 표현하는 Mesh
 	Mesh* HPBarMesh;
-	// HPBar를 표현하는 행렬
+	//ClientOnly HPBar를 표현하는 행렬
 	matrix HPMatrix;
-	// HeatBar를 표현하는 Mesh
+	//ClientOnly HeatBar를 표현하는 Mesh
 	Mesh* HeatBarMesh;
-	// HeatBar를 표현하는 행렬
+	//ClientOnly HeatBar를 표현하는 행렬
 	matrix HeatBarMatrix;
-
-	// 인벤토리 데이터
-	vector<ItemStack> Inventory;
-
-	// idk
+	//ClientOnly
 	std::vector<int> gunBarrelNodeIndices;
 	float gunBarrelAngle;
 	float gunBarrelSpeed;
-
-	float m_yaw = 0.0f;
-	float m_pitch = 0.0f;
-
 	bool  m_isZooming = false;
 	float m_currentFov = 60.0f;  // 현재 FOV
 	float m_targetFov = 60.0f;   // 목표 FOV
 
-	Player() : HP{ 100 } {
-		m_pWeapon = new Weapon(WeaponType::Sniper);
-	}
+	//CTS
+	float m_yaw = 0.0f;
+	float m_pitch = 0.0f;
 
-	virtual ~Player() { if (m_pWeapon) delete m_pWeapon; }
-
-	Weapon* m_pWeapon = nullptr;
+	Player();
+	virtual ~Player();
 
 	/*
 	* 설명 : 게임오브젝트의 업데이트를 실행함.
@@ -830,4 +906,48 @@ public:
 
 	// idk
 	void UpdateGunBarrelNodes();
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		vec4 LVelocity;
+		float AnimationFlowTime;
+		int PlayingAnimationIndex;
+
+		//STC HP
+		float HP;
+		//STC 최대HP
+		float MaxHP = 100;
+		//STC 현재총탄개수
+		int bullets = 100;
+		//STC 몬스터를 킬한 카운트 (임시 점수)
+		int KillCount = 0;
+		//STC 죽음 카운트
+		int DeathCount = 0;
+		//STC 열기 게이지
+		float HeatGauge = 0;
+		//STC 최대 열기 게이지
+		float MaxHeatGauge = 100;
+		//STC 스킬 쿨타임
+		float HealSkillCooldown = 10.0f;
+		//STC 쿨타임 타이머
+		float HealSkillCooldownFlow = 0.0f;
+		//STC 현재 무기 타입?
+		int m_currentWeaponType = 0;
+		//STC 플레이어의 인벤토리 정보
+		static constexpr int maxItem = 36;
+		ItemStack Inventory[maxItem];
+		//STC 들고있는 무기
+		Weapon weapon;
+	};
+#pragma pack(pop)
+	
+	virtual void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_Player);
+#undef STC_CurrentStruct
 };

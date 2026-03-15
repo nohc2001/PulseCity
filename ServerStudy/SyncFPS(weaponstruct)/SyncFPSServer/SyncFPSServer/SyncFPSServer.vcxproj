@@ -48,7 +48,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -120,6 +120,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -131,27 +132,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="GameObject.cpp" />
-    <ClCompile Include="GameObjectType.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Monster.cpp" />
-    <ClCompile Include="Player.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GameObject.h" />
-    <ClInclude Include="GameObjectTypes.h" />
     <ClInclude Include="main.h" />
-    <ClInclude Include="Monster.h" />
-    <ClInclude Include="NWLib\CustomNWLib.h" />
-    <ClInclude Include="NWLib\Endpoint.h" />
-    <ClInclude Include="NWLib\Epoll.h" />
-    <ClInclude Include="NWLib\Exception.h" />
-    <ClInclude Include="NWLib\Iocp.h" />
-    <ClInclude Include="NWLib\Poll.h" />
-    <ClInclude Include="NWLib\Semaphore.h" />
-    <ClInclude Include="NWLib\Socket.h" />
-    <ClInclude Include="NWLib\SocketInit.h" />
     <ClInclude Include="NWLib\targetver.h" />
-    <ClInclude Include="Player.h" />
     <ClInclude Include="SpaceMath.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="vecset.h" />

@@ -208,28 +208,6 @@ struct DescriptorAllotter {
 	__forceinline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(int index);
 };
 
-/*
-* 설명 :
-*/
-struct ShaderVisibleDescriptorPool
-{
-	UINT	m_AllocatedDescriptorCount = 0;
-	UINT	m_MaxDescriptorCount = 0;
-	UINT	m_srvDescriptorSize = 0;
-	UINT	m_srvImmortalDescriptorSize = 0;
-	ID3D12DescriptorHeap* m_pDescritorHeap = nullptr;
-	D3D12_CPU_DESCRIPTOR_HANDLE	m_cpuDescriptorHandle = {};
-	D3D12_GPU_DESCRIPTOR_HANDLE	m_gpuDescriptorHandle = {};
-
-	void	Release();
-	BOOL	Initialize(UINT MaxDescriptorCount);
-	BOOL	AllocDescriptorTable(D3D12_CPU_DESCRIPTOR_HANDLE* pOutCPUDescriptor, D3D12_GPU_DESCRIPTOR_HANDLE* pOutGPUDescriptor, UINT DescriptorCount);
-	BOOL	ImmortalAllocDescriptorTable(D3D12_CPU_DESCRIPTOR_HANDLE* pOutCPUDescriptor, D3D12_GPU_DESCRIPTOR_HANDLE* pOutGPUDescriptor, UINT DescriptorCount);
-
-	bool	IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu);
-	void	Reset();
-};
-
 // [MainRenderTarget SRV]*SwapChainBufferCount [BlurTexture SRV] [SubRenderTarget SRV] [InstancingSRV] * cap, [TextureSRV] * cap, [MaterialCBV] * cap // immortal layer.
 // //dynamic layer
 struct SVDescPool2
@@ -2614,21 +2592,6 @@ public:
 	virtual void InitShader();
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
-};
-
-/*
-* 설명 : 단일 색상 텍스쳐를 매핑하는 셰이더
-*/
-class DiffuseTextureShader : Shader {
-public:
-	DiffuseTextureShader();
-	virtual ~DiffuseTextureShader();
-
-	virtual void InitShader();
-	virtual void CreateRootSignature();
-	virtual void CreatePipelineState();
-
-	void SetTextureCommand(GPUResource* texture);
 };
 
 /*

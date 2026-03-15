@@ -3869,11 +3869,6 @@ struct GameMap {
 	int pdepcnt = 0;
 	ui64 GetSpaceHash(int x, int y, int z);*/
 
-	struct Posindex {
-		int x;
-		int y;
-		int z;
-	};
 	/*ui64 inv_pdep_src2[48] = {};
 	int inv_pdepcnt = 0;
 	Posindex GetInvSpaceHash(ui64 hash);*/

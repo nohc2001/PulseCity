@@ -8,6 +8,49 @@ GlobalDevice gd;
 extern Game game;
 extern int dbgc[128];
 
+unordered_map<string, int> Shape::StrToShapeIndex;
+vector<Shape> Shape::ShapeTable;
+vector<string> Shape::ShapeStrTable;
+
+#pragma region Global_InitCode
+
+void GPUCmd::SetShader(Shader* shader, ShaderType reg) {
+	shader->Add_RegisterShaderCommand(*this, reg);
+}
+
+void font_parsed(void* args, void* _font_data, int error)
+{
+	if (error)
+	{
+		*(uint8_t*)args = error;
+	}
+	else
+	{
+		TTFFontParser::FontData* font_data = (TTFFontParser::FontData*)_font_data;
+
+		{
+			for (const auto& glyph_iterator : font_data->glyphs)
+			{
+				uint32_t num_curves = 0, num_lines = 0;
+				for (const auto& path_list : glyph_iterator.second.path_list)
+				{
+					for (const auto& geometry : path_list.geometry)
+					{
+						if (geometry.is_curve)
+							num_curves++;
+						else
+							num_lines++;
+					}
+				}
+			}
+		}
+
+		*(uint8_t*)args = 1;
+	}
+}
+
+#pragma region DescHandleAndIndexCode
+
 template<D3D12_DESCRIPTOR_HEAP_TYPE type>
 inline DescHandle DescHandle::operator[](UINT index)
 {
@@ -25,6 +68,34 @@ inline DescHandle DescHandle::operator[](UINT index)
 	handle.operator+=(index * incSiz);
 	return handle;
 }
+
+DescHandle DescIndex::GetCreationDescHandle() const
+{
+	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.NSVDescHeapCreationHandle[index];
+	else if (type == 'n') return DescHandle(gd.TextureDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'r') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index));
+	else if (type == 'd') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index));
+}
+
+DescHandle DescIndex::GetRenderDescHandle() const
+{
+	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.SVDescHeapRenderHandle[index];
+	else if (type == 'n') return DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE(0), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'r') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'd') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(0));
+}
+
+#pragma endregion
+
+#pragma region GPUResourceCode
 
 void GPUResource::AddResourceBarrierTransitoinToCommand(ID3D12GraphicsCommandList* cmd, D3D12_RESOURCE_STATES afterState)
 {
@@ -330,6 +401,10 @@ void GPUResource::Release()
 	descindex.Set(false, 0);
 }
 
+#pragma endregion
+
+#pragma region DescriptorAllotterCode
+
 void DescriptorAllotter::Init(D3D12_DESCRIPTOR_HEAP_TYPE heapType, D3D12_DESCRIPTOR_HEAP_FLAGS Flags, int Capacity)
 {
 	D3D12_DESCRIPTOR_HEAP_DESC commonHeapDesc = {};
@@ -382,38 +457,9 @@ D3D12_CPU_DESCRIPTOR_HANDLE DescriptorAllotter::GetCPUHandle(int index)
 	return handle;
 }
 
-void ShaderVisibleDescriptorPool::Release()
-{
-	if (m_pDescritorHeap)
-	{
-		m_pDescritorHeap->Release();
-		m_pDescritorHeap = nullptr;
-	}
-}
+#pragma endregion
 
-BOOL ShaderVisibleDescriptorPool::Initialize(UINT MaxDescriptorCount)
-{
-	m_srvImmortalDescriptorSize = 0;
-	BOOL bResult = FALSE;
-	m_MaxDescriptorCount = MaxDescriptorCount;
-	m_srvDescriptorSize = gd.pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-	// create descriptor heap
-	D3D12_DESCRIPTOR_HEAP_DESC commonHeapDesc = {};
-	commonHeapDesc.NumDescriptors = m_MaxDescriptorCount;
-	commonHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	commonHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	if (FAILED(gd.pDevice->CreateDescriptorHeap(&commonHeapDesc, IID_PPV_ARGS(&m_pDescritorHeap))))
-	{
-		__debugbreak();
-		goto lb_return;
-	}
-	m_cpuDescriptorHandle = m_pDescritorHeap->GetCPUDescriptorHandleForHeapStart();
-	m_gpuDescriptorHandle = m_pDescritorHeap->GetGPUDescriptorHandleForHeapStart();
-	bResult = TRUE;
-lb_return:
-	return bResult;
-}
+#pragma region ShaderVisibleDescHeapCode
 
 void SVDescPool2::Release()
 {
@@ -676,104 +722,9 @@ void SVDescPool2::DynamicReset()
 	DynamicSize = 0;
 }
 
-BOOL ShaderVisibleDescriptorPool::AllocDescriptorTable(D3D12_CPU_DESCRIPTOR_HANDLE* pOutCPUDescriptor, D3D12_GPU_DESCRIPTOR_HANDLE* pOutGPUDescriptor, UINT DescriptorCount)
-{
-	BOOL bResult = FALSE;
-	if (m_AllocatedDescriptorCount + DescriptorCount > m_MaxDescriptorCount)
-	{
-		return bResult;
-	}
-	UINT offset = m_AllocatedDescriptorCount + DescriptorCount;
+#pragma endregion
 
-	pOutCPUDescriptor->ptr = m_cpuDescriptorHandle.ptr + m_AllocatedDescriptorCount * m_srvDescriptorSize;
-	pOutGPUDescriptor->ptr = m_gpuDescriptorHandle.ptr + m_AllocatedDescriptorCount * m_srvDescriptorSize;
-	m_AllocatedDescriptorCount += DescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-BOOL ShaderVisibleDescriptorPool::ImmortalAllocDescriptorTable(D3D12_CPU_DESCRIPTOR_HANDLE* pOutCPUDescriptor, D3D12_GPU_DESCRIPTOR_HANDLE* pOutGPUDescriptor, UINT DescriptorCount)
-{
-	BOOL bResult = FALSE;
-	if (m_AllocatedDescriptorCount + DescriptorCount > m_MaxDescriptorCount)
-	{
-		return bResult;
-	}
-	UINT offset = m_AllocatedDescriptorCount + DescriptorCount;
-
-	pOutCPUDescriptor->ptr = m_cpuDescriptorHandle.ptr + m_AllocatedDescriptorCount * m_srvDescriptorSize;
-	pOutGPUDescriptor->ptr = m_gpuDescriptorHandle.ptr + m_AllocatedDescriptorCount * m_srvDescriptorSize;
-	m_AllocatedDescriptorCount += DescriptorCount;
-	m_srvImmortalDescriptorSize = m_AllocatedDescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-bool ShaderVisibleDescriptorPool::IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu)
-{
-	return (m_pDescritorHeap->GetCPUDescriptorHandleForHeapStart().ptr <= hcpu.ptr) && (hcpu.ptr < m_pDescritorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.CBV_SRV_UAV_Desc_IncrementSiz * m_MaxDescriptorCount);
-}
-
-void ShaderVisibleDescriptorPool::Reset()
-{
-	m_AllocatedDescriptorCount = m_srvImmortalDescriptorSize;
-}
-
-DescHandle DescIndex::GetCreationDescHandle() const
-{
-	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.NSVDescHeapCreationHandle[index];
-	else if (type == 'n') return DescHandle(gd.TextureDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'r') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index));
-	else if (type == 'd') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index));
-}
-
-DescHandle DescIndex::GetRenderDescHandle() const
-{
-	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.SVDescHeapRenderHandle[index];
-	else if (type == 'n') return DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE(0), D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'r') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'd') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(0));
-}
-
-
-void font_parsed(void* args, void* _font_data, int error)
-{
-	if (error)
-	{
-		*(uint8_t*)args = error;
-	}
-	else
-	{
-		TTFFontParser::FontData* font_data = (TTFFontParser::FontData*)_font_data;
-
-		{
-			for (const auto& glyph_iterator : font_data->glyphs)
-			{
-				uint32_t num_curves = 0, num_lines = 0;
-				for (const auto& path_list : glyph_iterator.second.path_list)
-				{
-					for (const auto& geometry : path_list.geometry)
-					{
-						if (geometry.is_curve)
-							num_curves++;
-						else
-							num_lines++;
-					}
-				}
-			}
-		}
-
-		*(uint8_t*)args = 1;
-	}
-}
+#pragma region GlobalDeviceCode
 
 void GlobalDevice::Factory_Adaptor_Output_Init()
 {
@@ -1089,7 +1040,7 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	//why cannot be shader visible in Saver DescriptorHeap?
 	//answer : CreateConstantBufferView, CreateShaderResourceView -> only CPU Descriptor Working. so Shader Invisible.
 
-	ShaderVisibleDescPool.Initialize(4096);
+	ShaderVisibleDescPool.Initialize(1024 * 32);
 
 	try {
 		raytracing.Init(this);
@@ -1557,7 +1508,6 @@ void GlobalDevice::UploadToCommitedGPUBuffer(void* ptr, GPUResource* uploadBuffe
 
 UINT64 GlobalDevice::GetRequiredIntermediateSize(ID3D12Resource* pDestinationResource, UINT FirstSubresource, UINT NumSubresources) noexcept
 {
-
 #if defined(_MSC_VER) || !defined(_WIN32)
 	const auto Desc = pDestinationResource->GetDesc();
 #else
@@ -1943,9 +1893,9 @@ void GlobalDevice::CreateDefaultHeap_IB(void* ptr, GPUResource& IndexBuffer, GPU
 	view.SizeInBytes = indexByteSize * IndexCount;
 }
 
-void GPUCmd::SetShader(Shader* shader, ShaderType reg) {
-	shader->Add_RegisterShaderCommand(*this, reg);
-}
+#pragma endregion
+
+#pragma region RaytracingDeviceCode
 
 void RayTracingDevice::Init(void* origin_gd)
 {
@@ -2205,6 +2155,16 @@ void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up)
 	XMMATRIX viewProj = view * proj;
 	gd.raytracing.MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
 }
+
+#pragma endregion
+
+#pragma endregion
+
+#pragma region ShapeCode
+
+#pragma region MeshCode
+
+#pragma region RaytracingMeshCode
 
 void RayTracingMesh::StaticInit()
 {
@@ -2827,6 +2787,10 @@ void RayTracingMesh::UAV_BLAS_Refit()
 	commandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
 }
 
+#pragma endregion
+
+#pragma region BasicMeshCode
+
 Mesh::~Mesh()
 {
 }
@@ -3306,6 +3270,10 @@ void Mesh::CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radiu
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
+#pragma endregion
+
+#pragma region UVMeshCode
+
 void UVMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering)
 {
 	std::vector< Vertex > temp_vertices;
@@ -3615,6 +3583,10 @@ void UVMesh::CreateTextRectMesh()
 	VertexNum = vertices.size();
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
+
+#pragma endregion
+
+#pragma region BumpMeshCode
 
 BumpMesh::~BumpMesh()
 {
@@ -4124,6 +4096,10 @@ void BumpMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList) {
 	}
 }
 
+#pragma endregion
+
+#pragma region BumpSkinMeshCode
+
 void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<BoneData>& bonedata, vector<TriangleIndex>& inds, int SubMeshNum, int* SubMeshIndexArr, matrix* NodeLocalMatrixs, int matrixCount)
 {
 	if (SubMeshIndexArr == nullptr) {
@@ -4276,175 +4252,11 @@ BumpSkinMesh::~BumpSkinMesh()
 {
 }
 
-void Material::ShiftTextureIndexs(unsigned int TextureIndexStart)
-{
-	if (ti.Diffuse >= 0)ti.Diffuse += TextureIndexStart;
-	if (ti.Specular >= 0)ti.Specular += TextureIndexStart;
-	if (ti.Ambient >= 0)ti.Ambient += TextureIndexStart;
-	if (ti.Emissive >= 0)ti.Emissive += TextureIndexStart;
-	if (ti.Normal >= 0)ti.Normal += TextureIndexStart;
-	if (ti.Roughness >= 0)ti.Roughness += TextureIndexStart;
-	if (ti.Opacity >= 0)ti.Opacity += TextureIndexStart;
-	if (ti.LightMap >= 0)ti.LightMap += TextureIndexStart;
-	if (ti.Reflection >= 0)ti.Reflection += TextureIndexStart;
-	if (ti.Sheen >= 0)ti.Sheen += TextureIndexStart;
-	if (ti.ClearCoat >= 0)ti.ClearCoat += TextureIndexStart;
-	if (ti.Transmission >= 0)ti.Transmission += TextureIndexStart;
-	if (ti.Anisotropy >= 0)ti.Anisotropy += TextureIndexStart;
-}
+#pragma endregion
 
-void Material::SetDescTable()
-{
-	DescIndex hDesc;
-	DescIndex hOriginDesc;
-	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
+#pragma endregion
 
-	// 텍스쳐 5개가 같은 머터리얼이 있는지 확인한다. (SRV Desc Heap 자리 재활용을 위해..)
-	int findSame = -1;
-	for (int i = 0; i < game.MaterialTable.size(); ++i) {
-		Material& mat = game.MaterialTable[i];
-		bool b = mat.ti.Diffuse == ti.Diffuse;
-		b = b && (mat.ti.Normal == ti.Normal);
-		b = b && (mat.ti.AmbientOcculsion == ti.AmbientOcculsion);
-		b = b && (mat.ti.Metalic == ti.Metalic);
-		b = b && (mat.ti.Roughness == ti.Roughness);
-		if (b) {
-			findSame = i;
-			break;
-		}
-	}
-
-	if (findSame >= 0) {
-		TextureSRVTableIndex = game.MaterialTable[findSame].TextureSRVTableIndex;
-	}
-	else {
-		gd.ShaderVisibleDescPool.ImmortalAlloc_TextureSRV(&TextureSRVTableIndex, 5);
-
-		hDesc = TextureSRVTableIndex;
-		hOriginDesc = hDesc;
-
-		GPUResource* diffuseTex = &game.DefaultTex;
-		if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
-		GPUResource* normalTex = &game.DefaultNoramlTex;
-		if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
-		GPUResource* ambientTex = &game.DefaultTex;
-		if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
-		GPUResource* MetalicTex = &game.DefaultAmbientTex;
-		if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
-		GPUResource* roughnessTex = &game.DefaultAmbientTex;
-		if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
-
-		const int inc = gd.CBVSRVUAVSize;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, normalTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, ambientTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, MetalicTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, roughnessTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	}
-
-	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256의 배수
-	CB_Resource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-	CB_Resource.resource->Map(0, NULL, (void**)&CBData);
-	*CBData = GetMatCB();
-	CB_Resource.resource->Unmap(0, NULL);
-	gd.ShaderVisibleDescPool.ImmortalAlloc_MaterialCBV(&CB_Resource.descindex, 1);
-
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc;
-	cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
-	cbv_desc.SizeInBytes = ncbElementBytes;
-	gd.pDevice->CreateConstantBufferView(&cbv_desc, CB_Resource.descindex.hCreation.hcpu);
-}
-
-MaterialCB_Data Material::GetMatCB()
-{
-	MaterialCB_Data CBData;
-	CBData.baseColor = clr.base;
-	CBData.ambientColor = clr.ambient;
-	CBData.emissiveColor = clr.emissive;
-	CBData.metalicFactor = metallicFactor;
-	CBData.smoothness = roughnessFactor;
-	CBData.bumpScaling = clr.bumpscaling;
-	CBData.extra = 1.0f;
-	CBData.TilingX = TilingX;
-	CBData.TilingY = TilingY;
-	CBData.TilingOffsetX = TilingOffsetX;
-	CBData.TilingOffsetY = TilingOffsetY;
-	return CBData;
-}
-
-MaterialST_Data Material::GetMatST()
-{
-	MaterialST_Data STData;
-	STData.baseColor = clr.base;
-	STData.ambientColor = clr.ambient;
-	STData.emissiveColor = clr.emissive;
-	STData.metalicFactor = metallicFactor;
-	STData.smoothness = roughnessFactor;
-	STData.bumpScaling = clr.bumpscaling;
-	STData.TilingX = TilingX;
-	STData.TilingY = TilingY;
-	STData.TilingOffsetX = TilingOffsetX;
-	STData.TilingOffsetY = TilingOffsetY;
-
-	STData.diffuseTexId = TextureSRVTableIndex.index - gd.ShaderVisibleDescPool.TextureSRVStart;
-	STData.normalTexId = STData.diffuseTexId + 1;
-	STData.AOTexId = STData.normalTexId + 1;
-	STData.metalicTexId = STData.AOTexId + 1;
-	STData.roughnessTexId = STData.metalicTexId + 1;
-	return STData;
-}
-
-void Material::InitMaterialStructuredBuffer(bool reset)
-{
-	if (MaterialStructuredBuffer.resource != nullptr) {
-		if (reset) {
-			MaterialStructuredBuffer.Release();
-			MaterialStructuredBuffer.resource = nullptr;
-			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256의 배수
-			MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
-			for (int i = 0; i < game.MaterialTable.size(); ++i) {
-				MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
-			}
-			MaterialStructuredBuffer.resource->Unmap(0, NULL);
-
-			//MaterialStructuredBufferSRV를 재할당하지 않는다. (같은 자리를 차지한다.)
-			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			srvDesc.Buffer.FirstElement = 0;
-			srvDesc.Buffer.NumElements = gd.ShaderVisibleDescPool.MaterialCBVCap;
-			srvDesc.Buffer.StructureByteStride = sizeof(MaterialST_Data);
-			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-			gd.pDevice->CreateShaderResourceView(MaterialStructuredBuffer.resource, &srvDesc, MaterialStructuredBufferSRV.hCreation.hcpu);
-		}
-	}
-	else {
-		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256의 배수
-		MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-		MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
-		for (int i = 0; i < game.MaterialTable.size(); ++i) {
-			MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
-		}
-		MaterialStructuredBuffer.resource->Unmap(0, NULL);
-
-		gd.ShaderVisibleDescPool.ImmortalAlloc(&MaterialStructuredBufferSRV, 1);
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Buffer.FirstElement = 0;
-		srvDesc.Buffer.NumElements = gd.ShaderVisibleDescPool.MaterialCBVCap;
-		srvDesc.Buffer.StructureByteStride = sizeof(MaterialST_Data);
-		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-		gd.pDevice->CreateShaderResourceView(MaterialStructuredBuffer.resource, &srvDesc, MaterialStructuredBufferSRV.hCreation.hcpu);
-	}
-}
+#pragma region ModelCode
 
 void ModelNode::PushRenderBatch(void* model, const matrix& parentMat, void* pGameobject)
 {
@@ -5071,43 +4883,218 @@ int Model::FindNodeIndexByName(const std::string& name)
 	return -1;
 }
 
+#pragma endregion
+
 int Shape::GetShapeIndex(string meshName)
 {
-	for (int i = 0; i < Shape::ShapeNameArr.size(); ++i) {
-		if (Shape::ShapeNameArr[i] == meshName) {
-			return i;
-		}
+	auto f = Shape::StrToShapeIndex.find(meshName);
+	if (f != Shape::StrToShapeIndex.end()) {
+		return f->second;
 	}
 	return -1;
 }
 
-int Shape::AddShapeName(string meshName)
-{
-	int r = ShapeNameArr.size();
-	ShapeNameArr.push_back(meshName);
-	return r;
-}
-
 int Shape::AddMesh(string name, Mesh* ptr)
 {
-	int index = AddShapeName(name);
+	int index = Shape::ShapeStrTable.size();
 	Shape s;
 	s.SetMesh(ptr);
-	StrToShapeMap.insert(pair<string, Shape>(name, s));
-	//Shape::IndexToShapeMap.insert(pair<int, Shape>(index, s));
+	Shape::ShapeStrTable.push_back(name);
+	Shape::ShapeTable.push_back(s);
+	Shape::StrToShapeIndex.insert(pair<string, int>(name, index));
 	return index;
 }
 
 int Shape::AddModel(string name, Model* ptr)
 {
-	int index = AddShapeName(name);
+	int index = Shape::ShapeStrTable.size();
 	Shape s;
 	s.SetModel(ptr);
-	StrToShapeMap.insert(pair<string, Shape>(name, s));
-	//IndexToShapeMap.insert(pair<int, Shape>(index, s));
+	Shape::ShapeStrTable.push_back(name);
+	Shape::ShapeTable.push_back(s);
+	Shape::StrToShapeIndex.insert(pair<string, int>(name, index));
 	return index;
 }
 
+#pragma endregion
+
+#pragma region MaterialCode
+
+void Material::ShiftTextureIndexs(unsigned int TextureIndexStart)
+{
+	if (ti.Diffuse >= 0)ti.Diffuse += TextureIndexStart;
+	if (ti.Specular >= 0)ti.Specular += TextureIndexStart;
+	if (ti.Ambient >= 0)ti.Ambient += TextureIndexStart;
+	if (ti.Emissive >= 0)ti.Emissive += TextureIndexStart;
+	if (ti.Normal >= 0)ti.Normal += TextureIndexStart;
+	if (ti.Roughness >= 0)ti.Roughness += TextureIndexStart;
+	if (ti.Opacity >= 0)ti.Opacity += TextureIndexStart;
+	if (ti.LightMap >= 0)ti.LightMap += TextureIndexStart;
+	if (ti.Reflection >= 0)ti.Reflection += TextureIndexStart;
+	if (ti.Sheen >= 0)ti.Sheen += TextureIndexStart;
+	if (ti.ClearCoat >= 0)ti.ClearCoat += TextureIndexStart;
+	if (ti.Transmission >= 0)ti.Transmission += TextureIndexStart;
+	if (ti.Anisotropy >= 0)ti.Anisotropy += TextureIndexStart;
+}
+
+void Material::SetDescTable()
+{
+	DescIndex hDesc;
+	DescIndex hOriginDesc;
+	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
+
+	// 텍스쳐 5개가 같은 머터리얼이 있는지 확인한다. (SRV Desc Heap 자리 재활용을 위해..)
+	int findSame = -1;
+	for (int i = 0; i < game.MaterialTable.size(); ++i) {
+		Material& mat = game.MaterialTable[i];
+		bool b = mat.ti.Diffuse == ti.Diffuse;
+		b = b && (mat.ti.Normal == ti.Normal);
+		b = b && (mat.ti.AmbientOcculsion == ti.AmbientOcculsion);
+		b = b && (mat.ti.Metalic == ti.Metalic);
+		b = b && (mat.ti.Roughness == ti.Roughness);
+		if (b) {
+			findSame = i;
+			break;
+		}
+	}
+
+	if (findSame >= 0) {
+		TextureSRVTableIndex = game.MaterialTable[findSame].TextureSRVTableIndex;
+	}
+	else {
+		gd.ShaderVisibleDescPool.ImmortalAlloc_TextureSRV(&TextureSRVTableIndex, 5);
+
+		hDesc = TextureSRVTableIndex;
+		hOriginDesc = hDesc;
+
+		GPUResource* diffuseTex = &game.DefaultTex;
+		if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
+		GPUResource* normalTex = &game.DefaultNoramlTex;
+		if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
+		GPUResource* ambientTex = &game.DefaultTex;
+		if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
+		GPUResource* MetalicTex = &game.DefaultAmbientTex;
+		if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
+		GPUResource* roughnessTex = &game.DefaultAmbientTex;
+		if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
+
+		const int inc = gd.CBVSRVUAVSize;
+		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		hDesc.index += 1;
+		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, normalTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		hDesc.index += 1;
+		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, ambientTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		hDesc.index += 1;
+		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, MetalicTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		hDesc.index += 1;
+		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, roughnessTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+
+	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256의 배수
+	CB_Resource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	CB_Resource.resource->Map(0, NULL, (void**)&CBData);
+	*CBData = GetMatCB();
+	CB_Resource.resource->Unmap(0, NULL);
+	gd.ShaderVisibleDescPool.ImmortalAlloc_MaterialCBV(&CB_Resource.descindex, 1);
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc;
+	cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
+	cbv_desc.SizeInBytes = ncbElementBytes;
+	gd.pDevice->CreateConstantBufferView(&cbv_desc, CB_Resource.descindex.hCreation.hcpu);
+}
+
+MaterialCB_Data Material::GetMatCB()
+{
+	MaterialCB_Data CBData;
+	CBData.baseColor = clr.base;
+	CBData.ambientColor = clr.ambient;
+	CBData.emissiveColor = clr.emissive;
+	CBData.metalicFactor = metallicFactor;
+	CBData.smoothness = roughnessFactor;
+	CBData.bumpScaling = clr.bumpscaling;
+	CBData.extra = 1.0f;
+	CBData.TilingX = TilingX;
+	CBData.TilingY = TilingY;
+	CBData.TilingOffsetX = TilingOffsetX;
+	CBData.TilingOffsetY = TilingOffsetY;
+	return CBData;
+}
+
+MaterialST_Data Material::GetMatST()
+{
+	MaterialST_Data STData;
+	STData.baseColor = clr.base;
+	STData.ambientColor = clr.ambient;
+	STData.emissiveColor = clr.emissive;
+	STData.metalicFactor = metallicFactor;
+	STData.smoothness = roughnessFactor;
+	STData.bumpScaling = clr.bumpscaling;
+	STData.TilingX = TilingX;
+	STData.TilingY = TilingY;
+	STData.TilingOffsetX = TilingOffsetX;
+	STData.TilingOffsetY = TilingOffsetY;
+
+	STData.diffuseTexId = TextureSRVTableIndex.index - gd.ShaderVisibleDescPool.TextureSRVStart;
+	STData.normalTexId = STData.diffuseTexId + 1;
+	STData.AOTexId = STData.normalTexId + 1;
+	STData.metalicTexId = STData.AOTexId + 1;
+	STData.roughnessTexId = STData.metalicTexId + 1;
+	return STData;
+}
+
+void Material::InitMaterialStructuredBuffer(bool reset)
+{
+	if (MaterialStructuredBuffer.resource != nullptr) {
+		if (reset) {
+			MaterialStructuredBuffer.Release();
+			MaterialStructuredBuffer.resource = nullptr;
+			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256의 배수
+			MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
+			for (int i = 0; i < game.MaterialTable.size(); ++i) {
+				MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
+			}
+			MaterialStructuredBuffer.resource->Unmap(0, NULL);
+
+			//MaterialStructuredBufferSRV를 재할당하지 않는다. (같은 자리를 차지한다.)
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.NumElements = gd.ShaderVisibleDescPool.MaterialCBVCap;
+			srvDesc.Buffer.StructureByteStride = sizeof(MaterialST_Data);
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			gd.pDevice->CreateShaderResourceView(MaterialStructuredBuffer.resource, &srvDesc, MaterialStructuredBufferSRV.hCreation.hcpu);
+		}
+	}
+	else {
+		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256의 배수
+		MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
+		for (int i = 0; i < game.MaterialTable.size(); ++i) {
+			MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
+		}
+		MaterialStructuredBuffer.resource->Unmap(0, NULL);
+
+		gd.ShaderVisibleDescPool.ImmortalAlloc(&MaterialStructuredBufferSRV, 1);
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Buffer.FirstElement = 0;
+		srvDesc.Buffer.NumElements = gd.ShaderVisibleDescPool.MaterialCBVCap;
+		srvDesc.Buffer.StructureByteStride = sizeof(MaterialST_Data);
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		gd.pDevice->CreateShaderResourceView(MaterialStructuredBuffer.resource, &srvDesc, MaterialStructuredBufferSRV.hCreation.hcpu);
+	}
+}
+
+#pragma endregion
+
+#pragma region ShaderCode
+
+#pragma region BasicShaderCode
 Shader::Shader() {
 
 }
@@ -5340,7 +5327,9 @@ D3D12_SHADER_BYTECODE Shader::GetShaderByteCode(const WCHAR* pszFileName, LPCSTR
 
 	return(d3dShaderByteCode);
 }
+#pragma endregion
 
+#pragma region OnlyColorShaderCode
 OnlyColorShader::OnlyColorShader()
 {
 
@@ -5510,227 +5499,9 @@ void OnlyColorShader::CreatePipelineState()
 	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
+#pragma endregion
 
-DiffuseTextureShader::DiffuseTextureShader()
-{
-}
-
-DiffuseTextureShader::~DiffuseTextureShader()
-{
-}
-
-void DiffuseTextureShader::InitShader()
-{
-	CreateRootSignature();
-	CreatePipelineState();
-}
-
-void DiffuseTextureShader::CreateRootSignature()
-{
-	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
-
-	D3D12_ROOT_PARAMETER1 rootParam[4] = {};
-
-	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-	rootParam[0].Constants.Num32BitValues = 20;
-	rootParam[0].Constants.ShaderRegister = 0; // b0 : Camera Matrix (Projection, View) + Camera Positon
-	rootParam[0].Constants.RegisterSpace = 0;
-
-	rootParam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-	rootParam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-	rootParam[1].Constants.Num32BitValues = 16;
-	rootParam[1].Constants.ShaderRegister = 1; // b1 : Transform Matrix
-	rootParam[1].Constants.RegisterSpace = 0;
-
-	rootParam[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; //Static Light
-	rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParam[2].Descriptor.ShaderRegister = 2; // b2
-	rootParam[2].Descriptor.RegisterSpace = 0;
-	rootParam[2].Descriptor.Flags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC;
-
-	rootParam[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParam[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParam[3].DescriptorTable.NumDescriptorRanges = 1;
-
-	D3D12_DESCRIPTOR_RANGE1 ranges[1];
-	ranges[0].BaseShaderRegister = 0; // t0 //Diffuse Texture
-	ranges[0].RegisterSpace = 0;
-	ranges[0].NumDescriptors = 1;
-	ranges[0].OffsetInDescriptorsFromTableStart = 0;
-	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
-		D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
-	rootParam[3].DescriptorTable.pDescriptorRanges = &ranges[0];
-
-	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS*/;
-
-		/// default sampler
-	D3D12_STATIC_SAMPLER_DESC sampler = {};
-	// sampler register index.
-	sampler.ShaderRegister = 0;
-	// setting
-	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	sampler.MipLODBias = 0.0f;
-	sampler.MaxAnisotropy = 16;
-	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
-	sampler.MinLOD = -FLT_MAX;
-	sampler.MaxLOD = D3D12_FLOAT32_MAX;
-	sampler.RegisterSpace = 0;
-	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-
-	rootSigDesc1.NumParameters = 4;
-	rootSigDesc1.pParameters = rootParam;
-	rootSigDesc1.NumStaticSamplers = 1; // question002 : what is static samplers?
-	rootSigDesc1.pStaticSamplers = &sampler;
-	rootSigDesc1.Flags = d3dRootSignatureFlags;
-
-	ID3DBlob* pd3dSignatureBlob = NULL;
-	ID3DBlob* pd3dErrorBlob = NULL;
-	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
-	versioned_rootSigDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
-	versioned_rootSigDesc.Desc_1_1 = rootSigDesc1;
-	D3D12SerializeVersionedRootSignature(&versioned_rootSigDesc, &pd3dSignatureBlob, &pd3dErrorBlob);
-	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
-		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
-			**)&pRootSignature);
-	if (pd3dErrorBlob) pd3dErrorBlob->Release();
-	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
-}
-
-void DiffuseTextureShader::CreatePipelineState()
-{
-	D3D12_SHADER_BYTECODE NULLCODE;
-	NULLCODE.BytecodeLength = 0;
-	NULLCODE.pShaderBytecode = nullptr;
-
-	ID3DBlob* pd3dVertexShaderBlob = NULL, * pd3dPixelShaderBlob = NULL;
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC gPipelineStateDesc;
-	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-
-	gPipelineStateDesc.pRootSignature = pRootSignature;
-
-	gPipelineStateDesc.NodeMask = 0;
-
-	//Input Asm
-	gPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	D3D12_INPUT_ELEMENT_DESC inputElementDesc[4] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // pos vec3
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // color vec4
-		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // normal vec3
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0} // uv vec2
-	};
-	gPipelineStateDesc.InputLayout.NumElements = 4;
-	gPipelineStateDesc.InputLayout.pInputElementDescs = inputElementDesc;
-
-	//Vertex Shader
-	gPipelineStateDesc.VS = Shader::GetShaderByteCode(L"Resources/Shaders/DiffuseTextureShader.hlsl", "VSMain", "vs_5_1", &pd3dVertexShaderBlob);
-
-	//Hull Shader
-	//gPipelineStateDesc.HS = NULLCODE;
-
-	//Tessellation
-
-	//Domain Shader
-	//gPipelineStateDesc.DS = NULLCODE;
-
-	//Geometry Shader
-	//gPipelineStateDesc.GS = NULLCODE;
-
-	//Stream Output
-	//gPipelineStateDesc.StreamOutput
-
-	//Rasterazer
-	gPipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-	gPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	gPipelineStateDesc.RasterizerState.FrontCounterClockwise = FALSE; // front = clock wise
-	//Rasterazer-depth
-	gPipelineStateDesc.RasterizerState.DepthBias = 0;
-	gPipelineStateDesc.RasterizerState.DepthBiasClamp = 0;
-	gPipelineStateDesc.RasterizerState.SlopeScaledDepthBias = 0;
-	gPipelineStateDesc.RasterizerState.DepthClipEnable = TRUE; // if depth > 1, cliping vertex.
-	//Rasterazer-MSAA
-	gPipelineStateDesc.RasterizerState.MultisampleEnable = TRUE;
-	gPipelineStateDesc.RasterizerState.AntialiasedLineEnable = TRUE;
-	gPipelineStateDesc.RasterizerState.ForcedSampleCount = 0; // sample count of UAV rendering // question 003 : what is UAV rendering?
-	//Rasterazer - Conservative Rendering On/Off - (bosujuk rendering)
-	gPipelineStateDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-
-	//Pixel Shader
-	gPipelineStateDesc.PS = Shader::GetShaderByteCode(L"Resources/Shaders/DiffuseTextureShader.hlsl", "PSMain", "ps_5_1", &pd3dPixelShaderBlob);
-
-	//Output Merger
-	//Output Merger-Blend
-	D3D12_BLEND_DESC d3dBlendDesc;
-	::ZeroMemory(&d3dBlendDesc, sizeof(D3D12_BLEND_DESC));
-	d3dBlendDesc.AlphaToCoverageEnable = FALSE;
-	d3dBlendDesc.IndependentBlendEnable = FALSE;
-	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
-	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
-	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
-	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-	d3dBlendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-	d3dBlendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-	d3dBlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-	gPipelineStateDesc.BlendState = d3dBlendDesc;
-	//Output Merger - MSAA
-	gPipelineStateDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
-	gPipelineStateDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable) ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
-	gPipelineStateDesc.SampleMask = 0xFFFFFFFF; // pass every sampling.
-	//Output Merger - DepthStencil
-	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
-	//Output Merger - DepthStencil - depth
-	depthStencilDesc.DepthEnable = TRUE;
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
-	//Output Merger - DepthStencil - stencil
-	depthStencilDesc.StencilEnable = FALSE;
-	depthStencilDesc.StencilReadMask = 0x00;
-	depthStencilDesc.StencilWriteMask = 0x00;
-	depthStencilDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	depthStencilDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	depthStencilDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	depthStencilDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NEVER;
-	depthStencilDesc.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	depthStencilDesc.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	depthStencilDesc.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	depthStencilDesc.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_NEVER;
-	gPipelineStateDesc.DepthStencilState = depthStencilDesc;
-	//Output Merger - RenderTagets / DepthStencil Buffer
-	gPipelineStateDesc.NumRenderTargets = 1;
-	gPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	gPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-	gd.pDevice->CreateGraphicsPipelineState(&gPipelineStateDesc,
-		__uuidof(ID3D12PipelineState), (void**)&pPipelineState);
-	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
-	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
-}
-
-void DiffuseTextureShader::SetTextureCommand(GPUResource* texture)
-{
-	DescHandle descH;
-	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 1);
-
-	gd.pDevice->CopyDescriptorsSimple(1, descH.hcpu, texture->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-	gd.gpucmd->SetGraphicsRootDescriptorTable(3, descH.hgpu);
-}
-
+#pragma region ScreenShaderCode
 ScreenCharactorShader::ScreenCharactorShader()
 {
 }
@@ -5957,7 +5728,9 @@ void ScreenCharactorShader::SetTextureCommand(GPUResource* texture)
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, descH.hgpu);
 }
+#pragma endregion
 
+#pragma region PBRShaderCode
 void PBRShader1::InitShader()
 {
 	CreateRootSignature();
@@ -7208,7 +6981,9 @@ void PBRShader1::SetMaterialCBV(D3D12_GPU_DESCRIPTOR_HANDLE hgpu)
 {
 	gd.gpucmd->SetGraphicsRootDescriptorTable(4, hgpu);
 }
+#pragma endregion
 
+#pragma region SkyBoxShaderCode
 void SkyBoxShader::LoadSkyBox(const wchar_t* filename)
 {
 	ID3D12Resource* uploadbuffer = nullptr;
@@ -7526,6 +7301,9 @@ void SkyBoxShader::RenderSkyBox()
 	gd.gpucmd->DrawInstanced(36, 1, 0, 0);
 }
 
+#pragma endregion
+
+#pragma region ParticleShaderCode
 void ParticleShader::InitShader()
 {
 	CreateRootSignature();
@@ -7575,8 +7353,6 @@ void ParticleShader::CreateRootSignature()
 	sigBlob->Release();
 	if (errBlob) errBlob->Release();
 }
-
-
 
 void ParticleShader::CreatePipelineState()
 {
@@ -7673,7 +7449,6 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 	cmd->DrawInstanced(particleCount * 6, 1, 0, 0);
 }
 
-
 void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
 {
 	// RootSignature 
@@ -7716,7 +7491,9 @@ void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buff
 
 	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 }
+#pragma endregion
 
+#pragma region RaytracingShaderCode
 float** RayTracingShader::push_rins_immortal(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex)
 {
 	dbgc[1] += 1;
@@ -8220,85 +7997,6 @@ void RayTracingShader::PrepareRender()
 	BuildShaderTable();
 }
 
-matrix AnimChannel::GetLocalMatrixAtTime(float time, matrix original)
-{
-	vec4 pos = vec4(0, 0, 0, 1);;
-	vec4 rotQ = vec4(0, 0, 0, 1);
-	vec4 scale = vec4(1, 1, 1);
-	//XMMatrixDecompose(&scale.v4, &rotQ.v4, &pos.v4, original);
-
-	if (posKeys.size() > 0) {
-		for (int i = 0; i < posKeys.size() - 1; ++i) {
-			if (posKeys[i].time < time && time < posKeys[i + 1].time) {
-				vec4 p0 = posKeys[i].value;
-				vec4 p1 = posKeys[i + 1].value;
-				float maxf = posKeys[i + 1].time - posKeys[i].time;
-				float flow = time - posKeys[i].time;
-				float rate = flow / maxf;
-				pos = (1.0f - rate) * p0 + rate * p1;
-				break;
-			}
-		}
-	}
-
-	if (rotKeys.size() > 0) {
-		for (int i = 0; i < rotKeys.size() - 1; ++i) {
-			if (rotKeys[i].time < time && time < rotKeys[i + 1].time) {
-				vec4 p0 = rotKeys[i].value;
-				vec4 p1 = rotKeys[i + 1].value;
-				float maxf = rotKeys[i + 1].time - rotKeys[i].time;
-				float flow = time - rotKeys[i].time;
-				float rate = flow / maxf;
-				rotQ = vec4::Qlerp(p0, p1, rate);
-
-				break;
-			}
-		}
-	}
-
-	/*if (scaleKeys.size() > 0) {
-		for (int i = 0; i < scaleKeys.size() - 1; ++i) {
-			if (scaleKeys[i].time < time && time < scaleKeys[i + 1].time) {
-				vec4 p0 = scaleKeys[i].value;
-				vec4 p1 = scaleKeys[i + 1].value;
-				float maxf = scaleKeys[i + 1].time - scaleKeys[i].time;
-				float flow = time - scaleKeys[i].time;
-				float rate = flow / maxf;
-				scale = (1.0f - rate) * p0 + rate * p1;
-				break;
-			}
-		}
-	}
-	*/
-
-	//matrix rotM = XMMatrixRotationQuaternion(rotQ);
-	//// Pitch (X) 
-	//float pitch = atan2f(-rotM._32, sqrtf(rotM._11 * rotM._11 + rotM._21 * rotM._21));
-	////pitch += 3.141592f/2;
-	//// Yaw (Y)
-	//float yaw = atan2f(rotM._31, rotM._33);
-	////yaw += 3.141592f/2;
-	////Roll (Z) 
-	//float roll = atan2f(rotM._12, rotM._22);
-	////roll += 3.141592f/2;
-
-	matrix mat =
-		XMMatrixScaling(scale.x, scale.y, scale.z) *
-		XMMatrixRotationQuaternion(rotQ) *
-		XMMatrixTranslation(pos.x, pos.y, pos.z);
-
-
-	//mat.right *= -1;
-	//mat.up.y *= -1;
-	//matrix mat = XMMatrixScaling(1, 1, 1);
-	//mat = mat * XMMatrixRotationQuaternion(rotQ);
-	//mat.pos = pos;
-	//mat.pos.w = 1;
-	//mat.transpose();
-
-	return mat;
-}
-
 void SkinMeshModifyShader::InitShader()
 {
 	CreateRootSignature();
@@ -8380,3 +8078,124 @@ void SkinMeshModifyShader::Release()
 	if (pRootSignature) pRootSignature->Release();
 	if (pPipelineState) pPipelineState->Release();
 }
+#pragma endregion
+
+#pragma endregion
+
+#pragma region AnimationCode
+
+void HumanoidAnimation::LoadHumanoidAnimation(string filename)
+{
+	ifstream ifs{ filename, ios_base::binary };
+	Duration = 0;
+	for (int i = 0; i < 55; ++i) {
+		int posKeyNum = 0;
+		int rotKeyNum = 0;
+		int scaleKeyNum = 0;
+		ifs.read((char*)&posKeyNum, sizeof(int));
+		ifs.read((char*)&rotKeyNum, sizeof(int));
+		ifs.read((char*)&scaleKeyNum, sizeof(int));
+		channels[i].posKeys.reserve(posKeyNum);
+		channels[i].posKeys.resize(posKeyNum);
+		channels[i].rotKeys.reserve(rotKeyNum);
+		channels[i].rotKeys.resize(rotKeyNum);
+		channels[i].scaleKeys.reserve(scaleKeyNum);
+		channels[i].scaleKeys.resize(scaleKeyNum);
+		for (int k = 0; k < posKeyNum; ++k) {
+			ifs.read((char*)&channels[i].posKeys[k].time, sizeof(double));
+			ifs.read((char*)&channels[i].posKeys[k].value, sizeof(XMFLOAT3));
+			Duration = max(channels[i].posKeys[k].time, Duration);
+		}
+		for (int k = 0; k < rotKeyNum; ++k) {
+			ifs.read((char*)&channels[i].rotKeys[k].time, sizeof(double));
+			ifs.read((char*)&channels[i].rotKeys[k].value, sizeof(XMFLOAT4));
+			Duration = max(channels[i].rotKeys[k].time, Duration);
+		}
+		for (int k = 0; k < scaleKeyNum; ++k) {
+			ifs.read((char*)&channels[i].scaleKeys[k].time, sizeof(double));
+			ifs.read((char*)&channels[i].scaleKeys[k].value, sizeof(XMFLOAT3));
+			Duration = max(channels[i].scaleKeys[k].time, Duration);
+		}
+	}
+}
+
+matrix AnimChannel::GetLocalMatrixAtTime(float time, matrix original)
+{
+	vec4 pos = vec4(0, 0, 0, 1);;
+	vec4 rotQ = vec4(0, 0, 0, 1);
+	vec4 scale = vec4(1, 1, 1);
+	//XMMatrixDecompose(&scale.v4, &rotQ.v4, &pos.v4, original);
+
+	if (posKeys.size() > 0) {
+		for (int i = 0; i < posKeys.size() - 1; ++i) {
+			if (posKeys[i].time < time && time < posKeys[i + 1].time) {
+				vec4 p0 = posKeys[i].value;
+				vec4 p1 = posKeys[i + 1].value;
+				float maxf = posKeys[i + 1].time - posKeys[i].time;
+				float flow = time - posKeys[i].time;
+				float rate = flow / maxf;
+				pos = (1.0f - rate) * p0 + rate * p1;
+				break;
+			}
+		}
+	}
+
+	if (rotKeys.size() > 0) {
+		for (int i = 0; i < rotKeys.size() - 1; ++i) {
+			if (rotKeys[i].time < time && time < rotKeys[i + 1].time) {
+				vec4 p0 = rotKeys[i].value;
+				vec4 p1 = rotKeys[i + 1].value;
+				float maxf = rotKeys[i + 1].time - rotKeys[i].time;
+				float flow = time - rotKeys[i].time;
+				float rate = flow / maxf;
+				rotQ = vec4::Qlerp(p0, p1, rate);
+
+				break;
+			}
+		}
+	}
+
+	/*if (scaleKeys.size() > 0) {
+		for (int i = 0; i < scaleKeys.size() - 1; ++i) {
+			if (scaleKeys[i].time < time && time < scaleKeys[i + 1].time) {
+				vec4 p0 = scaleKeys[i].value;
+				vec4 p1 = scaleKeys[i + 1].value;
+				float maxf = scaleKeys[i + 1].time - scaleKeys[i].time;
+				float flow = time - scaleKeys[i].time;
+				float rate = flow / maxf;
+				scale = (1.0f - rate) * p0 + rate * p1;
+				break;
+			}
+		}
+	}
+	*/
+
+	//matrix rotM = XMMatrixRotationQuaternion(rotQ);
+	//// Pitch (X) 
+	//float pitch = atan2f(-rotM._32, sqrtf(rotM._11 * rotM._11 + rotM._21 * rotM._21));
+	////pitch += 3.141592f/2;
+	//// Yaw (Y)
+	//float yaw = atan2f(rotM._31, rotM._33);
+	////yaw += 3.141592f/2;
+	////Roll (Z) 
+	//float roll = atan2f(rotM._12, rotM._22);
+	////roll += 3.141592f/2;
+
+	matrix mat =
+		XMMatrixScaling(scale.x, scale.y, scale.z) *
+		XMMatrixRotationQuaternion(rotQ) *
+		XMMatrixTranslation(pos.x, pos.y, pos.z);
+
+
+	//mat.right *= -1;
+	//mat.up.y *= -1;
+	//matrix mat = XMMatrixScaling(1, 1, 1);
+	//mat = mat * XMMatrixRotationQuaternion(rotQ);
+	//mat.pos = pos;
+	//mat.pos.w = 1;
+	//mat.transpose();
+
+	return mat;
+}
+
+#pragma endregion

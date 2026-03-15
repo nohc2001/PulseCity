@@ -8,7 +8,7 @@
 
 extern GlobalDevice gd;
 extern Game game;
-Socket* ClientSocket = nullptr;
+Client client;
 UCHAR* m_pKeyBuffer;
 vector<Item> ItemTable;
 
@@ -62,12 +62,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	//init.
 	gd.Init();
 	game.Init();
-
-	ClientSocket = new Socket(SocketType::Tcp);
-	ClientSocket->SetReceiveBuffer(malloc(4096 * 2), 4096 * 2);
-	ClientSocket->Bind(Endpoint::Any); // 2
-	ClientSocket->Connect(Endpoint("127.0.0.1", 1000));
-	ClientSocket->SetNonblocking();
+	
+	client.Init("127.0.0.1", 9000);
 
 	wchar_t m_pszFrameRate[32] = L"Pulse City Client 001 ____FPS";
 	constexpr double MaxFPSFlow = 10000;
@@ -152,7 +148,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if ((game.pKeyBuffer['W'] & 0xF0) == false) {
 				char input[3] = "WD";
-				ClientSocket->Send(input, 2);
+				//send(client.sock, input, 2, 0);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -160,7 +157,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if ((game.pKeyBuffer['A'] & 0xF0) == false) {
 				char input[3] = "AD";
-				ClientSocket->Send(input, 2);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -168,7 +165,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if ((game.pKeyBuffer['S'] & 0xF0) == false) {
 				char input[3] = "SD";
-				ClientSocket->Send(input, 2);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -176,7 +173,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if ((game.pKeyBuffer['D'] & 0xF0) == false) {
 				char input[3] = "DD";
-				ClientSocket->Send(input, 2);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -184,7 +181,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if ((game.pKeyBuffer['Q'] & 0xF0) == false) {
 				char input[3] = "QD";
-				ClientSocket->Send(input, 2);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -194,7 +191,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
 				char input[3] = "_D";
 				input[0] = VK_SPACE;
-				ClientSocket->Send(input, 2);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -211,7 +208,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		{
 			if (!(lParam & (1 << 30))) {
 				char input[3] = { (char)wParam, 'D', 0 }; 
-				ClientSocket->Send(input, 2);
+				client.send(input, 2, 0);
 			}
 		}
 		break;
@@ -246,38 +243,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		case 'W':
 		{
 			char input[3] = "WU";
-			ClientSocket->Send(input, 2);
+			client.send(input, 2, 0);
 		}
 		break;
 		case 'A':
 		{
 			char input[3] = "AU";
-			ClientSocket->Send(input, 2);
+			client.send(input, 2, 0);
 		}
 		break;
 		case 'S':
 		{
 			char input[3] = "SU";
-			ClientSocket->Send(input, 2);
+			client.send(input, 2, 0);
 		}
 		break;
 		case 'D':
 		{
 			char input[3] = "DU";
-			ClientSocket->Send(input, 2);
+			client.send(input, 2, 0);
 		}
 		break;
 		case 'Q':
 		{
 			char input[3] = "QU";
-			ClientSocket->Send(input, 2);
+			client.send(input, 2, 0);
 		}
 		break;
 		case VK_SPACE:
 		{
 			char input[3] = "_U";
 			input[0] = VK_SPACE;
-			ClientSocket->Send(input, 2);
+			client.send(input, 2, 0);
 		}
 		break;
 		}
@@ -287,28 +284,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	{
 		char input[3] = "_D";
 		input[0] = InputID::MouseLbutton;
-		ClientSocket->Send(input, 2);
+		client.send(input, 2, 0);
 	}
 	break;
 	case WM_LBUTTONUP:
 	{
 		char input[3] = "_U";
 		input[0] = InputID::MouseLbutton;
-		ClientSocket->Send(input, 2);
+		client.send(input, 2, 0);
 	}
 	break;
 	case WM_RBUTTONDOWN:
 	{
 		char input[3] = "_D";
 		input[0] = InputID::MouseRbutton;
-		ClientSocket->Send(input, 2);
+		client.send(input, 2, 0);
 	}
 	break;
 	case WM_RBUTTONUP:
 	{
 		char input[3] = "_U";
 		input[0] = InputID::MouseRbutton;
-		ClientSocket->Send(input, 2);
+		client.send(input, 2, 0);
 	}
 	break;
 	case WM_DESTROY:
@@ -316,7 +313,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		//ClientSocket->Send(nullptr, 0); // exit signal?
 
 		while (true) {
-			int result = ClientSocket->Receive();
+			int result = client.recv(client.rBuf, client.rbufMax, 0);
 			if (result <= 0) {
 				break;
 			}

@@ -36,7 +36,6 @@
 #include <d3d12sdklayers.h>
 #include <wrl.h>
 
-#include "NWLib/CustomNWLib.h"
 #include "Utill_ImageFormating.h"
 
 #include "vecset.h"
@@ -55,10 +54,42 @@ using namespace DirectX::PackedVector;
 using namespace std;
 //using Microsoft::WRL::ComPtr; -> question 001
 
+#pragma comment(lib, "ws2_32.lib") // 64비트 버전이라 한다. (16 - 16비트 32 -> 32이상.)
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
+
+#pragma region STCSyncCode
+struct STCMemberInfo {
+	const char* name;
+	unsigned int offset;
+	unsigned int size;
+};
+
+template <typename T, typename M> constexpr unsigned int offset_of(M T::* member) { return reinterpret_cast<size_t>(&(((T*)0)->*member)); }
+
+#define STC_STATICINIT_innerStruct inline static vector<STCMemberInfo> g_members; \
+    struct OffsetRegister { \
+        OffsetRegister(const char* name, unsigned int offset, unsigned int size) { \
+            STC_CurrentStruct::g_members.push_back({name, offset, size}); \
+        } \
+    };
+#define STC_STATICINIT_outerStruct(MyStruct) vector<STCMemberInfo> MyStruct::g_members;
+
+#define STC_CurrentStruct int
+#define STCDef(type, member) \
+    type member; \
+    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(type)};
+
+#define STCDefArr(type, member, Count) \
+    type member[Count]; \
+    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(type) * Count};
+
+#define STCDefStdArr(type, member, Count) \
+    array<type, Count> member; \
+    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(array<type, Count>)};
+#pragma endregion
 
 void dbgbreak(bool condition);
 #pragma region dbglogDefines
@@ -189,4 +220,51 @@ struct DescIndex {
 	__forceinline DescHandle GetRenderDescHandle() const;
 	__declspec(property(get = GetCreationDescHandle)) const DescHandle hCreation;
 	__declspec(property(get = GetRenderDescHandle)) const DescHandle hRender;
+};
+
+struct GameObject;
+struct SyncWay {
+	int clientOffset;
+	void (*syncfunc)(GameObject*, char*, int);
+	SyncWay() {}
+	SyncWay(int n) :
+		clientOffset{ n }, syncfunc{ nullptr }
+	{
+
+	}
+	SyncWay(void(*func)(GameObject*, char*, int)) :
+		clientOffset{ -1 }, syncfunc{ func }
+	{
+
+	}
+};
+
+// virtual function pointer table <-> GameObjectType
+// pair <GameObjectType, offset> <-> Client Offset
+union GameObjectType {
+	static constexpr int ObjectTypeCount = 6;
+
+	short id;
+	enum {
+		_GameObject = 0,
+		_StaticGameObject = 1,
+		_DynamicGameObject = 2,
+		_SkinMeshGameObject = 3,
+		_Player = 4,
+		_Monster = 5,
+	};
+
+	operator short() { return id; }
+
+	static void* vptr[ObjectTypeCount];
+	static vector<STCMemberInfo> Server_STCMembers[ObjectTypeCount];
+	static vector<STCMemberInfo> Client_STCMembers[ObjectTypeCount];
+
+	
+	static unordered_map<int, SyncWay> STC_OffsetMap;
+
+	// 싱크되는 변수의 서버이름과 클라이언트 이름이 다른 경우 연결을 위해 사용.
+	static void LinkOffsetByName(short type, const char* ServerVarName, const char* ClientVarName);
+	static void LinkOffsetAsFunction(short type, const char* ServerVarName, void (*func)(GameObject*, char*, int));
+	static void STATICINIT();
 };

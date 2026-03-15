@@ -31,6 +31,9 @@
     <Filter Include="소스 파일\UtillSource">
       <UniqueIdentifier>{f1bfc38d-fea9-4402-ba7c-e90f23f8c06f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders\Raytracing">
+      <UniqueIdentifier>{d6f6e729-a0cd-47a2-9108-0afa7a287b7b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -177,6 +180,18 @@
     </FxCompile>
     <FxCompile Include="Particle.hlsl">
       <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\PBRShader01_InstancingwithShadow.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\PBRShader01_SkinMeshwithShadow.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\RayTracing\ComputeSkinMeshGeometry.hlsl">
+      <Filter>Shaders\Raytracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\RayTracing\Raytracing.hlsl">
+      <Filter>Shaders\Raytracing</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

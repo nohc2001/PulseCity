@@ -1,9 +1,22 @@
 #include "stdafx.h"
 #include "GameObject.h"
+#include <set>
 
-vector<string> Shape::ShapeNameArr;
-unordered_map<string, Shape> Shape::StrToShapeMap;
-unordered_map<int, Shape> Shape::IndexToShapeMap;
+unordered_map<string, int> Shape::StrToShapeIndex;
+vector<Shape> Shape::ShapeTable;
+vector<string> Shape::ShapeStrTable;
+extern World gameworld;
+extern float DeltaTime;
+
+unordered_map<type_offset_pair, short, hash<type_offset_pair>> GameObjectType::GetClientOffset;
+unordered_map<void*, GameObjectType> GameObjectType::VptrToTypeTable;
+
+void GameObjectType::STATICINIT()
+{
+	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<GameObject>(), GameObjectType::_GameObject));
+	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<Player>(), GameObjectType::_Player));
+	GameObjectType::VptrToTypeTable.insert(pair<void*, GameObjectType>(GetVptr<Monster>(), GameObjectType::_Monster));
+}
 
 void Mesh::ReadMeshFromFile_OBJ(const char* path, bool centering)
 {
@@ -71,82 +84,353 @@ void Mesh::SetOBBDataWithAABB(XMFLOAT3 minpos, XMFLOAT3 maxpos)
 	Center = mid.f3;
 }
 
-int Shape::GetShapeIndex(string meshName)
-{
-	for (int i = 0; i < Shape::ShapeNameArr.size(); ++i) {
-		if (Shape::ShapeNameArr[i] == meshName) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-int Shape::AddShapeName(string meshName)
-{
-	int r = ShapeNameArr.size();
-	ShapeNameArr.push_back(meshName);
-	return r;
-}
-
 int Shape::AddMesh(string name, Mesh* ptr)
 {
-	int index = AddShapeName(name);
 	Shape s;
 	s.SetMesh(ptr);
-	StrToShapeMap.insert(pair<string, Shape>(name, s));
-	IndexToShapeMap.insert(pair<int, Shape>(index, s));
+	int index = ShapeTable.size();
+	ShapeTable.push_back(s);
+	ShapeStrTable.push_back(name);
+	StrToShapeIndex.insert(pair<string, int>(name, index));
 	return index;
 }
 
 int Shape::AddModel(string name, Model* ptr)
 {
-	int index = AddShapeName(name);
 	Shape s;
 	s.SetModel(ptr);
-	StrToShapeMap.insert(pair<string, Shape>(name, s));
-	IndexToShapeMap.insert(pair<int, Shape>(index, s));
+	int index = ShapeTable.size();
+	ShapeTable.push_back(s);
+	ShapeStrTable.push_back(name);
+	StrToShapeIndex.insert(pair<string, int>(name, index));
 	return index;
 }
 
 GameObject::GameObject()
 {
-	isExist = false;
-	m_worldMatrix.Id();
-	ShapeIndex = -1;
-	LVelocity = 0;
-	tickLVelocity = 0;
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = false;
+	worldMat.Id();
+	shapeindex = -1;
 }
 
 GameObject::~GameObject()
 {
 }
 
-void GameObject::Update(float deltaTime)
+matrix GameObject::GetWorld() {
+	return worldMat;
+}
+
+void GameObject::SetWorld(matrix localWorldMat)
 {
+	worldMat = localWorldMat;
+}
+
+void GameObject::Release()
+{
+	tag[GameObjectTag::Tag_Enable] = false;
+	if (transforms_innerModel) {
+		delete[] transforms_innerModel;
+	}
 }
 
 BoundingOrientedBox GameObject::GetOBB()
 {
 	BoundingOrientedBox obb_local;
-	Shape s = Shape::IndexToShapeMap[ShapeIndex];
-	if (s.isMesh()) {
-		obb_local = s.GetMesh()->GetOBB();
-	}
-	else obb_local = s.GetModel()->GetOBB();
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	if (model != nullptr) obb_local = model->GetOBB();
 	BoundingOrientedBox obb_world;
-	obb_local.Transform(obb_world, m_worldMatrix);
+	obb_local.Transform(obb_world, worldMat);
 	return obb_world;
 }
 
-void GameObject::CollisionMove(GameObject* gbj1, GameObject* gbj2)
+void GameObject::SetShape(int _shapeindex)
+{
+	shapeindex = _shapeindex;
+}
+
+void GameObject::OnRayHit(GameObject* rayFrom) {
+
+}
+
+StaticGameObject::StaticGameObject()
+{
+}
+
+StaticGameObject::~StaticGameObject()
+{
+	aabbArr.clear();
+}
+
+matrix StaticGameObject::GetWorld() {
+	return worldMat;
+}
+
+void StaticGameObject::SetWorld(matrix localWorldMat)
+{
+	matrix sav = localWorldMat;
+	StaticGameObject* obj = gameworld.Static_gameObjects[parent];
+	if (obj != nullptr) {
+		sav *= obj->worldMat;
+	}
+	worldMat = sav;
+}
+
+bool StaticGameObject::Collision_Inherit(matrix parent_world, BoundingBox bb)
+{
+	XMMATRIX sav = XMMatrixMultiply(worldMat, parent_world);
+	BoundingOrientedBox obb = GetOBBw(sav);
+	if (obb.Extents.x > 0 && obb.Intersects(bb)) {
+		return true;
+	}
+
+	StaticGameObject* obj = (StaticGameObject*)childs;
+	while (obj != nullptr) {
+		if (obj->Collision_Inherit(sav, bb)) return true;
+		obj = (StaticGameObject*)obj->sibling;
+	}
+
+	return false;
+}
+
+void StaticGameObject::InitMapAABB_Inherit(void* origin, matrix parent_world)
+{
+	GameMap* map = (GameMap*)origin;
+
+	XMMATRIX sav = XMMatrixMultiply(worldMat, parent_world);
+	BoundingOrientedBox obb = GetOBBw(sav);
+	map->ExtendMapAABB(obb);
+
+	StaticGameObject* obj = (StaticGameObject*)childs;
+	while (obj != nullptr) {
+		obj->InitMapAABB_Inherit(origin, sav);
+		obj = (StaticGameObject*)obj->sibling;
+	}
+}
+
+BoundingOrientedBox StaticGameObject::GetOBB() {
+	return GameObject::GetOBB();
+}
+
+BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
+{
+	BoundingOrientedBox obb_local;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+	if (model != nullptr) {
+		obb_local = model->GetOBB();
+	}
+	else if (mesh != nullptr) {
+		obb_local = mesh->GetOBB();
+	}
+	else {
+		obb_local.Extents.x = -1;
+		return obb_local;
+	}
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, worldMat);
+	return obb_world;
+}
+
+void StaticGameObject::Release() {
+	GameObject::Release();
+}
+
+DynamicGameObject::DynamicGameObject() :
+	chunkAllocIndexs{ nullptr }
+{
+	tickLVelocity = vec4(0, 0, 0, 0);
+	tickAVelocity = vec4(0, 0, 0, 0);
+	LastQuerternion = vec4(0, 0, 0, 0);
+	chunkAllocIndexsCapacity = 0;
+	ZeroMemory(&IncludeChunks, sizeof(GameObjectIncludeChunks));
+}
+
+DynamicGameObject::~DynamicGameObject()
+{
+	if (chunkAllocIndexs) {
+		delete[] chunkAllocIndexs;
+		chunkAllocIndexs = nullptr;
+	}
+}
+
+void DynamicGameObject::InitialChunkSetting()
+{
+	if (chunkAllocIndexs == nullptr) {
+		BoundingOrientedBox obb = GetOBB();
+		vec4 ext = obb.Extents;
+		float len = ext.len3 / gameworld.chunck_divide_Width;
+		chunkAllocIndexsCapacity = powf(2 * ceilf(len * 0.5f), 3);
+		chunkAllocIndexs = new int[chunkAllocIndexsCapacity];
+	}
+}
+
+matrix DynamicGameObject::GetWorld() {
+	matrix sav = worldMat;
+	GameObject* obj = gameworld.Dynamic_gameObjects[parent];
+	while (obj != nullptr) {
+		sav *= obj->worldMat;
+		if (obj->tag[GameObjectTag::Tag_Dynamic] == false) break;
+		obj = gameworld.Dynamic_gameObjects[obj->parent];
+	}
+	return sav;
+}
+
+void DynamicGameObject::SetWorld(matrix localWorldMat)
+{
+	worldMat = localWorldMat;
+}
+
+void DynamicGameObject::Move(vec4 velocity, vec4 Q)
+{
+	int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	int up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				GameChunk* gc = gameworld.chunck[ChunkIndex(ix, iy, iz)];
+				gc->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+				up += 1;
+			}
+		}
+	}
+
+	// 위치 이동 / 회전
+	vec4 pos = worldMat.pos;
+	worldMat.trQ(Q);
+	worldMat.pos = pos + velocity;
+	worldMat.pos.w = 1;
+
+	// 포함 청크 탐색
+	IncludeChunks = gameworld.GetChunks_Include_OBB(GetOBB());
+
+	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				auto c = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
+				GameChunk* gc;
+				if (c == gameworld.chunck.end()) {
+					// new game chunk
+					gc = new GameChunk();
+					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+					gameworld.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+				}
+				else gc = c->second;
+				int allocN = gc->Dynamic_gameobjects.Alloc();
+				gc->Dynamic_gameobjects[allocN] = this;
+				chunkAllocIndexs[up] = allocN;
+				up += 1;
+			}
+		}
+	}
+}
+
+void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afterChunkInc)
+{
+	int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	int up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				gameworld.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+				up += 1;
+			}
+		}
+	}
+
+	// 위치 이동 / 회전
+	vec4 pos = worldMat.pos;
+	worldMat.trQ(Q);
+	worldMat.pos = pos + velocity;
+	worldMat.pos.w = 1;
+
+	// 포함 청크 탐색
+	IncludeChunks = afterChunkInc;
+	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+	zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+	up = 0;
+	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+				auto c = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
+				GameChunk* gc;
+				if (c == gameworld.chunck.end()) {
+					// new game chunk
+					gc = new GameChunk();
+					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+					gameworld.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+				}
+				else gc = c->second;
+				int allocN = gc->Dynamic_gameobjects.Alloc();
+				gc->Dynamic_gameobjects[allocN] = this;
+				chunkAllocIndexs[up] = allocN;
+				up += 1;
+			}
+		}
+	}
+}
+
+void DynamicGameObject::Update(float delatTime) {
+
+}
+
+void DynamicGameObject::Release() {
+	GameObject::Release();
+	if (chunkAllocIndexs) {
+		int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+		int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+		int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+		int up = 0;
+		for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+			for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+				for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+					gameworld.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+					up += 1;
+				}
+			}
+		}
+		delete[] chunkAllocIndexs;
+	}
+}
+
+BoundingOrientedBox DynamicGameObject::GetOBB() {
+	BoundingOrientedBox obb_local;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	if (model != nullptr) obb_local = model->GetOBB();
+
+	matrix sav = GetWorld();
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, sav);
+
+	return obb_world;
+}
+
+void DynamicGameObject::CollisionMove(DynamicGameObject* gbj1, DynamicGameObject* gbj2)
 {
 	constexpr float epsillon = 0.01f;
 
 	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());
 	bool bj = XMColorEqual(gbj2->tickLVelocity, XMVectorZero());
 
-	GameObject* movObj = nullptr;
-	GameObject* colObj = nullptr;
+	DynamicGameObject* movObj = nullptr;
+	DynamicGameObject* colObj = nullptr;
 	BoundingOrientedBox obb1 = gbj1->GetOBB();
 	BoundingOrientedBox obb2 = gbj2->GetOBB();
 
@@ -169,12 +453,12 @@ Collision_By_Move:
 	else if (!bi && !bj) {
 		// i : moving GameObject
 		// j : moving GameObject
-		gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
+		gbj1->worldMat.pos += gbj1->tickLVelocity;
 		obb1 = gbj1->GetOBB();
-		gbj1->m_worldMatrix.pos -= gbj1->tickLVelocity;
-		gbj2->m_worldMatrix.pos += gbj2->tickLVelocity;
+		gbj1->worldMat.pos -= gbj1->tickLVelocity;
+		gbj2->worldMat.pos += gbj2->tickLVelocity;
 		obb2 = gbj2->GetOBB();
-		gbj2->m_worldMatrix.pos -= gbj2->tickLVelocity;
+		gbj2->worldMat.pos -= gbj2->tickLVelocity;
 
 		if (obb1.Intersects(obb2)) {
 			gbj1->OnCollision(gbj2);
@@ -189,12 +473,12 @@ Collision_By_Move:
 		CMP_INTERSECT:
 			vec4 v1 = mul * gbj1->tickLVelocity;
 			vec4 v2 = mul * gbj2->tickLVelocity;
-			gbj1->m_worldMatrix.pos += v1;
+			gbj1->worldMat.pos += v1;
 			obb1 = gbj1->GetOBB();
-			gbj1->m_worldMatrix.pos -= v1;
-			gbj2->m_worldMatrix.pos += v2;
+			gbj1->worldMat.pos -= v1;
+			gbj2->worldMat.pos += v2;
 			obb2 = gbj2->GetOBB();
-			gbj2->m_worldMatrix.pos -= v2;
+			gbj2->worldMat.pos -= v2;
 			bool isMoveForward = false;
 			if (obb1.Intersects(obb2)) {
 				mul -= rate;
@@ -221,16 +505,16 @@ Collision_By_Move:
 			vec4 postMove2 = gbj2->tickLVelocity - v2;
 			gbj2->tickLVelocity = postMove2;
 
-			gbj2->m_worldMatrix.pos += preMove2;
+			gbj2->worldMat.pos += preMove2;
 			obb2 = gbj2->GetOBB();
-			gbj2->m_worldMatrix.pos -= preMove2;
+			gbj2->worldMat.pos -= preMove2;
 
 			CollisionMove_DivideBaseline_rest(gbj1, gbj2, obb2, preMove1);
 			gbj1->tickLVelocity += preMove1;
 
-			gbj1->m_worldMatrix.pos += gbj1->tickLVelocity;
+			gbj1->worldMat.pos += gbj1->tickLVelocity;
 			obb1 = gbj1->GetOBB();
-			gbj1->m_worldMatrix.pos -= gbj1->tickLVelocity;
+			gbj1->worldMat.pos -= gbj1->tickLVelocity;
 
 			CollisionMove_DivideBaseline_rest(gbj2, gbj1, obb1, preMove2);
 			gbj2->tickLVelocity += preMove2;
@@ -243,9 +527,9 @@ Collision_By_Move:
 	}
 
 Collision_By_Move_static_vs_dynamic:
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	obb2 = colObj->GetOBB();
 
 	if (obb1.Intersects(obb2)) {
@@ -256,44 +540,44 @@ Collision_By_Move_static_vs_dynamic:
 	}
 }
 
-void GameObject::CollisionMove_DivideBaseline(GameObject* movObj, GameObject* colObj)
+void DynamicGameObject::CollisionMove_DivideBaseline(DynamicGameObject* movObj, DynamicGameObject* colObj)
 {
 	BoundingOrientedBox colOBB = colObj->GetOBB();
-	XMMATRIX basemat = colObj->m_worldMatrix;
-	XMMATRIX invmat = colObj->m_worldMatrix.RTInverse;
+	XMMATRIX basemat = colObj->worldMat;
+	XMMATRIX invmat = colObj->worldMat.RTInverse;
 	invmat.r[3] = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
 	movObj->tickLVelocity = XMVectorZero();
 
 	XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	BoundingOrientedBox obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
 	MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
 	MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 }
 
-void GameObject::CollisionMove_DivideBaseline_StaticOBB(GameObject* movObj, BoundingOrientedBox colOBB)
+void DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(DynamicGameObject* movObj, BoundingOrientedBox colOBB)
 {
 	XMFLOAT3 Corners[8] = {};
 	colOBB.GetCorners((XMFLOAT3*)Corners);
@@ -315,82 +599,99 @@ void GameObject::CollisionMove_DivideBaseline_StaticOBB(GameObject* movObj, Boun
 
 	XMVECTOR MoveVector = basemat.mat.r[0] * BaseLine.m128_f32[0];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	BoundingOrientedBox obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
 	MoveVector = basemat.mat.r[1] * BaseLine.m128_f32[1];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
 	MoveVector = basemat.mat.r[2] * BaseLine.m128_f32[2];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 }
 
-void GameObject::CollisionMove_DivideBaseline_rest(GameObject* movObj, GameObject* colObj, BoundingOrientedBox colOBB, vec4 preMove)
+void DynamicGameObject::CollisionMove_DivideBaseline_rest(DynamicGameObject* movObj, DynamicGameObject* colObj, BoundingOrientedBox colOBB, vec4 preMove)
 {
-	movObj->m_worldMatrix.pos += preMove;
+	movObj->worldMat.pos += preMove;
 
-	XMMATRIX basemat = colObj->m_worldMatrix;
-	XMMATRIX invmat = colObj->m_worldMatrix.RTInverse;
+	XMMATRIX basemat = colObj->worldMat;
+	XMMATRIX invmat = colObj->worldMat.RTInverse;
 	invmat.r[3] = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR BaseLine = XMVector3Transform(movObj->tickLVelocity, invmat);
 	movObj->tickLVelocity = XMVectorZero();
 
 	XMVECTOR MoveVector = basemat.r[0] * BaseLine.m128_f32[0];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	BoundingOrientedBox obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
 	MoveVector = basemat.r[1] * BaseLine.m128_f32[1];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
 	MoveVector = basemat.r[2] * BaseLine.m128_f32[2];
 	movObj->tickLVelocity += MoveVector;
-	movObj->m_worldMatrix.pos += movObj->tickLVelocity;
+	movObj->worldMat.pos += movObj->tickLVelocity;
 	obb1 = movObj->GetOBB();
-	movObj->m_worldMatrix.pos -= movObj->tickLVelocity;
+	movObj->worldMat.pos -= movObj->tickLVelocity;
 	if (obb1.Intersects(colOBB)) {
 		movObj->tickLVelocity -= MoveVector;
 	}
 
-	movObj->m_worldMatrix.pos -= preMove;
+	movObj->worldMat.pos -= preMove;
 }
 
-void GameObject::OnCollision(GameObject* other)
+void DynamicGameObject::OnCollision(GameObject* other)
 {
 }
 
-void GameObject::OnStaticCollision(BoundingOrientedBox obb)
+void DynamicGameObject::OnStaticCollision(BoundingOrientedBox obb)
 {
 }
 
-void GameObject::OnCollisionRayWithBullet(GameObject* shooter, float damage)
+void DynamicGameObject::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 {
+}
+
+void DynamicGameObject::OnRayHit(GameObject* rayFrom)
+{
+}
+
+SkinMeshGameObject::SkinMeshGameObject() {
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+}
+
+SkinMeshGameObject::~SkinMeshGameObject() {
+}
+
+void SkinMeshGameObject::Update(float delatTime) {
+	AnimationFlowTime += DeltaTime;
 }
 
 void GameMap::ExtendMapAABB(BoundingOrientedBox obb)
@@ -412,304 +713,59 @@ void GameMap::BakeStaticCollision()
 	MapObjects[0]->InitMapAABB_Inherit(this, XMMatrixIdentity());
 }
 
-void GameMap::StaticCollisionMove(GameObject* obj)
+void GameMap::StaticCollisionMove(DynamicGameObject* obj)
 {
-	obj->m_worldMatrix.pos += obj->tickLVelocity;
+	obj->worldMat.pos += obj->tickLVelocity;
 	BoundingOrientedBox obb = obj->GetOBB();
-	obj->m_worldMatrix.pos -= obj->tickLVelocity;
+	obj->worldMat.pos -= obj->tickLVelocity;
 
-	vec4 AABB[2];
-	vector<StaticCollisions*> SCArr;
-	SCArr.reserve(8);
+	// 움직인 후의 청크영역을 찾아냄.
+	GameObjectIncludeChunks goic = gameworld.GetChunks_Include_OBB(obb);
 
-	Mesh::GetAABBFromOBB(AABB, obb, true);
-	int xMin = floor(AABB[0].x / GameMap::chunck_divide_Width);
-	int xMax = floor(AABB[1].x / GameMap::chunck_divide_Width);
-	int yMin = floor(AABB[0].y / GameMap::chunck_divide_Width);
-	int yMax = floor(AABB[1].y / GameMap::chunck_divide_Width);
-	int zMin = floor(AABB[0].z / GameMap::chunck_divide_Width);
-	int zMax = floor(AABB[1].z / GameMap::chunck_divide_Width);
-	auto f = static_collision_chunck.end();
-	if (xMin != xMax) {
-		if (yMin != yMax) {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-		else {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-	}
-	else {
-		if (yMin != yMax) {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-		else {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-	}
+	for (int ix = goic.xmin; ix <= goic.xmin + goic.xlen; ++ix) {
+		for (int iy = goic.ymin; iy <= goic.ymin + goic.ylen; ++iy) {
+			for (int iz = goic.zmin; iz <= goic.zmin + goic.zlen; ++iz) {
+				GameChunk* ch = gameworld.chunck[ChunkIndex(ix, iy, iz)];
+				//Static Object는 Enable이 false일 수 없기 때문에 할당검사는 안함.
+				// >> 그럼 그냥 vector여도 상관없잖음 왜 vecset으로 함? >> fix
+				for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
+					BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
 
-	for (int i = 0; i < SCArr.size(); ++i) {
-		for (int k = 0; k < SCArr[i]->obbs.size(); ++k) {
-			BoundingOrientedBox staticobb = SCArr[i]->obbs[k];
+					obj->worldMat.pos += obj->tickLVelocity;
+					BoundingOrientedBox obb1 = obj->GetOBB();
+					obj->worldMat.pos -= obj->tickLVelocity;
 
-			obj->m_worldMatrix.pos += obj->tickLVelocity;
-			BoundingOrientedBox obb1 = obj->GetOBB();
-			obj->m_worldMatrix.pos -= obj->tickLVelocity;
+					if (obb1.Intersects(staticobb)) {
+						obj->OnStaticCollision(staticobb);
+						DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(obj, staticobb);
+					}
 
-			if (obb1.Intersects(staticobb)) {
-				obj->OnStaticCollision(staticobb);
-				GameObject::CollisionMove_DivideBaseline_StaticOBB(obj, staticobb);
+					if (obj->tickLVelocity.fast_square_of_len3 <= 0.001f) return;
+				}
 			}
-
-			if (obj->tickLVelocity.fast_square_of_len3 <= 0.001f) return;
 		}
 	}
 }
 
 bool GameMap::isStaticCollision(BoundingOrientedBox obb)
 {
-	vec4 AABB[2];
-	vector<StaticCollisions*> SCArr;
-	SCArr.reserve(8);
+	GameObjectIncludeChunks goic = gameworld.GetChunks_Include_OBB(obb);
 
-	Mesh::GetAABBFromOBB(AABB, obb, true);
-	int xMin = floor(AABB[0].x / GameMap::chunck_divide_Width);
-	int xMax = floor(AABB[1].x / GameMap::chunck_divide_Width);
-	int yMin = floor(AABB[0].y / GameMap::chunck_divide_Width);
-	int yMax = floor(AABB[1].y / GameMap::chunck_divide_Width);
-	int zMin = floor(AABB[0].z / GameMap::chunck_divide_Width);
-	int zMax = floor(AABB[1].z / GameMap::chunck_divide_Width);
-	auto f = static_collision_chunck.end();
-	if (xMin != xMax) {
-		if (yMin != yMax) {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-		else {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMax, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-	}
-	else {
-		if (yMin != yMax) {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMax, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-		else {
-			if (zMin != zMax) {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMax));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-			else {
-				f = static_collision_chunck.find(ChunkIndex(xMin, yMin, zMin));
-				if (f != static_collision_chunck.end()) SCArr.push_back(f->second);
-			}
-		}
-	}
+	for (int ix = goic.xmin; ix <= goic.xmin + goic.xlen; ++ix) {
+		for (int iy = goic.ymin; iy <= goic.ymin + goic.ylen; ++iy) {
+			for (int iz = goic.zmin; iz <= goic.zmin + goic.zlen; ++iz) {
+				GameChunk* ch = gameworld.chunck[ChunkIndex(ix, iy, iz)];
+				for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
+					BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
 
-	for (int i = 0; i < SCArr.size(); ++i) {
-		for (int k = 0; k < SCArr[i]->obbs.size(); ++k) {
-			BoundingOrientedBox staticobb = SCArr[i]->obbs[k];
-
-			if (obb.Intersects(staticobb)) {
-				return true;
+					if (obb.Intersects(staticobb)) {
+						return true;
+					}
+				}
 			}
 		}
 	}
 	return false;
-}
-
-void GameMap::PushOBB_ToStaticCollisions(BoundingOrientedBox obb) {
-	vec4 AABB[2];
-	Mesh::GetAABBFromOBB(AABB, obb, true);
-	int xMin = floor(AABB[0].x / GameMap::chunck_divide_Width);
-	int xMax = floor(AABB[1].x / GameMap::chunck_divide_Width);
-	int yMin = floor(AABB[0].y / GameMap::chunck_divide_Width);
-	int yMax = floor(AABB[1].y / GameMap::chunck_divide_Width);
-	int zMin = floor(AABB[0].z / GameMap::chunck_divide_Width);
-	int zMax = floor(AABB[1].z / GameMap::chunck_divide_Width);
-	if (xMin != xMax) {
-		if (yMin != yMax) {
-			if (zMin != zMax) {
-				for (int xi = xMin; xi <= xMax; ++xi)
-					for (int yi = yMin; yi <= yMax; ++yi)
-						for (int zi = zMin; zi <= zMax; ++zi)
-							PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xi, yi, zi), obb);
-			}
-			else {
-				for (int xi = xMin; xi <= xMax; ++xi)
-					for (int yi = yMin; yi <= yMax; ++yi)
-						PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xi, yi, zMin), obb);
-			}
-		}
-		else {
-			if (zMin != zMax) {
-				for (int xi = xMin; xi <= xMax; ++xi)
-					for (int zi = zMin; zi <= zMax; ++zi)
-						PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xi, yMin, zi), obb);
-			}
-			else {
-				for (int xi = xMin; xi <= xMax; ++xi) 
-					PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xi, yMin, zMin), obb);
-			}
-		}
-	}
-	else {
-		if (yMin != yMax) {
-			if (zMin != zMax) {
-				for (int yi = yMin; yi <= yMax; ++yi)
-					for (int zi = zMin; zi <= zMax; ++zi)
-						PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xMin, yi, zi), obb);
-			}
-			else {
-				for (int yi = yMin; yi <= yMax; ++yi)
-					PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xMin, yi, zMin), obb);
-			}
-		}
-		else {
-			if (zMin != zMax) {
-				for (int zi = zMin; zi <= zMax; ++zi)
-					PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xMin, yMin, zi), obb);
-			}
-			else {
-				PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex(xMin, yMin, zMin), obb);
-			}
-		}
-	}
-}
-
-void GameMap::PushOBB_ToStaticCollisions_WithChunkIndex(ChunkIndex ci, BoundingOrientedBox obb)
-{
-	auto f = static_collision_chunck.find(ci);
-	if (f != static_collision_chunck.end()) {
-		static_collision_chunck[ci]->obbs.push_back(obb);
-	}
-	else {
-		StaticCollisions* pSC = new StaticCollisions();
-		pSC->obbs.push_back(obb);
-		static_collision_chunck.insert(pair<ChunkIndex, StaticCollisions*>(ci, pSC));
-	}
 }
 
 void GameMap::LoadMap(const char* MapName)
@@ -766,6 +822,9 @@ void GameMap::LoadMap(const char* MapName)
 		map->name[i] = name;
 	}
 
+	TextureTableStart = 0; // fix : 현재 MaterialTexture 개수
+	MaterialTableStart = 0; // fix : 현재 Material 개수
+
 	constexpr char MeshDir[] = "Mesh/";
 	constexpr char TextureDir[] = "Texture/";
 	constexpr char ModelDir[] = "Model/";
@@ -784,6 +843,18 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&nameid, sizeof(int));
 		string& name = map->name[nameid];
 		Mesh mesh;
+
+		string filename = MeshDirPath;
+		// .map (확장자)제거
+		filename += name;
+		filename += ".mesh";
+		ifstream ifs2{ filename, ios_base::binary };
+		int vertCnt = 0;
+		int subMeshCount = 0;
+		ifs2.read((char*)&vertCnt, sizeof(int));
+		ifs2.read((char*)&subMeshCount, sizeof(int));
+		mesh.subMeshNum = subMeshCount;
+		ifs2.close();
 
 		//string filename = MeshDirPath;
 		//// .map (확장자)제거
@@ -885,11 +956,11 @@ void GameMap::LoadMap(const char* MapName)
 	}
 
 	for (int i = 0; i < gameObjectCount; ++i) {
-		Hierarchy_Object* go = new Hierarchy_Object();
+		StaticGameObject* go = new StaticGameObject();
 		map->MapObjects[i] = go;
 	}
 	for (int i = 0; i < gameObjectCount; ++i) {
-		Hierarchy_Object* go = map->MapObjects[i];
+		StaticGameObject* go = map->MapObjects[i];
 		int nameId = 0;
 		ifs.read((char*)&nameId, sizeof(int));
 
@@ -901,58 +972,108 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&scale, sizeof(float) * 3);
 
 		rot *= 3.141592f / 180.0f;
-		go->m_worldMatrix *= XMMatrixScaling(scale.x, scale.y, scale.z);
-		go->m_worldMatrix *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
-		go->m_worldMatrix.pos.f3 = pos.f3;
-		go->m_worldMatrix.pos.w = 1;
+		matrix world;
+		world.Id();
+		world *= XMMatrixScaling(scale.x, scale.y, scale.z);
+		world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
+		world.pos.f3 = pos.f3;
+		world.pos.w = 1;
+		go->SetWorld(world);
 		
-		bool isMeshes = false;
-		ifs.read((char*)&isMeshes, sizeof(bool));
-		if (isMeshes) {
+		char Mod = 'n';
+		ifs.read((char*)&Mod, sizeof(char));
+		if (Mod == 'n') { // mesh
 			int meshid = 0;
 			int materialNum = 0;
 			int materialId = 0;
 			ifs.read((char*)&meshid, sizeof(int));
-			if (meshid == 75) {
-				cout << endl;
-			}
 			if (meshid < 0) {
 				//go->mesh = nullptr;
 				ifs.read((char*)&materialNum, sizeof(int));
 			}
 			else {
-				go->ShapeIndex = map->mesh_shapeindexes[meshid];
+				go->shapeindex = map->mesh_shapeindexes[meshid];
 				ifs.read((char*)&materialNum, sizeof(int));
+				go->material = new int[materialNum];
 				for (int k = 0; k < materialNum; ++k) {
 					ifs.read((char*)&materialId, sizeof(int));
-					go->Mesh_materialIndex = MaterialTableStart + materialId;
+					if (materialId < 0) go->material[k] = 0;
+					else {
+						go->material[k] = MaterialTableStart + materialId;
+					}
 				}
 			}
+
+			int ColliderCount = 0;
+			ifs.read((char*)&ColliderCount, sizeof(int));
+			go->aabbArr.reserve(ColliderCount);
+			go->aabbArr.resize(ColliderCount);
+			for (int k = 0; k < ColliderCount; ++k) {
+				ifs.read((char*)&go->aabbArr[k].Center, sizeof(XMFLOAT3));
+				ifs.read((char*)&go->aabbArr[k].Extents, sizeof(XMFLOAT3));
+			}
 		}
-		else {
+		else if (Mod == 'm'){
 			//Model
 			int ModelID;
 			ifs.read((char*)&ModelID, sizeof(int));
 			if (ModelID < 0) {
-				go->ShapeIndex = -1;
+				go->shapeindex = -1;
 			}
 			else {
-				go->ShapeIndex = map->model_shapeindexes[ModelID];
+				go->shapeindex = map->model_shapeindexes[ModelID];
+			}
+
+			int nodeCount = Shape::ShapeTable[go->shapeindex].GetModel()->nodeCount;
+			go->transforms_innerModel = new matrix[nodeCount];
+			for (int k = 0; k < nodeCount; ++k) {
+				vec4 pos;
+				ifs.read((char*)&pos, sizeof(float) * 3);
+				vec4 rot = 0;
+				ifs.read((char*)&rot, sizeof(float) * 3);
+				vec4 scale = 0;
+				ifs.read((char*)&scale, sizeof(float) * 3);
+
+				rot *= 3.141592f / 180.0f;
+				matrix world;
+				world.Id();
+				world *= XMMatrixScaling(scale.x, scale.y, scale.z);
+				world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
+				world.pos.f3 = pos.f3;
+				world.pos.w = 1;
+				if (k != 0)
+					go->transforms_innerModel[k] = world;
+				else
+					go->transforms_innerModel[k].Id();
 			}
 		}
+		else if (Mod == 'l') {
+			// is light (no data in server.)
+			int n = 0;
+			ifs.read((char*)&n, sizeof(int));
+			go->shapeindex = -1;
+			float f = 0;
+			ifs.read((char*)&f, sizeof(float));
+			ifs.read((char*)&f, sizeof(float));
+			ifs.read((char*)&f, sizeof(float));
+		}
 
-		if (isMeshes) {
-			ifs.read((char*)&go->childCount, sizeof(int));
-			go->childs.reserve(go->childCount);
-			go->childs.resize(go->childCount);
-			for (int k = 0; k < go->childCount; ++k) {
+		if (Mod != 'm') {
+			int childCount = 0;
+			ifs.read((char*)&childCount, sizeof(int));
+			int cnt = 0;
+			StaticGameObject** temp = &map->MapObjects[go->childs];
+			while (cnt < childCount) {
 				int childIndex = 0;
 				ifs.read((char*)&childIndex, sizeof(int));
-				go->childs[k] = map->MapObjects[childIndex];
+				*temp = map->MapObjects[childIndex];
+				(*temp)->parent = i;
+				temp = &map->MapObjects[(*temp)->sibling];
+				cnt += 1;
 			}
 		}
 		else {
-			go->childCount = 0;
+			go->childs = -1;
 		}
 		map->MapObjects[i] = go;
 	}
@@ -1250,53 +1371,1378 @@ void ModelNode::BakeAABB(void* origin, const matrix& parentMat)
 	}
 }
 
-bool Hierarchy_Object::Collision_Inherit(matrix parent_world, BoundingBox bb)
+void Player::Update(float deltaTime)
 {
-	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
-	BoundingOrientedBox obb = GetOBBw(sav);
-	if (obb.Extents.x > 0 && obb.Intersects(bb)) {
-		return true;
+	weapon.Update(deltaTime);
+
+	vec4 currentPos = worldMat.pos;
+	XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, m_yaw, 0);
+	worldMat.mat = rotMat;
+	worldMat.pos = currentPos;
+
+	if (collideCount == 0) isGround = false;
+	collideCount = 0;
+
+	if (isGround == false) {
+		LVelocity.y -= 9.8f * deltaTime;
 	}
 
-	for (int i = 0; i < childCount; ++i) {
-		if (childs[i]->Collision_Inherit(sav, bb)) return true;
+	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
+	constexpr float speed = 6.0f;
+
+	if (isGround) {
+		if (InputBuffer[InputID::KeyboardSpace]) {
+			LVelocity.y = JumpVelocity;
+			isGround = false;
+		}
+	}
+	tickLVelocity = LVelocity * deltaTime;
+
+	if (InputBuffer[InputID::KeyboardW] == true) {
+		tickLVelocity += speed * worldMat.look * deltaTime;
+	}
+	if (InputBuffer[InputID::KeyboardS] == true) {
+		tickLVelocity -= speed * worldMat.look * deltaTime;
+	}
+	if (InputBuffer[InputID::KeyboardA] == true) {
+		tickLVelocity -= speed * worldMat.right * deltaTime;
+	}
+	if (InputBuffer[InputID::KeyboardD] == true) {
+		tickLVelocity += speed * worldMat.right * deltaTime;
 	}
 
-	return false;
+	if (HealSkillCooldownFlow >= 0.0f) {
+		HealSkillCooldownFlow -= deltaTime;
+		gameworld.Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HealSkillCooldownFlow);
+	}
+
+	if (InputBuffer[InputID::KeyboardQ] == true) {
+		std::cout << "[Player::Update] Q pressed!  HP=" << HP
+			<< " Heat=" << HeatGauge
+			<< " CD=" << HealSkillCooldownFlow << std::endl;
+
+		if (HealSkillCooldownFlow <= 0.0f && HeatGauge > 0.0f && HP < MaxHP) {
+
+			// 회복량 HeatGauge 전부를 HP로 전환
+			float healAmount = HeatGauge;
+			HP += healAmount;
+
+			if (HP > MaxHP) HP = MaxHP;
+
+			// 게이지 소모
+			HeatGauge = 0.0f;
+
+			// 쿨타임 리셋
+			HealSkillCooldownFlow = HealSkillCooldown;
+
+			// HP, HeatGauge 서버->클라 개인 동기화
+			gameworld.Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+			gameworld.Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+		}
+	}
+
+	//if (InputBuffer[InputID::MouseLbutton] == true) {
+	//	if (ShootFlow >= ShootDelay) {
+	//		if (bFirstPersonVision) {
+	//			matrix shootmat = ViewMatrix.RTInverse;
+	//			gameworld.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look, shootmat.look, 50.0f);
+	//		}
+	//		else {
+	//			matrix shootmat = ViewMatrix.RTInverse;
+	//			gameworld.FireRaycast((GameObject*)this, shootmat.pos + shootmat.look * 3, shootmat.look, 50.0f);
+	//		}
+	//		ShootFlow = 0;
+	//		recoilFlow = 0;
+	//	}
+	//}
+
+	XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(m_pitch, m_yaw, 0);
+	vec4 clook = { 0, 0, 1, 0 };
+	clook = XMVector3Rotate(clook, quaternion);
+
+	vec4 peye = worldMat.pos;
+	vec4 pat = worldMat.pos;
+
+	if (bFirstPersonVision) {
+		peye += 1.0f * worldMat.up;
+		pat += 1.0f * worldMat.up;
+		pat += 10.0f * clook;
+	}
+	else {
+		peye -= 3.0f * clook;
+		pat += 10.0f * clook;
+		peye += 0.5f * worldMat.up;
+		peye += 0.5f * worldMat.right;
+	}
+
+	XMVECTOR vUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+	if (InputBuffer[InputID::MouseLbutton] == true) {
+		if (weapon.m_shootFlow >= weapon.m_info.shootDelay && bullets > 0 && HeatGauge <= MaxHeatGauge) {
+
+			bullets -= 1;
+			HeatGauge += 2;
+
+			weapon.OnFire();
+
+			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
+			gameworld.FireRaycast((GameObject*)this, shootOrigin + clook * 1.5f, clook, 50.0f, weapon.m_info.damage);
+
+			// fix 이건 이렇게 하면 안될것 같은데? Update 될때마다 패킷이 쌓임. 
+			// 패킷이 많아지면 서버에서 부담이므로 차라리 특정시간마다 쏴주는게 좋다.
+			gameworld.Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
+			gameworld.Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+			gameworld.Sending_PlayerFire(gameworld.CommonSDS, gameworld.clients[clientIndex].objindex);
+
+			if (bullets <= 0) {
+				weapon.m_shootFlow = -weapon.m_info.reloadTime;
+
+				bullets = weapon.m_info.maxBullets;
+
+				gameworld.Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
+			}
+		}
+	}
+
+	//int datacap = gameworld.Sending_ChangeGameObjectMember(gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &DeltaMousePos, 8);
+	//gameworld.clients[clientIndex].socket.Send(gameworld.tempbuffer.data, datacap);
+
+	BoundingOrientedBox obb = GetOBB();
+	for (int i = 0; i < gameworld.DropedItems.size; ++i) {
+		if (gameworld.DropedItems.isnull(i)) continue;
+		vec4 p = gameworld.DropedItems[i].pos;
+		p.w = 0;
+		if (obb.Contains(p)) {
+			bool isexist = false;
+			bool beat = false;
+			int firstBlackIndex = -1;
+			for (int k = 0; k < Player::maxItem; ++k) {
+				if (Inventory[k].id == 0 && firstBlackIndex == -1) {
+					firstBlackIndex = k;
+				}
+				if (Inventory[k].id == gameworld.DropedItems[i].itemDrop.id)
+				{
+					Inventory[k].ItemCount += gameworld.DropedItems[i].itemDrop.ItemCount;
+					isexist = true;
+					beat = true;
+					firstBlackIndex = k;
+					break;
+				}
+			}
+			if (isexist == false && firstBlackIndex != -1) {
+				Inventory[firstBlackIndex] = gameworld.DropedItems[i].itemDrop;
+				beat = true;
+			}
+
+			if (beat) {
+				gameworld.Sending_InventoryItemSync(gameworld.clients[clientIndex].PersonalSDS, Inventory[firstBlackIndex], firstBlackIndex);
+				gameworld.DropedItems.Free(i);
+				gameworld.Sending_ItemRemove(gameworld.CommonSDS, i);
+				break;
+			}
+		}
+	}
+
+	//히트 게이지 지속 감소 (발사 안할시)
+
+	if (HeatGauge > 0.0f) {
+		float decayRate = 5.0f; // 초당 감소량
+		HeatGauge -= decayRate * deltaTime;
+		if (HeatGauge < 0.0f) HeatGauge = 0.0f;
+	}
+
+	static float heatSendTimer = 0.0f;
+	heatSendTimer += deltaTime;
+
+	if (heatSendTimer > 0.2f) { // 0.2초마다 서버 → 클라 전송
+		heatSendTimer = 0.0f;
+
+		gameworld.Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS
+			, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+	}
+
 }
 
-void Hierarchy_Object::InitMapAABB_Inherit(void* origin, matrix parent_world)
+void Player::OnCollision(GameObject* other)
 {
-	GameMap* map = (GameMap*)origin;
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = other->GetOBB();
 
-	XMMATRIX sav = XMMatrixMultiply(m_worldMatrix, parent_world);
-	BoundingOrientedBox obb = GetOBBw(sav);
+	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
 
-	if (obb.Extents.x > 0) {
-		map->PushOBB_ToStaticCollisions(obb);
-	}
-	
-	map->ExtendMapAABB(obb);
-
-	for (int i = 0; i < childCount; ++i) {
-		childs[i]->InitMapAABB_Inherit(origin, sav);
+	if (belowhit && belowDist < Shape::ShapeTable[shapeindex].GetMesh()->GetOBB().Extents.y + 1.0f) {
+		LVelocity.y = 0;
+		isGround = true;
 	}
 }
 
-BoundingOrientedBox Hierarchy_Object::GetOBBw(matrix worldMat) {
-	BoundingOrientedBox obb_local;
-	Shape s = Shape::IndexToShapeMap[ShapeIndex];
-	if (ShapeIndex == -1) {
-		obb_local.Extents.x = -1;
-		return obb_local;
+void Player::OnStaticCollision(BoundingOrientedBox obb)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = obb;
+
+	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
+
+	if (belowhit && belowDist < Shape::ShapeTable[shapeindex].GetMesh()->GetOBB().Extents.y + 1.0f) {
+		LVelocity.y = 0;
+		isGround = true;
 	}
-	if (s.isMesh()) {
-		obb_local = s.GetMesh()->GetOBB();
-	}
-	else{
-		obb_local = s.GetModel()->GetOBB();
-	}
+}
+
+BoundingOrientedBox Player::GetOBB()
+{
+	BoundingOrientedBox obb_local = Shape::ShapeTable[shapeindex].GetMesh()->GetOBB();
+	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
-	obb_local.Transform(obb_world, worldMat);
+	matrix id = XMMatrixIdentity();
+	id.pos = worldMat.pos;
+	obb_local.Transform(obb_world, id);
 	return obb_world;
+}
+
+void Player::TakeDamage(float damage)
+{
+	HP -= damage;
+
+	gameworld.Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+
+	if (HP <= 0) {
+		tag[GameObjectTag::Tag_Enable] = false;
+
+		DeathCount += 1;
+		gameworld.Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &DeathCount);
+
+		Respawn();
+	}
+}
+
+void Player::OnCollisionRayWithBullet(GameObject* shooter, float damage)
+{
+	TakeDamage(damage);
+}
+
+void Player::Respawn() {
+	HP = 100;
+	tag[GameObjectTag::Tag_Enable] = true;
+
+	worldMat.Id();
+	worldMat.pos.y = 2;
+	//player position send
+
+	bool isExist = true;
+	gameworld.Sending_ChangeGameObjectMember<Tag>(gameworld.CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &tag);
+	gameworld.Sending_ChangeGameObjectMember<float>(gameworld.CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+}
+
+void Monster::Update(float deltaTime)
+{
+	if (isDead) {
+		respawntimer += deltaTime;
+		if (respawntimer > 1.0f) {
+			Respawn();
+			respawntimer = 0;
+		}
+	}
+	else {
+		if (collideCount == 0) isGround = false;
+		collideCount = 0;
+
+		if (isGround == false) {
+			LVelocity.y -= 9.81f * deltaTime;
+		}
+		tickLVelocity = LVelocity * deltaTime;
+
+		vec4 monsterPos = worldMat.pos;
+		monsterPos.w = 0;
+
+		if (Target == nullptr || (Target != nullptr && *Target == nullptr)) {
+			int limitseek = 4;
+			if (gameworld.clients.size == 0) {
+				Target = nullptr;
+				return;
+			}
+
+		SEEK_TARGET_LOOP:
+			for (int i = targetSeekIndex; i < gameworld.clients.size; ++i) {
+				limitseek -= 1;
+				if (limitseek == 0) {
+					return;
+				}
+				if (gameworld.clients.isnull(i)) continue;
+				Target = (Player**)&gameworld.Dynamic_gameObjects[gameworld.clients[i].objindex];
+				break;
+			}
+			if (limitseek != 0 && (Target == nullptr || *Target == nullptr)) {
+				targetSeekIndex = 0;
+				goto SEEK_TARGET_LOOP;
+			}
+		}
+
+		vec4 playerPos = (*Target)->worldMat.pos;
+		playerPos.w = 0;
+
+		vec4 toPlayer = playerPos - monsterPos;
+		toPlayer.y = 0.0f;
+		float distanceToPlayer = toPlayer.len3;
+
+		// 플레이어 추적
+		if (distanceToPlayer <= m_chaseRange) {
+			m_targetPos = playerPos;
+			m_isMove = true;
+
+			// A* 경로가 없거나, 다 소비했으면 새로 계산
+			if (path.empty() || currentPathIndex >= path.size()) {
+				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, gameworld.allnodes);
+				AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, gameworld.allnodes);
+
+				if (start && goal) {
+					path = AstarSearch(start, goal, gameworld.allnodes);
+					currentPathIndex = 0;
+				}
+			}
+
+			// A* 경로가 있으면 그 경로를 따라 이동
+			if (!path.empty() && currentPathIndex < path.size()) {
+				MoveByAstar(deltaTime);
+			}
+			else {
+				// 경로 계산 실패했을 때만 기존 직선 추적으로 fallback
+				if (distanceToPlayer > 0.0001f) {
+					toPlayer.len3 = 1.0f;
+					tickLVelocity += toPlayer * m_speed * deltaTime;
+					worldMat.SetLook(toPlayer);
+				}
+			}
+
+
+			if (distanceToPlayer < 2.0f) {
+				tickLVelocity.x = 0;
+				tickLVelocity.z = 0;
+			}
+			m_fireTimer += deltaTime;
+			if (m_fireTimer >= m_fireDelay) {
+				m_fireTimer = 0.0f;
+
+				vec4 rayStart = monsterPos + (worldMat.look * 0.5f);
+				rayStart.y += 0.7f;
+				vec4 rayDirection = playerPos - rayStart;
+
+				float InverseAccurcy = distanceToPlayer / 6;
+				rayDirection.x += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+				rayDirection.y += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+				rayDirection.z += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+				rayDirection.len3 = 1.0f;
+
+				gameworld.FireRaycast(this, rayStart, rayDirection, m_chaseRange, 10);
+			}
+		}
+		else {
+			if (!m_isMove) {
+				float randomAngle = ((float)rand() / RAND_MAX) * 2.0f * XM_PI;
+				float randomRadius = ((float)rand() / RAND_MAX) * m_patrolRange;
+
+				m_targetPos.x = m_homePos.x + randomRadius * cos(randomAngle);
+				m_targetPos.z = m_homePos.z + randomRadius * sin(randomAngle);
+				m_targetPos.y = m_homePos.y;
+
+				m_isMove = true;
+				m_patrolTimer = 0.0f;
+
+				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, gameworld.allnodes);
+				AstarNode* goal = FindClosestNode(m_targetPos.x, m_targetPos.z, gameworld.allnodes);
+
+				if (start && goal) {
+					path = AstarSearch(start, goal, gameworld.allnodes);
+					currentPathIndex = 0;
+				}
+				else {
+					path.clear();
+					currentPathIndex = 0;
+				}
+			}
+
+			m_patrolTimer += deltaTime;
+
+			if (m_patrolTimer >= 5.0f) {
+				tickLVelocity.x = 0;
+				tickLVelocity.z = 0;
+				m_isMove = false;
+				path.clear();
+				currentPathIndex = 0;
+				return;
+			}
+
+			if (!path.empty() && currentPathIndex < path.size()) {
+				MoveByAstar(deltaTime);
+
+				if (currentPathIndex >= path.size()) {
+					tickLVelocity.x = 0;
+					tickLVelocity.z = 0;
+					m_isMove = false;
+					path.clear();
+					currentPathIndex = 0;
+				}
+			}
+			else {
+				vec4 currentPos = worldMat.pos;
+				currentPos.w = 0;
+				vec4 direction = m_targetPos - currentPos;
+				direction.y = 0.0f;
+				float distance = direction.len3;
+
+				if (distance > 1.0f) {
+					direction.len3 = 1.0f;
+					tickLVelocity += direction * m_speed * deltaTime;
+					worldMat.SetLook(direction);
+				}
+				else {
+					tickLVelocity.x = 0;
+					tickLVelocity.z = 0;
+					m_isMove = false;
+				}
+			}
+		}
+
+		if (gameworld.lowHit()) {
+			gameworld.Sending_ChangeGameObjectMember<matrix>(gameworld.CommonSDS, gameworld.currentIndex, this, GameObjectType::_Monster, &(worldMat));
+		}
+	}
+}
+
+void Monster::OnCollision(GameObject* other)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = other->GetOBB();
+	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
+	if (belowhit && belowDist < GetOBB().Extents.y + 1.0f) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+void Monster::OnStaticCollision(BoundingOrientedBox obb)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = obb;
+	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
+	if (belowhit && belowDist < GetOBB().Extents.y + 1.0f) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
+{
+	HP -= damage;
+	gameworld.Sending_ChangeGameObjectMember<float>(gameworld.CommonSDS, gameworld.currentIndex, this, GameObjectType::_Monster, &HP);
+
+	if (HP <= 0 && isDead == false) {
+		isDead = true;
+		gameworld.Sending_ChangeGameObjectMember<bool>(gameworld.CommonSDS, gameworld.currentIndex, this, GameObjectType::_Monster, &isDead);
+
+		vec4 prevpos = worldMat.pos;
+
+		// when monster is dead, player's killcount +1
+		void* vptr = *(void**)shooter;
+		if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
+			Player* p = (Player*)shooter;
+			p->KillCount += 1;
+			gameworld.Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
+		}
+
+		//when monster is dead, loot random items;
+		ItemLoot il = {};
+		il.itemDrop.id = 1 + (rand() % (ItemTable.size() - 1));
+		il.itemDrop.ItemCount = 1 + rand() % 5;
+		il.pos = prevpos;
+		int newindex = gameworld.DropedItems.Alloc();
+		gameworld.DropedItems[newindex] = il;
+		gameworld.Sending_ItemDrop(gameworld.CommonSDS, newindex, il);
+	}
+}
+
+void Monster::Init(const XMMATRIX& initialWorldMatrix)
+{
+	worldMat = (initialWorldMatrix);
+	m_homePos = worldMat.pos;
+}
+
+void Monster::Respawn()
+{
+	Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+	while (gameworld.map.isStaticCollision(GetOBB())) {
+		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+	}
+	m_isMove = false;
+	gameworld.Sending_ChangeGameObjectMember<vec4>(gameworld.CommonSDS, gameworld.currentIndex, this, GameObjectType::_Monster, &worldMat.pos);
+	isDead = false;
+	gameworld.Sending_ChangeGameObjectMember<bool>(gameworld.CommonSDS, gameworld.currentIndex, this, GameObjectType::_Monster, &isDead);
+	HP = 30;
+	gameworld.Sending_ChangeGameObjectMember<int>(gameworld.CommonSDS, gameworld.currentIndex, this, GameObjectType::_Monster, &HP);
+}
+
+BoundingOrientedBox Monster::GetOBB()
+{
+	BoundingOrientedBox obb_local = Shape::ShapeTable[shapeindex].GetMesh()->GetOBB();
+	obb_local.Extents.x = obb_local.Extents.z;
+	BoundingOrientedBox obb_world;
+	matrix id = XMMatrixIdentity();
+	id.pos = worldMat.pos;
+	obb_local.Transform(obb_world, id);
+	return obb_world;
+}
+
+
+/*
+<설명>
+A*에서 현재 노드(current) 기준으로 갈 수 있는 이웃 노드를 찾아 반환한다.
+8방향(상하좌우 + 대각선) 모두 검사한다.
+맵 밖으로 나가는 노드는 제외한다.
+이동 불가(cango==false) 노드는 제외한다.
+
+매변 :
+current : 이웃을 구하려는 기준 노드.
+allNodes : 전체 노드.
+gridWidth : 그리드 가로 크기.
+gridHeight : 그리드 세로 크기.
+
+return :
+vector<AstarNode*> neighbor (이동 가능한 이웃 노드 목록)
+if current가 가장자리 -> 범위 검사로 이웃 수가 줄어듦
+if 주변 노드가 cango=false -> 목록에서 제외됨
+*/
+//AI involved Code Start : <chatgpt>
+vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*>& allNodes, int gridWidth, int gridHeight)
+{
+	std::vector<AstarNode*> neighbors;
+
+	for (int dx = -1; dx <= 1; ++dx) {
+		for (int dz = -1; dz <= 1; ++dz) {
+			if (dx == 0 && dz == 0)
+				continue;
+
+			int nx = current->xIndex + dx;
+			int nz = current->zIndex + dz;
+
+			// 범위 밖이면 무시
+			if (nx < 0 || nz < 0 || nx >= gridWidth || nz >= gridHeight)
+				continue;
+
+			// 인덱스로 노드 접근
+			AstarNode* neighbor = allNodes[nz * gridWidth + nx];
+			if (neighbor->cango)
+				neighbors.push_back(neighbor);
+		}
+	}
+
+	return neighbors;
+}
+//AI involved Code End : <chatgpt>
+
+/* <설명>
+- A* 알고리즘으로 start -> destination 최단 경로를 계산해 "노드 리스트(path)"를 반환한다.
+- 노드마다 g/h/f 비용과 parent를 갱신하며, 목적지 도달 시 parent를 따라 역추적해 경로를 만든다.
+
+매변 :
+<start> : 시작 노드(몬스터 위치를 FindClosestNode로 스냅한 결과).
+<destination> : 목적지 노드(플레이어/순찰 목표를 FindClosestNode로 스냅한 결과).
+<allNodes> : 전체 노드 목록(매 탐색마다 노드 비용/parent 초기화에 사용).
+
+return :
+vector<AstarNode*> (start부터 destination까지의 경로 노드들)
+if start == nullptr or destination == nullptr -> 빈 벡터 반환
+if openList가 비어서도 destination에 도달 못함 -> 빈 벡터 반환(경로 없음)
+if destination 도달 -> parent를 따라 역추적한 뒤 reverse하여 정상 순서 경로 반환
+
+1) 모든 노드의 gCost를 무한대로, parent를 nullptr로 초기화한다(이전 탐색 흔적 제거).
+2) start를 openList에 넣고 g=0, h=거리(휴리스틱), f=g+h를 계산한다.
+3) openList에서 f가 가장 작은 노드를 current로 뽑는다.
+4) current가 destination이면, current에서 parent를 따라가며 경로를 만들고 반환한다.
+5) 아니면 current를 closedList로 옮긴다.
+6) current의 이웃들을 가져오고, 더 좋은 경로(tentativeG)가 나오면 neighbor의 parent/g/h/f를 갱신한다.
+7) openList가 빌 때까지 반복한다.
+*/
+
+//AI Code Start : <chatgpt>
+vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination, std::vector<AstarNode*>& allNodes)
+{
+
+	std::vector<AstarNode*> openList;
+	std::vector<AstarNode*> closedList;
+
+	if (start == nullptr || destination == nullptr)
+		return {};
+
+	// 초기화
+	for (auto node : allNodes)
+	{
+		node->gCost = FLT_MAX;
+		node->hCost = 0.0f;
+		node->fCost = 0.0f;
+		node->parent = nullptr;
+	}
+
+	start->gCost = 0.0f;
+	start->hCost = std::abs(start->xIndex - destination->xIndex) + std::abs(start->zIndex - destination->zIndex);
+	start->fCost = start->gCost + start->hCost;
+
+	openList.push_back(start);
+
+	while (!openList.empty())
+	{
+		// fCost 최소 노드 선택
+		AstarNode* currentNode = openList[0];
+		for (AstarNode* node : openList)
+		{
+			if (node->fCost < currentNode->fCost)
+				currentNode = node;
+		}
+
+		// 목적지 도달 시 경로 추적
+		if (currentNode == destination)
+		{
+			std::vector<AstarNode*> path;
+			AstarNode* pathNode = currentNode;
+			while (pathNode != nullptr)
+			{
+				path.push_back(pathNode);
+				pathNode = pathNode->parent;
+			}
+			std::reverse(path.begin(), path.end());
+			return path;
+		}
+
+		// 오픈 리스트 → 클로즈드 리스트
+		openList.erase(std::remove(openList.begin(), openList.end(), currentNode), openList.end());
+		closedList.push_back(currentNode);
+
+		// 이웃 탐색
+		for (AstarNode* neighbor : GetNeighbors(currentNode, allNodes, 80, 80))
+		{
+			// 이미 방문한 노드는 스킵
+			if (std::find(closedList.begin(), closedList.end(), neighbor) != closedList.end())
+				continue;
+
+			float costToNeighbor = ((currentNode->xIndex != neighbor->xIndex && currentNode->zIndex != neighbor->zIndex) ? 1.414f : 1.0f);
+			float tentativeG = currentNode->gCost + costToNeighbor;
+
+			if (tentativeG < neighbor->gCost)
+			{
+				neighbor->parent = currentNode;
+				neighbor->gCost = tentativeG;
+				neighbor->hCost = std::abs(neighbor->xIndex - destination->xIndex) + std::abs(neighbor->zIndex - destination->zIndex);
+				neighbor->fCost = neighbor->gCost + neighbor->hCost;
+
+				if (std::find(openList.begin(), openList.end(), neighbor) == openList.end())
+					openList.push_back(neighbor);
+			}
+		}
+	}
+
+	return {}; // 경로 없음
+}
+//AI Code End : <chatgpt>
+
+/*<설명>
+AstarSearch로 만들어진 path에 맞춰 이동.
+path[currentPathIndex] 노드 방향으로 이동한다.
+목표 노드에 가까워지면 currentPathIndex++ 하여 다음 노드를 목표로 한다.
+
+매변 :
+deltaTime : speed*deltaTime로 이동량을 계산한다.
+
+1) 현재 목표 노드 = path[currentPathIndex]를 잡는다.
+2) 몬스터 위치에서 목표 노드 월드좌표(worldx, worldz)까지 방향 벡터(dir)를 만든 다.
+3) 거의 도착했으면 다음 노드로 넘어간다.
+4) 아니면 dir을 정규화하고, tickLVelocity = dir * m_speed * deltaTime로 이번 프레임 이동량을 만든다.
+5) 바라보는 방향(look)을 dir로 맞춘다.
+*/
+
+//AI involved Code Start : <chatgpt>
+void Monster::MoveByAstar(float deltaTime)
+{
+	if (path.empty() || currentPathIndex >= path.size())
+		return;
+
+	AstarNode* targetNode = path[currentPathIndex];
+
+	// 현재 몬스터 위치
+	vec4 pos = worldMat.pos;
+	pos.w = 1.0f;
+
+	// A*에서 지정한 타겟 노드 위치 (y는 현재 높이 유지)
+	vec4 target(targetNode->worldx, pos.y, targetNode->worldz, 1.0f);
+	if (gameworld.AstarStartX > target.x) target.x = gameworld.AstarStartX;
+	if (gameworld.AstarStartZ > target.z) target.z = gameworld.AstarStartZ;
+	if (gameworld.AstarEndX < target.x) target.x = gameworld.AstarEndX;
+	if (gameworld.AstarEndZ < target.z) target.z = gameworld.AstarEndZ;
+
+	// 방향 벡터
+	vec4 dir = target - pos;
+	dir.y = 0.0f;
+	float len = dir.len3;
+
+	// 거의 도착했다고 보면 다음 노드로 넘어감
+	if (len < 0.3f) {
+		currentPathIndex++;
+		return;
+	}
+
+	// 정규화
+	dir /= len;
+
+	tickLVelocity.x = dir.x * m_speed * deltaTime;
+	tickLVelocity.z = dir.z * m_speed * deltaTime;
+
+	worldMat.SetLook(dir);
+}
+//AI involved Code End : <chatgpt>
+
+/*<설명>
+- 월드 좌표(wx, wz)에 가장 가까운 "이동 가능 노드(cango==true)"를 찾아 반환한다.
+- 월드 좌표는 그리드 정중앙이 아닐 수 있으므로, A*의 start/goal 노드를 잡기 위한 함수.
+
+매변 :
+wx : 월드 X 좌표.
+wz : 월드 Z 좌표.
+allNodes : 전체 노드 목록(가장 가까운 노드 찾기 위해 전체 순회).
+
+return :
+if 이동 가능 노드가 하나도 없으면 -> nullptr 반환
+if 여러 후보가 있으면 -> 거리^2(dx^2+dz^2)가 최소인 노드 반환
+
+1) allNodes를 전부 돌며 cango==true인 노드만 본다.
+2) (node.worldx - wx)^2 + (node.worldz - wz)^2 를 계산해 가장 작은 노드를 갱신한다.
+3) 최종적으로 가장 가까운 노드를 반환.
+*/
+AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
+{
+	AstarNode* best = nullptr;
+	float bestDist2 = FLT_MAX;
+	for (AstarNode* n : allNodes) {
+		if (!n->cango) continue;
+		float dx = n->worldx - wx;
+		float dz = n->worldz - wz;
+		float d2 = dx * dx + dz * dz;
+		if (d2 < bestDist2) { bestDist2 = d2; best = n; }
+	}
+	return best;
+}
+
+BoundingBox ChunkIndex::GetAABB() {
+	BoundingBox AABB;
+	float halfW = gameworld.chunck_divide_Width * 0.5f;
+	AABB.Center = XMFLOAT3(gameworld.chunck_divide_Width * x + halfW, gameworld.chunck_divide_Width * y + halfW, gameworld.chunck_divide_Width * z + halfW);
+	AABB.Extents = XMFLOAT3(halfW, halfW, halfW);
+	return AABB;
+}
+
+void GameChunk::SetChunkIndex(ChunkIndex ci) {
+	cindex = ci;
+	AABB = ci.GetAABB();
+}
+
+void World::Init() {
+	ItemTable.push_back(Item(0)); // blank space in inventory.
+	ItemTable.push_back(Item(1));
+	ItemTable.push_back(Item(2));
+	ItemTable.push_back(Item(3)); // test items. red, green, blue bullet mags.
+
+	//astar grid init
+	const int gridWidth = 80;
+	const int gridHeight = 80;
+	const float cellSize = 1.0f;
+
+	const float offsetX = -gridWidth * cellSize * 0.5f;  // -40
+	const float offsetZ = -gridHeight * cellSize * 0.5f; // -40
+
+	allnodes.clear();
+	allnodes.reserve(gridWidth * gridHeight);
+
+	//Grid initiolaize
+	for (int z = 0; z < gridHeight; ++z)
+	{
+		for (int x = 0; x < gridWidth; ++x)
+		{
+			AstarNode* node = new AstarNode();
+			node->worldx = offsetX + x * cellSize + cellSize * 0.5f;
+			node->worldz = offsetZ + z * cellSize + cellSize * 0.5f;
+			node->xIndex = x;
+			node->zIndex = z;
+			node->gCost = 0;
+			node->hCost = 0;
+			node->fCost = 0;
+			node->parent = nullptr;
+
+			node->cango = true;
+
+			allnodes.push_back(node);
+		}
+	}
+
+	DropedItems.Init(4096);
+	clients.Init(32);
+	Dynamic_gameObjects.Init(128);
+
+	GameObjectType::STATICINIT();
+
+#ifdef _DEBUG //server / client
+	AddClientOffset(GameObjectType::_GameObject, 16, 16); // isExist
+	AddClientOffset(GameObjectType::_GameObject, 32, 32); // world Matrix
+	AddClientOffset(GameObjectType::_GameObject, 80, 144); // pos
+
+	AddClientOffset(GameObjectType::_Player, 16, 16); // isExist
+	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
+	AddClientOffset(GameObjectType::_Player, 64, 144); // pos
+
+	AddClientOffset(GameObjectType::_Player, 164, 212); // m_currentWeaponType
+	AddClientOffset(GameObjectType::_Player, 128, 176); // HP
+	AddClientOffset(GameObjectType::_Player, 132, 180); // MaxHP
+
+	AddClientOffset(GameObjectType::_Player, 136, 184); // Bullets
+	AddClientOffset(GameObjectType::_Player, 140, 188); // KillCount
+	AddClientOffset(GameObjectType::_Player, 144, 192); // DeathCount
+	AddClientOffset(GameObjectType::_Player, 148, 196); // HeatGauge
+	AddClientOffset(GameObjectType::_Player, 152, 200); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 156, 204); // HealSkillCooldown
+	AddClientOffset(GameObjectType::_Player, 160, 208); // HealSkillCooldownFlow
+
+	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
+	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
+	AddClientOffset(GameObjectType::_Monster, 80, 144); // pos
+	AddClientOffset(GameObjectType::_Monster, 210, 176); // isDead
+	AddClientOffset(GameObjectType::_Monster, 184, 180); // HP
+	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
+#else
+	AddClientOffset(GameObjectType::_GameObject, 16, 16); // isExist
+	AddClientOffset(GameObjectType::_GameObject, 32, 32); // world Matrix
+	AddClientOffset(GameObjectType::_GameObject, 80, 144); // pos
+
+	AddClientOffset(GameObjectType::_Player, 16, 16); // isExist
+	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
+	AddClientOffset(GameObjectType::_Player, 64, 144); // pos
+
+	AddClientOffset(GameObjectType::_Player, 164, 212); // m_currentWeaponType
+	AddClientOffset(GameObjectType::_Player, 128, 176); // HP
+	AddClientOffset(GameObjectType::_Player, 132, 180); // MaxHP
+
+	AddClientOffset(GameObjectType::_Player, 136, 184); // Bullets
+	AddClientOffset(GameObjectType::_Player, 140, 188); // KillCount
+	AddClientOffset(GameObjectType::_Player, 144, 192); // DeathCount
+	AddClientOffset(GameObjectType::_Player, 148, 196); // HeatGauge
+	AddClientOffset(GameObjectType::_Player, 152, 200); // MaxHeatGauge
+	AddClientOffset(GameObjectType::_Player, 156, 204); // HealSkillCooldown
+	AddClientOffset(GameObjectType::_Player, 160, 208); // HealSkillCooldownFlow
+
+	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
+	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
+	AddClientOffset(GameObjectType::_Monster, 80, 144); // pos
+	AddClientOffset(GameObjectType::_Monster, 210, 176); // isDead
+	AddClientOffset(GameObjectType::_Monster, 184, 180); // HP
+	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
+#endif
+
+	//bulletRays.Init(32);
+
+	Mesh* MyMesh = new Mesh();
+	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj");
+	int playerMesh_index = Shape::AddMesh("Player", MyMesh);
+
+	Mesh* MyGroundMesh = new Mesh();
+	MyGroundMesh->CreateWallMesh(40.0f, 0.5f, 40.0f);
+	int groundMesh_index = Shape::AddMesh("Ground001", MyGroundMesh);
+
+	Mesh* MyWallMesh = new Mesh();
+	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f);
+	int wallMesh_index = Shape::AddMesh("Wall001", MyWallMesh);
+
+	/*BulletRay::mesh = new Mesh();
+	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);*/
+
+	Mesh* MyMonsterMesh = new Mesh();
+	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj");
+	int monsterMesh_index = Shape::AddMesh("Monster001", MyMonsterMesh);
+
+	int newindex = 0;
+	int datacap = 0;
+
+	map.LoadMap("The_Port");
+	std::set<StaticGameObject*> goset;
+	for (int i = 0; i < map.MapObjects.size(); ++i) {
+		PushGameObject(map.MapObjects[i]);
+	}
+
+	for (int i = 0; i < 20; ++i) {
+		Monster* myMonster_1 = new Monster();
+		myMonster_1->shapeindex = Shape::StrToShapeIndex["Monster001"];
+		//myMonster_1->mesh = (MyMonsterMesh);
+
+		myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 20.0f, rand() % 80 - 40));
+		while (gameworld.map.isStaticCollision(myMonster_1->GetOBB())) {
+			myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+		}
+
+		newindex = NewObject((DynamicGameObject*)myMonster_1, GameObjectType::_Monster);
+	}
+
+	/*Monster* myMonster_2 = new Monster();
+	myMonster_2->MeshIndex = Mesh::GetMeshIndex("Monster001");
+	myMonster_2->mesh = *(MyMonsterMesh);
+	myMonster_2->Init(XMMatrixTranslation(-5.0f, 0.5f, -2.5f));
+	newindex = NewObject(myMonster_2, GameObjectType::_Monster);
+	datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
+	SendToAllClient(datacap);
+
+	Monster* myMonster_3 = new Monster();
+	myMonster_3->MeshIndex = Mesh::GetMeshIndex("Monster001");
+	myMonster_3->mesh = *(MyMonsterMesh);
+	myMonster_3->Init(XMMatrixTranslation(5.0f, 0.5f, -2.5f));
+	newindex = NewObject(myMonster_3, GameObjectType::_Monster);
+	datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
+	SendToAllClient(datacap);*/
+
+	//그리드(노드)의 cango를 체크하는 함수
+	gridcollisioncheck();
+
+	const int GRID_W = 80;
+	const int GRID_H = 80;
+
+	//PrintCangoSummary(allnodes, GRID_W, GRID_H);
+	PrintCangoGrid(allnodes, GRID_W, GRID_H);
+
+	cout << "Game Init end" << endl;
+}
+
+void World::Update() {
+	lowFrequencyFlow += DeltaTime;
+	midFrequencyFlow += DeltaTime;
+	highFrequencyFlow += DeltaTime;
+
+	for (currentIndex = 0; currentIndex < Dynamic_gameObjects.size; ++currentIndex) {
+		if (Dynamic_gameObjects.isnull(currentIndex)) continue;
+		if (Dynamic_gameObjects[currentIndex]->tag[GameObjectTag::Tag_Enable] == false) {
+			continue;
+		}
+		Dynamic_gameObjects[currentIndex]->Update(DeltaTime);
+	}
+	//delete 한거를 업데이트해서
+	// Collision......
+
+	//bool bFixed = false;
+	for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+		if (Dynamic_gameObjects.isnull(i)) continue;
+		DynamicGameObject* gbj1 = Dynamic_gameObjects[i];
+		//if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) bFixed = true;
+
+		Shape s1 = Shape::ShapeTable[gbj1->shapeindex];
+		float fsl1 = 0;
+		if (s1.isMesh()) {
+			fsl1 = s1.GetMesh()->MAXpos.fast_square_of_len3;
+		}
+		else fsl1 = s1.GetModel()->OBB_Ext.fast_square_of_len3;
+
+		vec4 lastpos1 = gbj1->worldMat.pos + gbj1->tickLVelocity;
+
+		for (int j = i + 1; j < Dynamic_gameObjects.size; ++j) {
+			if (Dynamic_gameObjects.isnull(j)) continue;
+			DynamicGameObject* gbj2 = Dynamic_gameObjects[j];
+			Shape s2 = Shape::ShapeTable[gbj2->shapeindex];
+
+			vec4 Ext2 = 0;
+			if (s1.isMesh()) {
+				Ext2 = s2.GetMesh()->MAXpos;
+			}
+			else Ext2 = s2.GetModel()->OBB_Ext;
+
+			vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+			//if (gbj2->tickLVelocity.fast_square_of_len3 <= 0.001f && bFixed) continue;
+
+			if (fsl1 + Ext2.fast_square_of_len3 > dist.fast_square_of_len3) {
+				DynamicGameObject::CollisionMove(gbj1, gbj2);
+			}
+			//GameObject::CollisionMove(gbj1, gbj2);
+		}
+
+		map.StaticCollisionMove(gbj1);
+
+		//gbj1->tickLVelocity.w = 0;
+		if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) continue;
+
+		gbj1->worldMat.pos += gbj1->tickLVelocity;
+		/*if (fabsf(gbj1->m_worldMatrix.pos.x) > 40.0f || fabsf(gbj1->m_worldMatrix.pos.z) > 40.0f) {
+			gbj1->m_worldMatrix.pos -= gbj1->tickLVelocity;
+		}*/
+		gbj1->tickLVelocity = XMVectorZero();
+
+		// send matrix to client
+		Sending_ChangeGameObjectMember<matrix>(gameworld.CommonSDS, i, gbj1, GameObjectType::_GameObject, &gbj1->worldMat);
+	}
+
+	if (lowHit()) {
+		lowFrequencyFlow = 0;
+	}
+	if (midHit()) {
+		midFrequencyFlow = 0;
+	}
+	if (highHit()) {
+		highFrequencyFlow = 0;
+	}
+}
+
+void World::gridcollisioncheck()
+{
+	const float radius = 0.2f;
+	const float groundY = 0.0f;
+
+	for (AstarNode* node : allnodes)
+	{
+		vec4 nodePos(node->worldx, groundY, node->worldz);
+		collisionchecksphere sphere = { nodePos, radius };
+
+		bool blocked = false;
+
+		// 모든 오브젝트 중 "Wall001" 메쉬만 검사
+		for (int i = 0; i < Dynamic_gameObjects.size; ++i)
+		{
+			if (Dynamic_gameObjects.isnull(i)) continue;
+			DynamicGameObject* obj = Dynamic_gameObjects[i];
+
+			// 벽 메쉬 식별
+			if (obj->shapeindex == Shape::StrToShapeIndex["Wall001"])
+			{
+				vec4 wallCenter(obj->worldMat.pos.x,
+					obj->worldMat.pos.y,
+					obj->worldMat.pos.z);
+
+				// Wall001이 5x2x1로 생성되었다면 절반 크기 = {2.5, 1.0, 0.5}
+				vec4 wallHalfSize(2.5f, 1.0f, 0.5f);
+
+				if (CheckAABBSphereCollision(wallCenter, wallHalfSize, sphere))
+				{
+					blocked = true;
+					break;
+				}
+			}
+		}
+		node->cango = !blocked;
+	}
+}
+
+int World::NewObject(DynamicGameObject* obj, GameObjectType gotype)
+{
+	int newindex = Dynamic_gameObjects.Alloc();
+	Dynamic_gameObjects[newindex] = obj;
+	obj->tag[GameObjectTag::Tag_Enable] = true;
+
+	Sending_NewGameObject(CommonSDS, newindex, obj);
+	return newindex;
+}
+
+int World::NewPlayer(SendDataSaver& sds, Player* obj, int clientIndex)
+{
+	int newindex = Dynamic_gameObjects.Alloc();
+	Dynamic_gameObjects[newindex] = (DynamicGameObject*)obj;
+	obj->tag[GameObjectTag::Tag_Enable] = true;
+
+	Sending_NewGameObject(CommonSDS, newindex, obj);
+	return newindex;
+}
+
+void World::Sending_NewGameObject(SendDataSaver& sds, int newindex, GameObject* newobj) {
+	newobj->SendGameObject(newindex, sds);
+}
+
+void World::Sending_NewRay(SendDataSaver& sds, vec4 rayStart, vec4 rayDirection, float rayDistance) {
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_NewRay_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_NewRay_Header& header = *(STC_NewRay_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = SendingType::NewRay;
+	header.raystart = rayStart.f3;
+	header.rayDir = rayDirection.f3;
+	header.distance = rayDistance;
+	sds.postpush_end();
+}
+
+void World::Sending_DeleteGameObject(SendDataSaver& sds, int objindex)
+{
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_DeleteGameObject_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_DeleteGameObject_Header& header = *(STC_DeleteGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = SendingType::DeleteGameObject;
+	header.obj_index = objindex;
+	sds.postpush_end();
+}
+
+void World::Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdata)
+{
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_ItemDrop_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_ItemDrop_Header& header = *(STC_ItemDrop_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = SendingType::ItemDrop;
+	header.dropindex = dropindex;
+	header.lootData = lootdata;
+	sds.postpush_end();
+}
+
+void World::Sending_ItemRemove(SendDataSaver& sds, int dropindex)
+{
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_ItemDropRemove_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_ItemDropRemove_Header& header = *(STC_ItemDropRemove_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = SendingType::ItemDropRemove;
+	header.dropindex = dropindex;
+	sds.postpush_end();
+}
+
+void World::Sending_InventoryItemSync(SendDataSaver& sds, ItemStack lootdata, int inventoryIndex)
+{
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_InventoryItemSync_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_InventoryItemSync_Header& header = *(STC_InventoryItemSync_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = SendingType::InventoryItemSync;
+	header.Iteminfo = lootdata;
+	header.inventoryIndex = inventoryIndex;
+	sds.postpush_end();
+}
+
+void World::Sending_PlayerFire(SendDataSaver& sds, int objIndex) {
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_PlayerFire_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_PlayerFire_Header& header = *(STC_PlayerFire_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = SendingType::PlayerFire;
+	header.objindex = objIndex;
+	sds.postpush_end();
+}
+
+//void World::DestroyObject(int objindex)
+//{
+//	if (gameObjects.isnull(objindex)) return;
+//
+//	int datacap = Sending_DeleteGameObject(objindex);
+//	SendToAllClient(datacap);
+//
+//	delete gameObjects[objindex];
+//	gameObjects.Free(objindex);
+//}
+//int World::
+
+//should i separate player delete and gameobject delete?
+
+void World::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage)
+{
+	vec4 rayOrigin = rayStart;
+	DynamicGameObject* closestHitObject = nullptr;
+	float closestDistance = rayDistance;
+	int lastcurrentindex = gameworld.currentIndex;
+
+	for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+		if (Dynamic_gameObjects.isnull(i) || shooter == Dynamic_gameObjects[i]) continue;
+
+		BoundingOrientedBox obb = Dynamic_gameObjects[i]->GetOBB();
+		float distance;
+
+		if (obb.Intersects(rayOrigin, rayDirection, distance)) {
+			if (distance < closestDistance) {
+				closestDistance = distance;
+				closestHitObject = Dynamic_gameObjects[i];
+			}
+		}
+	}
+
+	if (closestHitObject != nullptr) {
+		closestHitObject->OnCollisionRayWithBullet(shooter, damage);
+		//std::cout << "Hit! Object Distance: " << closestDistance << std::endl;
+	}
+
+	Sending_NewRay(CommonSDS, rayStart, rayDirection, closestDistance);
+}
+
+GameObjectIncludeChunks World::GetChunks_Include_OBB(BoundingOrientedBox obb) {
+	GameObjectIncludeChunks ret;
+	XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];
+	obb.GetCorners(corners);
+
+	vec4 c[8];
+	c[0].f3 = corners[0];
+	vec4 minpos = c[0];
+	vec4 maxpos = c[0];
+	for (int i = 1; i < 8; ++i) {
+		c[i].f3 = corners[i];
+		minpos = _mm_min_ps(c[i], minpos);
+		maxpos = _mm_max_ps(c[i], maxpos);
+	}
+
+	ret.xmin = floor(minpos.x / chunck_divide_Width);
+	ret.xlen = floor(maxpos.x / chunck_divide_Width) - ret.xmin;
+	ret.ymin = floor(minpos.y / chunck_divide_Width);
+	ret.ylen = floor(maxpos.y / chunck_divide_Width) - ret.ymin;
+	ret.zmin = floor(minpos.z / chunck_divide_Width);
+	ret.zlen = floor(maxpos.z / chunck_divide_Width) - ret.zmin;
+	return ret;
+}
+
+GameChunk* World::GetChunkFromPos(vec4 pos) {
+	int ix = floor(pos.x / chunck_divide_Width);
+	int iy = floor(pos.y / chunck_divide_Width);
+	int iz = floor(pos.z / chunck_divide_Width);
+	ChunkIndex ci = ChunkIndex(ix, iy, iz);
+	auto gc = chunck.find(ci);
+	if (gc != chunck.end()) {
+		return gc->second;
+	}
+	else {
+		return nullptr;
+	}
+}
+
+void World::PushGameObject(GameObject* go) {
+	if (go->tag[GameObjectTag::Tag_Dynamic] == false) {
+		// static game object
+		StaticGameObject* sgo = (StaticGameObject*)go;
+		GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(sgo->GetOBB());
+		int xmax = chunkIds.xmin + chunkIds.xlen;
+		int ymax = chunkIds.ymin + chunkIds.ylen;
+		int zmax = chunkIds.zmin + chunkIds.zlen;
+		bool pushing = false;
+		for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+			for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+				for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+					auto c = chunck.find(ChunkIndex(ix, iy, iz));
+					GameChunk* gc;
+					if (c == chunck.end()) {
+						// new game chunk
+						gc = new GameChunk();
+						gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+						chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+					}
+					else gc = c->second;
+
+					int allocN = gc->Static_gameobjects.Alloc();
+					gc->Static_gameobjects[allocN] = sgo;
+					pushing = true;
+				}
+			}
+		}
+	}
+	else {
+		if (go->tag[GameObjectTag::Tag_SkinMeshObject] == true) {
+			// dynamic game object
+			SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
+			smgo->InitialChunkSetting();
+			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
+			int xmax = chunkIds.xmin + chunkIds.xlen;
+			int ymax = chunkIds.ymin + chunkIds.ylen;
+			int zmax = chunkIds.zmin + chunkIds.zlen;
+			int up = 0;
+			for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+				for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+					for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+						auto c = chunck.find(ChunkIndex(ix, iy, iz));
+						GameChunk* gc;
+						if (c == chunck.end()) {
+							// new game chunk
+							gc = new GameChunk();
+							gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+							chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+						}
+						else gc = c->second;
+						int allocN = gc->SkinMesh_gameobjects.Alloc();
+						gc->SkinMesh_gameobjects[allocN] = smgo;
+						smgo->chunkAllocIndexs[up] = allocN;
+						up += 1;
+					}
+				}
+			}
+		}
+		else {
+			// dynamic game object
+			DynamicGameObject* dgo = (DynamicGameObject*)go;
+			dgo->InitialChunkSetting();
+			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
+			int xmax = chunkIds.xmin + chunkIds.xlen;
+			int ymax = chunkIds.ymin + chunkIds.ylen;
+			int zmax = chunkIds.zmin + chunkIds.zlen;
+			int up = 0;
+			for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+				for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+					for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+						auto c = chunck.find(ChunkIndex(ix, iy, iz));
+						GameChunk* gc;
+						if (c == chunck.end()) {
+							// new game chunk
+							gc = new GameChunk();
+							gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+							chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+						}
+						else gc = c->second;
+						int allocN = gc->Dynamic_gameobjects.Alloc();
+						gc->Dynamic_gameobjects[allocN] = dgo;
+						dgo->chunkAllocIndexs[up] = allocN;
+						up += 1;
+					}
+				}
+			}
+		}
+	}
+}
+
+//그리드 그리기 함수
+void World::PrintCangoGrid(const std::vector<AstarNode*>& all, int gridWidth, int gridHeight)
+{
+	std::cout << "\n=== CANGO GRID (.: walkable, #: blocked) ===\n";
+	for (int z = 0; z < gridHeight; ++z) {
+		for (int x = 0; x < gridWidth; ++x) {
+			const AstarNode* n = all[z * gridWidth + x];
+			std::cout << (n && n->cango ? '.' : '#');
+		}
+		std::cout << '\n';
+	}
+	std::cout << std::flush;
+}
+
+void World::PrintOffset() {
+	ofstream ofs{ "STC_GameObjectOffsets.txt" };
+	ofs << GameObject::g_members.size() << endl;
+	GameObject::PrintOffset(ofs);
+	ofs << GameObject::g_members.size() + StaticGameObject::g_members.size() << endl;
+	StaticGameObject::PrintOffset(ofs);
+	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() << endl;
+	DynamicGameObject::PrintOffset(ofs);
+	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() + SkinMeshGameObject::g_members.size() << endl;
+	SkinMeshGameObject::PrintOffset(ofs);
+	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() + SkinMeshGameObject::g_members.size() + Player::g_members.size() << endl;
+	Player::PrintOffset(ofs);
+	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() + SkinMeshGameObject::g_members.size() + Monster::g_members.size() << endl;
+	Monster::PrintOffset(ofs);
+	ofs.close();
+}
+
+bool World::CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfSize, const collisionchecksphere& sphere)
+{
+	float x = max(boxCenter.x - boxHalfSize.x, min(sphere.center.x, boxCenter.x + boxHalfSize.x));
+	float y = max(boxCenter.y - boxHalfSize.y, min(sphere.center.y, boxCenter.y + boxHalfSize.y));
+	float z = max(boxCenter.z - boxHalfSize.z, min(sphere.center.z, boxCenter.z + boxHalfSize.z));
+
+	float dx = sphere.center.x - x;
+	float dy = sphere.center.y - y;
+	float dz = sphere.center.z - z;
+
+	float dist2 = dx * dx + dy * dy + dz * dz;
+	return dist2 < (sphere.radius * sphere.radius);
 }
