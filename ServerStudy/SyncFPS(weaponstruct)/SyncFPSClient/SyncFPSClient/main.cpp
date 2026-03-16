@@ -1,13 +1,13 @@
-﻿int dbgc[128] = {};
-
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "main.h"
 #include "Render.h"
 #include "Game.h"
 #include "GameObject.h"
+#include "Player.h"
+#include "Monster.h"
 
-extern GlobalDevice gd;
-extern Game game;
+GlobalDevice gd;
+Game game;
 Socket* ClientSocket = nullptr;
 UCHAR* m_pKeyBuffer;
 vector<Item> ItemTable;
@@ -20,7 +20,6 @@ int resolutionLevel = 3;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
-	GameObject::StaticInit();
 	PrintOffset();
 
 	gd.Factory_Adaptor_Output_Init();
@@ -333,110 +332,110 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 }
 
 void PrintOffset() {
-	//{
-	//	int n = sizeof(GameObject);
-	//	dbglog1(L"class GameObject : size = %d\n", n);
-	//	GameObject temp;
+	{
+		int n = sizeof(GameObject);
+		dbglog1(L"class GameObject : size = %d\n", n);
+		GameObject temp;
 
-	//	n = (char*)&temp - (char*)&temp.tag;
-	//	dbglog1(L"class GameObject.tag%d\n", n);
-	//	n = (char*)&temp - (char*)&temp;
-	//	dbglog1(L"class GameObject.MaterialIndex%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.worldMat;
-	//	dbglog1(L"class GameObject.worldMat%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.LVelocity;
-	//	dbglog1(L"class GameObject.LVelocity%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.tickLVelocity;
-	//	dbglog1(L"class GameObject.tickLVelocity%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.m_pMesh;
-	//	dbglog1(L"class GameObject.m_pMesh%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.m_pShader;
-	//	dbglog1(L"class GameObject.m_pShader%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.Destpos;
-	//	dbglog1(L"class GameObject.Destpos%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.rmod;
-	//	dbglog1(L"class GameObject.rmod%d\n", n);
+		n = (char*)&temp - (char*)&temp.isExist;
+		dbglog1(L"class GameObject.isExist%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaterialIndex;
+		dbglog1(L"class GameObject.MaterialIndex%d\n", n);
+		n = (char*)&temp - (char*)&temp.worldMat;
+		dbglog1(L"class GameObject.worldMat%d\n", n);
+		n = (char*)&temp - (char*)&temp.LVelocity;
+		dbglog1(L"class GameObject.LVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.tickLVelocity;
+		dbglog1(L"class GameObject.tickLVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pMesh;
+		dbglog1(L"class GameObject.m_pMesh%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pShader;
+		dbglog1(L"class GameObject.m_pShader%d\n", n);
+		n = (char*)&temp - (char*)&temp.Destpos;
+		dbglog1(L"class GameObject.Destpos%d\n", n);
+		n = (char*)&temp - (char*)&temp.rmod;
+		dbglog1(L"class GameObject.rmod%d\n", n);
 
-	//}
-	//dbglog1(L"-----------------------------------%d\n\n", rand());
-	//{
-	//	int n = sizeof(Player);
-	//	dbglog1(L"class Player : size = %d\n", n);
-	//	Player temp;
+	}
+	dbglog1(L"-----------------------------------%d\n\n", rand());
+	{
+		int n = sizeof(Player);
+		dbglog1(L"class Player : size = %d\n", n);
+		Player temp;
 
-	//	n = (char*)&temp - (char*)&temp.isExist;
-	//	dbglog1(L"class Player.isExist%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.MaterialIndex;
-	//	dbglog1(L"class Player.MaterialIndex%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.worldMat;
-	//	dbglog1(L"class Player.worldMat%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.LVelocity;
-	//	dbglog1(L"class Player.LVelocity%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.tickLVelocity;
-	//	dbglog1(L"class Player.tickLVelocity%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.m_pMesh;
-	//	dbglog1(L"class Player.m_pMesh%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.m_pShader;
-	//	dbglog1(L"class Player.m_pShader%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.Destpos;
-	//	dbglog1(L"class Player.Destpos%d\n", n);
-	//	dbglog1(L"-----------------------%d\n", rand());
-	//	n = (char*)&temp.m_pWeapon - (char*)&temp;
-	//	dbglog1(L"class Player.m_pWeapon: %d\n", n);
-	//	n = (char*)&temp.m_currentWeaponType - (char*)&temp;
-	//	dbglog1(L"class Player.m_currentWeaponType: %d\n", n);
-	//	n = (char*)&temp.m_yaw - (char*)&temp;
-	//	dbglog1(L"class Player.m_yaw: %d\n", n);
-	//	n = (char*)&temp.m_pitch - (char*)&temp;
-	//	dbglog1(L"class Player.m_pitch: %d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HP;
-	//	dbglog1(L"class Player.HP%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.MaxHP;
-	//	dbglog1(L"class Player.MaxHP%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.DeltaMousePos;
-	//	dbglog1(L"class Player.DeltaMousePos%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.bullets;
-	//	dbglog1(L"class Player.bullets%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.KillCount;
-	//	dbglog1(L"class Player.KillCount%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.DeathCount;
-	//	dbglog1(L"class Player.DeathCount%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HeatGauge;
-	//	dbglog1(L"class Player.HeatGauge%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.MaxHeatGauge;
-	//	dbglog1(L"class Player.MaxHeatGauge%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HealSkillCooldown;
-	//	dbglog1(L"class Player.Heal%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HealSkillCooldownFlow;
-	//	dbglog1(L"class Player.Healflow%d\n", n);
-	//}
-	//dbglog1(L"-----------------------------------%d\n\n", rand());
-	//{
-	//	int n = sizeof(Monster);
-	//	dbglog1(L"class Monster : size = %d\n", n);
-	//	Monster temp;
+		n = (char*)&temp - (char*)&temp.isExist;
+		dbglog1(L"class Player.isExist%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaterialIndex;
+		dbglog1(L"class Player.MaterialIndex%d\n", n);
+		n = (char*)&temp - (char*)&temp.worldMat;
+		dbglog1(L"class Player.worldMat%d\n", n);
+		n = (char*)&temp - (char*)&temp.LVelocity;
+		dbglog1(L"class Player.LVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.tickLVelocity;
+		dbglog1(L"class Player.tickLVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pMesh;
+		dbglog1(L"class Player.m_pMesh%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pShader;
+		dbglog1(L"class Player.m_pShader%d\n", n);
+		n = (char*)&temp - (char*)&temp.Destpos;
+		dbglog1(L"class Player.Destpos%d\n", n);
+		dbglog1(L"-----------------------%d\n", rand());
+		n = (char*)&temp.m_pWeapon - (char*)&temp;
+		dbglog1(L"class Player.m_pWeapon: %d\n", n);
+		n = (char*)&temp.m_currentWeaponType - (char*)&temp;
+		dbglog1(L"class Player.m_currentWeaponType: %d\n", n);
+		n = (char*)&temp.m_yaw - (char*)&temp;
+		dbglog1(L"class Player.m_yaw: %d\n", n);
+		n = (char*)&temp.m_pitch - (char*)&temp;
+		dbglog1(L"class Player.m_pitch: %d\n", n);
+		n = (char*)&temp - (char*)&temp.HP;
+		dbglog1(L"class Player.HP%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaxHP;
+		dbglog1(L"class Player.MaxHP%d\n", n);
+		n = (char*)&temp - (char*)&temp.DeltaMousePos;
+		dbglog1(L"class Player.DeltaMousePos%d\n", n);
+		n = (char*)&temp - (char*)&temp.bullets;
+		dbglog1(L"class Player.bullets%d\n", n);
+		n = (char*)&temp - (char*)&temp.KillCount;
+		dbglog1(L"class Player.KillCount%d\n", n);
+		n = (char*)&temp - (char*)&temp.DeathCount;
+		dbglog1(L"class Player.DeathCount%d\n", n);
+		n = (char*)&temp - (char*)&temp.HeatGauge;
+		dbglog1(L"class Player.HeatGauge%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaxHeatGauge;
+		dbglog1(L"class Player.MaxHeatGauge%d\n", n);
+		n = (char*)&temp - (char*)&temp.HealSkillCooldown;
+		dbglog1(L"class Player.Heal%d\n", n);
+		n = (char*)&temp - (char*)&temp.HealSkillCooldownFlow;
+		dbglog1(L"class Player.Healflow%d\n", n);
+	}
+	dbglog1(L"-----------------------------------%d\n\n", rand());
+	{
+		int n = sizeof(Monster);
+		dbglog1(L"class Monster : size = %d\n", n);
+		Monster temp;
 
-	//	n = (char*)&temp - (char*)&temp.isExist;
-	//	dbglog1(L"class Monster.isExist%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.MaterialIndex;
-	//	dbglog1(L"class Monster.MaterialIndex%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.worldMat;
-	//	dbglog1(L"class Monster.worldMat%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.LVelocity;
-	//	dbglog1(L"class Monster.LVelocity%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.tickLVelocity;
-	//	dbglog1(L"class Monster.tickLVelocity%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.m_pMesh;
-	//	dbglog1(L"class Monster.m_pMesh%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.m_pShader;
-	//	dbglog1(L"class Monster.m_pShader%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.Destpos;
-	//	dbglog1(L"class Monster.Destpos%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.isDead;
-	//	dbglog1(L"class Monster.isDead%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HP;
-	//	dbglog1(L"class Monster.HP%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.MaxHP;
-	//	dbglog1(L"class Monster.MaxHP%d\n", n);
-	//}
+		n = (char*)&temp - (char*)&temp.isExist;
+		dbglog1(L"class Monster.isExist%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaterialIndex;
+		dbglog1(L"class Monster.MaterialIndex%d\n", n);
+		n = (char*)&temp - (char*)&temp.worldMat;
+		dbglog1(L"class Monster.worldMat%d\n", n);
+		n = (char*)&temp - (char*)&temp.LVelocity;
+		dbglog1(L"class Monster.LVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.tickLVelocity;
+		dbglog1(L"class Monster.tickLVelocity%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pMesh;
+		dbglog1(L"class Monster.m_pMesh%d\n", n);
+		n = (char*)&temp - (char*)&temp.m_pShader;
+		dbglog1(L"class Monster.m_pShader%d\n", n);
+		n = (char*)&temp - (char*)&temp.Destpos;
+		dbglog1(L"class Monster.Destpos%d\n", n);
+		n = (char*)&temp - (char*)&temp.isDead;
+		dbglog1(L"class Monster.isDead%d\n", n);
+		n = (char*)&temp - (char*)&temp.HP;
+		dbglog1(L"class Monster.HP%d\n", n);
+		n = (char*)&temp - (char*)&temp.MaxHP;
+		dbglog1(L"class Monster.MaxHP%d\n", n);
+	}
 }

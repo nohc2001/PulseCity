@@ -41,6 +41,7 @@
 
 #include "vecset.h"
 #include "SpaceMath.h"
+#include "RangeArr.h"
 
 #include "D3D_Util/DXSampleHelper.h"
 #include "D3D_Util/ShaderUtil.h"
@@ -60,7 +61,10 @@ using namespace std;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
-void dbgbreak(bool condition);
+int dbgc[128] = {};
+void dbgbreak(bool condition) {
+	if (condition) __debugbreak();
+}
 #pragma region dbglogDefines
 #define dbglog1(format, A) \
 	{\
@@ -190,3 +194,23 @@ struct DescIndex {
 	__declspec(property(get = GetCreationDescHandle)) const DescHandle hCreation;
 	__declspec(property(get = GetRenderDescHandle)) const DescHandle hRender;
 };
+
+/*
+template<D3D12_DESCRIPTOR_HEAP_TYPE type>
+inline DescHandle DescHandle::operator[](UINT index)
+{
+	DescHandle handle = *this;
+	UINT incSiz = gd.CBVSRVUAVSize;
+	if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_RTV) {
+		incSiz = gd.RTVSize;
+	}
+	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV) {
+		incSiz = gd.DSVSize;
+	}
+	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {
+		incSiz = gd.SamplerDescSize;
+	}
+	handle.operator+=(index * incSiz);
+	return handle;
+}
+*/

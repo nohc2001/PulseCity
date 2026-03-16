@@ -281,14 +281,6 @@ int GlobalDevice::CreateNewBundle()
 	return n;
 }
 
-// DRED 관련 인터페이스 ID 직접 정의
-struct __declspec(uuid("e8eb59ff-0f92-4f10-9114-64797fe1de27")) ID3D12DeviceRemovedExtendedDataSettings;
-struct __declspec(uuid("9b5e0447-ec44-4dfa-89f0-2e4070a28916")) ID3D12DeviceRemovedExtendedData;
-
-static const CLSID CLSID_D3D12DeviceRemovedExtendedDataSettings = { 0xe8eb59ff, 0x0f92, 0x4f10, { 0x91, 0x14, 0x64, 0x79, 0x7f, 0xe1, 0xde, 0x27 } };
-static const IID IID_ID3D12DeviceRemovedExtendedDataSettings = { 0xe8eb59ff, 0x0f92, 0x4f10, { 0x91, 0x14, 0x64, 0x79, 0x7f, 0xe1, 0xde, 0x27 } };
-static const IID IID_ID3D12DeviceRemovedExtendedData = { 0x9b5e0447, 0xec44, 0x4dfa, { 0x89, 0xf0, 0x2e, 0x40, 0x70, 0xa2, 0x89, 0x16 } };
-
 void GlobalDevice::Factory_Adaptor_Output_Init()
 {
 	HRESULT hr;
@@ -301,10 +293,8 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	UINT nDXGIFactoryFlags = 0;
 #if defined(_DEBUG)
 	ID3D12Debug* pd3dDebugController = NULL;
-
 	hr = D3D12GetDebugInterface(__uuidof(ID3D12Debug), (void
 		**)&pd3dDebugController);
-	
 	if (pd3dDebugController)
 	{
 		pd3dDebugController->EnableDebugLayer();
@@ -345,15 +335,6 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	if (FAILED(hr)) {
 		OutputDebugStringA("[ERROR] : Create Factory Error.\n");
 		return;
-	}
-
-	// Device 생성 전 호출
-	ComPtr<ID3D12DeviceRemovedExtendedDataSettings> pDredSettings;
-	if (SUCCEEDED(D3D12GetInterface(CLSID_D3D12DeviceRemovedExtendedDataSettings, IID_PPV_ARGS(&pDredSettings)))) {
-		// GPU가 마지막으로 실행한 명령어를 기록함
-		pDredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
-		// 잘못된 메모리 접근(Page Fault) 위치를 기록함
-		pDredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
 	}
 
 DXGI_FACTORY_INIT_END:
@@ -14308,7 +14289,6 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		gd.gpucmd.Close(true);
 		gd.gpucmd.Execute(true);
 		gd.WaitGPUComplete();
-		HRESULT hr = gd.pDevice->GetDeviceRemovedReason();
 
 		//Geometry
 		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[subMeshCount];
