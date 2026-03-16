@@ -222,6 +222,7 @@ class ParticleShader : public Shader {
 public:
 	ID3D12RootSignature* ParticleRootSig = nullptr;
 	ID3D12PipelineState* ParticlePSO = nullptr;
+	ID3D12PipelineState* MuzzleFlashPSO = nullptr;
 
 	GPUResource* FireTexture = nullptr;
 
@@ -229,7 +230,7 @@ public:
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
 
-	void Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount);
+	void Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount, bool isMuzzleFlash = false);
 };
 
 class ParticleCompute
@@ -240,4 +241,6 @@ public:
 
 	void Init(const wchar_t* hlslFile, const char* entry);
 	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
+	void DispatchMuzzle(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, const MuzzleCB& data, float dt);
+
 };

@@ -1980,12 +1980,6 @@ void ParticleShader::CreatePipelineState()
 
 	psoDesc.BlendState = blendDesc;
 
-	// Depth
-	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-	psoDesc.DepthStencilState.DepthEnable = TRUE;
-	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-
 	psoDesc.SampleMask = UINT_MAX;
 	psoDesc.NumRenderTargets = 1;
 	psoDesc.RTVFormats[0] = gd.MainRenderTarget_PixelFormat;
@@ -1994,18 +1988,35 @@ void ParticleShader::CreatePipelineState()
 	psoDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
 	psoDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable) ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
 
+	// Depth
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	psoDesc.DepthStencilState.DepthEnable = TRUE;
+	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
 	HRESULT hr = gd.pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&ParticlePSO));
+	if (FAILED(hr))
+		OutputDebugStringA("[ERROR] Particle PSO Create Failed\n");
+
+	psoDesc.DepthStencilState.DepthEnable = FALSE; 
+	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+
+	hr = gd.pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&MuzzleFlashPSO));
+	if (FAILED(hr))
+		OutputDebugStringA("[ERROR] MuzzleFlash PSO Create Failed\n");
 
 	if (vsBlob) vsBlob->Release();
 	if (psBlob) psBlob->Release();
 
-	if (FAILED(hr))
-		OutputDebugStringA("[ERROR] Particle PSO Create Failed\n");
 }
 
-void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount)
+void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount, bool isMuzzleFlash)
 {
-	cmd->SetPipelineState(ParticlePSO);
+	if (isMuzzleFlash)
+		cmd->SetPipelineState(MuzzleFlashPSO);
+	else
+		cmd->SetPipelineState(ParticlePSO);
+
 	cmd->SetGraphicsRootSignature(ParticleRootSig);
 
 	// t0 : Particle Buffer
@@ -2043,12 +2054,14 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
 {
 	// RootSignature 
-	CD3DX12_ROOT_PARAMETER params[2];
-	params[0].InitAsUnorderedAccessView(0); // u0
-	params[1].InitAsConstants(1, 0);        // b0 (dt)
+	CD3DX12_ROOT_PARAMETER params[3];
+
+	params[0].InitAsUnorderedAccessView(0); // u0: ParticlesRW
+	params[1].InitAsConstants(1, 0);        // b0: TimeCB 
+	params[2].InitAsConstants(sizeof(MuzzleCB) / 4, 1);
 
 	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
-	rsDesc.Init(2, params);
+	rsDesc.Init(3, params);
 
 	ID3DBlob* sig = nullptr;
 	D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, nullptr);
@@ -2077,6 +2090,23 @@ void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buff
 	cmd->SetComputeRootSignature(RootSig);
 	cmd->SetComputeRootUnorderedAccessView(0, buffer->resource->GetGPUVirtualAddress());
 	cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
+
+	cmd->Dispatch((count + 255) / 256, 1, 1);
+
+	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+}
+
+void ParticleCompute::DispatchMuzzle(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, const MuzzleCB& data, float dt)
+{
+	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+	cmd->SetPipelineState(PSO);
+	cmd->SetComputeRootSignature(RootSig);
+	cmd->SetComputeRootUnorderedAccessView(0, buffer->resource->GetGPUVirtualAddress());
+
+	cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
+
+	cmd->SetComputeRoot32BitConstants(2, sizeof(MuzzleCB) / 4, &data, 0);
 
 	cmd->Dispatch((count + 255) / 256, 1, 1);
 

@@ -76,6 +76,10 @@ public:
 	float m_currentFov = 60.0f;  // 현재 FOV
 	float m_targetFov = 60.0f;   // 목표 FOV
 
+	bool m_bIsShooting = false;  
+	MuzzleCB m_muzzleData;        
+	float m_lastShootFlow = 0.0f;
+
 	Player() : HP{ 100 } {
 		m_pWeapon = new Weapon(WeaponType::Sniper);
 	}

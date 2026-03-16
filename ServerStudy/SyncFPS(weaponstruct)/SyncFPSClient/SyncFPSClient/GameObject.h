@@ -308,14 +308,16 @@ struct WeaponData {
 	float damage;         // 기본 데미지
 	int maxBullets;       // 탄창 용량
 	float reloadTime;     // 장전 시간
+
+	vec4 muzzleOffset; // 총구 위치 오프셋
 };
 
 static WeaponData GWeaponTable[] = {
-	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
-	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
-	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
-	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
-	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
+	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f, {0.4f, -0.50f, 0.4f, 0.0f} },
+	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f, {0.80f, -0.40f, 3.0f, 0.0f} },
+	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f, {0.75f, -0.4f, 1.50f, 0.0f} },
+	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f, {0.90f, -0.5f, 1.50f, 0.0f} },
+	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f, {1.0f, -0.50f, 1.10f, 0.0f} },
 	// 
 };
 

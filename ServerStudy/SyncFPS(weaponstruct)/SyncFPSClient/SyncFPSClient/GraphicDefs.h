@@ -373,3 +373,10 @@ struct ParticlePool
 	GPUResource Buffer;
 	UINT Count;
 };
+
+struct MuzzleCB {
+	vec4 MuzzlePos;
+	vec4 MuzzleDir;
+	float MuzzleBurst;
+	float pad[3];
+};

@@ -12,6 +12,8 @@ void Player::Update(float deltaTime)
 
 void Player::ClientUpdate(float deltaTime)
 {
+	bool weaponChanged = false;
+
 	if ((uintptr_t)m_pWeapon > 0x00007FFFFFFFFFFF) {
 		m_pWeapon = nullptr;
 	}
@@ -24,12 +26,14 @@ void Player::ClientUpdate(float deltaTime)
 		}
 
 		m_pWeapon = new Weapon((WeaponType)m_currentWeaponType);
-
+		weaponChanged = true;
 	}
 
 	if (m_pWeapon == nullptr) return;
 
 	m_pWeapon->Update(deltaTime);
+
+	float currentFlow = m_pWeapon->m_shootFlow;
 
 	if (game.player == this) {
 		float recoilT = m_pWeapon->GetRecoilAlpha();
@@ -194,6 +198,47 @@ void Player::ClientUpdate(float deltaTime)
 		XMMATRIX dropMat = XMMatrixTranslation(0, -drop, 0);
 		gunMatrix_firstPersonView.mat = gunMatrix_firstPersonView.mat * dropMat;
 	}
+
+	if (weaponChanged)
+	{
+		m_lastShootFlow = currentFlow;
+		m_muzzleData.MuzzleBurst = 0.0f;
+	}
+	else if (currentFlow < m_lastShootFlow)
+	{
+		XMMATRIX viewInv = XMMatrixInverse(nullptr, gd.viewportArr[0].ViewMatrix);
+
+		XMVECTOR camRight = viewInv.r[0];
+		XMVECTOR camUp = viewInv.r[1];
+		XMVECTOR camLook = viewInv.r[2];
+		XMVECTOR camPos = viewInv.r[3];
+
+		m_bIsShooting = true;
+
+		float offX = m_pWeapon->m_info.muzzleOffset.x;
+		float offY = m_pWeapon->m_info.muzzleOffset.y;
+		float offZ = m_pWeapon->m_info.muzzleOffset.z;
+
+		XMVECTOR finalMuzzlePos = camPos
+			+ (camRight * offX)
+			+ (camUp * offY)
+			+ (camLook * offZ);
+
+		XMStoreFloat4((XMFLOAT4*)&m_muzzleData.MuzzlePos, finalMuzzlePos);
+		XMStoreFloat4((XMFLOAT4*)&m_muzzleData.MuzzleDir, camLook);
+
+		m_muzzleData.MuzzleDir.w = 0.6f;
+		m_muzzleData.MuzzleBurst = 1.0f;
+
+		m_muzzleData.pad[0] = 0.0f; m_muzzleData.pad[1] = 0.0f; m_muzzleData.pad[2] = 0.0f;
+	}
+	else
+	{
+		m_bIsShooting = false;
+		m_muzzleData.MuzzleBurst = 0.0f;
+	}
+
+	m_lastShootFlow = currentFlow;
 }
 
 void Player::Render()

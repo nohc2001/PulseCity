@@ -144,7 +144,7 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 	);
 }
 
-void Game::Init()
+void Game::Init()	
 {
 	GameObjectType::STATICINIT();
 
@@ -341,9 +341,13 @@ void Game::Init()
 	InitParticlePool(FirePool, FIRE_COUNT);
 	InitParticlePool(FirePillarPool, FIRE_PILLAR_COUNT);
 	InitParticlePool(FireRingPool, FIRE_RING_COUNT);
+	InitParticlePool(MuzzlePool, 1024);
 
 	FireCS = new ParticleCompute();
 	FireCS->Init(L"Particle.hlsl", "FireCS");
+
+	MuzzleFlashCS = new ParticleCompute();
+	MuzzleFlashCS->Init(L"Particle.hlsl", "MuzzleFlashCS");
 
 	FirePillarCS = new ParticleCompute();
 	FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS");
@@ -474,6 +478,22 @@ void Game::Render() {
 	FireRingCS->Dispatch(gd.pCommandList, &FireRingPool.Buffer, FireRingPool.Count, DeltaTime);
 	ParticleDraw->Render(gd.pCommandList, &FireRingPool.Buffer, FireRingPool.Count);
 
+	if (game.player)
+	{
+		MuzzleFlashCS->DispatchMuzzle(
+			gd.pCommandList,
+			&MuzzlePool.Buffer,
+			MuzzlePool.Count,
+			game.player->m_muzzleData,
+			DeltaTime
+		);
+
+		ParticleDraw->Render(gd.pCommandList, &MuzzlePool.Buffer, MuzzlePool.Count, true);
+	}
+
+	// 2. 렌더링 (Draw)
+	// MuzzlePool에 데이터가 (살아있는 파티클이) 있다면 화면에 그림
+	ParticleDraw->Render(gd.pCommandList, &MuzzlePool.Buffer, MuzzlePool.Count);
 	//////////////////
 
 	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);
