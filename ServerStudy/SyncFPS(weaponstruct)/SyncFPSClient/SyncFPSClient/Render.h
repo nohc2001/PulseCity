@@ -452,13 +452,6 @@ struct ParticlePool
 	UINT Count;
 };
 
-struct MuzzleCB {
-	vec4 MuzzlePos;   
-	vec4 MuzzleDir;    
-	float MuzzleBurst; 
-	float pad[3];      
-};
-
 #pragma region RootParamSetTypes
 union GRegID {
 	unsigned int id;
@@ -2782,6 +2775,5 @@ public:
 
 	void Init(const wchar_t* hlslFile, const char* entry);
 	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
-	void DispatchMuzzle(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, const MuzzleCB& data, float dt);
 };
 

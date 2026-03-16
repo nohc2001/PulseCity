@@ -7677,14 +7677,12 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
 {
 	// RootSignature 
-	CD3DX12_ROOT_PARAMETER params[3];
-
-	params[0].InitAsUnorderedAccessView(0); // u0: ParticlesRW
-	params[1].InitAsConstants(1, 0);        // b0: TimeCB 
-	params[2].InitAsConstants(sizeof(MuzzleCB) / 4, 1); // b1: MuzzleCB (ÃÑ±¸ µ¥ÀÌÅÍ)
+	CD3DX12_ROOT_PARAMETER params[2];
+	params[0].InitAsUnorderedAccessView(0); // u0
+	params[1].InitAsConstants(1, 0);        // b0 (dt)
 
 	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
-	rsDesc.Init(3, params); 
+	rsDesc.Init(2, params);
 
 	ID3DBlob* sig = nullptr;
 	D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, nullptr);
@@ -7713,23 +7711,6 @@ void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buff
 	cmd->SetComputeRootSignature(RootSig);
 	cmd->SetComputeRootUnorderedAccessView(0, buffer->resource->GetGPUVirtualAddress());
 	cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
-
-	cmd->Dispatch((count + 255) / 256, 1, 1);
-
-	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-}
-
-void ParticleCompute::DispatchMuzzle(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, const MuzzleCB& data, float dt)
-{
-	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-
-	cmd->SetPipelineState(PSO);
-	cmd->SetComputeRootSignature(RootSig);
-	cmd->SetComputeRootUnorderedAccessView(0, buffer->resource->GetGPUVirtualAddress());
-
-	cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
-
-	cmd->SetComputeRoot32BitConstants(2, sizeof(MuzzleCB) / 4, &data, 0);
 
 	cmd->Dispatch((count + 255) / 256, 1, 1);
 

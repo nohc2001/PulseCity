@@ -191,12 +191,10 @@ public:
 	ParticlePool FirePool;
 	ParticlePool FirePillarPool;
 	ParticlePool FireRingPool;
-	ParticlePool MuzzlePool;
 
 	ParticleCompute* FireCS = nullptr;
 	ParticleCompute* FirePillarCS = nullptr;
 	ParticleCompute* FireRingCS = nullptr;
-	ParticleCompute* MuzzleFlashCS = nullptr;
 
 	ParticleCompute* ParticleCS = nullptr;
 	ParticleShader* ParticleDraw = nullptr;
