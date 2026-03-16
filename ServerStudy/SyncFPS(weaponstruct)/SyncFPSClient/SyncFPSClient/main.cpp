@@ -20,6 +20,13 @@ int resolutionLevel = 3;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
+	// 오류등이 한글로 표시되도록 한다.
+	wcout.imbue(locale("korean"));
+	//WSA 초기화
+	WSADATA wsa;
+	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+		return 1;
+
 	GameObject::StaticInit();
 	PrintOffset();
 
@@ -63,7 +70,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	gd.Init();
 	game.Init();
 	
-	client.Init("127.0.0.1", 9000);
+	bool Connected = client.Init("127.0.0.1", 9000);
+	if (Connected == false) {
+		WSACleanup();
+		return 0;
+	}
 
 	wchar_t m_pszFrameRate[32] = L"Pulse City Client 001 ____FPS";
 	constexpr double MaxFPSFlow = 10000;
@@ -106,6 +117,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		ft = et;
 	}
 
+	WSACleanup();
 	return Message.wParam;
 }
 
@@ -313,7 +325,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		//ClientSocket->Send(nullptr, 0); // exit signal?
 
 		while (true) {
-			int result = client.recv(client.rBuf, client.rbufMax, 0);
+			int result = client.recv(client.rBuf, client.rbufMax);
 			if (result <= 0) {
 				break;
 			}

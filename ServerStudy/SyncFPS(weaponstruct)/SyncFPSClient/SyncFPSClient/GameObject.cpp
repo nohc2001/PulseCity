@@ -905,9 +905,9 @@ void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
-	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
-	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr; // fix
+	childs = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
 
@@ -1901,6 +1901,7 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&mesh->OBB_Tr, sizeof(float) * 3);
 		ifs.read((char*)&mesh->OBB_Ext, sizeof(float) * 3);
 		map->meshes[i] = mesh;
+		Shape::AddMesh(name, mesh);
 	}
 
 	TextureTableStart = game.TextureTable.size();
@@ -2104,6 +2105,7 @@ void GameMap::LoadMap(const char* MapName)
 		Model* pModel = new Model();
 		pModel->LoadModelFile2(filename);
 		map->models[i] = pModel;
+		Shape::AddModel(modelName, pModel);
 	}
 
 	for (int i = 0; i < gameObjectCount; ++i) {

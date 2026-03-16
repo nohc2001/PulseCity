@@ -132,7 +132,7 @@ union Tag {
 	};
 
 	// bool로도 쓸 수 있음.
-	TagSetter& operator[](UINT MaskIndex) {
+	TagSetter operator[](UINT MaskIndex) {
 		TagSetter ts;
 		ts.t = this;
 		ts.index = MaskIndex;

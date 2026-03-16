@@ -68,16 +68,6 @@ struct Server {
 	void Init(const char* ServerIP, unsigned short ServerPort) {
 		listen_sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 
-		// set non blocking
-		u_long val = 1;
-		int ret = ioctlsocket(listen_sock, FIONBIO, &val);
-		if (ret != 0)
-		{
-			stringstream ss;
-			ss << "bind failed:" << WSAGetLastError();
-			throw ss.str().c_str();
-		}
-
 		// Set Addr
 		struct sockaddr_in serveraddr;
 		memset(&serveraddr, 0, sizeof(serveraddr));
@@ -94,6 +84,16 @@ struct Server {
 			ss << "bind failed:" << WSAGetLastError();
 			throw ss.str().c_str();
 		}
+
+		// set non blocking
+		u_long val = 1;
+		int ret = ioctlsocket(listen_sock, FIONBIO, &val);
+		if (ret != 0)
+		{
+			stringstream ss;
+			ss << "bind failed:" << WSAGetLastError();
+			throw ss.str().c_str();
+		}
 	}
 
 	void Listen() {
@@ -101,9 +101,9 @@ struct Server {
 		listen(listen_sock, backlog);
 	}
 
-	int Accept(SOCKET sock, string& error) {
+	int Accept(SOCKET& sock, string& error) {
 		sock = accept(listen_sock, NULL, 0);
-		if (sock == -1)
+		if (sock == INVALID_SOCKET)
 		{
 			error = WSAGetLastError();
 			return -1;
@@ -469,7 +469,9 @@ struct SendDataSaver {
 			delete[] buffer;
 			buffer = newbuffer;
 			capacity = capacity * 2;
+			ofbuff = buffer + postsiz;
 		}
+		postsiz += add_len;
 	}
 
 	template <int offset, int len>
@@ -502,7 +504,7 @@ struct SendDataSaver {
 	}
 
 	__forceinline void postpush_end() {
-		int len = size - postsiz;
+		int len = postsiz - size;
 		*(int*)(((char*)buffer) + size) = len;
 		size = postsiz;
 	}
@@ -607,7 +609,7 @@ union SendingType {
 * 각 게임오브젝트들의 맴버변수로 해당 데이터를 만들어 SendDataSaver에 보낼 수 있다.
 */
 struct STC_SyncGameObject_Header {
-	int size = 0;
+	unsigned int size = 0;
 	SendingType st = SendingType::SyncGameObject;
 	GameObjectType type;
 	int objindex;
@@ -617,7 +619,7 @@ struct STC_SyncGameObject_Header {
 * 설명 : 게임오브젝트에서 어떤 오브젝트의 어떤 맴버를 변경하고 싶을때 사용된다.
 */
 struct STC_ChangeMemberOfGameObject_Header {
-	int size = 0;
+	unsigned int size = 0;
 	SendingType st = SendingType::ChangeMemberOfGameObject;
 	GameObjectType type;
 	int objindex;
@@ -632,7 +634,7 @@ struct STC_ChangeMemberOfGameObject_Header {
 	사실 충돌이 결정나고 보내진다.
 */
 struct STC_NewRay_Header {
-	int size = 34; // 크기고정
+	unsigned int size = 34; // 크기고정
 	SendingType st = SendingType::NewRay;
 	XMFLOAT3 raystart;
 	XMFLOAT3 rayDir;
@@ -643,7 +645,7 @@ struct STC_NewRay_Header {
 * 설명 : 클라이언트에게 서버에서 자신과 자신의 오브젝트가 어떻게 관리되고 있는지 알려준다.
 */
 struct STC_AllocPlayerIndexes_Header {
-	int size = 14; // 크기고정
+	unsigned int size = 14; // 크기고정
 	SendingType st = SendingType::AllocPlayerIndexes;
 	
 	// 데이터를 받을 클라이언트가 서버내에서 몇번째 클라이언트인지
@@ -656,7 +658,7 @@ struct STC_AllocPlayerIndexes_Header {
 * 설명 : 특정 오브젝트가 삭제되었다는 사실을 클라이언트에게 보고한다.
 */
 struct STC_DeleteGameObject_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	SendingType st = SendingType::DeleteGameObject;
 	int obj_index; // 삭제를 진행할 dynamic 오브젝트의 인덱스
 };
@@ -665,7 +667,7 @@ struct STC_DeleteGameObject_Header {
 * 설명 : 아이템이 드롭되었다는 걸 클라이언트에게 알리는 역할.
 */
 struct STC_ItemDrop_Header {
-	int size = 48; // 크기고정
+	unsigned int size = 48; // 크기고정
 	SendingType st = SendingType::ItemDrop;
 	int dropindex; // 드롭아이템 인덱스
 	ItemLoot lootData; // 루팅된 아이템의 데이터
@@ -675,7 +677,7 @@ struct STC_ItemDrop_Header {
 * 설명 : 드롭 아이템이 삭제되었다는걸 클라이언트에게 알리는 역할
 */
 struct STC_ItemDropRemove_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	SendingType st = SendingType::ItemDropRemove;
 	int dropindex; // 삭제된 드롭아이템의 인덱스
 };
@@ -684,7 +686,7 @@ struct STC_ItemDropRemove_Header {
 * 설명 : 인벤토리의 특정 칸을 동기화 하는 역할
 */
 struct STC_InventoryItemSync_Header {
-	int size = 18; // 크기고정
+	unsigned int size = 18; // 크기고정
 	SendingType st = SendingType::InventoryItemSync;
 	// 인벤토리에 들어갈 아이템
 	ItemStack Iteminfo;
@@ -696,7 +698,7 @@ struct STC_InventoryItemSync_Header {
 * 설명 : ???
 */
 struct STC_PlayerFire_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	SendingType st = SendingType::PlayerFire;
 	int objindex;
 };
@@ -705,10 +707,36 @@ struct STC_PlayerFire_Header {
 * 설명 : 전반적인 게임과 관련된 상태들을 공유한다.
 */
 struct STC_SyncGameState_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	SendingType st = SendingType::SyncGameState;
 	int DynamicGameObjectCapacity;
 	int StaticGameObjectCapacity;
+};
+
+union CTS_Protocol {
+	enum {
+		KeyInput = 0,
+		SyncRotation = 1
+	};
+	short n;
+	char two_byte[2];
+
+	CTS_Protocol(short id) { n = id; }
+	operator short() { return n; }
+};
+
+struct CTS_KeyInput_Header {
+	unsigned int size = 8; // 크기고정
+	CTS_Protocol st = CTS_Protocol::KeyInput;
+	char Key;
+	bool isdown;
+};
+
+struct CTS_SyncRotation_Header {
+	unsigned int size = 14;
+	CTS_Protocol st = CTS_Protocol::KeyInput;
+	float yaw;
+	float pitch;
 };
 
 #pragma pack(pop)

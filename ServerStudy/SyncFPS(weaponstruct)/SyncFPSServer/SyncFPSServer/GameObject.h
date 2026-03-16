@@ -79,6 +79,11 @@ struct ModelNode {
 	// 해당 index는 Model::mMeshes 배열을 통해 Mesh를 얻을 수 있다.
 	unsigned int* Meshes;
 
+	// 메쉬에 입힐 머터리얼의 인덱스 배열
+	int* materialIndex;
+
+	vector<BoundingBox> aabbArr;
+
 	ModelNode() {
 		parent = nullptr;
 		numChildren = 0;
@@ -159,6 +164,11 @@ struct Model {
 	* 설명/반환 : Model의 기본 OBB를 반환한다.
 	*/
 	BoundingOrientedBox GetOBB();
+};
+
+struct HumanoidAnimation {
+	double Duration = 0;
+	void LoadHumanoidAnimation(string filename);
 };
 
 /*
@@ -273,7 +283,7 @@ union Tag {
 	};
 
 	// bool로도 쓸 수 있음.
-	TagSetter& operator[](UINT MaskIndex) {
+	TagSetter operator[](UINT MaskIndex) {
 		TagSetter ts;
 		ts.t = this;
 		ts.index = MaskIndex;
@@ -355,7 +365,9 @@ struct GameObject {
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
 		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh; Model* model; s.GetRealShape(mesh, model);
+		Mesh* mesh = nullptr; 
+		Model* model = nullptr; 
+		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 
@@ -394,9 +406,9 @@ struct GameObject {
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
 
-			matrix*& InnerModelTransformArr = *(matrix**)(sds.ofbuff + offset);
+			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
 			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(int) * model->nodeCount;
+			offset += sizeof(matrix) * model->nodeCount;
 		}
 
 		sds.postpush_end();
@@ -442,7 +454,9 @@ struct StaticGameObject : public GameObject {
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
 		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh; Model* model; s.GetRealShape(mesh, model);
+		Mesh* mesh = nullptr; 
+		Model* model = nullptr; 
+		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 		reqsiz += sizeof(int) + aabbArr.size() * sizeof(XMFLOAT3) * 2;
@@ -482,9 +496,9 @@ struct StaticGameObject : public GameObject {
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
 
-			matrix*& InnerModelTransformArr = *(matrix**)(sds.ofbuff + offset);
+			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
 			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(int) * model->nodeCount;
+			offset += sizeof(matrix) * model->nodeCount;
 		}
 
 		int& aabbCount = *(int*)(sds.ofbuff + offset);
@@ -629,7 +643,9 @@ struct DynamicGameObject : public GameObject {
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
 		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh; Model* model; s.GetRealShape(mesh, model);
+		Mesh* mesh = nullptr; 
+		Model* model = nullptr; 
+		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 
@@ -669,9 +685,9 @@ struct DynamicGameObject : public GameObject {
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
 
-			matrix*& InnerModelTransformArr = *(matrix**)(sds.ofbuff + offset);
+			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
 			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(int) * model->nodeCount;
+			offset += sizeof(matrix) * model->nodeCount;
 		}
 		sds.postpush_end();
 	}
@@ -717,7 +733,9 @@ struct SkinMeshGameObject : public DynamicGameObject {
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
 		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh; Model* model; s.GetRealShape(mesh, model);
+		Mesh* mesh = nullptr; 
+		Model* model = nullptr; 
+		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 
@@ -761,9 +779,9 @@ struct SkinMeshGameObject : public DynamicGameObject {
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
 
-			matrix*& InnerModelTransformArr = *(matrix**)(sds.ofbuff + offset);
+			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
 			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(int) * model->nodeCount;
+			offset += sizeof(matrix) * model->nodeCount;
 		}
 
 		sds.postpush_end();
@@ -989,7 +1007,9 @@ struct Player : public SkinMeshGameObject {
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
 		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh; Model* model; s.GetRealShape(mesh, model);
+		Mesh* mesh = nullptr; 
+		Model* model = nullptr; 
+		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 
@@ -1046,9 +1066,9 @@ struct Player : public SkinMeshGameObject {
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
 
-			matrix*& InnerModelTransformArr = *(matrix**)(sds.ofbuff + offset);
+			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
 			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(int) * model->nodeCount;
+			offset += sizeof(matrix) * model->nodeCount;
 		}
 
 		sds.postpush_end();
@@ -1170,7 +1190,9 @@ struct Monster : public SkinMeshGameObject {
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
 		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh; Model* model; s.GetRealShape(mesh, model);
+		Mesh* mesh = nullptr; 
+		Model* model = nullptr; 
+		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 
@@ -1217,9 +1239,9 @@ struct Monster : public SkinMeshGameObject {
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
 
-			matrix*& InnerModelTransformArr = *(matrix**)(sds.ofbuff + offset);
-			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(int) * model->nodeCount;
+			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+			memcpy_s(InnerModelTransformArr, sizeof(matrix) * model->nodeCount, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+			offset += sizeof(matrix) * model->nodeCount;
 		}
 
 		sds.postpush_end();
@@ -1393,8 +1415,8 @@ struct ClientData {
 	SOCKET socket;
 	
 	// 클라이언트로부터 받는 데이터를 저장하는 버퍼
-	static constexpr int rbufcap = 8192;
-	char rbuf[rbufcap] = {};
+	static constexpr int rbufcap = 8192 - sizeof(int);
+	char rbuf[rbufcap + sizeof(int)] = {};
 	int rbufoffset = 0;
 
 	// 클라이언트 접속주소
@@ -1409,10 +1431,10 @@ struct ClientData {
 	//Send하는 데이터를 쌓아놓는 곳.
 	SendDataSaver PersonalSDS;
 
-	__forceinline DWORD recv(DWORD flag) {
+	__forceinline DWORD recv(char* data, int len, DWORD flag) {
 		WSABUF buf;
-		buf.buf = rbuf;
-		buf.len = rbufcap;
+		buf.buf = data;
+		buf.len = len;
 		DWORD retval = 0;
 		WSARecv(socket, &buf, 1, &retval, &flag, NULL, NULL);
 		return retval;
@@ -1446,6 +1468,8 @@ struct ClientData {
 
 		inet_ntop(AF_INET, &addr.addr.sin_addr, addr.IPString, sizeof(addr.IPString) - 1);
 	}
+
+	static void DisconnectToServer(int index);
 };
 
 struct collisionchecksphere {
@@ -1519,6 +1543,8 @@ struct World {
 
 	// 게임 맵 데이터
 	GameMap map;
+	unsigned int MaterialCount = 0;
+	vector<HumanoidAnimation> HumanoidAnimationTable;
 
 	UINT TourID = 0;
 
@@ -1558,7 +1584,7 @@ struct World {
 	* 실제로 클라이언트가 보낸 패킷의 크기를 반환한다.
 	* 키보드 입력(2byte), 마우스 움직임 입력(9byte)
 	*/
-	__forceinline int Receiving(int clientIndex, char* rBuffer);
+	__forceinline int Receiving(int clientIndex, char* rBuffer, int totallen);
 
 	/*
 	* 설명 : 새로운 게임오브젝트를 추가하는 함수
@@ -1758,6 +1784,8 @@ struct World {
 	* int new_client_index : 새로운 클라이언트의 번호
 	*/
 	void SendingAllObjectForNewClient(SendDataSaver& sds) {
+		// STATIC 은 아직 보낼 필요는 없는듯? 하는게 충돌처리 밖에 없는데 충돌처리도 서버에서 함.
+		// 그리고 클라이언트쪽에서 맵 불러올때 StaticObject들도 같이 불러온다.
 		for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
 			if (Dynamic_gameObjects.isnull(i)) continue;
 			void* vptr = *(void**)Dynamic_gameObjects[i];

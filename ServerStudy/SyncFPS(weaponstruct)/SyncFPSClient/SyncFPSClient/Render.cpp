@@ -49,51 +49,7 @@ void font_parsed(void* args, void* _font_data, int error)
 	}
 }
 
-#pragma region DescHandleAndIndexCode
 
-template<D3D12_DESCRIPTOR_HEAP_TYPE type>
-inline DescHandle DescHandle::operator[](UINT index)
-{
-	DescHandle handle = *this;
-	UINT incSiz = gd.CBVSRVUAVSize;
-	if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_RTV) {
-		incSiz = gd.RTVSize;
-	}
-	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV) {
-		incSiz = gd.DSVSize;
-	}
-	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {
-		incSiz = gd.SamplerDescSize;
-	}
-	handle.operator+=(index * incSiz);
-	return handle;
-}
-
-DescHandle DescIndex::GetCreationDescHandle() const
-{
-	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.NSVDescHeapCreationHandle[index];
-	else if (type == 'n') return DescHandle(gd.TextureDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'r') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index));
-	else if (type == 'd') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index));
-}
-
-DescHandle DescIndex::GetRenderDescHandle() const
-{
-	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.SVDescHeapRenderHandle[index];
-	else if (type == 'n') return DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE(0), D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'r') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'd') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(0));
-}
-
-#pragma endregion
 
 #pragma region GPUResourceCode
 
@@ -450,13 +406,6 @@ D3D12_GPU_DESCRIPTOR_HANDLE DescriptorAllotter::GetGPUHandle(int index)
 	}
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE DescriptorAllotter::GetCPUHandle(int index)
-{
-	D3D12_CPU_DESCRIPTOR_HANDLE handle;
-	handle.ptr = pDescHeap->GetCPUDescriptorHandleForHeapStart().ptr + index * DescriptorSize;
-	return handle;
-}
-
 #pragma endregion
 
 #pragma region ShaderVisibleDescHeapCode
@@ -670,19 +619,19 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 
 	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + TextureSRVSiz);
 	for (int i = 0; i < TextureSRVCap - TextureSRVSiz; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hCreation.hcpu, game.TextureTable[0]->descindex.hCreation.hcpu, descheaptype);
+		gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hRender.hcpu, game.TextureTable[0]->descindex.hCreation.hcpu, descheaptype);
 		dummyTexSRV.index += 1;
 	}
 
 	DescIndex dummyMatCBV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVSiz);
 	for (int i = 0; i < MaterialCBVCap - MaterialCBVSiz; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hCreation.hcpu, game.MaterialTable[0].CB_Resource.descindex.hCreation.hcpu, descheaptype);
+		gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hRender.hcpu, game.MaterialTable[0].CB_Resource.descindex.hCreation.hcpu, descheaptype);
 		dummyMatCBV.index += 1;
 	}
 
 	DescIndex dummyInstancingSRV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVCap + InstancingSRVSiz);
 	for (int i = 0; i < InstancingSRVCap - InstancingSRVSiz; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, dummyInstancingSRV.hCreation.hcpu, game.MeshTable[0]->InstanceData[0].InstancingSRVIndex.hCreation.hcpu, descheaptype);
+		gd.pDevice->CopyDescriptorsSimple(1, dummyInstancingSRV.hRender.hcpu, game.MeshTable[0]->InstanceData[0].InstancingSRVIndex.hCreation.hcpu, descheaptype);
 		dummyInstancingSRV.index += 1;
 	}
 
@@ -3068,6 +3017,11 @@ void Mesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 
 	IndexNum = indices.size();
 	VertexNum = vertices.size();
+
+	subMeshNum = 1;
+	SubMeshIndexStart = new int[2];
+	SubMeshIndexStart[0] = 0;
+	SubMeshIndexStart[1] = IndexNum;
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
@@ -4341,6 +4295,7 @@ void Model::LoadModelFile2(string filename)
 	int BSMCount = 0;
 	MaterialTableStart = game.MaterialTable.size();
 	for (int i = 0; i < mNumMeshes; ++i) {
+
 		bool hasBone = false;
 		ifs.read((char*)&hasBone, sizeof(bool));
 
@@ -4500,6 +4455,7 @@ void Model::LoadModelFile2(string filename)
 				vertices[k].position.z *= unitMulRate;
 			}
 
+			
 			mesh->CreateMesh_FromVertexAndIndexData(vertices, indexs, subMeshCount, SubMeshSlots);
 			mMeshes[i] = mesh;
 		}

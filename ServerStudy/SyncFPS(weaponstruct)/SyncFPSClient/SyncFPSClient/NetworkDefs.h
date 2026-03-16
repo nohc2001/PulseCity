@@ -2,13 +2,25 @@
 #include "stdafx.h"
 
 struct Client {
-	static constexpr int rbufMax = 8192;
+	static constexpr int rbufMax = 8192 - sizeof(int);
 	SOCKET sock;
-	char rBuf[rbufMax];
+	char rBuf[rbufMax + sizeof(int)] = {};
 	int rbufOffset = 0;
 
-	void Init(const char* ServerIP, unsigned short ServerPort) {
+	bool Init(const char* ServerIP, unsigned short ServerPort) {
 		sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+
+		// connect()
+		struct sockaddr_in serveraddr;
+		memset(&serveraddr, 0, sizeof(serveraddr));
+		serveraddr.sin_family = AF_INET;
+		inet_pton(AF_INET, ServerIP, &serveraddr.sin_addr);
+		serveraddr.sin_port = htons(ServerPort);
+		int retval = connect(sock, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
+		if (retval < 0 && errno != EINPROGRESS) {
+			perror("connect failed");
+			return false;
+		}
 
 		// set non blocking
 		u_long val = 1;
@@ -20,16 +32,7 @@ struct Client {
 			throw ss.str().c_str();
 		}
 
-		// connect()
-		struct sockaddr_in serveraddr;
-		memset(&serveraddr, 0, sizeof(serveraddr));
-		serveraddr.sin_family = AF_INET;
-		inet_pton(AF_INET, ServerIP, &serveraddr.sin_addr);
-		serveraddr.sin_port = htons(ServerPort);
-		int retval = connect(client.sock, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
-		if (retval < 0 && errno != EINPROGRESS) {
-			perror("connect failed");
-		}
+		return true;
 	}
 
 	__forceinline DWORD send(char* data, int len, DWORD flag) {
@@ -41,11 +44,12 @@ struct Client {
 		return retval;
 	}
 
-	__forceinline DWORD recv(char* data, int len, DWORD flag) {
+	__forceinline DWORD recv(char* data, int len) {
 		WSABUF buf;
 		buf.buf = data;
 		buf.len = len;
 		DWORD retval = 0;
+		DWORD flag = 0;
 		WSARecv(sock, &buf, 1, &retval, &flag, NULL, NULL);
 		return retval;
 	}
@@ -111,7 +115,7 @@ union STCProtocol {
 * 각 게임오브젝트들의 맴버변수로 해당 데이터를 만들어 SendDataSaver에 보낼 수 있다.
 */
 struct STC_SyncGameObject_Header {
-	int size = 0;
+	unsigned int size = 0;
 	STCProtocol st = STCProtocol::SyncGameObject;
 	GameObjectType type;
 	int objindex;
@@ -121,7 +125,7 @@ struct STC_SyncGameObject_Header {
 * 설명 : 게임오브젝트에서 어떤 오브젝트의 어떤 맴버를 변경하고 싶을때 사용된다.
 */
 struct STC_ChangeMemberOfGameObject_Header {
-	int size = 0;
+	unsigned int size = 0;
 	STCProtocol st = STCProtocol::ChangeMemberOfGameObject;
 	GameObjectType type;
 	int objindex;
@@ -136,7 +140,7 @@ struct STC_ChangeMemberOfGameObject_Header {
 	사실 충돌이 결정나고 보내진다.
 */
 struct STC_NewRay_Header {
-	int size = 34; // 크기고정
+	unsigned int size = 34; // 크기고정
 	STCProtocol st = STCProtocol::NewRay;
 	XMFLOAT3 raystart;
 	XMFLOAT3 rayDir;
@@ -147,7 +151,7 @@ struct STC_NewRay_Header {
 * 설명 : 클라이언트에게 서버에서 자신과 자신의 오브젝트가 어떻게 관리되고 있는지 알려준다.
 */
 struct STC_AllocPlayerIndexes_Header {
-	int size = 14; // 크기고정
+	unsigned int size = 14; // 크기고정
 	STCProtocol st = STCProtocol::AllocPlayerIndexes;
 
 	// 데이터를 받을 클라이언트가 서버내에서 몇번째 클라이언트인지
@@ -187,7 +191,7 @@ struct ItemLoot {
 * 설명 : 특정 오브젝트가 삭제되었다는 사실을 클라이언트에게 보고한다.
 */
 struct STC_DeleteGameObject_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	STCProtocol st = STCProtocol::DeleteGameObject;
 	int obj_index; // 삭제를 진행할 dynamic 오브젝트의 인덱스
 };
@@ -196,7 +200,7 @@ struct STC_DeleteGameObject_Header {
 * 설명 : 아이템이 드롭되었다는 걸 클라이언트에게 알리는 역할.
 */
 struct STC_ItemDrop_Header {
-	int size = 48; // 크기고정
+	unsigned int size = 48; // 크기고정
 	STCProtocol st = STCProtocol::ItemDrop;
 	int dropindex; // 드롭아이템 인덱스
 	ItemLoot lootData; // 루팅된 아이템의 데이터
@@ -206,7 +210,7 @@ struct STC_ItemDrop_Header {
 * 설명 : 드롭 아이템이 삭제되었다는걸 클라이언트에게 알리는 역할
 */
 struct STC_ItemDropRemove_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	STCProtocol st = STCProtocol::ItemDropRemove;
 	int dropindex; // 삭제된 드롭아이템의 인덱스
 };
@@ -215,7 +219,7 @@ struct STC_ItemDropRemove_Header {
 * 설명 : 인벤토리의 특정 칸을 동기화 하는 역할
 */
 struct STC_InventoryItemSync_Header {
-	int size = 18; // 크기고정
+	unsigned int size = 18; // 크기고정
 	STCProtocol st = STCProtocol::InventoryItemSync;
 	// 인벤토리에 들어갈 아이템
 	ItemStack Iteminfo;
@@ -227,7 +231,7 @@ struct STC_InventoryItemSync_Header {
 * 설명 : ???
 */
 struct STC_PlayerFire_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	STCProtocol st = STCProtocol::PlayerFire;
 	int objindex;
 };
@@ -236,7 +240,7 @@ struct STC_PlayerFire_Header {
 * 설명 : 전반적인 게임과 관련된 상태들을 공유한다.
 */
 struct STC_SyncGameState_Header {
-	int size = 10; // 크기고정
+	unsigned int size = 10; // 크기고정
 	STCProtocol st = STCProtocol::SyncGameState;
 	int DynamicGameObjectCapacity;
 	int StaticGameObjectCapacity;
@@ -262,14 +266,14 @@ union CTS_Protocol {
 };
 
 struct CTS_KeyInput_Header {
-	int size = 8; // 크기고정
+	unsigned int size = 8; // 크기고정
 	CTS_Protocol st = CTS_Protocol::KeyInput;
 	char Key;
 	bool isdown;
 };
 
 struct CTS_SyncRotation_Header {
-	int size = 14;
+	unsigned int size = 14;
 	CTS_Protocol st = CTS_Protocol::KeyInput;
 	float yaw;
 	float pitch;

@@ -646,7 +646,6 @@ struct RasterDevice {
 
 //Code From : megayuchi - DXR Sample Start
 typedef DXC_API_IMPORT HRESULT(__stdcall* DxcCreateInstanceT)(_In_ REFCLSID rclsid, _In_ REFIID riid, _Out_ LPVOID* ppv);
-
 #define		MAX_SHADER_NAME_BUFFER_LEN		256
 #define		MAX_SHADER_NAME_LEN				(MAX_SHADER_NAME_BUFFER_LEN-1)
 #define		MAX_SHADER_NUM					2048

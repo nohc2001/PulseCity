@@ -62,6 +62,8 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, bool centering)
 	// 하지만 UnitScale이 다를 경우에는 어떻게 하는가?
 	// 조치가 필요하다.
 	MAXpos *= 0.01f;
+
+	subMeshNum = 1;
 }
 
 BoundingOrientedBox Mesh::GetOBB()
@@ -140,6 +142,10 @@ BoundingOrientedBox GameObject::GetOBB()
 	BoundingOrientedBox obb_local;
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
+	if (shapeindex < 0) {
+		obb_local.Extents.x = -1;
+		return obb_local;
+	}
 	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	if (model != nullptr) obb_local = model->GetOBB();
@@ -151,6 +157,24 @@ BoundingOrientedBox GameObject::GetOBB()
 void GameObject::SetShape(int _shapeindex)
 {
 	shapeindex = _shapeindex;
+	Shape& s = Shape::ShapeTable[shapeindex];
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) {
+
+	}
+	else {
+		if (transforms_innerModel == nullptr) {
+			transforms_innerModel = new matrix[model->nodeCount];
+		}
+		else {
+		}
+
+		for (int i = 0;i < model->nodeCount;++i) {
+			transforms_innerModel[i] = model->Nodes[i].transform;
+		}
+	}
 }
 
 void GameObject::OnRayHit(GameObject* rayFrom) {
@@ -173,9 +197,11 @@ matrix StaticGameObject::GetWorld() {
 void StaticGameObject::SetWorld(matrix localWorldMat)
 {
 	matrix sav = localWorldMat;
-	StaticGameObject* obj = gameworld.Static_gameObjects[parent];
-	if (obj != nullptr) {
+	int temp = parent;
+	if (temp >= 0) {
+		StaticGameObject* obj = gameworld.Static_gameObjects[temp];
 		sav *= obj->worldMat;
+		temp = obj->parent;
 	}
 	worldMat = sav;
 }
@@ -728,19 +754,24 @@ void GameMap::StaticCollisionMove(DynamicGameObject* obj)
 				GameChunk* ch = gameworld.chunck[ChunkIndex(ix, iy, iz)];
 				//Static Object는 Enable이 false일 수 없기 때문에 할당검사는 안함.
 				// >> 그럼 그냥 vector여도 상관없잖음 왜 vecset으로 함? >> fix
-				for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
-					BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
 
-					obj->worldMat.pos += obj->tickLVelocity;
-					BoundingOrientedBox obb1 = obj->GetOBB();
-					obj->worldMat.pos -= obj->tickLVelocity;
+				//어짜피 서버면 청크를 다 만드는게 맞지 않을까? 그럼 nullptr 체크를 할 필요가 있나?
+				// fix
+				if (ch != nullptr) {
+					for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
+						BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
 
-					if (obb1.Intersects(staticobb)) {
-						obj->OnStaticCollision(staticobb);
-						DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(obj, staticobb);
+						obj->worldMat.pos += obj->tickLVelocity;
+						BoundingOrientedBox obb1 = obj->GetOBB();
+						obj->worldMat.pos -= obj->tickLVelocity;
+
+						if (obb1.Intersects(staticobb)) {
+							obj->OnStaticCollision(staticobb);
+							DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(obj, staticobb);
+						}
+
+						if (obj->tickLVelocity.fast_square_of_len3 <= 0.001f) return;
 					}
-
-					if (obj->tickLVelocity.fast_square_of_len3 <= 0.001f) return;
 				}
 			}
 		}
@@ -755,11 +786,13 @@ bool GameMap::isStaticCollision(BoundingOrientedBox obb)
 		for (int iy = goic.ymin; iy <= goic.ymin + goic.ylen; ++iy) {
 			for (int iz = goic.zmin; iz <= goic.zmin + goic.zlen; ++iz) {
 				GameChunk* ch = gameworld.chunck[ChunkIndex(ix, iy, iz)];
-				for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
-					BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
+				if (ch != nullptr) {
+					for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
+						BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
 
-					if (obb.Intersects(staticobb)) {
-						return true;
+						if (obb.Intersects(staticobb)) {
+							return true;
+						}
 					}
 				}
 			}
@@ -823,7 +856,7 @@ void GameMap::LoadMap(const char* MapName)
 	}
 
 	TextureTableStart = 0; // fix : 현재 MaterialTexture 개수
-	MaterialTableStart = 0; // fix : 현재 Material 개수
+	MaterialTableStart = gameworld.MaterialCount; // fix : 현재 Material 개수
 
 	constexpr char MeshDir[] = "Mesh/";
 	constexpr char TextureDir[] = "Texture/";
@@ -934,6 +967,7 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&tempRead, sizeof(int));
 		ifs.read((char*)&tempRead, sizeof(int));
 		ifs.read((char*)&tempRead, sizeof(int));
+		gameworld.MaterialCount += 1;
 	}
 
 	for (int i = 0; i < ModelCount; ++i) {
@@ -955,9 +989,15 @@ void GameMap::LoadMap(const char* MapName)
 		model_shapeindexes[i] = Shape::AddModel(modelName, pModel);
 	}
 
+	gameworld.Static_gameObjects.Init(gameObjectCount);
 	for (int i = 0; i < gameObjectCount; ++i) {
 		StaticGameObject* go = new StaticGameObject();
 		map->MapObjects[i] = go;
+		go->parent = -1;
+		go->childs = -1;
+		go->sibling = -1;
+		int index = gameworld.Static_gameObjects.Alloc();
+		gameworld.Static_gameObjects[i] = go;
 	}
 	for (int i = 0; i < gameObjectCount; ++i) {
 		StaticGameObject* go = map->MapObjects[i];
@@ -978,8 +1018,7 @@ void GameMap::LoadMap(const char* MapName)
 		world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
 		world.pos.f3 = pos.f3;
 		world.pos.w = 1;
-		go->SetWorld(world);
-		
+
 		char Mod = 'n';
 		ifs.read((char*)&Mod, sizeof(char));
 		if (Mod == 'n') { // mesh
@@ -992,7 +1031,7 @@ void GameMap::LoadMap(const char* MapName)
 				ifs.read((char*)&materialNum, sizeof(int));
 			}
 			else {
-				go->shapeindex = map->mesh_shapeindexes[meshid];
+				go->SetShape(map->mesh_shapeindexes[meshid]);
 				ifs.read((char*)&materialNum, sizeof(int));
 				go->material = new int[materialNum];
 				for (int k = 0; k < materialNum; ++k) {
@@ -1021,7 +1060,7 @@ void GameMap::LoadMap(const char* MapName)
 				go->shapeindex = -1;
 			}
 			else {
-				go->shapeindex = map->model_shapeindexes[ModelID];
+				go->SetShape(map->model_shapeindexes[ModelID]);
 			}
 
 			int nodeCount = Shape::ShapeTable[go->shapeindex].GetModel()->nodeCount;
@@ -1062,23 +1101,24 @@ void GameMap::LoadMap(const char* MapName)
 			int childCount = 0;
 			ifs.read((char*)&childCount, sizeof(int));
 			int cnt = 0;
-			StaticGameObject** temp = &map->MapObjects[go->childs];
+			StaticGameObject** temp = &go;
 			while (cnt < childCount) {
 				int childIndex = 0;
 				ifs.read((char*)&childIndex, sizeof(int));
 				*temp = map->MapObjects[childIndex];
 				(*temp)->parent = i;
-				temp = &map->MapObjects[(*temp)->sibling];
 				cnt += 1;
 			}
 		}
 		else {
 			go->childs = -1;
 		}
+
+		go->SetWorld(world);
 		map->MapObjects[i] = go;
 	}
 
-	BakeStaticCollision();
+	//BakeStaticCollision();
 }
 
 void Model::LoadModelFile2(string filename)
@@ -1090,59 +1130,126 @@ void Model::LoadModelFile2(string filename)
 	ifs.read((char*)&nodeCount, sizeof(unsigned int));
 	Nodes = new ModelNode[nodeCount];
 
+	int MaterialTableStart = gameworld.MaterialCount;
+
 	//new0
-	int mNumTextures;
-	int mNumMaterials;
+	unsigned int mNumTextures;
+	unsigned int mNumMaterials;
 	ifs.read((char*)&mNumTextures, sizeof(unsigned int));
 	ifs.read((char*)&mNumMaterials, sizeof(unsigned int));
-	vec4 tempRead;
+
+	int BSMCount = 0;
+	//unsigned int MaterialTableStart = gameworld.MaterialTable.size();
 	for (int i = 0; i < mNumMeshes; ++i) {
 		Mesh* mesh = new Mesh();
+		
+		bool hasBone = false;
+		ifs.read((char*)&hasBone, sizeof(bool));
+
 		XMFLOAT3 AABB[2];
 		ifs.read((char*)AABB, sizeof(XMFLOAT3) * 2);
 		mesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
-
 		//new1
 		//ifs.read((char*)&mesh->material_index, sizeof(int));
 
 		XMFLOAT3 MAABB[2];
 		unsigned int vertSiz = 0;
-		unsigned int indexSiz = 0;
+		unsigned int subMeshCount = 0;
 		ifs.read((char*)&vertSiz, sizeof(unsigned int));
-		ifs.read((char*)&indexSiz, sizeof(unsigned int));
+		ifs.read((char*)&subMeshCount, sizeof(unsigned int));
+		mesh->subMeshNum = subMeshCount;
 
-		unsigned int triSiz = indexSiz / 3;
+		int stackSiz = 0;
+		int prevSiz = 0;
+		int* SubMeshSlots = new int[subMeshCount + 1];
+		SubMeshSlots[0] = 0;
 
-		
-		for (int k = 0; k < vertSiz; ++k) {
-			ifs.read((char*)&tempRead, sizeof(XMFLOAT3));
-			if (k == 0) {
-				MAABB[0] = tempRead.f3;
-				MAABB[1] = tempRead.f3;
+		if (hasBone) {
+			BSMCount += 1;
+
+			for (int k = 0; k < vertSiz; ++k) {
+				XMFLOAT3 dumy = {0, 0, 0};
+				ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+				ifs.read((char*)&dumy, sizeof(float));
+				ifs.read((char*)&dumy, sizeof(float));
+				ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+				ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+
+				// non use
+				XMFLOAT3 bitangent;
+				ifs.read((char*)&bitangent, sizeof(XMFLOAT3));
+
+				//bonedata
+				int boneindex = 0;
+				float boneweight = 0;
+				for (int u = 0; u < 4; ++u) {
+					ifs.read((char*)&boneindex, sizeof(int));
+					ifs.read((char*)&boneweight, sizeof(float));
+				}
 			}
 
-			if (MAABB[0].x > tempRead.x) MAABB[0].x = tempRead.x;
-			if (MAABB[0].y > tempRead.y) MAABB[0].y = tempRead.y;
-			if (MAABB[0].z > tempRead.z) MAABB[0].z = tempRead.z;
+			for (int k = 0; k < subMeshCount; ++k) {
+				int indCnt = 0;
+				ifs.read((char*)&indCnt, sizeof(int));
+				int tricnt = (indCnt / 3);
+				stackSiz += tricnt;
+				UINT dumy = 0;
+				for (int k = 0; k < tricnt; ++k) {
+					ifs.read((char*)&dumy, sizeof(UINT));
+					ifs.read((char*)&dumy, sizeof(UINT));
+					ifs.read((char*)&dumy, sizeof(UINT));
+				}
+				prevSiz = stackSiz;
+				SubMeshSlots[k + 1] = 3 * prevSiz;
+			}
 
-			if (MAABB[1].x < tempRead.x) MAABB[1].x = tempRead.x;
-			if (MAABB[1].y < tempRead.y) MAABB[1].y = tempRead.y;
-			if (MAABB[1].z < tempRead.z) MAABB[1].z = tempRead.z;
+			UINT dumy = 0;
+			ifs.read((char*)&dumy, sizeof(int));
+			for (int k = 0; k < dumy; ++k) {
+				matrix offset;
+				ifs.read((char*)&offset, sizeof(matrix));
+			}
+			for (int k = 0; k < dumy; ++k) {
+				UINT dumy2 = 0;
+				ifs.read((char*)&dumy2, sizeof(int));
+			}
 
-			ifs.read((char*)&tempRead, sizeof(XMFLOAT2));
-			ifs.read((char*)&tempRead, sizeof(XMFLOAT3));
-			ifs.read((char*)&tempRead, sizeof(XMFLOAT3));
-
-			// non use
-			XMFLOAT3 bitangent;
-			ifs.read((char*)&bitangent, sizeof(XMFLOAT3));
+			mMeshes[i] = mesh;
 		}
-		for (int k = 0; k < triSiz; ++k) {
-			ifs.read((char*)&tempRead, sizeof(int) * 3);
-		}
+		else {
+			mesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
 
-		mesh->SetOBBDataWithAABB(MAABB[0], MAABB[1]);
-		mMeshes[i] = mesh;
+			for (int k = 0; k < vertSiz; ++k) {
+				XMFLOAT3 dumy = { 0, 0, 0 };
+				ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+
+				ifs.read((char*)&dumy, sizeof(float));
+				ifs.read((char*)&dumy, sizeof(float));
+				ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+				ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+
+				// non use
+				XMFLOAT3 bitangent;
+				ifs.read((char*)&bitangent, sizeof(XMFLOAT3));
+			}
+
+			for (int k = 0; k < subMeshCount; ++k) {
+				int indCnt = 0;
+				ifs.read((char*)&indCnt, sizeof(int));
+				int tricnt = (indCnt / 3);
+				stackSiz += tricnt;
+				for (int k = 0; k < tricnt; ++k) {
+					UINT dumy2 = 0;
+					ifs.read((char*)&dumy2, sizeof(UINT));
+					ifs.read((char*)&dumy2, sizeof(UINT));
+					ifs.read((char*)&dumy2, sizeof(UINT));
+				}
+				prevSiz = stackSiz;
+				SubMeshSlots[k + 1] = 3 * prevSiz;
+			}
+
+			mMeshes[i] = mesh;
+		}
 	}
 
 	for (int i = 0; i < nodeCount; ++i) {
@@ -1151,14 +1258,15 @@ void Model::LoadModelFile2(string filename)
 		char name[256] = {};
 		ifs.read((char*)name, namelen);
 		name[namelen] = 0;
-		//Nodes[i].name = name;
 
-		vec4 pos;
+		/*vec4 pos;
 		ifs.read((char*)&pos, sizeof(float) * 3);
 		vec4 rot = 0;
 		ifs.read((char*)&rot, sizeof(float) * 3);
 		vec4 scale = 0;
-		ifs.read((char*)&scale, sizeof(float) * 3);
+		ifs.read((char*)&scale, sizeof(float) * 3);*/
+		matrix WorldMat;
+		ifs.read((char*)&WorldMat, sizeof(matrix));
 
 		if (i == 0) {
 			matrix mat;
@@ -1166,17 +1274,16 @@ void Model::LoadModelFile2(string filename)
 			Nodes[i].transform = mat;
 		}
 		else {
-			matrix mat;
+			/*matrix mat;
 			mat.Id();
 			rot *= 3.141592f / 180.0f;
 			mat *= XMMatrixScaling(scale.x, scale.y, scale.z);
 			mat *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
 			mat.pos.f3 = pos.f3;
-			mat.pos.w = 1;
+			mat.pos.w = 1;*/
 
-			Nodes[i].transform = mat;
+			Nodes[i].transform = WorldMat;
 		}
-
 
 		int parent = 0;
 		ifs.read((char*)&parent, sizeof(int));
@@ -1196,43 +1303,75 @@ void Model::LoadModelFile2(string filename)
 			else Nodes[i].Childrens[k] = &Nodes[child];
 		}
 
+		int tempMeshIndexArr[256] = {};
 		for (int k = 0; k < Nodes[i].numMesh; ++k) {
 			ifs.read((char*)&Nodes[i].Meshes[k], sizeof(int));
 			int num_materials = 0;
 			ifs.read((char*)&num_materials, sizeof(int));
+			Nodes[i].materialIndex = new int[num_materials];
+
 			for (int u = 0; u < num_materials; ++u) {
 				int material_id = 0;
 				ifs.read((char*)&material_id, sizeof(int));
+				Nodes[i].materialIndex[u] = MaterialTableStart + material_id;
 			}
 		}
-	}
 
+		//ifs.read((char*)&Nodes[i].Meshes[0], sizeof(int) * Nodes[i].numMesh);
+
+		int ColliderCount = 0;
+		ifs.read((char*)&ColliderCount, sizeof(int));
+		Nodes[i].aabbArr.reserve(ColliderCount);
+		Nodes[i].aabbArr.resize(ColliderCount);
+		for (int k = 0; k < ColliderCount; ++k) {
+			ifs.read((char*)&Nodes[i].aabbArr[k].Center, sizeof(XMFLOAT3));
+			ifs.read((char*)&Nodes[i].aabbArr[k].Extents, sizeof(XMFLOAT3));
+		}
+	}
+	//new2
+
+	//mMaterials = new Material * [mNumMaterials];
 	for (int i = 0; i < mNumMaterials; ++i) {
+		vec4 dumy = 0;
 		int namelen = 0;
-		ifs.read((char*)&namelen, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(int));
 		char name[512] = {};
 		ifs.read((char*)name, namelen * sizeof(char));
 		name[namelen] = 0;
 
-		ifs.read((char*)&tempRead, sizeof(float) * 4);
-		ifs.read((char*)&tempRead, sizeof(float));
-		ifs.read((char*)&tempRead, sizeof(float));
-		ifs.read((char*)&tempRead, sizeof(float));
-		ifs.read((char*)&tempRead, sizeof(float) * 2);
-		ifs.read((char*)&tempRead, sizeof(float) * 2);
-		ifs.read((char*)&tempRead, sizeof(float) * 2);
-		ifs.read((char*)&tempRead, sizeof(float) * 2);
-		ifs.read((char*)&tempRead, sizeof(bool));
-		ifs.read((char*)&tempRead, sizeof(bool));
+		ifs.read((char*)&dumy, sizeof(float) * 4);
 
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
-		ifs.read((char*)&tempRead, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(float));
+
+		float smoothness = 0;
+		ifs.read((char*)&dumy, sizeof(float));
+
+		ifs.read((char*)&dumy, sizeof(float));
+
+		vec4 tiling, offset = 0;
+		vec4 tiling2, offset2 = 0;
+		ifs.read((char*)&tiling, sizeof(float) * 2);
+		ifs.read((char*)&offset, sizeof(float) * 2);
+		ifs.read((char*)&tiling2, sizeof(float) * 2);
+		ifs.read((char*)&offset2, sizeof(float) * 2);
+
+		bool isTransparent = false;
+		ifs.read((char*)&isTransparent, sizeof(bool));
+
+		bool emissive = 0;
+		ifs.read((char*)&emissive, sizeof(bool));
+
+		ifs.read((char*)&dumy, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(int));
+		ifs.read((char*)&dumy, sizeof(int));
+
+		int diffuse2, normal2 = 0;
+		ifs.read((char*)&diffuse2, sizeof(int));
+		ifs.read((char*)&normal2, sizeof(int));
+		gameworld.MaterialCount += 1;
 	}
 
 	RootNode = &Nodes[0];
@@ -1887,7 +2026,7 @@ void Monster::Respawn()
 
 BoundingOrientedBox Monster::GetOBB()
 {
-	BoundingOrientedBox obb_local = Shape::ShapeTable[shapeindex].GetMesh()->GetOBB();
+	BoundingOrientedBox obb_local = Shape::ShapeTable[shapeindex].GetModel()->GetOBB();
 	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
 	matrix id = XMMatrixIdentity();
@@ -2246,39 +2385,33 @@ void World::Init() {
 	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
 #endif
 
-	//bulletRays.Init(32);
-
-	Mesh* MyMesh = new Mesh();
-	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj");
-	int playerMesh_index = Shape::AddMesh("Player", MyMesh);
-
-	Mesh* MyGroundMesh = new Mesh();
-	MyGroundMesh->CreateWallMesh(40.0f, 0.5f, 40.0f);
-	int groundMesh_index = Shape::AddMesh("Ground001", MyGroundMesh);
-
-	Mesh* MyWallMesh = new Mesh();
-	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f);
-	int wallMesh_index = Shape::AddMesh("Wall001", MyWallMesh);
-
-	/*BulletRay::mesh = new Mesh();
-	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);*/
-
-	Mesh* MyMonsterMesh = new Mesh();
-	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj");
-	int monsterMesh_index = Shape::AddMesh("Monster001", MyMonsterMesh);
-
-	int newindex = 0;
-	int datacap = 0;
-
 	map.LoadMap("The_Port");
 	std::set<StaticGameObject*> goset;
 	for (int i = 0; i < map.MapObjects.size(); ++i) {
 		PushGameObject(map.MapObjects[i]);
 	}
 
+	//bulletRays.Init(32);
+
+	HumanoidAnimation hanim;
+	hanim.LoadHumanoidAnimation("Resources/Animation/BreakDance1990.Humanoid_animation");
+	HumanoidAnimationTable.push_back(hanim);
+
+	Model* PlayerModel = new Model();
+	PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
+	//PlayerModel->Retargeting_Humanoid(); // 휴머노이드 리타겟팅
+	int playerMesh_index = Shape::AddModel("Player", PlayerModel);
+
+	Model* MonsterModel = new Model();
+	MonsterModel->LoadModelFile2("Resources/Model/Remy.model");
+	int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
+
+	int newindex = 0;
+	int datacap = 0;
+
 	for (int i = 0; i < 20; ++i) {
 		Monster* myMonster_1 = new Monster();
-		myMonster_1->shapeindex = Shape::StrToShapeIndex["Monster001"];
+		myMonster_1->SetShape(monsterMesh_index);
 		//myMonster_1->mesh = (MyMonsterMesh);
 
 		myMonster_1->Init(XMMatrixTranslation(rand() % 80 - 40, 20.0f, rand() % 80 - 40));
@@ -2288,22 +2421,6 @@ void World::Init() {
 
 		newindex = NewObject((DynamicGameObject*)myMonster_1, GameObjectType::_Monster);
 	}
-
-	/*Monster* myMonster_2 = new Monster();
-	myMonster_2->MeshIndex = Mesh::GetMeshIndex("Monster001");
-	myMonster_2->mesh = *(MyMonsterMesh);
-	myMonster_2->Init(XMMatrixTranslation(-5.0f, 0.5f, -2.5f));
-	newindex = NewObject(myMonster_2, GameObjectType::_Monster);
-	datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
-	SendToAllClient(datacap);
-
-	Monster* myMonster_3 = new Monster();
-	myMonster_3->MeshIndex = Mesh::GetMeshIndex("Monster001");
-	myMonster_3->mesh = *(MyMonsterMesh);
-	myMonster_3->Init(XMMatrixTranslation(5.0f, 0.5f, -2.5f));
-	newindex = NewObject(myMonster_3, GameObjectType::_Monster);
-	datacap = Sending_SetMeshInGameObject(newindex, "Monster001");
-	SendToAllClient(datacap);*/
 
 	//그리드(노드)의 cango를 체크하는 함수
 	gridcollisioncheck();
@@ -2745,4 +2862,44 @@ bool World::CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfS
 
 	float dist2 = dx * dx + dy * dy + dz * dz;
 	return dist2 < (sphere.radius * sphere.radius);
+}
+
+void ClientData::DisconnectToServer(int index) {
+	cout << "client " << index << " Left the Game. \n";
+	int objindex = gameworld.clients[index].objindex;
+	delete gameworld.clients[index].pObjData;
+	gameworld.clients[index].pObjData = nullptr;
+	gameworld.Dynamic_gameObjects[objindex] = nullptr;
+	gameworld.Dynamic_gameObjects.Free(objindex);
+	gameworld.clients.Free(index);
+}
+
+void HumanoidAnimation::LoadHumanoidAnimation(string filename) {
+	ifstream ifs{ filename, ios_base::binary };
+	Duration = 0;
+	for (int i = 0; i < 55; ++i) {
+		int posKeyNum = 0;
+		int rotKeyNum = 0;
+		int scaleKeyNum = 0;
+		ifs.read((char*)&posKeyNum, sizeof(int));
+		ifs.read((char*)&rotKeyNum, sizeof(int));
+		ifs.read((char*)&scaleKeyNum, sizeof(int));
+		double time;
+		vec4 dumy = 0;
+		for (int k = 0; k < posKeyNum; ++k) {
+			ifs.read((char*)&time, sizeof(double));
+			ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+			Duration = max(time, Duration);
+		}
+		for (int k = 0; k < rotKeyNum; ++k) {
+			ifs.read((char*)&time, sizeof(double));
+			ifs.read((char*)&dumy, sizeof(XMFLOAT4));
+			Duration = max(time, Duration);
+		}
+		for (int k = 0; k < scaleKeyNum; ++k) {
+			ifs.read((char*)&time, sizeof(double));
+			ifs.read((char*)&dumy, sizeof(XMFLOAT3));
+			Duration = max(time, Duration);
+		}
+	}
 }

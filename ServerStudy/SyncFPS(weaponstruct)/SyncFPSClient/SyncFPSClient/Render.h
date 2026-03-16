@@ -6,6 +6,61 @@
 using namespace TTFFontParser;
 
 /*
+* 설명 :
+* GPU에 올렸거나 올릴 리소스의 디스크립터 핸들을 저장한다.
+* Sentinel Value
+* NULL = (hcpu == 0 && hgpu == 0)
+*/
+struct DescHandle {
+	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
+	D3D12_GPU_DESCRIPTOR_HANDLE hgpu;
+
+	DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE _hcpu, D3D12_GPU_DESCRIPTOR_HANDLE _hgpu) {
+		hcpu = _hcpu;
+		hgpu = _hgpu;
+	}
+	DescHandle() :
+		hcpu{ 0 }, hgpu{ 0 }
+	{
+	}
+
+	__forceinline void operator+=(unsigned long long inc) {
+		hcpu.ptr += inc;
+		hgpu.ptr += inc;
+	}
+
+	template<D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV>
+	__forceinline DescHandle operator[](UINT index);
+};
+
+struct OBB_vertexVector {
+	vec4 vertex[2][2][2] = { {{}} };
+};
+
+struct DescIndex {
+	bool isShaderVisible = false;
+	char type = 0; // 'n' - UAV, SRV, CBV / 'r' - RTV / 'd' - DSV
+	ui32 index;
+	DescIndex() {
+
+	}
+
+	DescIndex(bool isSV, ui32 i, char t = 'n') : isShaderVisible{ isSV }, index{ i }, type{ t } {
+
+	}
+
+	void Set(bool isSV, ui32 i, char t = 'n') {
+		isShaderVisible = isSV;
+		index = i;
+		type = t;
+	}
+	__forceinline DescHandle GetCreationDescHandle() const;
+	__forceinline DescHandle GetRenderDescHandle() const;
+	__declspec(property(get = GetCreationDescHandle)) const DescHandle hCreation;
+	__declspec(property(get = GetRenderDescHandle)) const DescHandle hRender;
+};
+
+/*
 * 설명 : 같은 종류의 셰이더에서 다르게 렌더링을 하려하기 때문에,
 * 어떤 렌더링을 사용할 것인지 선택할 수 있게 하는 enum.
 */
@@ -205,7 +260,11 @@ struct DescriptorAllotter {
 	* 매개변수 :
 	* int index : Desc 자리 인덱스
 	*/
-	__forceinline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(int index);
+	__forceinline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(int index) {
+		D3D12_CPU_DESCRIPTOR_HANDLE handle;
+		handle.ptr = pDescHeap->GetCPUDescriptorHandleForHeapStart().ptr + index * DescriptorSize;
+		return handle;
+	}
 };
 
 // [MainRenderTarget SRV]*SwapChainBufferCount [BlurTexture SRV] [SubRenderTarget SRV] [InstancingSRV] * cap, [TextureSRV] * cap, [MaterialCBV] * cap // immortal layer.
@@ -1181,16 +1240,6 @@ struct GlobalDevice {
 
 	// Texutre의 DESC를 할당/해제하여 수정이 가능한 텍스쳐 출력에 쓰이게 한다.
 	DescriptorAllotter TextureDescriptorAllotter;
-
-	// 텍스쳐들을 모아 놓은 것. 
-	// fix <뭔가 렌더링에서 통합된 구조를 원한다. 이것도 수정해야 할 수도 있다.>
-	// <주로 통신의 예전 버전때문에 어쩔 수 없이 넣은 느낌이다.>
-	GPUResource GlobalTextureArr[64] = {};
-	enum GlobalTexture {
-		GT_TileTex = 0,
-		GT_WallTex = 1,
-		GT_Monster = 2,
-	};
 
 	// CBV, SRV, UAV DESC의 증가 사이즈이다.
 	unsigned long long CBV_SRV_UAV_Desc_IncrementSiz = 0;
@@ -2193,7 +2242,7 @@ struct Material {
 		TextureSRVTableIndex = ref.TextureSRVTableIndex;
 	}
 
-	__forceinline void ShiftTextureIndexs(unsigned int TextureIndexStart);
+	void ShiftTextureIndexs(unsigned int TextureIndexStart);
 	void SetDescTable();
 	MaterialCB_Data GetMatCB();
 	MaterialST_Data GetMatST();
@@ -2740,3 +2789,50 @@ public:
 	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
 };
 
+#pragma region DescHandleAndIndexCode
+extern GlobalDevice gd;
+template<D3D12_DESCRIPTOR_HEAP_TYPE type>
+inline DescHandle DescHandle::operator[](UINT index)
+{
+	DescHandle handle = *this;
+	UINT incSiz = gd.CBVSRVUAVSize;
+	if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_RTV) {
+		incSiz = gd.RTVSize;
+	}
+	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV) {
+		incSiz = gd.DSVSize;
+	}
+	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {
+		incSiz = gd.SamplerDescSize;
+	}
+	handle.operator+=(index * incSiz);
+	return handle;
+}
+
+DescHandle DescIndex::GetCreationDescHandle() const
+{
+	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.NSVDescHeapCreationHandle[index];
+	else if (type == 'n') return DescHandle(gd.TextureDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'r') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index));
+	else if (type == 'd') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index));
+}
+
+DescHandle DescIndex::GetRenderDescHandle() const
+{
+	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.SVDescHeapRenderHandle[index];
+	else if (type == 'n') return DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE(0), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'r') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'd') return DescHandle(
+		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
+		D3D12_GPU_DESCRIPTOR_HANDLE(0));
+
+	return DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE(0), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+}
+
+#pragma endregion

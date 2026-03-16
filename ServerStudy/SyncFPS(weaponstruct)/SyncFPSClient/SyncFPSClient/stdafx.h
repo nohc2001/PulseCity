@@ -167,60 +167,7 @@ static inline ui64 GetTicks()
 	return ticks.QuadPart;
 }
 
-/*
-* 설명 : 
-* GPU에 올렸거나 올릴 리소스의 디스크립터 핸들을 저장한다.
-* Sentinel Value
-* NULL = (hcpu == 0 && hgpu == 0)
-*/
-struct DescHandle {
-	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
-	D3D12_GPU_DESCRIPTOR_HANDLE hgpu;
 
-	DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE _hcpu, D3D12_GPU_DESCRIPTOR_HANDLE _hgpu) {
-		hcpu = _hcpu;
-		hgpu = _hgpu;
-	}
-	DescHandle() :
-		hcpu{ 0 }, hgpu{ 0 }
-	{
-	}
-
-	__forceinline void operator+=(unsigned long long inc) {
-		hcpu.ptr += inc;
-		hgpu.ptr += inc;
-	}
-
-	template<D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV>
-	__forceinline DescHandle operator[](UINT index);
-};
-
-struct OBB_vertexVector {
-	vec4 vertex[2][2][2] = { {{}} };
-};
-
-struct DescIndex {
-	bool isShaderVisible = false;
-	char type = 0; // 'n' - UAV, SRV, CBV / 'r' - RTV / 'd' - DSV
-	ui32 index;
-	DescIndex() {
-
-	}
-
-	DescIndex(bool isSV, ui32 i, char t = 'n') : isShaderVisible{ isSV }, index{ i }, type{ t } {
-
-	}
-
-	void Set(bool isSV, ui32 i, char t = 'n') {
-		isShaderVisible = isSV;
-		index = i;
-		type = t;
-	}
-	__forceinline DescHandle GetCreationDescHandle() const;
-	__forceinline DescHandle GetRenderDescHandle() const;
-	__declspec(property(get = GetCreationDescHandle)) const DescHandle hCreation;
-	__declspec(property(get = GetRenderDescHandle)) const DescHandle hRender;
-};
 
 struct GameObject;
 struct SyncWay {
@@ -259,9 +206,7 @@ union GameObjectType {
 	static void* vptr[ObjectTypeCount];
 	static vector<STCMemberInfo> Server_STCMembers[ObjectTypeCount];
 	static vector<STCMemberInfo> Client_STCMembers[ObjectTypeCount];
-
-	
-	static unordered_map<int, SyncWay> STC_OffsetMap;
+	static unordered_map<int, SyncWay> STC_OffsetMap[ObjectTypeCount];
 
 	// 싱크되는 변수의 서버이름과 클라이언트 이름이 다른 경우 연결을 위해 사용.
 	static void LinkOffsetByName(short type, const char* ServerVarName, const char* ClientVarName);

@@ -10,6 +10,13 @@ Server server;
 vector<Item> ItemTable;
 
 int main() {
+	// 오류등이 한글로 표시되도록 한다.
+	wcout.imbue(locale("korean"));
+	//WSA 초기화
+	WSADATA wsa;
+	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+		return 1;
+
 	gameworld.PrintOffset();
 	gameworld.CommonSDS.Init(4096);
 
@@ -34,6 +41,46 @@ int main() {
 		if (DeltaFlow >= 0.016) { // limiting fps.
 			DeltaTime = (float)DeltaFlow;
 			gameworld.Update();
+			
+			indexRange ir[2048] = {};
+			int irlen = 0;
+			gameworld.clients.GetTourPairs(ir, &irlen);
+			WSABUF sendbuf[2];
+			sendbuf[1].buf = gameworld.CommonSDS.buffer;
+			sendbuf[1].len = gameworld.CommonSDS.size;
+			for (int i = 0;i < irlen;++i) {
+				for (int k = ir[i].start;k <= ir[i].end;++k) {
+					sendbuf[0].buf = gameworld.clients[k].PersonalSDS.buffer;
+					sendbuf[0].len = gameworld.clients[k].PersonalSDS.size;
+					DWORD retval = 0;
+
+					bool sendSuccess = true;
+					STARTSEND:
+					int err = WSASend(gameworld.clients[k].socket, sendbuf, 2, &retval, 0, NULL, NULL);
+					if (err == SOCKET_ERROR) {
+						int error = WSAGetLastError();
+						printf("Error code: %d\n", error);
+					}
+					if (retval != sendbuf[0].len + sendbuf[1].len) {
+						int sav = sendbuf[0].len;
+						sendbuf[0].len -= retval;
+						sendbuf[0].buf += retval;
+						if (sendbuf[0].len < 0) sendbuf[0].len = 0;
+						retval -= sav;
+						sendbuf[1].len -= retval;
+						sendbuf[1].buf += retval;
+						if (sendbuf[1].len < 0) sendbuf[0].len = 0;
+						sendSuccess = false;
+					}
+					if (sendSuccess == false) goto STARTSEND;
+
+					sendbuf[1].buf = gameworld.CommonSDS.buffer;
+					sendbuf[1].len = gameworld.CommonSDS.size;
+					gameworld.clients[k].PersonalSDS.Clear();
+				}
+			}
+			gameworld.CommonSDS.Clear();
+
 			DeltaFlow = 0;
 		}
 
@@ -66,12 +113,12 @@ int main() {
 			{
 				if (num == listenSockIndex) {
 					// 4
-					SOCKET tcpConnection = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+					//SOCKET tcpConnection = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 					string errorMessage;
 
 					int newindex = gameworld.clients.Alloc();
 					if (newindex >= 0) {
-						server.Accept(tcpConnection, errorMessage);
+						server.Accept(gameworld.clients[newindex].socket, errorMessage);
 						auto a = gameworld.clients[newindex].addr.ToString();
 						gameworld.clients[newindex].SetNonBlocking();
 
@@ -87,7 +134,7 @@ int main() {
 						p->clientIndex = clientindex;
 						p->worldMat.Id();
 						p->worldMat.pos.f3.y = 10;
-						p->shapeindex = Shape::StrToShapeIndex["Player"];
+						p->SetShape(Shape::StrToShapeIndex["Player"]);
 						//p->mesh = Mesh::StrToShapeMap["Player"];
 						for (int i = 0; i < 36; ++i) {
 							p->Inventory[i].id = 0;
@@ -95,6 +142,7 @@ int main() {
 						}
 
 						int objindex = gameworld.NewPlayer(gameworld.CommonSDS, p, clientindex);
+						gameworld.Sending_NewGameObject(gameworld.clients[newindex].PersonalSDS, objindex, p);
 						gameworld.clients[clientindex].pObjData = p;
 
 						//int datacap = gameworld.Sending_AllocPlayerIndex(newindex, objindex);
@@ -116,26 +164,35 @@ int main() {
 				else {
 					int index = num - 1;
 					if (gameworld.clients.isnull(index)) continue;
-					int result = gameworld.clients[index].recv(0);
-					if (result > 0) {
-						char* cptr = gameworld.clients[index].rbuf;
-
-					RECEIVE_LOOP:
-						int offset = gameworld.Receiving(index, cptr);
-						cptr += offset;
-						result -= offset;
-						if (result > 1) {
-							goto RECEIVE_LOOP;
+					ClientData& client = gameworld.clients[index];
+					while (1) {
+						int result = client.recv(client.rbuf + client.rbufoffset, client.rbufcap - client.rbufoffset, 0);
+						if (result > 0) {
+							char* cptr = client.rbuf;
+							result += client.rbufoffset;
+							int offset = gameworld.Receiving(index, cptr, result);
+							memmove(client.rbuf, client.rbuf + offset, result - offset);
+							client.rbufoffset = result - offset;
 						}
-					}
-					else if (result <= 0) {
-						cout << "client " << index << " Left the Game." << endl;
-						int objindex = gameworld.clients[index].objindex;
-						delete gameworld.clients[index].pObjData;
-						gameworld.clients[index].pObjData = nullptr;
-						gameworld.Dynamic_gameObjects[objindex] = nullptr;
-						gameworld.Dynamic_gameObjects.Free(objindex);
-						gameworld.clients.Free(index);
+						if (result == -1) {
+							if (WSAGetLastError() == WSAEWOULDBLOCK) {
+								// 아직 읽을 수 없다면 다음 루프로 넘긴다.
+								break;
+							}
+							else {
+								// 네트워크 오류가 발생되었거나 클라이언트가 죽은 상황
+								// TODO : 서버와의 연결 끊을때의 처리
+								ClientData::DisconnectToServer(index);
+								break;
+							}
+						}
+						else if (result == 0) {
+							// 서버가 종료됨.
+							// TODO : 서버와의 연결 끊을때의 처리
+							ClientData::DisconnectToServer(index);
+							break;
+						}
+						else break; // ??
 					}
 				}
 			}
@@ -144,6 +201,8 @@ int main() {
 
 		st = ft;
 	}
+
+	WSACleanup();
 	return 0;
 }
 
@@ -172,10 +231,46 @@ void World::Sending_SyncGameState(SendDataSaver& sds) {
 	sds.postpush_end();
 }
 
-int World::Receiving(int clientIndex, char* rBuffer) {
+int World::Receiving(int clientIndex, char* rBuffer, int totallen) {
 	ClientData& client = clients[clientIndex];
 	Player* p = (Player*)client.pObjData;
 
+	char* currentPivot = rBuffer;
+	int offset = 0;
+	int size;
+	CTS_Protocol type = CTS_Protocol::KeyInput;
+READ_START:
+	//if (offset + sizeof(int) > totallen) return offset;
+	size = *(int*)currentPivot;
+	if (offset + size >= totallen) return offset;
+	type = *(CTS_Protocol*)(currentPivot + sizeof(int));
+
+	switch (type) {
+	case CTS_Protocol::KeyInput:
+	{
+		CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
+		p->InputBuffer[header.Key] = header.isdown;
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::SyncRotation:
+	{
+		CTS_SyncRotation_Header& header = *(CTS_SyncRotation_Header*)currentPivot;
+		p->m_yaw = header.yaw;
+		p->m_pitch = header.pitch;
+		currentPivot += header.size;
+		offset += header.size;
+	}
+		break;
+	}
+
+	goto READ_START;
+
+	// fix 이 아래 코드는 이전 코드임.
+	// 사실 무기 바꾸는 코드는 여기 있는게 아니라 Update에 가야 하는데 여기에 있는 이유는
+	// 아마 Player 구조체에 이전 상태가 없어서 그런것 같다. 이 코드가 Update에 위치할 수 있도록 고쳐야 한다.
+	// 당장 생각나는 방법은 이중 버퍼링을 하는것?
 	if (rBuffer[0] == InputID::RotationSync) {
 		RotationPacket* pkt = (RotationPacket*)rBuffer;
 		p->m_yaw = pkt->yaw;
@@ -208,6 +303,7 @@ int World::Receiving(int clientIndex, char* rBuffer) {
 				return 2;
 			}
 		}
+
 		ui64 putv = (rBuffer[1] == 'D') ? 1 : 0;
 		BitBoolArr_ui64* bit = &p->InputBuffer[rBuffer[0]];
 		*bit = putv;

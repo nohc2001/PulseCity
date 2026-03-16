@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "main.h"
-#include "Game.h"
 #include "Render.h"
+#include "Game.h"
 #include "GameObject.h"
 #include "NetworkDefs.h"
 
@@ -15,18 +15,13 @@ template <typename T> void* GetVptr() {
 	return *(void**)&a;
 }
 
-#define SERVER_RELEASE
-#ifndef SERVER_RELEASE
-#define SERVER_DEBUG
-#endif
-
 extern GlobalDevice gd;
 Game game;
 
 void* GameObjectType::vptr[GameObjectType::ObjectTypeCount];
 vector<STCMemberInfo> GameObjectType::Server_STCMembers[GameObjectType::ObjectTypeCount];
 vector<STCMemberInfo> GameObjectType::Client_STCMembers[GameObjectType::ObjectTypeCount];
-unordered_map<int, SyncWay> GameObjectType::STC_OffsetMap;
+unordered_map<int, SyncWay> GameObjectType::STC_OffsetMap[GameObjectType::ObjectTypeCount];
 
 // 싱크되는 변수의 서버이름과 클라이언트 이름이 다른 경우 연결을 위해 사용.
 void GameObjectType::LinkOffsetByName(short type, const char* ServerVarName, const char* ClientVarName) {
@@ -36,7 +31,7 @@ void GameObjectType::LinkOffsetByName(short type, const char* ServerVarName, con
 			for (int u = 0;u < Client_STCMembers[type].size();++u) {
 				STCMemberInfo& cminfo = Client_STCMembers[type][u];
 				if (strcmp(cminfo.name, ClientVarName) == 0) {
-					STC_OffsetMap.insert(pair<int, SyncWay>(minfo.offset, SyncWay(cminfo.offset)));
+					STC_OffsetMap[type].insert(pair<int, SyncWay>(minfo.offset, SyncWay(cminfo.offset)));
 					return;
 				}
 			}
@@ -49,7 +44,7 @@ void GameObjectType::LinkOffsetAsFunction(short type, const char* ServerVarName,
 	for (int k = 0;k < Server_STCMembers[type].size();++k) {
 		STCMemberInfo& minfo = Server_STCMembers[type][k];
 		if (strcmp(minfo.name, ServerVarName) == 0) {
-			STC_OffsetMap.insert(pair<int, SyncWay>(minfo.offset, SyncWay(func)));
+			STC_OffsetMap[type].insert(pair<int, SyncWay>(minfo.offset, SyncWay(func)));
 		}
 	}
 }
@@ -94,7 +89,7 @@ void GameObjectType::STATICINIT() {
 			for (int u = 0;u < Client_STCMembers[i].size();++u) {
 				STCMemberInfo& cminfo = Client_STCMembers[i][u];
 				if (strcmp(minfo.name, cminfo.name) == 0) {
-					STC_OffsetMap.insert(pair<int, SyncWay>(minfo.offset, SyncWay(cminfo.offset)));
+					STC_OffsetMap[i].insert(pair<int, SyncWay>(minfo.offset, SyncWay(cminfo.offset)));
 					break;
 				}
 			}
@@ -314,6 +309,7 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 		sizeof(Particle) * count,
 		1,
 		DXGI_FORMAT_UNKNOWN,
+		1,
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
 	);
 
@@ -373,27 +369,6 @@ void Game::Init()
 	// particle texture
 	FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", DXGI_FORMAT_UNKNOWN, 1, true);
 
-	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex].CreateTexture_fromFile(L"Resources/Tiles036_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
-	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_TileTex]);
-	Material TileMat;
-	TileMat.ti.Diffuse = game.TextureTable.size() - 1;
-	TileMat.SetDescTable(); // (int)gd.GlobalDevice::GM_TileTex
-	game.MaterialTable.push_back(TileMat);
-	
-	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_WallTex].CreateTexture_fromFile(L"Resources/Chip001_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
-	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_WallTex]);
-	Material WallMat;
-	WallMat.ti.Diffuse = game.TextureTable.size() - 1;
-	WallMat.SetDescTable();
-	game.MaterialTable.push_back(WallMat);
-
-	gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster].CreateTexture_fromFile(L"Resources/PaintedMetal004_1K-PNG_Color.png", game.basicTexFormat, game.basicTexMip);
-	game.TextureTable.push_back(&gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster]);
-	Material MonsterMat;
-	MonsterMat.ti.Diffuse = game.TextureTable.size() - 1;
-	MonsterMat.SetDescTable();
-	game.MaterialTable.push_back(MonsterMat);
-
 	Map = new GameMap();
 	Map->LoadMap("The_Port");
 
@@ -410,52 +385,46 @@ void Game::Init()
 	BumpMesh* ItemMesh = new BumpMesh();
 	ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
 	ItemTable.push_back(Item(0, vec4(0, 0, 0, 0), nullptr, nullptr, L"")); // blank space in inventory.
-	ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_Monster], L"[빨간 탄알집]"));
-	ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &gd.GlobalTextureArr[(int)gd.GlobalDevice::GT_WallTex], L"[녹색 탄알집]"));
+	ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &DefaultTex, L"[빨간 탄알집]"));
+	ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &DefaultTex, L"[녹색 탄알집]"));
 	ItemTable.push_back(Item(3, vec4(0, 0, 1, 1), ItemMesh, &DefaultTex, L"[하얀 탄알집]")); // test items. red, green, blue bullet mags.
 
-	
+	HumanoidAnimation hanim;
+	hanim.LoadHumanoidAnimation("Resources/Animation/BreakDance1990.Humanoid_animation");
+	HumanoidAnimationTable.push_back(hanim);
 
-	BumpMesh* MyMesh = (BumpMesh*)new BumpMesh();
-	MyMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 1, 1, 1 });
-	Shape::AddMesh("Player", MyMesh);
+	Model* PlayerModel = new Model();
+	PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
+	//PlayerModel->Retargeting_Humanoid(); // 휴머노이드 리타겟팅
+	int playerMesh_index = Shape::AddModel("Player", PlayerModel);
 
-	BumpMesh* MyGroundMesh = (BumpMesh*)new BumpMesh();
-	MyGroundMesh->CreateWallMesh(40.0f, 0.5f, 40.0f, { 1, 1, 1, 1 });
-	Shape::AddMesh("Ground001", MyGroundMesh);
+	Model* MonsterModel = new Model();
+	MonsterModel->LoadModelFile2("Resources/Model/Remy.model");
+	int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
 
-	BumpMesh* MyWallMesh = (BumpMesh*)new BumpMesh();
-	MyWallMesh->CreateWallMesh(5.0f, 2.0f, 1.0f, { 1, 1, 1, 1 });
-	Shape::AddMesh("Wall001", MyWallMesh);
+	//// LOD Sphere Mesh 생성
+	//Mesh* SphereHigh = new Mesh();
+	//SphereHigh->CreateSphereMesh(gd.gpucmd, 1.5f, 10, 5, vec4(1, 0, 0, 1)); // 100 triangles
+	//Shape::AddMesh("SphereHigh100", SphereHigh);
 
-	// LOD Sphere Mesh 생성
-	Mesh* SphereHigh = new Mesh();
-	SphereHigh->CreateSphereMesh(gd.gpucmd, 1.5f, 10, 5, vec4(1, 0, 0, 1)); // 100 triangles
-	Shape::AddMesh("SphereHigh100", SphereHigh);
+	//Mesh* SphereLow = new Mesh();
+	//SphereLow->CreateSphereMesh(gd.gpucmd, 1.5f, 5, 2, vec4(0, 1, 0, 1));   // 20 triangles
+	//Shape::AddMesh("SphereLow20", SphereLow);
 
-	Mesh* SphereLow = new Mesh();
-	SphereLow->CreateSphereMesh(gd.gpucmd, 1.5f, 5, 2, vec4(0, 1, 0, 1));   // 20 triangles
-	Shape::AddMesh("SphereLow20", SphereLow);
+	////LOD Sphere Object 생성
+	//SphereLODObject* lodSphere = new SphereLODObject();
+	//lodSphere->MeshNear = SphereHigh;
+	//lodSphere->MeshFar = SphereLow;
+	///*lodSphere->m_pShader = MyShader;
+	//lodSphere->MaterialIndex = 0;*/
+	//lodSphere->FixedPos = vec4(5, 5, 0, 1);
+	//lodSphere->worldMat = (XMMatrixTranslation(5.0f, 5.0f, 0.0f));
+	//lodSphere->SwitchDistance = 20.0f;
 
-	//LOD Sphere Object 생성
-	SphereLODObject* lodSphere = new SphereLODObject();
-	lodSphere->MeshNear = SphereHigh;
-	lodSphere->MeshFar = SphereLow;
-	/*lodSphere->m_pShader = MyShader;
-	lodSphere->MaterialIndex = 0;*/
-	lodSphere->FixedPos = vec4(5, 5, 0, 1);
-	lodSphere->worldMat = (XMMatrixTranslation(5.0f, 5.0f, 0.0f));
-	lodSphere->SwitchDistance = 20.0f;
-
-	game.DynmaicGameObjects.push_back(lodSphere);
-
+	//game.DynmaicGameObjects.push_back(lodSphere);
 
 	BulletRay::mesh = (Mesh*)new Mesh();
 	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
-
-	BumpMesh* MyMonsterMesh = (BumpMesh*)new BumpMesh();
-	MyMonsterMesh->ReadMeshFromFile_OBJ("Resources/Mesh/PlayerMesh.obj", { 1, 0, 0, 1 });
-	Shape::AddMesh("Monster001", MyMonsterMesh);
 
 	//game.GunModel = new Model;
 	//game.GunModel->LoadModelFile("Resources/Model/sniper.model");
@@ -1181,7 +1150,7 @@ void Game::Update()
 	}
 
 	while (true) {
-		int result = client.recv(client.rBuf + client.rbufOffset, client.rbufMax - client.rbufOffset, 0);
+		int result = client.recv(client.rBuf + client.rbufOffset, client.rbufMax - client.rbufOffset);
 		if (result > 0) {
 			char* cptr = client.rBuf;
 			result += client.rbufOffset;
@@ -1273,12 +1242,14 @@ int Game::Receiving(char* ptr, int totallen)
 {
 	char* currentPivot = ptr;
 	int offset = 0;
-
-	int size = *(int*)currentPivot;
-	if (offset + size > totallen) {
+	unsigned int size;
+	STCProtocol type = STCProtocol::SyncGameObject;
+READ_START:
+	size = *(unsigned int*)currentPivot;
+	if (offset + size >= totallen) {
 		return offset;
 	}
-	STCProtocol type = *(STCProtocol*)(currentPivot + sizeof(int));
+	type = *(STCProtocol*)(currentPivot + sizeof(int));
 	switch (type) {
 	case STCProtocol::SyncGameObject:
 	{
@@ -1339,6 +1310,22 @@ int Game::Receiving(char* ptr, int totallen)
 					}
 				}
 			}
+			else {
+				switch (header.type) {
+				case GameObjectType::_DynamicGameObject:
+					DynmaicGameObjects[header.objindex] = new DynamicGameObject();
+					break;
+				case GameObjectType::_SkinMeshGameObject:
+					DynmaicGameObjects[header.objindex] = new SkinMeshGameObject();
+					break;
+				case GameObjectType::_Player:
+					DynmaicGameObjects[header.objindex] = new Player();
+					break;
+				case GameObjectType::_Monster:
+					DynmaicGameObjects[header.objindex] = new Monster();
+					break;
+				}
+			}
 
 			DynmaicGameObjects[header.objindex]->RecvSTC_SyncObj(datapivot);
 		}
@@ -1352,43 +1339,45 @@ int Game::Receiving(char* ptr, int totallen)
 	{
 		STC_ChangeMemberOfGameObject_Header& header = *(STC_ChangeMemberOfGameObject_Header*)currentPivot;
 		char* datapivot = currentPivot + sizeof(STC_ChangeMemberOfGameObject_Header);
-		
+
+		auto f = GameObjectType::STC_OffsetMap[header.type].find(header.serveroffset);
+		if (f != GameObjectType::STC_OffsetMap[header.type].end()) {
+			SyncWay& sw = f->second;
+			char* source = datapivot;
+			if (sw.clientOffset == -1) {
+				sw.syncfunc(DynmaicGameObjects[header.objindex], source, header.datasize);
+			}
+			else {
+				char* dest = (((char*)DynmaicGameObjects[header.objindex]) + sw.clientOffset);
+				memcpy(dest, source, header.datasize);
+			}
+		}
+
 		currentPivot += header.size;
 		offset += header.size;
 	}
 	break;
 	case STCProtocol::NewRay:
 	{
-		//수정필요
-		vec4 start, direction;
-		float distance;
-		start.f3 = *(XMFLOAT3*)&ptr[offset];
-		start.w = 0;
-		offset += 12;
-		direction.f3 = *(XMFLOAT3*)&ptr[offset];
-		direction.w = 0;
-		offset += 12;
-		distance = *(float*)&ptr[offset];
-		offset += 4;
-
+		STC_NewRay_Header& header = *(STC_NewRay_Header*)currentPivot;
 		int BulletIndex = bulletRays.Alloc();
 		if (BulletIndex < 0) {
 			return offset;
 		}
 		BulletRay& bray = bulletRays[BulletIndex];
-		bray = BulletRay(start, direction, distance);
+		bray = BulletRay(header.raystart, header.rayDir, header.distance);
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	case STCProtocol::AllocPlayerIndexes:
 	{
-		int clientindex = *(int*)&ptr[offset];
-		offset += 4;
-		int objindex = *(int*)&ptr[offset];
-		offset += 4;
-		game.clientIndexInServer = clientindex;
-		game.playerGameObjectIndex = objindex;
+		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)currentPivot;
 
-		if (game.DynmaicGameObjects.size() <= objindex || objindex < 0) {
+		game.clientIndexInServer = header.clientindex;
+		game.playerGameObjectIndex = header.server_obj_index;
+
+		if (game.DynmaicGameObjects.size() <= header.server_obj_index || header.server_obj_index < 0) {
 			return offset;
 		}
 
@@ -1434,77 +1423,68 @@ int Game::Receiving(char* ptr, int totallen)
 		}
 
 		game.isPreparedGo = true;
+
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	case STCProtocol::DeleteGameObject:
 	{
-		int objindex = *(int*)&ptr[offset];
-		if (game.DynmaicGameObjects.size() <= objindex || objindex < 0) {
+		STC_DeleteGameObject_Header& header = *(STC_DeleteGameObject_Header*)currentPivot;
+		if (game.DynmaicGameObjects.size() <= header.obj_index || header.obj_index < 0) {
 			return 2;
 		}
-		offset += 4;
-		DynmaicGameObjects[objindex]->tag[GameObjectTag::Tag_Enable] = false;
-		delete DynmaicGameObjects[objindex];
-		DynmaicGameObjects[objindex] = nullptr;
+		DynmaicGameObjects[header.obj_index]->tag[GameObjectTag::Tag_Enable] = false;
+		delete DynmaicGameObjects[header.obj_index];
+		DynmaicGameObjects[header.obj_index] = nullptr;
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	case STCProtocol::ItemDrop:
 	{
-		int newindex = 0;
-		ItemLoot il;
-		newindex = *(int*)&ptr[offset];
-		offset += sizeof(int);
-		il = *(ItemLoot*)&ptr[offset];
-		offset += sizeof(ItemLoot);
-
-		if (newindex >= game.DropedItems.size()) {
-			while (newindex >= game.DropedItems.size()) {
+		STC_ItemDrop_Header& header = *(STC_ItemDrop_Header*)currentPivot;
+		if (header.dropindex >= game.DropedItems.size()) {
+			while (header.dropindex >= game.DropedItems.size()) {
 				ItemLoot til;
 				til.pos = 0;
 				til.itemDrop.id = 0;
 				til.itemDrop.ItemCount = 0;
 				game.DropedItems.push_back(til);
 			}
-			game.DropedItems[newindex] = il;
+			game.DropedItems[header.dropindex] = header.lootData;
 		}
 		else {
-			game.DropedItems[newindex] = il;
+			game.DropedItems[header.dropindex] = header.lootData;
 		}
-		return offset;
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	case STCProtocol::ItemDropRemove:
 	{
-		int dindex = 0;
-		ItemLoot il;
-		dindex = *(int*)&ptr[offset];
-		offset += sizeof(int);
-		game.DropedItems[dindex].itemDrop.id = 0;
-		game.DropedItems[dindex].itemDrop.ItemCount = 0;
-		game.DropedItems[dindex].pos = vec4(0, 0, 0, 0);
-		return offset;
+		STC_ItemDropRemove_Header& header = *(STC_ItemDropRemove_Header*)currentPivot;
+		game.DropedItems[header.dropindex].itemDrop.id = 0;
+		game.DropedItems[header.dropindex].itemDrop.ItemCount = 0;
+		game.DropedItems[header.dropindex].pos = vec4(0, 0, 0, 0);
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	case STCProtocol::InventoryItemSync:
 	{
-		int inventoryindex = 0;
-		ItemStack il;
-		il = *(ItemStack*)&ptr[offset];
-		offset += sizeof(ItemStack);
-		inventoryindex = *(int*)&ptr[offset];
-		offset += sizeof(int);
-		game.player->Inventory[inventoryindex].id = il.id;
-		game.player->Inventory[inventoryindex].ItemCount = il.ItemCount;
-		return offset;
+		STC_InventoryItemSync_Header& header = *(STC_InventoryItemSync_Header*)currentPivot;
+		game.player->Inventory[header.inventoryIndex].id = header.Iteminfo.id;
+		game.player->Inventory[header.inventoryIndex].ItemCount = header.Iteminfo.ItemCount;
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	case STCProtocol::PlayerFire:
 	{
-		int objindex = *(int*)&ptr[offset];
-		offset += 4;
-
-		if (objindex >= 0 && objindex < DynmaicGameObjects.size() && DynmaicGameObjects[objindex] != nullptr) {
-			GameObject* pObj = DynmaicGameObjects[objindex];
+		STC_PlayerFire_Header& header = *(STC_PlayerFire_Header*)currentPivot;
+		if (header.objindex >= 0 && header.objindex < DynmaicGameObjects.size() && DynmaicGameObjects[header.objindex] != nullptr) {
+			GameObject* pObj = DynmaicGameObjects[header.objindex];
 
 			void* objVptr = *(void**)pObj;
 
@@ -1516,15 +1496,25 @@ int Game::Receiving(char* ptr, int totallen)
 				}
 			}
 		}
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
-
 	case STCProtocol::SyncGameState:
 	{
-
+		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)currentPivot;
+		game.DynmaicGameObjects.reserve(header.DynamicGameObjectCapacity);
+		game.DynmaicGameObjects.resize(header.DynamicGameObjectCapacity);
+		game.StaticGameObjects.reserve(header.StaticGameObjectCapacity);
+		game.StaticGameObjects.resize(header.StaticGameObjectCapacity);
+		currentPivot += header.size;
+		offset += header.size;
 	}
 	break;
 	}
+
+	goto READ_START;
+
 	return offset;
 }
 
