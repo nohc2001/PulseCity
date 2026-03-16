@@ -201,56 +201,6 @@ struct ShaderVisibleDescriptorPool
 	void	Reset();
 };
 
-// [MainRenderTarget SRV]*SwapChainBufferCount [BlurTexture SRV] [SubRenderTarget SRV] [InstancingSRV] * cap, [TextureSRV] * cap, [MaterialCBV] * cap // immortal layer.
-// //dynamic layer
-struct SVDescPool2
-{
-	UINT AllocatedDescriptorCount = 0;
-	UINT MaxDescCount = 0;
-	UINT DynamicSize = 0;
-	ID3D12DescriptorHeap* pNSVDescHeapForCreation = nullptr;
-	DescHandle NSVDescHeapCreationHandle;
-
-	ID3D12DescriptorHeap* pSVDescHeapForRender = nullptr;
-	DescHandle SVDescHeapRenderHandle;
-
-	ID3D12DescriptorHeap* NSVDescHeapForCopy = nullptr;
-	DescHandle NSVDescHeapCopyHandle;
-
-	ui32 InitDescArrSiz;
-	union {
-		ui32 InitDescArrCap;
-		ui32 TextureSRVStart;
-	};
-	ui32 TextureSRVSiz;
-	ui32 TextureSRVCap;
-	ui32 MaterialCBVSiz;
-	ui32 MaterialCBVCap;
-	ui32 InstancingSRVSiz;
-	ui32 InstancingSRVCap;
-
-	bool isImmortalChange = false;
-	__forceinline const ui32 getImmortalSiz() const {
-		return InitDescArrCap + TextureSRVCap + MaterialCBVCap + InstancingSRVCap;
-	}
-	__declspec(property(get = getImmortalSiz)) const ui32 ImmortalSize;
-
-	void Release();
-	BOOL Initialize(UINT MaxDescriptorCount);
-	BOOL DynamicAlloc(DescHandle* pHandle, UINT DescriptorCount);
-
-	BOOL ImmortalAlloc(DescIndex* pindex, UINT DescriptorCount);
-	BOOL ImmortalAlloc_TextureSRV(DescIndex* pindex, UINT DescriptorCount);
-	BOOL ImmortalAlloc_MaterialCBV(DescIndex* pindex, UINT DescriptorCount);
-	BOOL ImmortalAlloc_InstancingSRV(DescIndex* pindex, UINT DescriptorCount);
-
-	void ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRVCap, ui32 newMaterialCBVCap, ui32 newInstancingSRVCap);
-	void BakeImmortalDesc();
-
-	bool IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu);
-	void DynamicReset();
-};
-
 struct GPUResource {
 	ID3D12Resource2* resource;
 
@@ -262,7 +212,8 @@ struct GPUResource {
 	ui32 extraData;
 
 	D3D12_GPU_VIRTUAL_ADDRESS pGPU;
-	DescIndex descindex;
+	D3D12_CPU_DESCRIPTOR_HANDLE hCpu;
+	D3D12_GPU_DESCRIPTOR_HANDLE hGpu;
 
 	void AddResourceBarrierTransitoinToCommand(ID3D12GraphicsCommandList* cmd, D3D12_RESOURCE_STATES afterState);
 	D3D12_RESOURCE_BARRIER GetResourceBarrierTransition(D3D12_RESOURCE_STATES afterState);
@@ -401,7 +352,7 @@ struct SpotLight {
 	matrix View;
 	GPUResource ShadowMap;
 	vec4 LightPos;
-	DescIndex descindex;
+	DescHandle renderDesc;
 	ViewportData viewport;
 };
 
@@ -422,131 +373,3 @@ struct ParticlePool
 	GPUResource Buffer;
 	UINT Count;
 };
-
-
-
-#pragma region RootParamSetTypes
-union GRegID {
-	unsigned int id;
-	struct {
-		unsigned short _num;
-		char _padding;
-		char _type;
-	};
-
-	GRegID() {}
-	~GRegID() {}
-
-	GRegID(char type, unsigned short num) :
-		_type{ type }, _padding{ 0 }, _num{ num }
-	{
-
-	}
-
-	GRegID(const GRegID& reg) {
-		id = reg.id;
-	}
-};
-
-struct RootParam1 {
-	union {
-		CD3DX12_ROOT_PARAMETER1 data;
-		D3D12_ROOT_PARAMETER1 origin;
-	};
-	vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
-
-	operator D3D12_ROOT_PARAMETER1() {
-		return origin;
-	}
-
-	RootParam1() {}
-	~RootParam1() {}
-
-	void PushDescRange(GRegID regid, const char* RangeType, UINT NumDesc, D3D12_DESCRIPTOR_RANGE_FLAGS flags, UINT registerSpace = 0, UINT OffsetInDescTable = 0) {
-		CD3DX12_DESCRIPTOR_RANGE1 range;
-		bool error = false;
-		if (strcmp(RangeType, "SRV") == 0) {
-			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-			error |= regid._type != 't';
-		}
-		else if (strcmp(RangeType, "UAV") == 0) {
-			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-			error |= regid._type != 'u';
-		}
-		else if (strcmp(RangeType, "CBV") == 0) {
-			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-			error |= regid._type != 'b';
-		}
-		else if (strcmp(RangeType, "Sampler") == 0) {
-			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-			error |= regid._type != 's';
-		}
-
-		if (error) {
-			dbglog2(L"ERROR set DescRange! %c %d", regid._type, regid._num);
-		}
-		else {
-			regid._type = 0;
-			range.NumDescriptors = NumDesc;
-			range.BaseShaderRegister = regid.id;
-			range.RegisterSpace = registerSpace;
-			range.Flags = flags;
-			range.OffsetInDescriptorsFromTableStart = OffsetInDescTable;
-			ranges.push_back(range);
-		}
-	}
-
-	void DescTable(D3D12_SHADER_VISIBILITY visible) {
-		data.InitAsDescriptorTable(ranges.size(), ranges.data(), visible);
-	}
-
-	static D3D12_ROOT_PARAMETER1 Const32s(GRegID regid, UINT DataSize_num32bitValue, D3D12_SHADER_VISIBILITY visible, UINT registerSpace = 0) {
-		RootParam1 rp;
-		if (regid._type == 'b') {
-			UINT reg = regid._num;
-			rp.data.InitAsConstants(DataSize_num32bitValue, reg, registerSpace, visible);
-		}
-		else {
-			dbglog2(L"ERROR set RootParam! Const32s %c %d", regid._type, regid._num);
-		}
-
-		return rp.origin;
-	}
-
-	static D3D12_ROOT_PARAMETER1 CBV(GRegID regid, D3D12_SHADER_VISIBILITY visible, D3D12_ROOT_DESCRIPTOR_FLAGS flags, UINT registerSpace = 0) {
-		RootParam1 rp;
-		if (regid._type == 'b') {
-			regid._type = 0;
-			rp.data.InitAsConstantBufferView(regid.id, registerSpace, flags, visible);
-		}
-		else {
-			dbglog2(L"ERROR set RootParam! CBV %c %d", regid._type, regid._num);
-		}
-		return rp.origin;
-	}
-
-	static D3D12_ROOT_PARAMETER1 SRV(GRegID regid, D3D12_SHADER_VISIBILITY visible, D3D12_ROOT_DESCRIPTOR_FLAGS flags, UINT registerSpace = 0) {
-		RootParam1 rp;
-		if (regid._type == 't') {
-			regid._type = 0;
-			rp.data.InitAsShaderResourceView(regid.id, registerSpace, flags, visible);
-		}
-		else {
-			dbglog2(L"ERROR set RootParam! SRV %c %d", regid._type, regid._num);
-		}
-		return rp.origin;
-	}
-
-	static D3D12_ROOT_PARAMETER1 UAV(GRegID regid, D3D12_SHADER_VISIBILITY visible, D3D12_ROOT_DESCRIPTOR_FLAGS flags, UINT registerSpace = 0) {
-		RootParam1 rp;
-		if (regid._type == 'u') {
-			regid._type = 0;
-			rp.data.InitAsUnorderedAccessView(regid.id, registerSpace, flags, visible);
-		}
-		else {
-			dbglog2(L"ERROR set RootParam! UAV %c %d", regid._type, regid._num);
-		}
-		return rp.origin;
-	}
-};
-#pragma endregion

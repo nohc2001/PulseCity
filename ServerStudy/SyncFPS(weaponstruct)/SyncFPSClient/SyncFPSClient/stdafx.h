@@ -14,7 +14,6 @@
 #include <winsock2.h>
 #include <cstdint>
 #include <fstream>
-#include <iomanip>
 
 #include <Windows.h>
 #include <d3d12.h>
@@ -31,21 +30,12 @@
 #include <string>
 #include <unordered_map>
 #include <random>
-
-#include <dxcapi.h>
-#include <d3d12sdklayers.h>
-#include <wrl.h>
-
 #include "NWLib/CustomNWLib.h"
 #include "Utill_ImageFormating.h"
 
 #include "vecset.h"
 #include "SpaceMath.h"
 #include "RangeArr.h"
-
-#include "D3D_Util/DXSampleHelper.h"
-#include "D3D_Util/ShaderUtil.h"
-#include "D3D_Util/DirectXRaytracingHelper.h"
 
 typedef unsigned char byte8;
 typedef unsigned short ui16;
@@ -61,74 +51,31 @@ using namespace std;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
-int dbgc[128] = {};
-void dbgbreak(bool condition) {
-	if (condition) __debugbreak();
-}
+// improve : not just wchar, char also. function name is dbglogaN
 #pragma region dbglogDefines
 #define dbglog1(format, A) \
 	{\
-		wchar_t str[512] = {}; \
-		wchar_t format0[128] = L"%s line %d : "; \
-		wcscpy_s(format0+13, 128-13, format);\
-		swprintf_s(str, 512, format0, _T(__FUNCTION__), __LINE__, A); \
+		wchar_t str[128] = {}; \
+		swprintf_s(str, 128, format, A); \
 		OutputDebugString(str);\
 	}
 #define dbglog2(format, A, B) \
 	{\
-		wchar_t str[512] = {}; \
-		wchar_t format0[128] = L"%s line %d : "; \
-		wcscpy_s(format0+13, 128-13, format);\
-		swprintf_s(str, 512, format0, _T(__FUNCTION__), __LINE__, A, B); \
+		wchar_t str[128] = {}; \
+		swprintf_s(str, 128, format, A, B); \
 		OutputDebugString(str);\
 	}
 #define dbglog3(format, A, B, C) \
 	{\
-		wchar_t str[512] = {}; \
-		wchar_t format0[128] = L"%s line %d : "; \
-		wcscpy_s(format0+13, 128-13, format);\
-		swprintf_s(str, 512, format0, _T(__FUNCTION__), __LINE__, A, B, C); \
+		wchar_t str[128] = {}; \
+		swprintf_s(str, 128, format, A, B, C); \
 		OutputDebugString(str);\
 	}
 #define dbglog4(format, A, B, C, D) \
 	{\
-		wchar_t str[512] = {}; \
-		wchar_t format0[128] = L"%s line %d : "; \
-		wcscpy_s(format0+13, 128-13, format);\
-		swprintf_s(str, 512, format, _T(__FUNCTION__), __LINE__, A, B, C, D); \
+		wchar_t str[128] = {}; \
+		swprintf_s(str, 128, format, A, B, C, D); \
 		OutputDebugString(str);\
-	}
-#define dbglog1a(format, A) \
-	{\
-		char str[512] = {}; \
-		char format0[128] = "%s line %d : "; \
-		strcpy_s(format0+13, 128-13, format);\
-		sprintf_s(str, 512, format0, __FUNCTION__, __LINE__, A); \
-		OutputDebugStringA(str);\
-	}
-#define dbglog2a(format, A, B) \
-	{\
-		char str[512] = {}; \
-		char format0[128] = "%s line %d : "; \
-		strcpy_s(format0+13, 128-13, format);\
-		sprintf_s(str, 512, format0, __FUNCTION__, __LINE__, A, B); \
-		OutputDebugStringA(str);\
-	}
-#define dbglog3a(format, A, B, C) \
-	{\
-		char str[512] = {}; \
-		char format0[128] = "%s line %d : "; \
-		strcpy_s(format0+13, 128-13, format);\
-		sprintf_s(str, 512, format0, __FUNCTION__, __LINE__, A, B, C); \
-		OutputDebugStringA(str);\
-	}
-#define dbglog4a(format, A, B, C, D) \
-	{\
-		char str[512] = {}; \
-		char format0[128] = "%s line %d : "; \
-		strcpy_s(format0+13, 128-13, format);\
-		sprintf_s(str, 512, format, __FUNCTION__, __LINE__, A, B, C, D); \
-		OutputDebugStringA(str);\
 	}
 #pragma endregion
 
@@ -163,54 +110,8 @@ struct DescHandle {
 		hcpu.ptr += inc;
 		hgpu.ptr += inc;
 	}
-
-	template<D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV>
-	__forceinline DescHandle operator[](UINT index);
 };
 
 struct OBB_vertexVector {
 	vec4 vertex[2][2][2] = { {{}} };
 };
-
-struct DescIndex {
-	bool isShaderVisible = false;
-	char type = 0; // 'n' - UAV, SRV, CBV / 'r' - RTV / 'd' - DSV
-	ui32 index;
-	DescIndex() {
-
-	}
-
-	DescIndex(bool isSV, ui32 i, char t = 'n') : isShaderVisible{ isSV }, index{ i }, type{ t } {
-
-	}
-
-	void Set(bool isSV, ui32 i, char t = 'n') {
-		isShaderVisible = isSV;
-		index = i;
-		type = t;
-	}
-	__forceinline DescHandle GetCreationDescHandle() const;
-	__forceinline DescHandle GetRenderDescHandle() const;
-	__declspec(property(get = GetCreationDescHandle)) const DescHandle hCreation;
-	__declspec(property(get = GetRenderDescHandle)) const DescHandle hRender;
-};
-
-/*
-template<D3D12_DESCRIPTOR_HEAP_TYPE type>
-inline DescHandle DescHandle::operator[](UINT index)
-{
-	DescHandle handle = *this;
-	UINT incSiz = gd.CBVSRVUAVSize;
-	if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_RTV) {
-		incSiz = gd.RTVSize;
-	}
-	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV) {
-		incSiz = gd.DSVSize;
-	}
-	else if constexpr (type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {
-		incSiz = gd.SamplerDescSize;
-	}
-	handle.operator+=(index * incSiz);
-	return handle;
-}
-*/

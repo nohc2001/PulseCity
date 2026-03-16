@@ -175,7 +175,7 @@ void Player::ClientUpdate(float deltaTime)
 
 			pitchAngle = (m_pWeapon->m_info.recoilVelocity * 0.1f) * recoilT;
 
-			shakeX = sinf(recoilT * XM_PI * 1.0f) * 0.005f;
+			shakeX = sinf(recoilT * XM_PI * 1.0f) * 0.010f;
 		}
 
 		XMMATRIX rotMat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle));
@@ -211,21 +211,21 @@ void Player::Render()
 			gunmat.pos.x += 0.55f;
 			gunmat.pos.z += 0.80f;
 
-			gunmat *= worldMat;
-			//gunmat.LookAt(worldMat.look);
+			gunmat *= m_worldMatrix;
+			//gunmat.LookAt(m_worldMatrix.look);
 			//gunmat.transpose();
 
-			//gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
-			//Gun->Render(gd.gpucmd, 1);
+			//gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
+			//Gun->Render(gd.pCommandList, 1);
 			if (Game::renderViewPort == &game.MySpotLight.viewport) {
 				//shadowMapping
 				if (GunModel) {
-					GunModel->Render(gd.gpucmd, gunmat, ShaderType::RenderShadowMap);
+					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
 				}
 			}
 			else {
 				if (GunModel) {
-					GunModel->Render(gd.gpucmd, gunmat, ShaderType::RenderWithShadow);
+					GunModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderWithShadow);
 				}
 			}
 			
@@ -317,29 +317,29 @@ void Player::Render_AfterDepthClear()
 				gunmat *= viewmat;
 
 				if (Game::renderViewPort == &game.MySpotLight.viewport) {
-					pTargetModel->Render(gd.gpucmd, gunmat, ShaderType::RenderShadowMap);
+					pTargetModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderShadowMap);
 					return;
 				}
 				else {
-					pTargetModel->Render(gd.gpucmd, gunmat, ShaderType::RenderWithShadow);
+					pTargetModel->Render(gd.pCommandList, gunmat, Shader::RegisterEnum::RenderWithShadow);
 				}
 			}
 		}
 	}
 
 	Shader* shader = (Shader*)game.MyOnlyColorShader;
-	shader->Add_RegisterShaderCommand(gd.gpucmd);
+	shader->Add_RegisterShaderCommand(gd.pCommandList);
 
 	matrix vmat = gd.viewportArr[0].ViewMatrix;
 	vmat *= gd.viewportArr[0].ProjectMatrix;
 	vmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &vmat, 0);
+	gd.pCommandList->SetGraphicsRoot32BitConstants(0, 16, &vmat, 0);
 
 	matrix spmat = viewmat;
 	spmat.pos += spmat.look * 10;
 	spmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
-	ShootPointMesh->Render(gd.gpucmd, 1);
+	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
+	ShootPointMesh->Render(gd.pCommandList, 1);
 
 	//HP = (ShootFlow / ShootDelay) * MaxHP;
 	matrix hpmat;
@@ -350,8 +350,8 @@ void Player::Render_AfterDepthClear()
 	hpmat.look *= 2 * HP / MaxHP;
 	hpmat *= viewmat;
 	hpmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
-	HPBarMesh->Render(gd.gpucmd, 1);
+	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
+	HPBarMesh->Render(gd.pCommandList, 1);
 
 	//Heat Bar
 	matrix heatmat;
@@ -362,8 +362,8 @@ void Player::Render_AfterDepthClear()
 	heatmat.look *= 2 * HeatGauge / 200;
 	heatmat *= viewmat;
 	heatmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
-	HeatBarMesh->Render(gd.gpucmd, 1);
+	gd.pCommandList->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
+	HeatBarMesh->Render(gd.pCommandList, 1);
 }
 
 void Player::UpdateGunBarrelNodes()

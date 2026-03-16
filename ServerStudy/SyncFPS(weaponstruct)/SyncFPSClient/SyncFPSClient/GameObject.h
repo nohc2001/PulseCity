@@ -8,320 +8,88 @@ class Shader;
 struct GPUResource;
 
 /*
-* 설명 : Shape은 Mesh와 Model을 포함할 수 있는 모양을 나타낸 구조체.
-* highest bit == 1 -> Mesh
-* else -> Model
-*
-* Sentinal Value :
-* NULL : (FlagPtr = 0);
-* isMesh : (FlagPtr & 0x8000000000000000);
-* isModel : !isMesh;
+* 설명 : 클라이언트의 게임 오브젝트
+* Sentinal Value : 
+* NULL = (isExist == false)
 */
-struct Shape {
-	ui64 FlagPtr = 0;
-
-	Shape() : FlagPtr{ 0 } {}
-	Shape(Mesh* mesh) {
-		SetMesh(mesh);
-	}
-	Shape(Model* model) {
-		SetModel(model);
-	}
-
-	/*
-	* 설명/반환 : Shape가 Mesh인지 여부를 반환
-	*/
-	__forceinline bool isMesh() {
-		return FlagPtr & 0x8000000000000000;
-	}
-
-	/*
-	* 설명/반환 : Shape가 가진 Mesh 포인터를 반환
-	*/
-	__forceinline Mesh* GetMesh() {
-		if (isMesh()) {
-			return reinterpret_cast<Mesh*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
-		}
-		else return nullptr;
-	}
-
-	/*
-	* 설명 : Shape에 Mesh를 넣는다.
-	*/
-	__forceinline void SetMesh(Mesh* ptr) {
-		FlagPtr = reinterpret_cast<ui64>(ptr);
-		FlagPtr |= 0x8000000000000000;
-	}
-
-	/*
-	* 설명/반환 : Shape가 가진 Model 포인터를 반환
-	*/
-	__forceinline Model* GetModel() {
-		if (isMesh()) return nullptr;
-		else {
-			return reinterpret_cast<Model*>(FlagPtr);
-		}
-	}
-
-	/*
-	* 설명 : Shape에 Model를 넣는다.
-	*/
-	__forceinline void SetModel(Model* ptr) {
-		FlagPtr = reinterpret_cast<ui64>(ptr);
-	}
-
-	/*
-	* 설명/반환 : Shape의 이름을 받아서 해당 Shape의 인덱스를 반환한다.
-	*/
-	static int GetShapeIndex(string meshName);
-	/*
-	* 설명/반환 : Shape의 이름을 받아서 ShapeNameArr에 저장후 해당 Shape의 인덱스를 반환한다.
-	*/
-	static int AddShapeName(string meshName);
-
-	// Shape의 이름 배열
-	inline static vector<string> ShapeNameArr;
-	// 이름에서 Shape를 얻는 map
-	inline static unordered_map<string, Shape> StrToShapeMap;
-	// 인덱스에서 Shape를 얻는 map
-	inline static unordered_map<int, Shape> IndexToShapeMap;
-
-	/*
-	* 설명 : Mesh의 이름과 Mesh 포인터를 받아 Mesh를 추가하는 함수
-	* 매개변수 :
-	* string name : Mesh의 이름
-	* Mesh* ptr : Mesh의 포인터
-	*/
-	static int AddMesh(string name, Mesh* ptr);
-
-	/*
-	* 설명 : Model의 이름과 Model 포인터를 받아 Model를 추가하는 함수
-	* 매개변수 :
-	* string name : Model의 이름
-	* Model* ptr : Model의 포인터
-	*/
-	static int AddModel(string name, Model* ptr);
-
-	void GetRealShape(Mesh*& out0, Model*& out1) {
-		if (isMesh()) out0 = reinterpret_cast<Mesh*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
-		else out1 = reinterpret_cast<Model*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
-	}
-};
-
-union Tag {
-	UINT tag = 0;
-	operator UINT() { return tag; }
-	operator bool() { return tag; }
-
-	Tag() {}
-	Tag(UINT n) : tag{ n } {}
-
-	struct TagSetter {
-		Tag* t;
-		int index;
-
-		operator bool() { return t->tag; }
-
-		void operator=(bool b) {
-			if (b) {
-				t->tag |= index;
-			}
-			else {
-				t->tag &= ~index;
-			}
-		}
-	};
-
-	// bool로도 쓸 수 있음.
-	TagSetter& operator[](UINT MaskIndex) {
-		TagSetter ts;
-		ts.t = this;
-		ts.index = MaskIndex;
-		return ts;
-	}
-};
-
-enum GameObjectTag {
-	Tag_Enable = 1, // 게임오브젝트 활성화 여부
-	Tag_Dynamic = 2, // 게임오브젝트가 움직일 수 있는지 여부
-};
-
 struct GameObject {
-	inline static void* StaticVptr = nullptr;
-	inline static void* DynamicVptr = nullptr;
-	inline static void* SkinMeshVptr = nullptr;
-	template <typename T> inline static void* Vptr = nullptr;
-	static void StaticInit();
+	// 게임오브젝트가 활성화 되었는지 여부
+	bool isExist = true;
+	// 해당 게임 오브젝트가 가진 머터리얼의 인덱스
+	int MaterialIndex = 0;
+	// 월드 행렬
+	matrix m_worldMatrix;
+	// 현재 속도
+	vec4 LVelocity;
+	// 다음 프레임에서 변경될 예정인 위치변화량
+	vec4 tickLVelocity;
 
-	template <typename T> __forceinline static bool IsType(GameObject* go);
-
-	/////////////////
-	// 청크를 통해 한 틱에 게임오브젝트 당 한번씩 해야하는 작업이 있다면 이 값을 사용하자.
-	UINT TourID = 0;
-
-	/*
-	* 게임오브젝트를 구분하고 탐색하기 위한 tag. 32개의 tag를 보유할 수 있다.
-	* 항상 tag의 첫번째 비트는 enable이다. (게임오브젝트가 활성화 되어있는지 여부)
-	*/
-	Tag tag;
-
-	// appearance
-	Shape shape;
 	union {
-		int* material = nullptr; // mesh 일 경우에만 활성화됨. slotNum만큼. game.MaterialTable에서 접근.
-		matrix* transforms_innerModel; // model 일 경우만 활성화됨. nodeCount 만큼.
+		// 가지고 있는 Mesh (Mesh/Model중 하나만 가져야 함.)
+		Mesh* m_pMesh;
+		// 가지고 있는 Model (Mesh/Model중 하나만 가져야 함.)
+		Model* pModel = nullptr;
 	};
+	// 이 오브젝트를 그릴 셰이더 
+	// <셰이더 통일을 할 것인가?>
+	Shader* m_pShader = nullptr;
+	// 서버로부터 받은 위치. 해당 위치로 클라이언트는 보간한다.
+	vec4 Destpos;
 
-	// 계층구조
-	GameObject* parent = nullptr;
-	GameObject* childs = nullptr;
-	GameObject* sibling = nullptr;
-	union {
-		char extra[8];
-		float** RaytracingWorldMatInput = nullptr;
-		float*** RaytracingWorldMatInput_Model;
+	enum eRenderMeshMod {
+		single_Mesh = 0,
+		Model = 1
 	};
-
-	// transform
-	matrix worldMat;
+	// 렌더링하는 것이 Mesh인지, Model인지 결정하는 enum.
+	// improve : Shape으로 통일 못하나??
+	eRenderMeshMod rmod = eRenderMeshMod::single_Mesh;
 
 	GameObject();
 	virtual ~GameObject();
 
-	virtual matrix GetWorld();
-	virtual void SetWorld(matrix localWorldMat);
+	/*
+	* 설명 : 한 프레임 마다 실행될 업데이트 함수
+	* 매개변수 : 
+	* float deltaTime : 이전 프레임에서 지금 프레임까지의 시간간격
+	*/
+	virtual void Update(float deltaTime);
+	/*
+	* 설명 : 
+	* <메쉬일 경우>
+	* WorldMatrix를 Root Param 1에 0~16에 Set하고,
+	* Material의 텍스쳐는 Root Param 3에 DescTable로 Set하고,
+	* Material의 Constant Buffer 값은 Root Param 4에 DescTable로 Set하고,
+	* 메쉬를 사용해
+	* <모델일 경우>
+	* //fix <처리 안함>
+	*/
+	virtual void Render();
 
-	// render instance를 이용한 배치처리를 하지 않는 순수한 렌더링시에 사용
-	virtual void Render(matrix parent = XMMatrixIdentity());
-	virtual void PushRenderBatch(matrix parent = XMMatrixIdentity());
-	// 현재 사용하는 렌더함수를 가리킴.
-	using RenderFuncType = void (GameObject::*)(matrix parent);
-	inline static RenderFuncType CurrentRenderFunc = &GameObject::Render;
-
-	virtual void Release();
-	virtual BoundingOrientedBox GetOBB();
-
-	virtual void SetShape(Shape _shape);
-	virtual void SetShape(Model* _shape);
-	virtual void SetShape(Mesh* _shape);
-
-	virtual void OnRayHit(GameObject* rayFrom);
-
-	void RaytracingUpdateTransform();
-	void RaytracingUpdateTransform(Model* model, ModelNode* node, matrix parent);
-
-	void DbgHieraky();
-};
-
-struct StaticGameObject : public GameObject {
-	StaticGameObject();
-	virtual ~StaticGameObject();
-	vector<BoundingBox> aabbArr;
-
-	virtual matrix GetWorld();
-	virtual void SetWorld(matrix localWorldMat);
-
-	virtual void Render(matrix parent = XMMatrixIdentity());
-	virtual void PushRenderBatch(matrix parent = XMMatrixIdentity());
-	// 현재 사용하는 렌더함수를 가리킴.
-	using RenderFuncType = void (StaticGameObject::*)(matrix parent);
-	inline static RenderFuncType CurrentRenderFunc = &StaticGameObject::Render;
-
-	virtual void Release();
-	virtual BoundingOrientedBox GetOBB();
-
-	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
-	void InitMapAABB_Inherit(void* origin, matrix parent_world);
-	BoundingOrientedBox GetOBBw(matrix worldMat);
-};
-
-struct GameObjectIncludeChunks {
-	int xmin;
-	int ymin;
-	int zmin;
-	unsigned char xlen;
-	unsigned char ylen;
-	unsigned char zlen;
-	unsigned char extraByte;
-};
-
-struct DynamicGameObject : public GameObject {
-	DynamicGameObject();
-	virtual ~DynamicGameObject();
-
-	virtual matrix GetWorld();
-	virtual void SetWorld(matrix localWorldMat);
-
-	vec4 LVelocity;
-	vec4 tickLVelocity;
-	vec4 tickAVelocity;
-	vec4 LastQuerternion;
-	vec4 Destpos;
-
-	GameObjectIncludeChunks IncludeChunks;
-	int* chunkAllocIndexs = nullptr;
-	int chunkAllocIndexsCapacity = 8;
-
-	void InitialChunkSetting();
-	void Move(vec4 velocity, vec4 Q);
-	void Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afterChunkInc);
-	virtual void Update(float delatTime);
-	virtual void Render(matrix parent = XMMatrixIdentity());
-	virtual void PushRenderBatch(matrix parent = XMMatrixIdentity());
-	using RenderFuncType = void (DynamicGameObject::*)(matrix parent);
-	inline static RenderFuncType CurrentRenderFunc = &DynamicGameObject::Render;
-
-	virtual void Event(WinEvent evt);
-	virtual void Release();
-	virtual BoundingOrientedBox GetOBB();
-
+	/*
+	* //improve : Shape로 통합되면 이 함수가 필요할까?
+	* 설명 : Mesh를 설정한다.
+	* 매개변수 : 
+	* Mesh* pMesh : 설정할 mesh
+	*/
+	__forceinline void SetMesh(Mesh* pMesh);
+	/*
+	* //improve : Shader가 통일되면 이 함수가 필요하나?
+	* 설명 : Shader를 설정한다.
+	* 매개변수 : 
+	* Shader* pShader : 설정할 셰이더
+	*/
+	__forceinline void SetShader(Shader* pShader);
+	/*
+	* 설명 : worldMatrix의 Z 기저를 look을 향하도록 한다.
+	* 매개변수 : 
+	* vec4 look : 바라볼 방향
+	* vec4 up : 위쪽 방향
+	*/
 	void LookAt(vec4 look, vec4 up = { 0, 1, 0, 0 });
-
-	static void CollisionMove(DynamicGameObject* obj1, DynamicGameObject* obj2);
-	virtual void OnCollision(GameObject* other);
-	virtual void OnRayHit(GameObject* rayFrom);
-
-	virtual void SetShape(Shape _shape);
-
-	void PositionInterpolation(float deltaTime);
-};
-
-//skinMesh 의 경우 shader 자체가 다르기 때문에 배치처리를 할 시에 따로 렌더링을 수행해야 한다.
-struct SkinMeshGameObject : public DynamicGameObject {
-	SkinMeshGameObject();
-	virtual ~SkinMeshGameObject();
-
-	// temp data. later combine one upload CBV
-	vector<matrix*> RootBoneMatrixs_PerSkinMesh;
-	// [bone 0] [...] [bone N]
-	vector<GPUResource> BoneToWorldMatrixCB;
-	vector<HumanoidAnimation*> HumanoidAnimationArr;
-	float AnimationFlowTime = 0;
-
-	// non shader visible desc heap에 위치함. 
-	// model->mNumSkinMesh 만큼 존재함.
-	DescIndex* OutVertexUAV;
-
-	// 레이트레이싱을 할때 실제로 변형되는 메쉬.
-	// model의 skinmeshcount 만큼 존재함.
-	RayTracingMesh* modifyMeshes = nullptr;
-
-	void InitRootBoneMatrixs();
-	void SetRootMatrixs();
-
-	void PushHumanoidAnimation(HumanoidAnimation* hanim);
-	void GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time);
-
-	virtual void Render(matrix parent = XMMatrixIdentity());
-	virtual void PushRenderBatch(matrix parent = XMMatrixIdentity());
-	void ModifyVertexs(matrix parent = XMMatrixIdentity());
-
-	using RenderFuncType = void (SkinMeshGameObject::*)(matrix parent);
-	inline static RenderFuncType CurrentRenderFunc = &SkinMeshGameObject::Render;
-
-	virtual void SetShape(Shape _shape);
-
-	virtual void Update(float delatTime);
+	/*
+	* 설명 : 게임 오브젝트의 위치를 DestPos로 보간한다.
+	*/
+	__forceinline void PositionInterpolation(float deltaTime);
 };
 
 /*
@@ -422,23 +190,6 @@ struct ItemLoot {
 // 아이템의 원본 정보가 담긴 아이템들의 테이블
 extern vector<Item> ItemTable;
 
-enum LightType {
-	LT_SpotLight = 0,
-	LT_DirectionLight = 1,
-	LT_PointLight = 2,
-};
-
-struct Light {
-	matrix transform;
-	LightType lightType;
-	float spot_angle;
-	float range;
-	float intencity;
-	void* data;
-
-	void GenerateLight();
-};
-
 /*
 * 설명 : 계층구조를 가지는 오브젝트
 * Sentinal Value : 
@@ -453,6 +204,7 @@ public:
 
 	Hierarchy_Object() {
 		childCount = 0;
+		MaterialIndex = 0;
 	}
 	~Hierarchy_Object() {}
 
@@ -463,9 +215,9 @@ public:
 	* 그리지 않는 물체를 제외시킨다.
 	* 매개변수 : 
 	* matrix parent_world : 계승될 행렬
-	* ShaderType sre : 어떤 방식으로 렌더링을 진행할건지 선택한다.
+	* Shader::RegisterEnum sre : 어떤 방식으로 렌더링을 진행할건지 선택한다.
 	*/
-	void Render_Inherit(matrix parent_world, ShaderType sre = ShaderType::RenderWithShadow);
+	void Render_Inherit(matrix parent_world, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderWithShadow);
 
 	/*
 	* 설명 : parent_world 로 변환을 수행한후, 계층구조 오브젝트의 자신과 자식을 모두 렌더한다.
@@ -474,9 +226,9 @@ public:
 	* 그리지 않는 물체를 제외시킨다.
 	* 매개변수 : 
 	* matrix parent_world : 계승될 행렬
-	* ShaderType sre : 어떤 방식으로 렌더링을 진행할건지 선택한다.
+	* Shader::RegisterEnum sre : 어떤 방식으로 렌더링을 진행할건지 선택한다.
 	*/
-	void Render_Inherit_CullingOrtho(matrix parent_world, ShaderType sre = ShaderType::RenderWithShadow);
+	void Render_Inherit_CullingOrtho(matrix parent_world, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderWithShadow);
 
 	/*
 	* 설명 :
@@ -492,120 +244,52 @@ public:
 };
 
 /*
-* 설명 : 청크를 찾아가기 위한 인덱스
-* Sentinal Value :
-* NULL = (x == -2,147,483,648 || y == -2,147,483,648 || z == -2,147,483,648)
-*/
-struct ChunkIndex {
-	int x = 0;
-	int y = 0;
-	int z = 0;
-
-	ChunkIndex() {}
-	~ChunkIndex() {}
-
-	ChunkIndex(int X, int Y, int Z) {
-		x = X;
-		y = Y;
-		z = Z;
-	}
-	ChunkIndex(const ChunkIndex& ref) {
-		x = ref.x;
-		y = ref.y;
-		z = ref.z;
-	}
-
-	bool operator==(const ChunkIndex& ci) const {
-		return (x == ci.x && y == ci.y) && z == ci.z;
-	}
-
-	BoundingBox GetAABB();
-};
-
-/*
-* 설명 : 청크.
-* 여러개의 OBB를 소유하고 있다.
-* Sentinal Value :
-* NULL = (obbs.size() == 0)
-*/
-struct GameChunk {
-	vecset<StaticGameObject*> Static_gameobjects;
-	vecset<DynamicGameObject*> Dynamic_gameobjects;
-	vecset<SkinMeshGameObject*> SkinMesh_gameobjects;
-
-	ChunkIndex cindex;
-	BoundingBox AABB;
-	UINT TourID = 0;
-
-	GameChunk() {
-		Static_gameobjects.Init(32);
-		Dynamic_gameobjects.Init(32);
-		SkinMesh_gameobjects.Init(32);
-	}
-	void SetChunkIndex(ChunkIndex ci);
-};
-
-/*
-* 설명 : ChunckIndex의 해쉬
-* x, y, z의 각 비트를 돌아가면서 적제하는 방식.
-* pdep를 이용해 그것을 빠르게 구현한다.
-*/
-template<>
-struct hash<ChunkIndex> {
-	size_t operator()(const ChunkIndex& p) const noexcept {
-		size_t h = _pdep_u64((size_t)p.x, 0x9249249249249249);
-		h |= _pdep_u64((size_t)p.y, 0x2492492492492492);
-		h |= _pdep_u64((size_t)p.z, 0x4924924924924924);
-		return h;
-	}
-};
-
-/*
 * 설명 : 게임 맵 데이터
 */
 struct GameMap {
 	GameMap() {}
 	~GameMap() {}
+	//맵의 다양한 객체 (오브젝트, 메쉬, 애니메이션, 텍스쳐, 머터리얼)등을 읽을 때 사용되는 중복가능한 이름을 저장함.
 	vector<string> name;
+	//맵의 메쉬데이터 배열
 	vector<Mesh*> meshes;
+	//모델의 배열
 	vector<Model*> models;
-	vector<StaticGameObject*> MapObjects;
+	//맵에 놓여져 있는 충돌처리를 할 계층구조 오브젝트
+	vector<Hierarchy_Object*> MapObjects;
+	// 맵 전체 영역의 AABB
 	vec4 AABB[2] = { 0, 0 };
+
+	/*
+	* 설명 : OBB를 받고, 그것을 통해 맵 전체의 AABB를 확장한다.
+	* 매개변수 :
+	* BoundingOrientedBox obb : 받은 OBB
+	*/
 	void ExtendMapAABB(BoundingOrientedBox obb);
 
-	/*ui64 pdep_src2[48] = {};
-	int pdepcnt = 0;
-	ui64 GetSpaceHash(int x, int y, int z);*/
-
-	struct Posindex {
-		int x;
-		int y;
-		int z;
-	};
-	/*ui64 inv_pdep_src2[48] = {};
-	int inv_pdepcnt = 0;
-	Posindex GetInvSpaceHash(ui64 hash);*/
-
-	RangeArr<ui32, bool> IsCollision;
-
-	//static collision..
-	void BakeStaticCollision();
-
+	//Map을 로드할때, 첫번째로 로드되는 텍스쳐가 몇번째 텍스쳐인지
 	unsigned int TextureTableStart = 0;
+	//Map을 로드할때, 첫번째로 로드되는 Material이 몇번째 머터리얼인지
 	unsigned int MaterialTableStart = 0;
 
+	/*
+	* 설명 : 전체 맵을 로드한다.
+	* 매개변수 :
+	* const char* MapName : 맵 파일의 이름. 경로가 아니니 확장자 또한 붙이지 않고, 오직 파일의 이름만 적는다.
+	*	해당 이름을 가진 .map 파일이 Resource/Map 경로에 있어야 한다.
+	*/
 	void LoadMap(const char* MapName);
 };
 
-struct SphereLODObject : public DynamicGameObject {
+struct SphereLODObject : public GameObject {
 	Mesh* MeshNear;
 	Mesh* MeshFar;
 	float SwitchDistance;
 
 	vec4 FixedPos;
 
-	virtual void Update(float deltaTime);
-	virtual void Render(matrix parent = XMMatrixIdentity());
+	virtual void Update(float deltaTime) override; 
+	virtual void Render() override;
 };
 
 /*

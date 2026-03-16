@@ -19,12 +19,6 @@
     <Filter Include="헤더 파일\NWLib">
       <UniqueIdentifier>{329ec6eb-9179-4023-bd74-12d08d1326fa}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Utill">
-      <UniqueIdentifier>{5875ccac-7b75-436b-94fa-82bda67d6f50}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="헤더 파일\Utill">
-      <UniqueIdentifier>{2770ff0b-714f-4b8d-8635-37c6d85abd50}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -59,12 +53,6 @@
     </ClCompile>
     <ClCompile Include="DDSTextureLoader12.cpp">
       <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="D3D_Util\D3DUtil.cpp">
-      <Filter>소스 파일\Utill</Filter>
-    </ClCompile>
-    <ClCompile Include="D3D_Util\ShaderUtil.cpp">
-      <Filter>소스 파일\Utill</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -158,21 +146,6 @@
     <ClInclude Include="RangeArr.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="D3D_Util\D3DUtil.h">
-      <Filter>헤더 파일\Utill</Filter>
-    </ClInclude>
-    <ClInclude Include="D3D_Util\DirectXRaytracingHelper.h">
-      <Filter>헤더 파일\Utill</Filter>
-    </ClInclude>
-    <ClInclude Include="D3D_Util\DXSampleHelper.h">
-      <Filter>헤더 파일\Utill</Filter>
-    </ClInclude>
-    <ClInclude Include="D3D_Util\pch.h">
-      <Filter>헤더 파일\Utill</Filter>
-    </ClInclude>
-    <ClInclude Include="D3D_Util\ShaderUtil.h">
-      <Filter>헤더 파일\Utill</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Resources\Shaders\DefaultShader.hlsl">
@@ -206,8 +179,5 @@
   <ItemGroup>
     <Text Include="memo.txt" />
     <Text Include="Credit.txt" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
   </ItemGroup>
 </Project>

@@ -168,13 +168,19 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	hFenceEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
 	// Create Event Object to Sync with Fence. Event's Init value is FALSE, when Signal call, Event Value change to FALSE
 
-	// Graphic GPUCmd
-	gpucmd = GPUCmd(pDevice, D3D12_COMMAND_LIST_TYPE_DIRECT);
-	hr = gpucmd.Close(); // why?
-
-	// compute GPUCmd
-	CScmd = GPUCmd(pDevice, D3D12_COMMAND_LIST_TYPE_COMPUTE);
-	hr = CScmd.Close();
+	// Command Queue & Command Allocator & Command List (TYPE : DIRECT)
+	D3D12_COMMAND_QUEUE_DESC d3dCommandQueueDesc;
+	::ZeroMemory(&d3dCommandQueueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
+	d3dCommandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+	d3dCommandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	hr = pDevice->CreateCommandQueue(&d3dCommandQueueDesc,
+		_uuidof(ID3D12CommandQueue), (void**)&pCommandQueue);
+	hr = pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+		__uuidof(ID3D12CommandAllocator), (void**)&pCommandAllocator);
+	hr = pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
+		pCommandAllocator, NULL, __uuidof(ID3D12GraphicsCommandList), (void
+			**)&pCommandList);
+	hr = pCommandList->Close(); // why?
 
 	ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
 	ClientFrameHeight = gd.EnableFullScreenMode_Resolusions[resolutionLevel].height;
@@ -205,13 +211,6 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	//answer : CreateConstantBufferView, CreateShaderResourceView -> only CPU Descriptor Working. so Shader Invisible.
 
 	ShaderVisibleDescPool.Initialize(4096);
-
-	try {
-		raytracing.Init(this);
-	}
-	catch (string err) {
-		dbglog1a("RayTracing ERROR : %s\n", err);
-	}
 }
 
 void GlobalDevice::Release()
@@ -233,8 +232,9 @@ void GlobalDevice::Release()
 	if (pDepthStencilBuffer) pDepthStencilBuffer->Release();
 	if (pDsvDescriptorHeap) pDsvDescriptorHeap->Release();
 
-	if (gpucmd) gpucmd.Release();
-	if (CScmd) CScmd.Release();
+	if (pCommandList) pCommandList->Release();
+	if (pCommandAllocator) pCommandAllocator->Release();
+	if (pCommandQueue) pCommandQueue->Release();
 
 	CloseHandle(hFenceEvent);
 	if (pFence) pFence->Release();
@@ -258,7 +258,16 @@ void GlobalDevice::Release()
 
 void GlobalDevice::WaitGPUComplete()
 {
-	gpucmd.WaitGPUComplete();
+	FenceValue++;
+	const UINT64 nFence = FenceValue;
+	HRESULT hResult = pCommandQueue->Signal(pFence, nFence);
+	//Add Signal Command (it update gpu fence value.)
+	if (pFence->GetCompletedValue() < nFence)
+	{
+		//When GPU Fence is smaller than CPU FenceValue, Wait.
+		hResult = pFence->SetEventOnCompletion(nFence, hFenceEvent);
+		::WaitForSingleObject(hFenceEvent, INFINITE);
+	}
 }
 
 void GlobalDevice::NewSwapChain()
@@ -291,7 +300,7 @@ void GlobalDevice::NewSwapChain()
 	dxgiSwapChainFullScreenDesc.Windowed = TRUE;
 
 	//Create SwapChain
-	pFactory->CreateSwapChainForHwnd(gpucmd.pCommandQueue, hWnd,
+	pFactory->CreateSwapChainForHwnd(pCommandQueue, hWnd,
 		&dxgiSwapChainDesc, &dxgiSwapChainFullScreenDesc, NULL, (IDXGISwapChain1
 			**)&pSwapChain); // is version 4 can executing without Query? sus..
 
@@ -553,7 +562,7 @@ int GlobalDevice::PixelFormatToPixelSize(DXGI_FORMAT format)
 	}
 }
 
-GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat, UINT DepthOrArraySize, D3D12_RESOURCE_FLAGS AdditionalFlag)
+GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES d3dResourceStates, D3D12_RESOURCE_DIMENSION dimension, int Width, int Height, DXGI_FORMAT BufferFormat, D3D12_RESOURCE_FLAGS flags)
 {
 	ID3D12Resource* pBuffer = NULL;
 	ID3D12Resource2* pBuffer2 = NULL;
@@ -572,7 +581,7 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 	d3dResourceDesc.Alignment = 0;
 	d3dResourceDesc.Width = Width;
 	d3dResourceDesc.Height = Height;
-	d3dResourceDesc.DepthOrArraySize = DepthOrArraySize;
+	d3dResourceDesc.DepthOrArraySize = 1;
 	d3dResourceDesc.MipLevels = 1;
 	d3dResourceDesc.Format = BufferFormat;
 	d3dResourceDesc.SampleDesc.Count = 1;
@@ -583,7 +592,7 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 	else {
 		d3dResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	}
-	d3dResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	d3dResourceDesc.Flags = flags;
 
 	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
 	if (d3dResourceDesc.Layout == D3D12_TEXTURE_LAYOUT_ROW_MAJOR && (d3dResourceDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)) {
@@ -595,28 +604,15 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 		d3dResourceDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_CROSS_ADAPTER;
 	}
 
-	d3dResourceDesc.Flags |= AdditionalFlag;
-
 	//D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER
 
-	D3D12_RESOURCE_STATES d3dResourceInitialStates = D3D12_RESOURCE_STATE_COMMON;
+	D3D12_RESOURCE_STATES d3dResourceInitialStates = D3D12_RESOURCE_STATE_COPY_DEST;
 	if (heapType == D3D12_HEAP_TYPE_UPLOAD)
 		d3dResourceInitialStates = D3D12_RESOURCE_STATE_GENERIC_READ;
 	else if (heapType == D3D12_HEAP_TYPE_READBACK)
 		d3dResourceInitialStates = D3D12_RESOURCE_STATE_COPY_DEST;
 
-	HRESULT hResult;
-	D3D12_CLEAR_VALUE ClearValue;
-	if (AdditionalFlag & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
-		ClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-		ClearValue.DepthStencil.Depth = 1.0f;
-		ClearValue.DepthStencil.Stencil = 0;
-		hResult = gd.pDevice->CreateCommittedResource(&d3dHeapPropertiesDesc, heapFlags, &d3dResourceDesc, d3dResourceInitialStates, &ClearValue, __uuidof(ID3D12Resource), (void**)&pBuffer);
-	}
-	else {
-		hResult = gd.pDevice->CreateCommittedResource(&d3dHeapPropertiesDesc, heapFlags, &d3dResourceDesc, d3dResourceInitialStates, NULL, __uuidof(ID3D12Resource), (void**)&pBuffer);
-	}
-
+	HRESULT hResult = gd.pDevice->CreateCommittedResource(&d3dHeapPropertiesDesc, heapFlags, &d3dResourceDesc, d3dResourceInitialStates, NULL, __uuidof(ID3D12Resource), (void**)&pBuffer);
 	pBuffer->QueryInterface<ID3D12Resource2>(&pBuffer2);
 	pBuffer->Release();
 
@@ -629,18 +625,13 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 	else {
 		GPUResource gr;
 		gr.resource = pBuffer2;
-
-		dbgc[0] += 1;
-		//dbgbreak(dbgc[0] == 8);
-		dbglog2(L"GPUResource %llx Created. dbgc0 = %d \n", gr.resource->GetGPUVirtualAddress(), dbgc[0]);
-
 		gr.CurrentState_InCommandWriteLine = d3dResourceInitialStates;
 		gr.extraData = 0;
 		return gr;
 	}
 }
 
-void GlobalDevice::UploadToCommitedGPUBuffer(void* ptr, GPUResource* uploadBuffer, GPUResource* copydestBuffer, bool StateReturning)
+void GlobalDevice::UploadToCommitedGPUBuffer(ID3D12GraphicsCommandList* commandList, void* ptr, GPUResource* uploadBuffer, GPUResource* copydestBuffer, bool StateReturning)
 {
 	D3D12_RANGE d3dReadRange = { 0, 0 };
 
@@ -658,14 +649,14 @@ void GlobalDevice::UploadToCommitedGPUBuffer(void* ptr, GPUResource* uploadBuffe
 		D3D12_RESOURCE_STATES uploadBufferOriginState = uploadBuffer->CurrentState_InCommandWriteLine;
 		D3D12_RESOURCE_STATES copydestOriginState = copydestBuffer->CurrentState_InCommandWriteLine;
 
-		gpucmd.ResBarrierTr(uploadBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		gpucmd.ResBarrierTr(copydestBuffer, D3D12_RESOURCE_STATE_COPY_DEST);
+		uploadBuffer->AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		copydestBuffer->AddResourceBarrierTransitoinToCommand(pCommandList, D3D12_RESOURCE_STATE_COPY_DEST);
 
-		gpucmd->CopyResource(copydestBuffer->resource, uploadBuffer->resource);
+		commandList->CopyResource(copydestBuffer->resource, uploadBuffer->resource);
 
 		if (StateReturning) {
-			gpucmd.ResBarrierTr(uploadBuffer, uploadBufferOriginState);
-			gpucmd.ResBarrierTr(copydestBuffer, copydestOriginState);
+			uploadBuffer->AddResourceBarrierTransitoinToCommand(pCommandList, uploadBufferOriginState);
+			copydestBuffer->AddResourceBarrierTransitoinToCommand(pCommandList, copydestOriginState);
 		}
 	}
 }
@@ -964,980 +955,4 @@ void GlobalDevice::bmpTodds(int mipmap_level, const char* Format, const char* fi
 	cmd += filename;
 	int result = system(cmd.c_str());
 	cout << result << endl;
-}
-
-void GlobalDevice::CreateDefaultHeap_VB(void* ptr, GPUResource& VertexBuffer, GPUResource& VertexUploadBuffer, D3D12_VERTEX_BUFFER_VIEW& view, UINT VertexCount, UINT sizeofVertex)
-{
-	UINT capacity = VertexCount * sizeofVertex;
-	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, capacity, 1);
-	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, capacity, 1);
-	gd.UploadToCommitedGPUBuffer(ptr, &VertexUploadBuffer, &VertexBuffer, true);
-	gd.gpucmd.ResBarrierTr(&VertexBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-	view.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
-	view.StrideInBytes = sizeofVertex;
-	view.SizeInBytes = sizeofVertex * VertexCount;
-}
-
-GPUResource GlobalDevice::CreateShadowMap(int width, int height, int DSVoffset, SpotLight& spotLight)
-{
-	GPUResource shadowMap;
-
-	D3D12_RESOURCE_DESC shadowTextureDesc;
-	shadowTextureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	shadowTextureDesc.Alignment = 0;
-	shadowTextureDesc.Width = width;
-	shadowTextureDesc.Height = height;
-	shadowTextureDesc.Format = DXGI_FORMAT_D32_FLOAT;
-	shadowTextureDesc.DepthOrArraySize = 1;
-	shadowTextureDesc.MipLevels = 1;
-	shadowTextureDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	shadowTextureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-	shadowTextureDesc.SampleDesc.Count = 1;
-	shadowTextureDesc.SampleDesc.Quality = 0;
-
-	D3D12_CLEAR_VALUE clearValue;    // Performance tip: Tell the runtime at resource creation the desired clear value.
-	clearValue.Format = DXGI_FORMAT_D32_FLOAT;
-	clearValue.DepthStencil.Depth = 1.0f;
-	clearValue.DepthStencil.Stencil = 0;
-
-	D3D12_HEAP_PROPERTIES heap_property;
-	heap_property.Type = D3D12_HEAP_TYPE_DEFAULT;
-	heap_property.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	heap_property.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	heap_property.CreationNodeMask = 1;
-	heap_property.VisibleNodeMask = 1;
-
-	gd.pDevice->CreateCommittedResource(
-		&heap_property,
-		D3D12_HEAP_FLAG_NONE,
-		&shadowTextureDesc,
-		D3D12_RESOURCE_STATE_DEPTH_WRITE,
-		&clearValue,
-		IID_PPV_ARGS(&shadowMap.resource));
-	shadowMap.CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-
-	// Create the depth stencil view.
-	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
-	hcpu.ptr = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + DSVoffset * gd.DSVSize;
-	gd.pDevice->CreateDepthStencilView(shadowMap.resource, nullptr, hcpu);
-	shadowMap.descindex.Set(false, DSVoffset, 'd'); // DepthStencilView DescHeap의 CPU HANDLE
-
-	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuH;
-	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuH;
-
-	gd.ShaderVisibleDescPool.ImmortalAlloc(&spotLight.descindex, 1);
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
-	srv_desc.Format = DXGI_FORMAT_R32_FLOAT;
-	srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srv_desc.Texture2D.MostDetailedMip = 0;
-	srv_desc.Texture2D.MipLevels = 1;
-	srv_desc.Texture2D.ResourceMinLODClamp = 0;
-	srv_desc.Texture2D.PlaneSlice = 0;
-	gd.pDevice->CreateShaderResourceView(shadowMap.resource, &srv_desc, spotLight.descindex.hCreation.hcpu);
-	//shadowMap.handle.hgpu = spotLight.descindex.hRender.hgpu; // CBV, SRV, UAV DescHeap 의 GPU HANDLE
-	return shadowMap;
-}
-
-template <int indexByteSize>
-void GlobalDevice::CreateDefaultHeap_IB(void* ptr, GPUResource& IndexBuffer, GPUResource& IndexUploadBuffer, D3D12_INDEX_BUFFER_VIEW& view, UINT IndexCount)
-{
-	int capacity = IndexCount * indexByteSize;
-	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, capacity, 1);
-	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, capacity, 1);
-	gd.UploadToCommitedGPUBuffer(ptr, &IndexUploadBuffer, &IndexBuffer, true);
-	gd.gpucmd.ResBarrierTr(&IndexBuffer, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-	view.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
-	if constexpr (indexByteSize == 2) {
-		view.Format = DXGI_FORMAT_R16_UINT;
-	}
-	else if constexpr (indexByteSize == 4) {
-		view.Format = DXGI_FORMAT_R32_UINT;
-	}
-	view.SizeInBytes = indexByteSize * IndexCount;
-}
-
-void GPUCmd::SetShader(Shader* shader, ShaderType reg) {
-	shader->Add_RegisterShaderCommand(*this, reg);
-}
-
-void RayTracingDevice::Init(void* origin_gd)
-{
-	HRESULT hr;
-	origin = (GlobalDevice*)origin_gd;
-	GlobalDevice* sup = (GlobalDevice*)origin_gd;
-
-	CheckDeviceSelfRemovable();
-
-	if (IsDirectXRaytracingSupported(sup->pSelectedAdapter) == false) {
-		throw "Your GPU is not support RayTracing.";
-	}
-
-	bool b = InitDXC();
-	if (!b) throw "Cannot Init DXC.";
-
-	//CreateRaytracingInterfaces
-	hr = origin->pDevice->QueryInterface(IID_PPV_ARGS(&dxrDevice));
-	if (FAILED(hr)) throw "Couldn't get DirectX Raytracing interface for the device.";
-	hr = origin->gpucmd.GraphicsCmdList->QueryInterface(IID_PPV_ARGS(&dxrCommandList));
-	if (FAILED(hr)) throw "Couldn't get DirectX Raytracing interface for the command list.";
-
-	CreateSubRenderTarget();
-
-	CreateCameraCB();
-}
-
-void RayTracingDevice::CheckDeviceSelfRemovable()
-{
-	__if_exists(DXGIDeclareAdapterRemovalSupport)
-	{
-		if (FAILED(DXGIDeclareAdapterRemovalSupport()))
-		{
-			OutputDebugString(L"Warning: application failed to declare adapter removal support.\n");
-		}
-	}
-}
-
-inline bool RayTracingDevice::IsDirectXRaytracingSupported(IDXGIAdapter1* adapter)
-{
-	ID3D12Device* testDevice;
-	D3D12_FEATURE_DATA_D3D12_OPTIONS5 featureSupportData = {};
-
-	return SUCCEEDED(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&testDevice)))
-		&& SUCCEEDED(testDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &featureSupportData, sizeof(featureSupportData)))
-		&& featureSupportData.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-}
-
-void RayTracingDevice::SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGNATURE_DESC& desc, ID3D12RootSignature** rootSig)
-{
-	HRESULT hr;
-	ID3DBlob* blob;
-	ID3DBlob* error;
-
-	hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
-	if (FAILED(hr)) {
-		if (error)
-		{
-			// 에러 메시지 출력
-			OutputDebugStringA((char*)error->GetBufferPointer());
-			error->Release();
-		}
-
-		//throw error ? static_cast<char*>(error->GetBufferPointer()) : nullptr;
-	}
-
-	hr = dxrDevice->CreateRootSignature(1, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&(*rootSig)));
-	if (FAILED(hr)) throw "dxrDevice->CreateRootSignature Failed.";
-}
-
-bool RayTracingDevice::InitDXC()
-{
-	bool bResult = FALSE;
-	HRESULT hr;
-	const WCHAR* wchDllPath = nullptr;
-#if defined(_M_ARM64EC)
-	wchDllPath = L"./Dxc/arm64";
-#elif defined(_M_ARM64)
-	wchDllPath = L"./Dxc/arm64";
-#elif defined(_M_AMD64)
-	wchDllPath = L"./Dxc/x64";
-#elif defined(_M_IX86)
-	wchDllPath = L"./Dxc/x86";
-#endif
-	WCHAR wchOldPath[_MAX_PATH];
-	GetCurrentDirectoryW(_MAX_PATH, wchOldPath);
-	SetCurrentDirectoryW(wchDllPath);
-	DxcCreateInstanceT DxcCreateInstanceFunc = nullptr;
-
-	hDXC = LoadLibrary(L"dxcompiler.dll");
-	if (!hDXC) goto lb_return;
-
-	DxcCreateInstanceFunc = (DxcCreateInstanceT)GetProcAddress(hDXC, "DxcCreateInstance");
-
-	hr = DxcCreateInstanceFunc(CLSID_DxcLibrary, IID_PPV_ARGS(&pDXCLib));
-	if (FAILED(hr))
-		__debugbreak();
-
-	hr = DxcCreateInstanceFunc(CLSID_DxcCompiler, IID_PPV_ARGS(&pDXCCompiler));
-	if (FAILED(hr))
-		__debugbreak();
-
-	pDXCLib->CreateIncludeHandler(&pDSCIncHandle);
-	bResult = TRUE;
-
-lb_return:
-	SetCurrentDirectoryW(wchOldPath);
-	return bResult;
-}
-
-SHADER_HANDLE* RayTracingDevice::CreateShaderDXC(const wchar_t* shaderPath, const WCHAR* wchShaderFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, DWORD dwFlags)
-{
-	BOOL				bResult = FALSE;
-
-	SYSTEMTIME	CreationTime = {};
-	SHADER_HANDLE* pNewShaderHandle = nullptr;
-
-	WCHAR wchOldPath[MAX_PATH];
-	GetCurrentDirectory(_MAX_PATH, wchOldPath);
-
-	IDxcBlob* pBlob = nullptr;
-
-	// case DXIL::ShaderKind::Vertex:    entry = L"VSMain"; profile = L"vs_6_1"; break;
-	// case DXIL::ShaderKind::Pixel:     entry = L"PSMain"; profile = L"ps_6_1"; break;
-	// case DXIL::ShaderKind::Geometry:  entry = L"GSMain"; profile = L"gs_6_1"; break;
-	// case DXIL::ShaderKind::Hull:      entry = L"HSMain"; profile = L"hs_6_1"; break;
-	// case DXIL::ShaderKind::Domain:    entry = L"DSMain"; profile = L"ds_6_1"; break;
-	// case DXIL::ShaderKind::Compute:   entry = L"CSMain"; profile = L"cs_6_1"; break;
-	// case DXIL::ShaderKind::Mesh:      entry = L"MSMain"; profile = L"ms_6_5"; break;
-	// case DXIL::ShaderKind::Amplification: entry = L"ASMain"; profile = L"as_6_5"; break;
-
-	//"vs_6_0"
-	//"ps_6_0"
-	//"cs_6_0"
-	//"gs_6_0"
-	//"ms_6_5"
-	//"as_6_5"
-	//"hs_6_0"
-	//"lib_6_3"
-
-	bool bDisableOptimize = true;
-#ifdef _DEBUG
-	bDisableOptimize = false;
-#endif
-
-	SetCurrentDirectory(shaderPath);
-	HRESULT	hr = CompileShaderFromFileWithDXC(pDXCLib, pDXCCompiler, pDSCIncHandle, wchShaderFileName, wchEntryPoint, wchShaderModel, &pBlob, bDisableOptimize, &CreationTime, 0);
-
-	if (FAILED(hr))
-	{
-		dbglog2(L"Failed to compile shader : %s-%s\n", wchShaderFileName, wchEntryPoint);
-		throw "Failed to compile shader";
-	}
-	DWORD	dwCodeSize = (DWORD)pBlob->GetBufferSize();
-	const char* pCodeBuffer = (const char*)pBlob->GetBufferPointer();
-
-	DWORD	ShaderHandleSize = sizeof(SHADER_HANDLE) - sizeof(DWORD) + dwCodeSize;
-	pNewShaderHandle = (SHADER_HANDLE*)malloc(ShaderHandleSize);
-
-	if (pNewShaderHandle != nullptr) {
-		memset(pNewShaderHandle, 0, ShaderHandleSize);
-		memcpy(pNewShaderHandle->pCodeBuffer, pCodeBuffer, dwCodeSize);
-		pNewShaderHandle->dwCodeSize = dwCodeSize;
-		pNewShaderHandle->dwShaderNameLen = swprintf_s(pNewShaderHandle->wchShaderName, L"%s-%s", wchShaderFileName, wchEntryPoint);
-		bResult = TRUE;
-	}
-
-lb_exit:
-	if (pBlob)
-	{
-		pBlob->Release();
-		pBlob = nullptr;
-	}
-	SetCurrentDirectory(wchOldPath);
-
-	return pNewShaderHandle;
-}
-
-void RayTracingDevice::CreateSubRenderTarget()
-{
-	ID3D12Device5* device = dxrDevice;
-	DXGI_FORMAT backbufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-	// Create the output resource. The dimensions and format should match the swap-chain.
-	auto uavDesc = CD3DX12_RESOURCE_DESC::Tex2D(backbufferFormat, gd.ClientFrameWidth, gd.ClientFrameHeight, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-
-	auto defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	ThrowIfFailed(device->CreateCommittedResource(
-		&defaultHeapProperties, D3D12_HEAP_FLAG_NONE, &uavDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&RayTracingOutput)));
-	SetName(RayTracingOutput, L"gd.raytracing.RayTracingOutput");
-
-	gd.ShaderVisibleDescPool.ImmortalAlloc(&RTO_UAV_index, 1);
-	D3D12_UNORDERED_ACCESS_VIEW_DESC UAVDesc = {};
-	UAVDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-	device->CreateUnorderedAccessView(RayTracingOutput, nullptr, &UAVDesc, RTO_UAV_index.hCreation.hcpu);
-}
-
-void RayTracingDevice::CreateCameraCB()
-{
-	// Create the constant buffer memory and map the CPU and GPU addresses
-	const D3D12_HEAP_PROPERTIES uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-
-	size_t ElementSize = sizeof(RayTracingDevice::CameraConstantBuffer);
-	ElementSize = ((ElementSize + 255) & ~255);
-	const D3D12_RESOURCE_DESC constantBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(ElementSize);
-
-	ThrowIfFailed(dxrDevice->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&constantBufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&CameraCB)));
-
-	// Map the constant buffer and cache its heap pointers.
-	// We don't unmap this until the app closes. Keeping buffer mapped for the lifetime of the resource is okay.
-	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-	ThrowIfFailed(CameraCB->Map(0, nullptr, reinterpret_cast<void**>(&MappedCB)));
-
-	gd.raytracing.m_eye = vec4(0.0f, 2.0f, -5.0f, 1.0f);
-	gd.raytracing.m_at = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-	XMVECTOR right = { 1.0f, 0.0f, 0.0f, 0.0f };
-
-	XMVECTOR direction = XMVector4Normalize(gd.raytracing.m_at - gd.raytracing.m_eye);
-	gd.raytracing.m_up = XMVector3Normalize(XMVector3Cross(direction, right));
-
-	// Rotate camera around Y axis.
-	XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(45.0f));
-	gd.raytracing.m_eye = XMVector3Transform(gd.raytracing.m_eye, rotate);
-	gd.raytracing.m_up = XMVector3Transform(gd.raytracing.m_up, rotate);
-
-	MappedCB->cameraPosition = m_eye;
-	float fovAngleY = 45.0f;
-	XMMATRIX view = XMMatrixLookAtLH(gd.raytracing.m_eye, gd.raytracing.m_at, gd.raytracing.m_up);
-	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 125.0f);
-	XMMATRIX viewProj = view * proj;
-
-	MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
-	//MappedCB->lightPosition = vec4(0.0f, 1.8f, -3.0f, 0.0f);
-	MappedCB->DirLight_color = XMFLOAT3(1.0f, 1.0f, 1.0f);
-	MappedCB->DirLight_intencity = 1.0f;
-	vec4 dir = vec4(1, 1, 1, 0);
-	dir /= dir.len3;
-	MappedCB->DirLight_invDirection = dir.f3;
-}
-
-void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up)
-{
-	vec4 at = CameraPos + look;
-
-	gd.raytracing.MappedCB->cameraPosition = CameraPos;
-	float fovAngleY = 60.0f;
-	XMMATRIX view = XMMatrixLookAtLH(CameraPos, at, up);
-	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 1000.0f);
-	XMMATRIX viewProj = view * proj;
-	gd.raytracing.MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
-}
-
-void RayTracingMesh::StaticInit()
-{
-	auto uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto VbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(Upload_VertexBufferCapacity);
-	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&VbufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&Upload_vertexBuffer)));
-	Upload_vertexBuffer->SetName(L"UploadVertexBuffer");
-	Upload_vertexBuffer->Map(0, nullptr, (void**)&pVBMappedStart);
-
-	auto IbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(Upload_IndexBufferCapacity);
-	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&IbufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&Upload_indexBuffer)));
-	Upload_indexBuffer->SetName(L"UploadSceneIndexBuffer");
-	Upload_indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
-
-	uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto UAV_VbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(UAV_Upload_VertexBufferCapacity);
-	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&UAV_VbufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&UAV_Upload_vertexBuffer)));
-	UAV_Upload_vertexBuffer->SetName(L"UploadUAV_VertexBuffer");
-	UAV_Upload_vertexBuffer->Map(0, nullptr, (void**)&pUAV_VBMappedStart);
-
-	////////////////
-
-	auto defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	auto DefaultVbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(VertexBufferCapacity);
-	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
-		&defaultHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&DefaultVbufferDesc,
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-		nullptr,
-		IID_PPV_ARGS(&vertexBuffer)));
-	vertexBuffer->SetName(L"SceneVertexBuffer");
-	//vertexBuffer->Map(0, nullptr, (void**) & pVBMappedStart);
-
-	auto DefaultIbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(IndexBufferCapacity);
-	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
-		&defaultHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&DefaultIbufferDesc,
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-		nullptr,
-		IID_PPV_ARGS(&indexBuffer)));
-	indexBuffer->SetName(L"SceneIndexBuffer");
-	//indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
-
-	auto UAV_DefaultVbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(UAV_VertexBufferCapacity);
-	UAV_DefaultVbufferDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
-		&defaultHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&UAV_DefaultVbufferDesc,
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-		nullptr,
-		IID_PPV_ARGS(&UAV_vertexBuffer)));
-	UAV_vertexBuffer->SetName(L"UAV_SceneVertexBuffer");
-	//vertexBuffer->Map(0, nullptr, (void**) & pVBMappedStart);
-
-	//Make SRV Table Of Vertex And Index Buffer
-	gd.ShaderVisibleDescPool.ImmortalAlloc(&VBIB_DescIndex, 2);
-	DescHandle dh = VBIB_DescIndex.hCreation;
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_VB = {};
-	srvDesc_VB.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvDesc_VB.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc_VB.Buffer.NumElements = VertexBufferCapacity / sizeof(Vertex);
-	srvDesc_VB.Format = DXGI_FORMAT_UNKNOWN;
-	srvDesc_VB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-	srvDesc_VB.Buffer.StructureByteStride = sizeof(Vertex);
-	gd.pDevice->CreateShaderResourceView(vertexBuffer, &srvDesc_VB, dh.hcpu);
-	dh += gd.CBVSRVUAVSize;
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_IB = {};
-	srvDesc_IB.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvDesc_IB.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc_IB.Buffer.NumElements = IndexBufferCapacity / sizeof(unsigned int);
-	srvDesc_IB.Format = DXGI_FORMAT_UNKNOWN;//DXGI_FORMAT_R32_TYPELESS;
-	srvDesc_IB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;//D3D12_BUFFER_SRV_FLAG_RAW;
-	srvDesc_IB.Buffer.StructureByteStride = sizeof(unsigned int);//0;
-	gd.pDevice->CreateShaderResourceView(indexBuffer, &srvDesc_IB, dh.hcpu);
-
-	//////////////
-	//UAV 버전
-	gd.ShaderVisibleDescPool.ImmortalAlloc(&UAV_VBIB_DescIndex, 2);
-	dh = UAV_VBIB_DescIndex.hCreation;
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_UAV_VB = {};
-	srvDesc_UAV_VB.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvDesc_UAV_VB.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc_UAV_VB.Buffer.NumElements = UAV_VertexBufferCapacity / sizeof(Vertex);
-	srvDesc_UAV_VB.Format = DXGI_FORMAT_UNKNOWN;
-	srvDesc_UAV_VB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-	srvDesc_UAV_VB.Buffer.StructureByteStride = sizeof(Vertex);
-	gd.pDevice->CreateShaderResourceView(UAV_vertexBuffer, &srvDesc_UAV_VB, dh.hcpu);
-	dh += gd.CBVSRVUAVSize;
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_UAV_IB = {};
-	srvDesc_UAV_IB.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvDesc_UAV_IB.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc_UAV_IB.Buffer.NumElements = IndexBufferCapacity / sizeof(unsigned int);
-	srvDesc_UAV_IB.Format = DXGI_FORMAT_UNKNOWN;//DXGI_FORMAT_R32_TYPELESS;
-	srvDesc_UAV_IB.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;//D3D12_BUFFER_SRV_FLAG_RAW;
-	srvDesc_UAV_IB.Buffer.StructureByteStride = sizeof(unsigned int);//0;
-	gd.pDevice->CreateShaderResourceView(indexBuffer, &srvDesc_UAV_IB, dh.hcpu);
-}
-
-void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes)
-{
-	subMeshCount = SubMeshNum;
-	int* SubMeshIndexArr = SubMeshIndexes;
-	if (SubMeshIndexes == nullptr) {
-		subMeshCount = 1;
-		SubMeshIndexArr = new int[2];
-		SubMeshIndexArr[0] = 0;
-		SubMeshIndexArr[1] = ibarr.size();
-	}
-
-	static bool VBisFulling = false;
-	static UINT RequireByteVB = 0;
-	static bool IBisFulling = false;
-	static UINT RequireByteIB = 0;
-
-	if (vertexBuffer == nullptr) {
-		RayTracingMesh::StaticInit();
-	}
-
-	if (gd.raytracing.ASBuild_ScratchResource == nullptr) {
-		AllocateUAVBuffer(gd.raytracing.dxrDevice, gd.raytracing.ASBuild_ScratchResource_Maxsiz, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
-	}
-
-	constexpr UINT64 VBAlign = 768; //2816;
-	constexpr UINT64 IBAlign = 256;//768;
-
-	int addtionalVB_Bytesiz = vbarr.size() * sizeof(RayTracingMesh::Vertex);
-	int addtionalIB_Bytesiz = 0;
-	vector<int> IBByteStart(subMeshCount);
-	for (int i = 0; i < subMeshCount; ++i) {
-		IBByteStart[i] = addtionalIB_Bytesiz;
-		addtionalIB_Bytesiz += (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT);
-		addtionalIB_Bytesiz = IBAlign * (1 + ((addtionalIB_Bytesiz - 1) / IBAlign));
-	}
-	//int addtionalIB_Bytesiz = ibarr.size() * sizeof(TriangleIndex);
-
-	bool vb_con = VertexBufferByteSize + addtionalVB_Bytesiz <= VertexBufferCapacity;
-	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
-
-	IBStartOffset = new UINT64[subMeshCount + 1];
-	if (vb_con && ib_con) {
-		// Create New Mesh
-
-		VBStartOffset = VertexBufferByteSize;
-		for (int i = 0; i < subMeshCount; ++i) {
-			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
-		}
-		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
-
-		pVBMapped = &pVBMappedStart[0];
-		pIBMapped = &pIBMappedStart[0];
-
-		// Copy Mesh Data
-		memcpy(pVBMapped, vbarr.data(), addtionalVB_Bytesiz);
-		for (int i = 0; i < subMeshCount; ++i) {
-
-			memcpy(pIBMapped + IBByteStart[i], (char*)ibarr.data() + SubMeshIndexArr[i] * sizeof(UINT), (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT));
-			UINT lastIndex = *((UINT*)ibarr.data() + SubMeshIndexArr[i + 1] - 1);
-			for (int k = 0; k < IBAlign; ++k) {
-				((UINT*)(pIBMapped + IBByteStart[i]))[SubMeshIndexArr[i + 1] - SubMeshIndexArr[i] + k] = lastIndex;
-			}
-		}
-
-		//Build BLAS
-		ID3D12Device5* device = gd.raytracing.dxrDevice;
-		ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
-
-		bool initialCmdStateClose = gd.gpucmd.isClose;
-		if (gd.gpucmd.isClose) {
-			gd.gpucmd.Reset(true);
-		}
-
-		D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_vertexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-
-		//dbglog1(L"VBSiz : %d \n", addtionalVB_Bytesiz);
-		commandList->CopyBufferRegion(vertexBuffer, VBStartOffset, Upload_vertexBuffer, 0, addtionalVB_Bytesiz);
-
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_vertexBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_GENERIC_READ);
-		commandList->ResourceBarrier(1, &barrier);
-
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(indexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_indexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-
-		//dbglog1(L"IBSiz : %d \n", addtionalIB_Bytesiz);
-		commandList->CopyBufferRegion(indexBuffer, IBStartOffset[0], Upload_indexBuffer, 0, addtionalIB_Bytesiz);
-
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(indexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_indexBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_GENERIC_READ);
-		commandList->ResourceBarrier(1, &barrier);
-
-		gd.gpucmd.Close(true);
-		gd.gpucmd.Execute(true);
-		gd.WaitGPUComplete();
-
-		//Geometry
-		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[subMeshCount];
-		for (int i = 0; i < subMeshCount; ++i) {
-			GeometryDescs[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-			GeometryDescs[i].Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + IBStartOffset[i];
-			GeometryDescs[i].Triangles.IndexCount = (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]);
-			GeometryDescs[i].Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-			GeometryDescs[i].Triangles.Transform3x4 = 0;
-			GeometryDescs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-			GeometryDescs[i].Triangles.VertexCount = vbarr.size();
-			GeometryDescs[i].Triangles.VertexBuffer.StartAddress = vertexBuffer->GetGPUVirtualAddress() + VBStartOffset;
-			GeometryDescs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-			GeometryDescs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
-		}
-
-		//BLAS Input
-		BLAS_Input.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-		BLAS_Input.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
-		BLAS_Input.NumDescs = subMeshCount;
-		BLAS_Input.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-		BLAS_Input.pGeometryDescs = GeometryDescs;
-
-		//Prebuild Info
-		gd.raytracing.dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&BLAS_Input, &bottomLevelPrebuildInfo);
-		if (bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes <= 0) {
-			throw "bottomLevelPrebuildInfo Create Failed.";
-		}
-		if (bottomLevelPrebuildInfo.ScratchDataSizeInBytes > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
-			gd.raytracing.ASBuild_ScratchResource->Release();
-			gd.raytracing.ASBuild_ScratchResource = nullptr;
-			AllocateUAVBuffer(gd.raytracing.dxrDevice, bottomLevelPrebuildInfo.ScratchDataSizeInBytes, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
-			gd.raytracing.ASBuild_ScratchResource_Maxsiz = bottomLevelPrebuildInfo.ScratchDataSizeInBytes;
-		}
-
-		//Create BLAS Res
-		D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-		AllocateUAVBuffer(gd.raytracing.dxrDevice, bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes, &BLAS, initialResourceState, L"BottomLevelAccelerationStructure");
-
-		// BLAS Build Desc
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottomLevelBuildDesc = {};
-		bottomLevelBuildDesc.Inputs = BLAS_Input;
-		bottomLevelBuildDesc.ScratchAccelerationStructureData = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
-		bottomLevelBuildDesc.DestAccelerationStructureData = BLAS->GetGPUVirtualAddress();
-
-		if (gd.gpucmd.isClose) {
-			gd.gpucmd.Reset(true);
-		}
-
-		CD3DX12_RESOURCE_BARRIER uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(BLAS);
-		commandList->ResourceBarrier(1, &uavBarrier);
-
-		commandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
-
-		/*gd.CmdClose(commandList);
-		ID3D12CommandList* ppd3dCommandLists[] = { commandList };
-		commandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
-		gd.WaitGPUComplete();*/
-
-		MeshDefaultInstanceData.Transform[0][0] = MeshDefaultInstanceData.Transform[1][1] = MeshDefaultInstanceData.Transform[2][2] = 1;
-		MeshDefaultInstanceData.InstanceMask = 1;
-		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
-		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
-
-
-		VertexBufferByteSize += addtionalVB_Bytesiz;
-		VertexBufferByteSize = VBAlign * (1 + ((VertexBufferByteSize - 1) / VBAlign));
-		//VertexBufferByteSize = ((VertexBufferByteSize + 255) & ~255);
-
-
-		IndexBufferByteSize += addtionalIB_Bytesiz;
-		IndexBufferByteSize = IBAlign * (1 + ((IndexBufferByteSize - 1) / IBAlign));
-		//IndexBufferByteSize = ((IndexBufferByteSize + 255) & ~255);
-		/*if (initialCmdStateClose == false) {
-			gd.CmdReset(commandList, commandAllocator);
-		}*/
-	}
-	else {
-		if (vb_con == false) {
-			if (VBisFulling) {
-				RequireByteVB += addtionalVB_Bytesiz;
-				dbglog1(L"Raytracing VB additional capacity require! %d \n", RequireByteVB);
-			}
-			else {
-				dbglog1(L"Raytracing VB additional capacity require! %d \n", VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacity);
-				RequireByteVB += VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacity;
-				VBisFulling = true;
-			}
-		}
-		if (RequireByteIB > 0) {
-			if (IBisFulling) {
-				RequireByteIB += addtionalIB_Bytesiz;
-				dbglog1(L"Raytracing IB additional capacity require! %d \n", RequireByteIB);
-			}
-		}
-		else {
-			if (IBisFulling == false) {
-				IBisFulling = true;
-				RequireByteIB = IndexBufferByteSize + addtionalIB_Bytesiz - IndexBufferCapacity;
-			}
-			else {
-				RequireByteIB += addtionalIB_Bytesiz;
-			}
-		}
-	}
-}
-
-void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum, int* SubMeshIndexes)
-{
-	static bool VBisFulling = false;
-	static UINT RequireByteVB = 0;
-	static bool IBisFulling = false;
-	static UINT RequireByteIB = 0;
-
-	if (UAV_vertexBuffer == nullptr) {
-		RayTracingMesh::StaticInit();
-	}
-
-	if (gd.raytracing.ASBuild_ScratchResource == nullptr) {
-		AllocateUAVBuffer(gd.raytracing.dxrDevice, gd.raytracing.ASBuild_ScratchResource_Maxsiz, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
-	}
-
-	constexpr UINT64 VBAlign = 768; //2816;
-	constexpr UINT64 IBAlign = 256; //768;
-
-	int addtionalVB_Bytesiz = vbarr.size() * sizeof(RayTracingMesh::Vertex);
-
-	bool vb_con = UAV_VertexBufferByteSize + addtionalVB_Bytesiz <= UAV_VertexBufferCapacity;
-	if (vb_con) {
-		// Create New Mesh
-		UAV_VBStartOffset = UAV_VertexBufferByteSize;
-		pUAV_VBMapped = &pVBMappedStart[0];
-
-		// Copy Mesh Data
-		memcpy(pUAV_VBMapped, vbarr.data(), addtionalVB_Bytesiz);
-
-		//Build BLAS
-		ID3D12Device5* device = gd.raytracing.dxrDevice;
-		ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
-
-		bool initialCmdStateClose = gd.gpucmd.isClose;
-		if (gd.gpucmd.isClose) {
-			gd.gpucmd.Reset(true);
-		}
-
-		D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(UAV_vertexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(UAV_Upload_vertexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-
-		//dbglog1(L"VBSiz : %d \n", addtionalVB_Bytesiz);
-		commandList->CopyBufferRegion(UAV_vertexBuffer, UAV_VBStartOffset, UAV_Upload_vertexBuffer, 0, addtionalVB_Bytesiz);
-
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(UAV_vertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(UAV_Upload_vertexBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_GENERIC_READ);
-		commandList->ResourceBarrier(1, &barrier);
-
-		gd.gpucmd.Close(true);
-		gd.gpucmd.Execute(true);
-		gd.WaitGPUComplete();
-
-		//Geometry
-		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[SubMeshNum];
-		for (int i = 0; i < SubMeshNum; ++i) {
-			GeometryDescs[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-			GeometryDescs[i].Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + inIBStartOffset[i];
-			GeometryDescs[i].Triangles.IndexCount = (SubMeshIndexes[i + 1] - SubMeshIndexes[i]);
-			GeometryDescs[i].Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-			GeometryDescs[i].Triangles.Transform3x4 = 0;
-			GeometryDescs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-			GeometryDescs[i].Triangles.VertexCount = vbarr.size();
-			GeometryDescs[i].Triangles.VertexBuffer.StartAddress = UAV_vertexBuffer->GetGPUVirtualAddress() + UAV_VBStartOffset;
-			GeometryDescs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-			GeometryDescs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
-		}
-
-		//BLAS Input
-		BLAS_Input.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-		BLAS_Input.Flags =
-			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
-			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
-		BLAS_Input.NumDescs = subMeshCount;
-		BLAS_Input.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-		BLAS_Input.pGeometryDescs = GeometryDescs;
-
-		//Prebuild Info
-		gd.raytracing.dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&BLAS_Input, &bottomLevelPrebuildInfo);
-		if (bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes <= 0) {
-			throw "bottomLevelPrebuildInfo Create Failed.";
-		}
-
-		if (bottomLevelPrebuildInfo.ScratchDataSizeInBytes > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
-			gd.raytracing.ASBuild_ScratchResource->Release();
-			gd.raytracing.ASBuild_ScratchResource = nullptr;
-			AllocateUAVBuffer(gd.raytracing.dxrDevice, bottomLevelPrebuildInfo.ScratchDataSizeInBytes, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
-			gd.raytracing.ASBuild_ScratchResource_Maxsiz = bottomLevelPrebuildInfo.ScratchDataSizeInBytes;
-		}
-
-		//Create BLAS Res
-		D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-		AllocateUAVBuffer(gd.raytracing.dxrDevice, bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes, &BLAS, initialResourceState, L"BottomLevelAccelerationStructure");
-
-		// BLAS Build Desc
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottomLevelBuildDesc = {};
-		bottomLevelBuildDesc.Inputs = BLAS_Input;
-		bottomLevelBuildDesc.ScratchAccelerationStructureData = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
-		bottomLevelBuildDesc.DestAccelerationStructureData = BLAS->GetGPUVirtualAddress();
-
-		if (gd.gpucmd.isClose) {
-			gd.gpucmd.Reset(true);
-		}
-
-		CD3DX12_RESOURCE_BARRIER uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(BLAS);
-		commandList->ResourceBarrier(1, &uavBarrier);
-
-		commandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
-
-		/*gd.CmdClose(commandList);
-		ID3D12CommandList* ppd3dCommandLists[] = { commandList };
-		commandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
-		gd.WaitGPUComplete();*/
-		// 이 주석은 애초에 Reset 상태에서 이 함수를 호출하기 때문에 주석을 처리함.
-		// 만약 Reset이 아니라면 이걸 해주는 것이 맞다.
-		// fix : 이 함수가 어떤 커맨드 상태로도 실행될 수 있도록 만드는 것.
-
-		MeshDefaultInstanceData.Transform[0][0] = MeshDefaultInstanceData.Transform[1][1] = MeshDefaultInstanceData.Transform[2][2] = 1;
-		MeshDefaultInstanceData.InstanceMask = 1;
-		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
-		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
-
-		UAV_VertexBufferByteSize += addtionalVB_Bytesiz;
-		UAV_VertexBufferByteSize = VBAlign * (1 + ((UAV_VertexBufferByteSize - 1) / VBAlign));
-	}
-	else {
-		if (vb_con == false) {
-			if (VBisFulling) {
-				RequireByteVB += addtionalVB_Bytesiz;
-				dbglog1(L"Raytracing VB additional capacity require! %d \n", RequireByteVB);
-			}
-			else {
-				dbglog1(L"Raytracing VB additional capacity require! %d \n", UAV_VertexBufferByteSize + addtionalVB_Bytesiz - UAV_VertexBufferCapacity);
-				RequireByteVB += UAV_VertexBufferByteSize + addtionalVB_Bytesiz - UAV_VertexBufferCapacity;
-				VBisFulling = true;
-			}
-		}
-	}
-}
-
-void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes)
-{
-	subMeshCount = SubMeshNum;
-	int* SubMeshIndexArr = SubMeshIndexes;
-	if (SubMeshIndexes == nullptr) {
-		subMeshCount = 1;
-		SubMeshIndexArr = new int[2];
-		SubMeshIndexArr[0] = 0;
-		SubMeshIndexArr[1] = ibarr.size();
-	}
-
-	static bool VBisFulling = false;
-	static UINT RequireByteVB = 0;
-	static bool IBisFulling = false;
-	static UINT RequireByteIB = 0;
-
-	if (vertexBuffer == nullptr) {
-		RayTracingMesh::StaticInit();
-	}
-
-	if (gd.raytracing.ASBuild_ScratchResource == nullptr) {
-		AllocateUAVBuffer(gd.raytracing.dxrDevice, gd.raytracing.ASBuild_ScratchResource_Maxsiz, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
-	}
-
-	constexpr UINT64 VBAlign = 768; //2816;
-	constexpr UINT64 IBAlign = 256;//768;
-
-	int addtionalIB_Bytesiz = 0;
-	vector<int> IBByteStart(subMeshCount);
-	for (int i = 0; i < subMeshCount; ++i) {
-		IBByteStart[i] = addtionalIB_Bytesiz;
-		addtionalIB_Bytesiz += (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT);
-		addtionalIB_Bytesiz = IBAlign * (1 + ((addtionalIB_Bytesiz - 1) / IBAlign));
-	}
-
-	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
-	IBStartOffset = new UINT64[subMeshCount + 1];
-	if (ib_con) {
-		// Create New Mesh
-		for (int i = 0; i < subMeshCount; ++i) {
-			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
-		}
-		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
-		pIBMapped = &pIBMappedStart[0];
-
-		// Copy Mesh Data
-		for (int i = 0; i < subMeshCount; ++i) {
-			memcpy(pIBMapped + IBByteStart[i], (char*)ibarr.data() + SubMeshIndexArr[i] * sizeof(UINT), (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT));
-			UINT lastIndex = *((UINT*)ibarr.data() + SubMeshIndexArr[i + 1] - 1);
-			for (int k = 0; k < IBAlign; ++k) {
-				((UINT*)(pIBMapped + IBByteStart[i]))[SubMeshIndexArr[i + 1] - SubMeshIndexArr[i] + k] = lastIndex;
-			}
-		}
-
-		//Build BLAS
-		ID3D12Device5* device = gd.raytracing.dxrDevice;
-		ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
-
-		bool initialCmdStateClose = gd.gpucmd.isClose;
-		if (gd.gpucmd.isClose) {
-			gd.gpucmd.Reset(true);
-		}
-
-		CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(indexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_indexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-
-		//dbglog1(L"IBSiz : %d \n", addtionalIB_Bytesiz);
-		commandList->CopyBufferRegion(indexBuffer, IBStartOffset[0], Upload_indexBuffer, 0, addtionalIB_Bytesiz);
-
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(indexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-		commandList->ResourceBarrier(1, &barrier);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(Upload_indexBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_GENERIC_READ);
-		commandList->ResourceBarrier(1, &barrier);
-
-		gd.gpucmd.Close(true);
-		gd.gpucmd.Execute(true);
-		gd.WaitGPUComplete();
-
-		if (gd.gpucmd.isClose) {
-			gd.gpucmd.Reset(true);
-		}
-
-		IndexBufferByteSize += addtionalIB_Bytesiz;
-		IndexBufferByteSize = IBAlign * (1 + ((IndexBufferByteSize - 1) / IBAlign));
-	}
-	else {
-		if (RequireByteIB > 0) {
-			if (IBisFulling) {
-				RequireByteIB += addtionalIB_Bytesiz;
-				dbglog1(L"Raytracing IB additional capacity require! %d \n", RequireByteIB);
-			}
-		}
-		else {
-			if (IBisFulling == false) {
-				IBisFulling = true;
-				RequireByteIB = IndexBufferByteSize + addtionalIB_Bytesiz - IndexBufferCapacity;
-			}
-			else {
-				RequireByteIB += addtionalIB_Bytesiz;
-			}
-		}
-	}
-}
-
-void RayTracingMesh::UAV_BLAS_Refit()
-{
-	//Build BLAS
-	ID3D12Device5* device = gd.raytracing.dxrDevice;
-	ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
-
-	D3D12_GPU_VIRTUAL_ADDRESS UsingScratchBufferVA;
-
-	//Prebuild Info
-	BLAS_Input.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
-
-	gd.raytracing.dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&BLAS_Input, &bottomLevelPrebuildInfo);
-	if (bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes <= 0) {
-		throw "bottomLevelPrebuildInfo Create Failed.";
-	}
-	if (gd.raytracing.UsingScratchSize + bottomLevelPrebuildInfo.ScratchDataSizeInBytes > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
-		// 이전의 Scratched Buffer 사용을 모두 끝낸다.
-		gd.gpucmd.Close(true);
-		gd.gpucmd.Execute(true);
-		gd.gpucmd.WaitGPUComplete();
-		gd.gpucmd.Reset(true);
-		gd.raytracing.UsingScratchSize = 0;
-	}
-
-	UINT64 AllocSiz = bottomLevelPrebuildInfo.ScratchDataSizeInBytes;
-	AllocSiz = 256 * (1 + ((AllocSiz - 1) / 256));
-	UsingScratchBufferVA = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress() + gd.raytracing.UsingScratchSize;
-	gd.raytracing.UsingScratchSize += AllocSiz;
-
-	// BLAS Build Desc
-	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottomLevelBuildDesc = {};
-	bottomLevelBuildDesc.Inputs = BLAS_Input;
-	bottomLevelBuildDesc.ScratchAccelerationStructureData = UsingScratchBufferVA;
-
-	// 이둘을 같게하면 Refit함. SourceAccelerationStructureData 0이면 build.
-	bottomLevelBuildDesc.SourceAccelerationStructureData = BLAS->GetGPUVirtualAddress();
-	bottomLevelBuildDesc.DestAccelerationStructureData = BLAS->GetGPUVirtualAddress();
-
-	CD3DX12_RESOURCE_BARRIER uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(BLAS);
-	commandList->ResourceBarrier(1, &uavBarrier);
-
-	commandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
 }

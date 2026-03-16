@@ -1,34 +1,8 @@
 #pragma once
 #include "stdafx.h"
 #include "GraphicDefs.h"
-#include "Render.h"
 
 struct GPUResource;
-
-/*
-* 설명 : 같은 종류의 셰이더에서 다르게 렌더링을 하려하기 때문에,
-* 어떤 렌더링을 사용할 것인지 선택할 수 있게 하는 enum.
-*/
-union ShaderType {
-	enum RegisterEnum_memberenum {
-		RenderNormal = 0, // 일반 렌더링
-		RenderWithShadow = 1, // 그림자와 함께 렌더링
-		RenderShadowMap = 2, // 쉐도우 맵을 렌더링
-		RenderStencil = 3, // 스텐실을 렌더링
-		RenderInnerMirror = 4, // 스텐실이 활성화된 부분을 렌더링 (거울 속 렌더링)
-		RenderTerrain = 5, // 터레인을 렌더링
-		StreamOut = 6, // 스트림아웃
-		SDF = 7, // SDF Text
-		TessTerrain = 8, // Tess Terrain
-		SkinMeshRender = 9,
-		InstancingWithShadow = 10,
-	};
-	int id;
-
-	ShaderType(int i) : id{ i } {}
-	ShaderType(RegisterEnum_memberenum e) { id = (int)e; }
-	operator int() { return id; }
-};
 
 /*
 * 설명 : 셰이더를 나타내는 클래스.
@@ -37,6 +11,27 @@ union ShaderType {
 */
 class Shader {
 public:
+	/*
+	* 설명 : 같은 종류의 셰이더에서 다르게 렌더링을 하려하기 때문에, 
+	* 어떤 렌더링을 사용할 것인지 선택할 수 있게 하는 enum.
+	*/
+	union RegisterEnum {
+		enum RegisterEnum_memberenum {
+			RenderNormal = 0, // 일반 렌더링
+			RenderWithShadow = 1, // 그림자와 함께 렌더링
+			RenderShadowMap = 2, // 쉐도우 맵을 렌더링
+			RenderStencil = 3, // 스텐실을 렌더링
+			RenderInnerMirror = 4, // 스텐실이 활성화된 부분을 렌더링 (거울 속 렌더링)
+			RenderTerrain = 5, // 터레인을 렌더링
+			StreamOut = 6, // 스트림아웃
+		};
+		int id;
+
+		RegisterEnum(int i) : id{ i } {}
+		RegisterEnum(RegisterEnum_memberenum e) { id = (int)e; }
+		operator int() { return id; }
+	};
+
 	ID3D12PipelineState* pPipelineState = nullptr;
 	ID3D12PipelineState* pPipelineState_withShadow = nullptr;
 	ID3D12PipelineState* pPipelineState_RenderShadowMap = nullptr;
@@ -72,15 +67,15 @@ public:
 	* reg를 통해 셰이더의 렌더링 종류를 결정할 수 있다.
 	* 매개변수 : 
 	* ID3D12GraphicsCommandList* commandList : 현재 렌더링에 쓰이는 commandList
-	* ShaderType reg : 어떤 종류의 렌더링을 선택할 것인지.
+	* Shader::RegisterEnum reg : 어떤 종류의 렌더링을 선택할 것인지.
 	*/
-	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList, Shader::RegisterEnum reg = Shader::RegisterEnum::RenderNormal);
 
 	/*
 	* 설명 : 셰이더의 바이트코드를 가져온다.
 	* <현재는 파일로부터 GPU 바이트 코드를 가져오고 있다. 하지만 정석적인 방법은 애초에 바이트코드를>
 	*/
-	static D3D12_SHADER_BYTECODE GetShaderByteCode(const WCHAR* pszFileName, LPCSTR pszShaderName, LPCSTR pszShaderProfile, ID3DBlob** ppd3dShaderBlob, vector<D3D_SHADER_MACRO>* macros = nullptr);
+	static D3D12_SHADER_BYTECODE GetShaderByteCode(const WCHAR* pszFileName, LPCSTR pszShaderName, LPCSTR pszShaderProfile, ID3DBlob** ppd3dShaderBlob);
 };
 
 /*
@@ -130,63 +125,51 @@ public:
 };
 
 /*
+* 설명 : 
+* <이것은 실제 쉐도우 매핑을 위한 셰이더가 아님. 그냥 쉐도우 맵 초기화등을 하는 오브젝트일 뿐이다. 이를 알 맞게 구조화해야 한다.>
+* // fix
+*/
+class ShadowMappingShader : public Shader {
+public:
+	GPUResource* CurrentShadowMap = nullptr;
+	ID3D12DescriptorHeap* ShadowDescriptorHeap;
+	ShaderVisibleDescriptorPool svdp;
+
+	int dsvIncrement = 0;
+	ShadowMappingShader();
+	virtual ~ShadowMappingShader();
+
+	virtual void InitShader();
+	virtual void CreateRootSignature();
+	virtual void CreatePipelineState();
+	void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList);
+	virtual void Release();
+
+	void RegisterShadowMap(GPUResource* shadowMap);
+	GPUResource CreateShadowMap(int width, int height, int DSVoffset);
+};
+
+/*
 * 설명 : PBR을 사용해 렌더링하는 셰이더
 */
 class PBRShader1 : public Shader {
 public:
-	ID3D12PipelineState* pPipelineState_TessTerrain = nullptr;
-	ID3D12RootSignature* pRootSignature_TessTerrain = nullptr;
-	ID3D12PipelineState* pPipelineState_SkinedMesh_withShadow = nullptr;
-	ID3D12RootSignature* pRootSignature_SkinedMesh_withShadow = nullptr;
-	ID3D12PipelineState* pPipelineState_Instancing_withShadow = nullptr;
-	ID3D12RootSignature* pRootSignature_Instancing_withShadow = nullptr;
-
 	PBRShader1() {}
 	virtual ~PBRShader1() {}
 
 	virtual void InitShader();
 	virtual void CreateRootSignature();
 	virtual void CreateRootSignature_withShadow();
-	virtual void CreateRootSignature_SkinedMesh();
-	virtual void CreateRootSignature_Instancing_withShadow();
+	//virtual void CreateRootSignature_Terrain();
 
 	virtual void CreatePipelineState();
 	virtual void CreatePipelineState_withShadow();
 	virtual void CreatePipelineState_RenderShadowMap();
-	virtual void CreatePipelineState_RenderStencil();
-	virtual void CreatePipelineState_InnerMirror();
-	virtual void CreatePipelineState_SkinedMesh();
-	virtual void CreatePipelineState_Instancing_withShadow();
-
-	void ReBuild_Shader(ShaderType st);
+	//virtual void CreatePipelineState_RenderStencil();
+	//virtual void CreatePipelineState_InnerMirror();
+	//virtual void CreatePipelineState_Terrain();
 
 	virtual void Release();
-
-	enum RootParamId {
-		Const_Camera = 0,
-		Const_Transform = 1,
-		CBV_StaticLight = 2,
-		SRVTable_MaterialTextures = 3,
-		CBVTable_Material = 4,
-		Normal_RootParamCapacity = 5,
-		SRVTable_ShadowMap = 5,
-		withShaow_RootParamCapacity = 6,
-
-		CBVTable_SkinMeshOffsetMatrix = 1,
-		CBVTable_SkinMeshToWorldMatrix = 2,
-		CBVTable_SkinMeshLightData = 3,
-		SRVTable_SkinMeshMaterialTextures = 4,
-		CBVTable_SkinMeshMaterial = 5,
-		SRVTable_SkinMeshShadowMaps = 6,
-		withSkinMeshShaow_RootParamCapacity = 7,
-
-		CBVTable_Instancing_DirLightData = 1,
-		SRVTable_Instancing_RenderInstance = 2,
-		SRVTable_Instancing_MaterialPool = 3,
-		SRVTable_Instancing_ShadowMap = 4,
-		SRVTable_Instancing_MaterialTexturePool = 5,
-		Instancing_Capacity = 6,
-	};
 
 	union eTextureID {
 		enum texid {
@@ -203,7 +186,7 @@ public:
 		operator unsigned int() { return num; }
 	};
 
-	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList, Shader::RegisterEnum reg = Shader::RegisterEnum::RenderNormal);
 
 	void SetTextureCommand(GPUResource* Color, GPUResource* Normal, GPUResource* AO, GPUResource* Metalic, GPUResource* Roughness);
 	virtual void SetShadowMapCommand(DescHandle shadowMapDesc);
@@ -229,7 +212,7 @@ public:
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
 
-	virtual void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList, Shader::RegisterEnum reg = Shader::RegisterEnum::RenderNormal);
 	virtual void Release();
 
 	void RenderSkyBox();

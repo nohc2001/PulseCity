@@ -1,27 +1,11 @@
 #pragma once
 #include "stdafx.h"
 #include "GraphicDefs.h"
-#include "Render.h"
 #include "Shader.h"
 
 /*
 * 설명 : 메쉬 데이터
 */
-struct RenderInstanceData {
-	matrix worldMat;
-	UINT MaterialIndex;
-	UINT extra;
-
-	RenderInstanceData() {}
-	~RenderInstanceData() {}
-
-	RenderInstanceData(matrix world, UINT materialID)
-	{
-		worldMat = world;
-		MaterialIndex = materialID;
-	}
-};
-
 class Mesh {
 protected:
 	// 버택스 버퍼
@@ -45,9 +29,16 @@ protected:
 	// Mesh의 토폴로지
 	D3D12_PRIMITIVE_TOPOLOGY topology;
 public:
+
+	/*
+	* 설명 : 일반 Mesh의 버택스하나의 데이터
+	*/
 	struct Vertex {
+		//위치
 		XMFLOAT3 position;
+		//색상
 		XMFLOAT4 color;
+		//법선
 		XMFLOAT3 normal;
 
 		Vertex() {}
@@ -57,62 +48,19 @@ public:
 		}
 	};
 
-	enum MeshType {
-		_Mesh = 0,
-		UVMesh = 1,
-		BumpMesh = 2,
-		SkinedBumpMesh = 3
-	};
-	MeshType type;
-
 	// Mesh 의 OBB의 Extends
 	XMFLOAT3 OBB_Ext;
 	// Mesh 의 OBB의 Center
 	XMFLOAT3 OBB_Tr;
-
-	int subMeshNum = 0;
-	int* SubMeshIndexStart = nullptr; // slotNum + 1 개의 int.
-	// i 번째 Mesh : (slotIndexStart[i] ~ slotIndexStart[i+1]-1)
-
-	struct InstancingStruct {
-		GPUResource StructuredBuffer;
-		RenderInstanceData* InstanceDataArr = nullptr;
-		Mesh* mesh = nullptr;
-		unsigned int Capacity = 0;
-		unsigned int InstanceSize = 0;
-		DescIndex InstancingSRVIndex;
-
-		InstancingStruct() {
-			InstanceDataArr = nullptr;
-			mesh = nullptr;
-			Capacity = 0;
-			InstanceSize = 0;
-		}
-
-		void Init(unsigned int capacity, Mesh* _mesh);
-		int PushInstance(RenderInstanceData instance);
-
-		//만약 항목이 업데이트가 잦지 않은 고정적인 업데이트인 경우 특정 오브젝트를 렌더에서 제외시킨다.
-		void DestroyInstance(RenderInstanceData* instance);
-
-		//매 프레임마다 인스턴싱 항목을 업데이트할 경우 이것을 사용한다.
-		void ClearInstancing();
-	};
-	static constexpr int MinInstancingStartSize = 0;
-	InstancingStruct* InstanceData = nullptr; // 서브메쉬의 개수만큼 존재.
-	void InstancingInit();
-
 	/*
 	* 설명 : AABB를 사용해 Mesh의 OBB 데이터를 구성.
-	* 매개변수 :
+	* 매개변수 : 
 	* XMFLOAT3 minpos : AABB의 최소 위치
 	* XMFLOAT3 maxpos : AABB의 최대 위치
 	*/
 	void SetOBBDataWithAABB(XMFLOAT3 minpos, XMFLOAT3 maxpos);
 
-	Mesh() {
-		type = _Mesh;
-	}
+	Mesh();
 	virtual ~Mesh();
 
 	/*
@@ -122,17 +70,15 @@ public:
 	* bool centering : Mesh의 OBB Center가 원점인지 여부 (Mesh의 정 중앙이 원점이 됨.)
 	*/
 	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
-	
+
 	/*
 	* 설명 : Mesh를 렌더링 한다.
 	* 여기에서 파이프라인이나 셰이더를 설정하지 않는다.
-	* 매개변수 :
+	* 매개변수 : 
 	* ID3D12GraphicsCommandList* pCommandList : 현재 렌더링에 사용되는 커맨드 리스트
 	* ui32 instanceNum : 렌더링 하고자 하는 Mesh의 개수. (인스턴싱의 경우 1이상의 값이 필요함.)
 	*/
-	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex = 0);
-
-	virtual void BatchRender(ID3D12GraphicsCommandList* pCommandList);
+	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
 
 	/*
 	* 설명/반환 : Mesh의 OBB를 얻는다.
@@ -146,12 +92,13 @@ public:
 	* float depth : 폭
 	* vec4 color : 색상
 	*/
-	void CreateWallMesh(float width, float height, float depth, vec4 color);
-	
+	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
+
 	/*
 	* 설명 : Mesh를 해제함.
 	*/
 	virtual void Release();
+
 
 	virtual void CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radius, int sliceCount, int stackCount, vec4 color);
 };
@@ -223,14 +170,64 @@ public:
 	// fix <이건 게임 오브젝트에 있어야 한다. 수정이 필요함.>
 	int material_index;
 
-	RayTracingMesh rmesh;
+	/*
+	* 설명 : BumpMesh의 버택스하나의 데이터
+	*/
+	struct Vertex {
+		XMFLOAT3 position;
+		XMFLOAT3 normal;
+		XMFLOAT2 uv;
+		XMFLOAT3 tangent;
 
-	typedef RayTracingMesh::Vertex Vertex;
+		Vertex() {}
+		Vertex(XMFLOAT3 p, XMFLOAT3 nor, XMFLOAT2 _uv, XMFLOAT3 tan)
+			: position{ p }, normal{ nor }, uv{ _uv }, tangent{ tan }
+		{
+		}
 
-	BumpMesh() {
-		type = Mesh::MeshType::BumpMesh;
-	}
+		/*
+		* 설명 : 해당 버택스의 tangent를 초기화할 필요가 있는지검사한다.
+		*/
+		__forceinline bool HaveToSetTangent() {
+			bool b = ((tangent.x == 0 && tangent.y == 0) && tangent.z == 0);
+			b |= ((isnan(tangent.x) || isnan(tangent.y)) || isnan(tangent.z));
+			return b;
+		}
+
+		/*
+		* 설명 : 삼각형의 세 점 P0, P1, P2가 있을때
+		* P0의 tangent를 계산하고 설정한다.
+		* 매개변수 : Vertex& P0, Vertex& P1, Vertex& P2 : 삼각형의 세 버택스
+		*/
+		static void CreateTBN(Vertex& P0, Vertex& P1, Vertex& P2) {
+			vec4 N1, N2, M1, M2;
+			//XMFLOAT3 N0, N1, M0, M1;
+			N1 = vec4(P1.uv) - vec4(P0.uv);
+			N2 = vec4(P2.uv) - vec4(P0.uv);
+			M1 = vec4(P1.position) - vec4(P0.position);
+			M2 = vec4(P2.position) - vec4(P0.position);
+
+			float f = 1.0f / (N1.x * N2.y - N2.x * N1.y);
+			vec4 tan = vec4(P0.tangent);
+			tan = f * (M1 * N2.y - M2 * N1.y);
+			vec4 v = XMVector3Normalize(tan);
+			P0.tangent = v.f3;
+
+			if (P0.HaveToSetTangent()) {
+				// why tangent is nan???
+				XMVECTOR NorV = XMVectorSet(P0.normal.x, P0.normal.y, P0.normal.z, 1.0f);
+				XMVECTOR TanV = XMVectorSet(0, 0, 0, 0);
+				XMVECTOR BinV = XMVectorSet(0, 0, 0, 0);
+				BinV = XMVector3Cross(NorV, M1);
+				TanV = XMVector3Cross(NorV, BinV);
+				P0.tangent = { 1, 0, 0 };
+			}
+		}
+	};
+
+	BumpMesh();
 	virtual ~BumpMesh();
+	
 	/*
 	* 설명 : 각 모서리 길이가 width, height, depth이고, color 색을 가진 직육면체 Mesh를 만든다.
 	* float width : 너비
@@ -240,7 +237,9 @@ public:
 	*/
 	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
 
-	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SlotNum = 1, int* SlotArr = nullptr, bool include_DXR = true);
+	/*
+	*/
+	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds);
 	
 	/*
 	* 설명 : path 경로에 있는 obj 파일의 Mesh를 불러온다. color 색 대로, centering 이 true일시에 OBB Center가 0이 된다.
@@ -248,10 +247,8 @@ public:
 	* vec4 color : Mesh에 입힐 색상
 	* bool centering : Mesh의 OBB Center가 원점인지 여부 (Mesh의 정 중앙이 원점이 됨.)
 	*/
-	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true, bool include_DXR = true);
-	static BumpMesh* MakeTerrainMeshFromHeightMap(const char* HeightMapTexFilename, float bumpScale, float Unit, int& XN, int& ZN, byte8** Heightmap, bool include_DXR = true);
-	void MakeTessTerrainMeshFromHeightMap(float EdgeLen, int xdiv, int zdiv);
-	
+	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
+
 	/*
 	* 설명 : Mesh를 렌더링 한다.
 	* 여기에서 파이프라인이나 셰이더를 설정하지 않는다.
@@ -259,157 +256,12 @@ public:
 	* ID3D12GraphicsCommandList* pCommandList : 현재 렌더링에 사용되는 커맨드 리스트
 	* ui32 instanceNum : 렌더링 하고자 하는 Mesh의 개수. (인스턴싱의 경우 1이상의 값이 필요함.)
 	*/
-	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex = 0);
-	void MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommandList
-		* pd3dCommandList, const wchar_t wchar, float fontsiz);
-	
+	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
+
 	/*
 	* 설명 : Mesh를 해제함.
 	*/
 	virtual void Release();
-
-	virtual void BatchRender(ID3D12GraphicsCommandList* pCommandList);
-};
-
-class BumpSkinMesh : public Mesh {
-public:
-	int material_index;
-	matrix* OffsetMatrixs;
-	int MatrixCount;
-	GPUResource ToOffsetMatrixsCB;
-	int* toNodeIndex;
-	vector<matrix> BoneMatrixs;
-
-	GPUResource BoneWeightBuffer;
-	GPUResource BoneWeightUploadBuffer;
-	D3D12_VERTEX_BUFFER_VIEW RenderVBufferView[2];
-
-	// 이 둘은 연속되어 있음. DescTable로 둘다 동시 참조 가능.
-	//DescIndex VertexSRV; // non shader visible desc heap에 위치함.
-	//DescIndex BoneSRV; // non shader visible desc heap에 위치함.
-	//RayTracingMesh rmesh;
-
-	// raytracing할때 수정가능한 버택스 배열을 VB에 올리기 위해 사용된다.
-
-
-	struct BoneWeight {
-		int boneID;
-		float weight;
-
-		BoneWeight() {
-			boneID = 0;
-			weight = 0;
-		}
-
-		BoneWeight(int bID, float w) :
-			boneID{ bID }, weight{ w }
-		{
-
-		}
-	};
-
-	struct BoneWeight4 {
-		BoneWeight bones[4];
-		BoneWeight4() {
-
-		}
-		BoneWeight4(BoneWeight b0, BoneWeight b1, BoneWeight b2, BoneWeight b3) {
-			bones[0] = b0;
-			bones[1] = b1;
-			bones[2] = b2;
-			bones[3] = b3;
-		}
-
-		void PushBones(BoneWeight p) {
-			for (int i = 0; i < 4; ++i) {
-				if (bones[i].boneID < 0) {
-					bones[i] = p;
-					return;
-				}
-			}
-
-			for (int i = 0; i < 4; ++i) {
-				if (bones[i].weight < p.weight) {
-					bones[i] = p;
-					return;
-				}
-			}
-		}
-	};
-
-	struct MatNode {
-		matrix mat;
-		int parent; // NULL = -1
-	};
-
-	//struct Vertex {
-	//	XMFLOAT3 position;
-	//	XMFLOAT2 uv;
-	//	XMFLOAT3 normal;
-	//	XMFLOAT3 tangent;
-	//	BoneWeight boneWeight[4];
-	//	
-	//	Vertex() {}
-	//	Vertex(XMFLOAT3 p, XMFLOAT3 nor, XMFLOAT2 _uv, XMFLOAT3 tan, XMFLOAT3 bit, BoneWeight b0, BoneWeight b1, BoneWeight b2, BoneWeight b3)
-	//		: position{ p }, normal{ nor }, uv{ _uv }, tangent{ tan }, bitangent{ bit }
-	//	{
-	//		boneWeight[0] = b0;
-	//		boneWeight[1] = b1;
-	//		boneWeight[2] = b2;
-	//		boneWeight[3] = b3;
-	//	}
-	//	bool HaveToSetTangent() {
-	//		bool b = ((tangent.x == 0 && tangent.y == 0) && tangent.z == 0);
-	//		b |= ((isnan(tangent.x) || isnan(tangent.y)) || isnan(tangent.z));
-	//		b |= ((bitangent.x == 0 && bitangent.y == 0) && bitangent.z == 0);
-	//		b |= ((isnan(bitangent.x) || isnan(bitangent.y)) || isnan(bitangent.z));
-	//		return b;
-	//	}
-	//	static void CreateTBN(Vertex& P0, Vertex& P1, Vertex& P2) {
-	//		vec4 N1, N2, M1, M2;
-	//		//XMFLOAT3 N0, N1, M0, M1;
-	//		N1 = vec4(P1.uv) - vec4(P0.uv);
-	//		N2 = vec4(P2.uv) - vec4(P0.uv);
-	//		M1 = vec4(P1.position) - vec4(P0.position);
-	//		M2 = vec4(P2.position) - vec4(P0.position);
-	//		float f = 1.0f / (N1.x * N2.y - N2.x * N1.y);
-	//		vec4 tan = vec4(P0.tangent);
-	//		tan = f * (M1 * N2.y - M2 * N1.y);
-	//		vec4 v = XMVector3Normalize(tan);
-	//		P0.tangent = v.f3;
-	//		XMVECTOR bit = vec4(P0.bitangent);
-	//		bit = f * (M2 * N1.x - M1 * N2.x);
-	//		v = XMVector3Normalize(bit);
-	//		P0.bitangent = v.f3;
-	//		if (P0.HaveToSetTangent()) {
-	//			// why tangent is nan???
-	//			XMVECTOR NorV = XMVectorSet(P0.normal.x, P0.normal.y, P0.normal.z, 1.0f);
-	//			XMVECTOR TanV = XMVectorSet(0, 0, 0, 0);
-	//			XMVECTOR BinV = XMVectorSet(0, 0, 0, 0);
-	//			BinV = XMVector3Cross(NorV, M1);
-	//			TanV = XMVector3Cross(NorV, BinV);
-	//			P0.tangent = { 1, 0, 0 };
-	//			P0.bitangent = { 0, 0, 1 };
-	//		}
-	//	}
-	//};
-
-	typedef RayTracingMesh::Vertex Vertex;
-	vector<Vertex> vertexData;
-
-	struct BoneData {
-		BoneWeight boneWeight[4];
-	};
-
-	BumpSkinMesh() {
-		type = Mesh::MeshType::SkinedBumpMesh;
-	}
-	virtual ~BumpSkinMesh();
-	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<BoneData>& bonedata, vector<TriangleIndex>& inds, int SubMeshNum = 1, int* SubMeshIndexArr = nullptr, matrix* NodeLocalMatrixs = nullptr, int matrixCount = 0);
-	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex = 0);
-	virtual void Release();
-
-	virtual void BatchRender(ID3D12GraphicsCommandList* pCommandList);
 };
 
 /*
@@ -539,27 +391,6 @@ struct MaterialCB_Data {
 	//[64+16 = 80]
 };
 
-struct MaterialST_Data {
-	vec4 baseColor;
-	vec4 ambientColor;
-	vec4 emissiveColor;
-
-	float metalicFactor;
-	float smoothness;
-	float bumpScaling;
-	ui32 diffuseTexId;
-
-	ui32 normalTexId;
-	ui32 AOTexId;
-	ui32 roughnessTexId;
-	ui32 metalicTexId;
-
-	float TilingX;
-	float TilingY;
-	float TilingOffsetX;
-	float TilingOffsetY;
-};
-
 /*
 * 설명 : 머터리얼 테이터
 */
@@ -683,6 +514,7 @@ struct Material {
 		}
 	};
 	char name[40] = {};
+	D3D12_GPU_DESCRIPTOR_HANDLE hGPU; // texture desc table handle
 	CLR clr;
 	TextureIndex ti;
 	PipelineChanger pipelineC; // this change pipeline of materials.
@@ -700,29 +532,25 @@ struct Material {
 	GLTF_alphaMod gltf_alphaMode;
 	float gltf_alpha_cutoff;
 
+	static constexpr int MaterialSiz_withoutGPUResource = 256;
+	GPUResource CB_Resource;
+	MaterialCB_Data* CBData = nullptr;
+
 	float TilingX;
 	float TilingY;
 	float TilingOffsetX;
 	float TilingOffsetY;
 
-	static constexpr int MaterialSiz_withoutGPUResource = 256;
-	GPUResource CB_Resource;
-	MaterialCB_Data* CBData = nullptr;
-	DescIndex TextureSRVTableIndex;
-
-	inline static GPUResource MaterialStructuredBuffer;
-	inline static MaterialST_Data* MappedMaterialStructuredBuffer = nullptr;
-	inline static DescIndex MaterialStructuredBufferSRV;
-
 	Material()
 	{
 		ZeroMemory(this, sizeof(Material));
-		memset(&ti, 0xFF, sizeof(TextureIndex));
-		clr.base = vec4(1, 1, 1, 1);
 		TilingX = 1;
 		TilingY = 1;
-		TilingOffsetX = 1;
-		TilingOffsetY = 1;
+		TilingOffsetX = 0;
+		TilingOffsetY = 0;
+		clr.bumpscaling = 1;
+		clr.base = vec4(1, 1, 1, 1);
+		memset(&ti, -1, sizeof(TextureIndex));
 	}
 
 	~Material()
@@ -738,154 +566,12 @@ struct Material {
 		TilingY = ref.TilingY;
 		TilingOffsetX = ref.TilingOffsetX;
 		TilingOffsetY = ref.TilingOffsetY;
-		TextureSRVTableIndex = ref.TextureSRVTableIndex;
 	}
 
 	__forceinline void ShiftTextureIndexs(unsigned int TextureIndexStart);
 	void SetDescTable();
+	void SetDescTable_NOTCBV();
 	MaterialCB_Data GetMatCB();
-	MaterialST_Data GetMatST();
-
-	static void InitMaterialStructuredBuffer(bool reset = false);
-};
-
-struct animKey {
-	double time;
-	UINT extra[2];
-	vec4 value;
-};
-
-struct AnimChannel {
-	vector<animKey> posKeys;
-	vector<animKey> rotKeys;
-	vector<animKey> scaleKeys;
-
-	matrix GetLocalMatrixAtTime(float time, matrix original);
-};
-
-struct HumanoidAnimation {
-	static constexpr UINT HumanBoneCount = 55;
-	enum HumanBodyBones
-	{
-		Hips = 0,
-		LeftUpperLeg = 1,
-		RightUpperLeg = 2,
-		LeftLowerLeg = 3,
-		RightLowerLeg = 4,
-		LeftFoot = 5,
-		RightFoot = 6,
-		Spine = 7,
-		Chest = 8,
-		Neck = 9,
-		Head = 10,
-		LeftShoulder = 11,
-		RightShoulder = 12,
-		LeftUpperArm = 13,
-		RightUpperArm = 14,
-		LeftLowerArm = 15,
-		RightLowerArm = 16,
-		LeftHand = 17,
-		RightHand = 18,
-		LeftToes = 19,
-		RightToes = 20,
-		LeftEye = 21,
-		RightEye = 22,
-		Jaw = 23,
-		LeftThumbProximal = 24,
-		LeftThumbIntermediate = 25,
-		LeftThumbDistal = 26,
-		LeftIndexProximal = 27,
-		LeftIndexIntermediate = 28,
-		LeftIndexDistal = 29,
-		LeftMiddleProximal = 30,
-		LeftMiddleIntermediate = 31,
-		LeftMiddleDistal = 32,
-		LeftRingProximal = 33,
-		LeftRingIntermediate = 34,
-		LeftRingDistal = 35,
-		LeftLittleProximal = 36,
-		LeftLittleIntermediate = 37,
-		LeftLittleDistal = 38,
-		RightThumbProximal = 39,
-		RightThumbIntermediate = 40,
-		RightThumbDistal = 41,
-		RightIndexProximal = 42,
-		RightIndexIntermediate = 43,
-		RightIndexDistal = 44,
-		RightMiddleProximal = 45,
-		RightMiddleIntermediate = 46,
-		RightMiddleDistal = 47,
-		RightRingProximal = 48,
-		RightRingIntermediate = 49,
-		RightRingDistal = 50,
-		RightLittleProximal = 51,
-		RightLittleIntermediate = 52,
-		RightLittleDistal = 53,
-		UpperChest = 54,
-		LastBone = 55
-	};
-	inline static const char HumanBoneNames[HumanBoneCount][32] = {
-	"Hips",
-	"LeftUpperLeg",
-	"RightUpperLeg",
-	"LeftLowerLeg",
-	"RightLowerLeg",
-	"LeftFoot",
-	"RightFoot",
-	"Spine",
-	"Chest",
-	"Neck",
-	"Head",
-	"LeftShoulder",
-	"RightShoulder",
-	"LeftUpperArm",
-	"RightUpperArm",
-	"LeftLowerArm",
-	"RightLowerArm",
-	"LeftHand",
-	"RightHand",
-	"LeftToes",
-	"RightToes",
-	"LeftEye",
-	"RightEye",
-	"Jaw",
-	"LeftThumbProximal",
-	"LeftThumbIntermediate",
-	"LeftThumbDistal",
-	"LeftIndexProximal",
-	"LeftIndexIntermediate",
-	"LeftIndexDistal",
-	"LeftMiddleProximal",
-	"LeftMiddleIntermediate",
-	"LeftMiddleDistal",
-	"LeftRingProximal",
-	"LeftRingIntermediate",
-	"LeftRingDistal",
-	"LeftLittleProximal",
-	"LeftLittleIntermediate",
-	"LeftLittleDistal",
-	"RightThumbProximal",
-	"RightThumbIntermediate",
-	"RightThumbDistal",
-	"RightIndexProximal",
-	"RightIndexIntermediate",
-	"RightIndexDistal",
-	"RightMiddleProximal",
-	"RightMiddleIntermediate",
-	"RightMiddleDistal",
-	"RightRingProximal",
-	"RightRingIntermediate",
-	"RightRingDistal",
-	"RightLittleProximal",
-	"RightLittleIntermediate",
-	"RightLittleDistal",
-	"UpperChest"
-	};
-
-	AnimChannel channels[HumanBoneCount];
-	double Duration = 0;
-
-	void LoadHumanoidAnimation(string filename);
 };
 
 /*
@@ -909,13 +595,6 @@ struct ModelNode {
 	// 메쉬가 가진 머터리얼 번호 배열
 	unsigned int* Mesh_Materials;
 
-	// 해당 메쉬가 몇번째 스킨메쉬인지에 대한 배열 Model이 스킨메쉬를 가지고, Node도 스킨메쉬를 가지면 할당됨.
-	int* Mesh_SkinMeshindex = nullptr;
-
-	vector<BoundingBox> aabbArr;
-
-	int* materialIndex;
-
 	//metadata
 	//???
 
@@ -935,9 +614,7 @@ struct ModelNode {
 	* ID3D12GraphicsCommandList* cmdlist : 커맨드 리스트
 	* const matrix& parentMat : 부모로부터 계승받은 월드 행렬
 	*/
-	template <bool isSkinMesh = false>
-	void Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* pGameobject = nullptr);
-	void PushRenderBatch(void* model, const matrix& parentMat, void* pGameobject = nullptr);
+	void Render(void* model, ID3D12GraphicsCommandList* cmdlist, const matrix& parentMat);
 
 	/*
 	* 설명 : 모델 노드가 기본상태일때,
@@ -975,14 +652,9 @@ struct Model {
 
 	// 모델이 가진 메쉬들의 포인터 배열
 	Mesh** mMeshes;
-	unsigned int mNumSkinMesh;
-	BumpSkinMesh** mBumpSkinMeshs;
-
+	
 	vector<BumpMesh::Vertex>* vertice = nullptr;
 	vector<TriangleIndex>* indice = nullptr;
-
-	matrix* DefaultNodelocalTr = nullptr;
-	matrix* NodeOffsetMatrixArr = nullptr;
 
 	unsigned int mNumTextures;
 	//GPUResource** mTextures;
@@ -1016,11 +688,7 @@ struct Model {
 	// 모델의 OBB.Extends
 	vec4 OBB_Ext;
 
-	//?
 	std::vector<matrix> BindPose;
-
-	// nodeCount 만큼의 int 배열. 노드의 인덱스를 넣으면 휴머노이드채널인덱스가 나옴.
-	int* Humanoid_retargeting = nullptr;
 
 	//void SaveModelFile(string filename);
 
@@ -1055,19 +723,14 @@ struct Model {
 	*/
 	BoundingOrientedBox GetOBB();
 
-	void Retargeting_Humanoid();
-
 	/*
 	* 설명 : 모델을 렌더링함
 	* 매개변수 : 
 	* ID3D12GraphicsCommandList* cmdlist : 현재 렌더링을 수행하는 커맨드 리스트
 	* matrix worldMatrix : 모델이 렌더링될 월드 행렬
-	* ShaderType sre : 어떤 방식으로 렌더링 할 것인지
+	* Shader::RegisterEnum sre : 어떤 방식으로 렌더링 할 것인지
 	*/
-	template <bool isSkinMesh = false>
-	void Render(GPUCmd& cmd, matrix worldMatrix, void* pGameobject = nullptr);
-
-	void PushRenderBatch(matrix worldMatrix, void* pGameobject = nullptr);
+	void Render(ID3D12GraphicsCommandList* cmdlist, matrix worldMatrix, Shader::RegisterEnum sre = Shader::RegisterEnum::RenderNormal);
 
 	/*
 	* 설명 : 노드의 이름으로 노드 인덱스를 찾는 함수
@@ -1077,4 +740,93 @@ struct Model {
 	*/
 	int FindNodeIndexByName(const std::string& name);
 
+};
+
+/*
+* 설명 : Shape은 Mesh와 Model을 포함할 수 있는 모양을 나타낸 구조체.
+* highest bit == 1 -> Mesh
+* else -> Model
+*
+* Sentinal Value :
+* NULL : (FlagPtr = 0);
+* isMesh : (FlagPtr & 0x8000000000000000);
+* isModel : !isMesh;
+*/
+struct Shape {
+	ui64 FlagPtr;
+
+	/*
+	* 설명/반환 : Shape가 Mesh인지 여부를 반환
+	*/
+	__forceinline bool isMesh() {
+		return FlagPtr & 0x8000000000000000;
+
+		// highest bit == 1 -> Mesh
+		// else -> Model
+	}
+
+	/*
+	* 설명/반환 : Shape가 가진 Mesh 포인터를 반환
+	*/
+	__forceinline Mesh* GetMesh() {
+		if (isMesh()) {
+			return reinterpret_cast<Mesh*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
+		}
+		else return nullptr;
+	}
+
+	/*
+	* 설명 : Shape에 Mesh를 넣는다.
+	*/
+	__forceinline void SetMesh(Mesh* ptr) {
+		FlagPtr = reinterpret_cast<ui64>(ptr);
+		FlagPtr |= 0x8000000000000000;
+	}
+
+	/*
+	* 설명/반환 : Shape가 가진 Model 포인터를 반환
+	*/
+	__forceinline Model* GetModel() {
+		if (isMesh()) return nullptr;
+		else {
+			return reinterpret_cast<Model*>(FlagPtr);
+		}
+	}
+
+	/*
+	* 설명 : Shape에 Model를 넣는다.
+	*/
+	__forceinline void SetModel(Model* ptr) {
+		FlagPtr = reinterpret_cast<ui64>(ptr);
+	}
+
+	/*
+	* 설명/반환 : Shape의 이름을 받아서 해당 Shape의 인덱스를 반환한다.
+	*/
+	static int GetShapeIndex(string meshName);
+	/*
+	* 설명/반환 : Shape의 이름을 받아서 ShapeNameArr에 저장후 해당 Shape의 인덱스를 반환한다.
+	*/
+	static int AddShapeName(string meshName);
+
+	// Shape의 이름 배열
+	static vector<string> ShapeNameArr;
+	// 이름에서 Shape를 얻는 map
+	static unordered_map<string, Shape> StrToShapeMap;
+
+	/*
+	* 설명 : Mesh의 이름과 Mesh 포인터를 받아 Mesh를 추가하는 함수
+	* 매개변수 :
+	* string name : Mesh의 이름
+	* Mesh* ptr : Mesh의 포인터
+	*/
+	static int AddMesh(string name, Mesh* ptr);
+
+	/*
+	* 설명 : Model의 이름과 Model 포인터를 받아 Model를 추가하는 함수
+	* 매개변수 :
+	* string name : Model의 이름
+	* Model* ptr : Model의 포인터
+	*/
+	static int AddModel(string name, Model* ptr);
 };

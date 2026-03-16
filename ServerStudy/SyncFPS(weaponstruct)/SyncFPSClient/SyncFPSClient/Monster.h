@@ -5,7 +5,7 @@
 /*
 * 설명 : 간이 몬스터 클래스
 */
-class Monster : public DynamicGameObject {
+class Monster : public GameObject {
 private:
 	/*float m_speed = 2.0f;
 	float m_patrolRange = 20.0f;
@@ -46,12 +46,12 @@ public:
 	* 매개변수 :
 	* float deltaTime : 이전 업데이트 실행 부터 현재까지의 시간 차이.
 	*/
-	virtual void Update(float deltaTime);
+	virtual void Update(float deltaTime) override;
 
 	/*
 	* 설명 : 게임오브젝트를 렌더링한다.
 	*/
-	virtual void Render(matrix parent = XMMatrixIdentity());
+	virtual void Render();
 
 	/*
 	* 몬스터를 초기화 한다.

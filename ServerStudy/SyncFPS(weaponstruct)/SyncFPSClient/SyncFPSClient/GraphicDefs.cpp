@@ -60,12 +60,10 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 
 		const BYTE* pSrc = pInitImage;
 		BYTE* pDest = pMappedPtr;
-		int mul = 4;
-		if (Format == DXGI_FORMAT_R8_SNORM) mul = 1;
 		for (UINT y = 0; y < Height; y++)
 		{
-			memcpy(pDest, pSrc, Width * mul);
-			pSrc += (Width * mul);
+			memcpy(pDest, pSrc, Width * 4);
+			pSrc += (Width * 4);
 			pDest += Footprint.Footprint.RowPitch;
 		}
 		// Unmap
@@ -90,8 +88,9 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 		int srvIndex = gd.TextureDescriptorAllotter.Alloc();
 		if (srvIndex >= 0)
 		{
-			descindex = DescIndex(false, srvIndex);
-			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, descindex.hCreation.hcpu);
+			hCpu = gd.TextureDescriptorAllotter.GetCPUHandle(srvIndex);
+			hGpu = gd.TextureDescriptorAllotter.GetGPUHandle(srvIndex);
+			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, hCpu);
 		}
 		else
 		{
@@ -101,9 +100,9 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 		}
 	}
 	else {
-		bool b = gd.ShaderVisibleDescPool.ImmortalAlloc(&descindex, 1);
+		bool b = gd.ShaderVisibleDescPool.ImmortalAllocDescriptorTable(&hCpu, &hGpu, 1);
 		if (b) {
-			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, descindex.hCreation.hcpu);
+			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, hCpu);
 		}
 		else {
 			resource->Release();
@@ -112,7 +111,7 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 		}
 	}
 
-	AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	return TRUE;
 }
@@ -209,7 +208,7 @@ TEXTURE_LOAD_START:
 	ID3D12Resource* texture = nullptr, * uploadbuff = nullptr;
 	std::unique_ptr<uint8_t[]> ddsData;
 	std::vector<D3D12_SUBRESOURCE_DATA> subresources;
-	texture = CreateTextureResourceFromDDSFile(gd.pDevice, gd.gpucmd, DDSName, &uploadbuff, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	texture = CreateTextureResourceFromDDSFile(gd.pDevice, gd.pCommandList, DDSName, &uploadbuff, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	texture->QueryInterface<ID3D12Resource2>(&resource);
 	this->CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
@@ -226,8 +225,9 @@ TEXTURE_LOAD_START:
 		int srvIndex = gd.TextureDescriptorAllotter.Alloc();
 		if (srvIndex >= 0)
 		{
-			descindex.Set(false, srvIndex);
-			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, descindex.hCreation.hcpu);
+			hCpu = gd.TextureDescriptorAllotter.GetCPUHandle(srvIndex);
+			hGpu = gd.TextureDescriptorAllotter.GetGPUHandle(srvIndex);
+			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, hCpu);
 		}
 		else
 		{
@@ -237,9 +237,9 @@ TEXTURE_LOAD_START:
 		}
 	}
 	else {
-		bool b = gd.ShaderVisibleDescPool.ImmortalAlloc(&descindex, 1);
+		bool b = gd.ShaderVisibleDescPool.ImmortalAllocDescriptorTable(&hCpu, &hGpu, 1);
 		if (b) {
-			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, descindex.hCreation.hcpu);
+			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, hCpu);
 		}
 		else {
 			resource->Release();
@@ -264,11 +264,15 @@ void GPUResource::UpdateTextureForWrite(ID3D12Resource* pSrcTexResource)
 	gd.pDevice->GetCopyableFootprints(&Desc, 0, Desc.MipLevels, 0, Footprint, Rows,
 		RowSize, &TotalBytes);
 
-	if (FAILED(gd.gpucmd.Reset()))
+	if (FAILED(gd.pCommandAllocator->Reset()))
 		__debugbreak();
 
+	if (FAILED(gd.pCommandList->Reset(gd.pCommandAllocator, nullptr)))
+		__debugbreak();
+
+
 	if (CurrentState_InCommandWriteLine != D3D12_RESOURCE_STATE_COPY_DEST) {
-		this->AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_COPY_DEST);
+		this->AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_COPY_DEST);
 	}
 
 	for (DWORD i = 0; i < Desc.MipLevels; ++i) {
@@ -283,29 +287,28 @@ void GPUResource::UpdateTextureForWrite(ID3D12Resource* pSrcTexResource)
 		srcLocation.pResource = pSrcTexResource;
 		srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 
-		gd.gpucmd->CopyTextureRegion(&destLocation, 0, 0, 0, &srcLocation, nullptr);
+		gd.pCommandList->CopyTextureRegion(&destLocation, 0, 0, 0, &srcLocation, nullptr);
 	}
 
-	this->AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	gd.gpucmd.Close();
-	gd.gpucmd.Execute();
-	gd.gpucmd.WaitGPUComplete();
+	this->AddResourceBarrierTransitoinToCommand(gd.pCommandList, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	gd.pCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { gd.pCommandList };
+	gd.pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	gd.WaitGPUComplete();
 }
 
 void GPUResource::Release()
 {
 	if (resource) {
-		dbgc[0] += 1;
-		if (dbgc[0] == 385) {
-			__debugbreak();
-		}
-		dbglog2(L"GPUResource %llx released. dbgc0 = %d \n", resource->GetGPUVirtualAddress(), dbgc[0]);
 		resource->Release();
 	}
 	CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_COMMON;
 	extraData = 0;
 	pGPU = 0;
-	descindex.Set(false, 0);
+	hCpu.ptr = 0;
+	hGpu.ptr = 0;
 }
 
 void DescriptorAllotter::Init(D3D12_DESCRIPTOR_HEAP_TYPE heapType, D3D12_DESCRIPTOR_HEAP_FLAGS Flags, int Capacity)
@@ -393,267 +396,6 @@ lb_return:
 	return bResult;
 }
 
-void SVDescPool2::Release()
-{
-	if (pSVDescHeapForRender)
-	{
-		pSVDescHeapForRender->Release();
-		pSVDescHeapForRender = nullptr;
-	}
-
-	if (pNSVDescHeapForCreation)
-	{
-		pNSVDescHeapForCreation->Release();
-		pNSVDescHeapForCreation = nullptr;
-	}
-
-	if (NSVDescHeapForCopy)
-	{
-		NSVDescHeapForCopy->Release();
-		NSVDescHeapForCopy = nullptr;
-	}
-}
-
-BOOL SVDescPool2::Initialize(UINT MaxDescriptorCount)
-{
-	InitDescArrSiz = 0;
-	InitDescArrCap = TextureSRVStart = 64; // 64부터 Desc 배열관리가 시작됨.
-	TextureSRVSiz = 0;
-	TextureSRVCap = 64;
-	MaterialCBVSiz = 0;
-	MaterialCBVCap = 64;
-	InstancingSRVSiz = 0;
-	InstancingSRVCap = 64;
-
-	BOOL bResult = FALSE;
-	MaxDescCount = MaxDescriptorCount;
-
-	// create SV descriptor heap
-	D3D12_DESCRIPTOR_HEAP_DESC SVDescHeapDesc = {};
-	D3D12_DESCRIPTOR_HEAP_DESC NSVDescHeapCreationDesc = {};
-	D3D12_DESCRIPTOR_HEAP_DESC NSVDescHeapCopyDesc = {};
-
-	SVDescHeapDesc.NumDescriptors = MaxDescCount;
-	SVDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	SVDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	if (FAILED(gd.pDevice->CreateDescriptorHeap(&SVDescHeapDesc, IID_PPV_ARGS(&pSVDescHeapForRender))))
-	{
-		__debugbreak();
-		goto lb_return;
-	}
-	SVDescHeapRenderHandle.hcpu = pSVDescHeapForRender->GetCPUDescriptorHandleForHeapStart();
-	SVDescHeapRenderHandle.hgpu = pSVDescHeapForRender->GetGPUDescriptorHandleForHeapStart();
-
-	// create NSV descriptor heap For Res Desc Creation
-	NSVDescHeapCreationDesc.NumDescriptors = MaxDescCount;
-	NSVDescHeapCreationDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	NSVDescHeapCreationDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	if (FAILED(gd.pDevice->CreateDescriptorHeap(&NSVDescHeapCreationDesc, IID_PPV_ARGS(&pNSVDescHeapForCreation))))
-	{
-		__debugbreak();
-		goto lb_return;
-	}
-	NSVDescHeapCreationHandle.hcpu = pNSVDescHeapForCreation->GetCPUDescriptorHandleForHeapStart();
-
-	// create NSV descriptor heap For Copy Desc
-	NSVDescHeapCopyDesc.NumDescriptors = MaxDescCount;
-	NSVDescHeapCopyDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	NSVDescHeapCopyDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	if (FAILED(gd.pDevice->CreateDescriptorHeap(&NSVDescHeapCopyDesc, IID_PPV_ARGS(&NSVDescHeapForCopy))))
-	{
-		__debugbreak();
-		goto lb_return;
-	}
-	NSVDescHeapCopyHandle.hcpu = NSVDescHeapForCopy->GetCPUDescriptorHandleForHeapStart();
-
-	bResult = TRUE;
-lb_return:
-	return bResult;
-}
-
-BOOL SVDescPool2::DynamicAlloc(DescHandle* pHandle, UINT DescriptorCount)
-{
-	BOOL bResult = FALSE;
-	if (ImmortalSize + DynamicSize + DescriptorCount > MaxDescCount)
-		return bResult;
-	DescIndex index;
-	index.Set(true, ImmortalSize + DynamicSize);
-	*pHandle = index.hRender;
-	DynamicSize += DescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-BOOL SVDescPool2::ImmortalAlloc(DescIndex* pindex, UINT DescriptorCount)
-{
-	isImmortalChange = true;
-	BOOL bResult = FALSE;
-	if (InitDescArrSiz + DescriptorCount > InitDescArrCap)
-	{
-		ExpendDescStructure(2 * InitDescArrCap, TextureSRVCap, MaterialCBVCap, InstancingSRVCap);
-	}
-	pindex->Set(true, InitDescArrSiz);
-	InitDescArrSiz += DescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-BOOL SVDescPool2::ImmortalAlloc_TextureSRV(DescIndex* pindex, UINT DescriptorCount)
-{
-	isImmortalChange = true;
-	BOOL bResult = FALSE;
-	if (TextureSRVSiz + DescriptorCount > TextureSRVCap)
-	{
-		ExpendDescStructure(InitDescArrCap, 2 * TextureSRVCap, MaterialCBVCap, InstancingSRVCap);
-	}
-	pindex->Set(true, InitDescArrCap + TextureSRVSiz);
-	TextureSRVSiz += DescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-BOOL SVDescPool2::ImmortalAlloc_MaterialCBV(DescIndex* pindex, UINT DescriptorCount)
-{
-	isImmortalChange = true;
-	BOOL bResult = FALSE;
-	if (MaterialCBVSiz + DescriptorCount > MaterialCBVCap)
-	{
-		ExpendDescStructure(InitDescArrCap, TextureSRVCap, 2 * MaterialCBVCap, InstancingSRVCap);
-	}
-	pindex->Set(true, InitDescArrCap + TextureSRVCap + MaterialCBVSiz);
-	MaterialCBVSiz += DescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-BOOL SVDescPool2::ImmortalAlloc_InstancingSRV(DescIndex* pindex, UINT DescriptorCount)
-{
-	isImmortalChange = true;
-	BOOL bResult = FALSE;
-	if (InstancingSRVSiz + DescriptorCount > InstancingSRVCap)
-	{
-		ExpendDescStructure(InitDescArrCap, TextureSRVCap, MaterialCBVCap, 2 * InstancingSRVCap);
-	}
-	pindex->Set(true, InitDescArrCap + TextureSRVCap + MaterialCBVCap + InstancingSRVSiz);
-	InstancingSRVSiz += DescriptorCount;
-	bResult = TRUE;
-	return bResult;
-}
-
-void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRVCap, ui32 newMaterialCBVCap, ui32 newInstancingSRVCap)
-{
-	D3D12_DESCRIPTOR_HEAP_TYPE descheaptype = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-
-	//source meta
-	D3D12_CPU_DESCRIPTOR_HANDLE SourceHandleArr[1];
-	UINT SourceSizeArr[1];
-	SourceHandleArr[0] = NSVDescHeapCreationHandle[0].hcpu;
-	SourceSizeArr[0] = ImmortalSize;
-
-	//dest meta
-	D3D12_CPU_DESCRIPTOR_HANDLE DestHandleArr[5]; // init, tex, material, instancing, dynamic
-	UINT DestSizeArr[5];
-	DestHandleArr[0] = NSVDescHeapCopyHandle[0].hcpu;
-	DestSizeArr[0] = InitDescArrCap;
-	DestHandleArr[1] = NSVDescHeapCopyHandle[newInitDescArrCap].hcpu;
-	DestSizeArr[1] = TextureSRVCap;
-	DestHandleArr[2] = NSVDescHeapCopyHandle[newInitDescArrCap + newTextureSRVCap].hcpu;
-	DestSizeArr[2] = MaterialCBVCap;
-	DestHandleArr[3] = NSVDescHeapCopyHandle[newInitDescArrCap + newTextureSRVCap + newMaterialCBVCap].hcpu;
-	DestSizeArr[3] = InstancingSRVCap;
-	DestHandleArr[4] = NSVDescHeapCopyHandle[newInitDescArrCap + newTextureSRVCap + newMaterialCBVCap + newInstancingSRVCap].hcpu;
-	DestSizeArr[4] = DynamicSize;
-	//copy to NSVDescHeap
-	gd.pDevice->CopyDescriptors(5, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
-
-	ui32 beforeMatTexturesSRVStart = TextureSRVStart;
-	ui32 afterMatTexturesSRVStart = newInitDescArrCap;
-	ui32 TexturesSRVdelta = afterMatTexturesSRVStart - beforeMatTexturesSRVStart;
-
-	ui32 beforeMatCBVStart = TextureSRVStart + TextureSRVCap;
-	ui32 afterMatCBVStart = newInitDescArrCap + newTextureSRVCap;
-	ui32 MatCBVdelta = afterMatCBVStart - beforeMatCBVStart;
-	for (int i = 0; i < game.MaterialTable.size(); ++i) {
-		Material& mat = game.MaterialTable[i];
-		mat.TextureSRVTableIndex.index += TexturesSRVdelta;
-		mat.CB_Resource.descindex.index += MatCBVdelta;
-	}
-
-	ui32 beforeInstancingSRVStart = TextureSRVStart + TextureSRVCap + MaterialCBVCap;
-	ui32 afterInstancingSRVStart = newInitDescArrCap + newTextureSRVCap + newMaterialCBVCap;
-	ui32 InstancingSRVdelta = afterInstancingSRVStart - beforeInstancingSRVStart;
-	for (int i = 0; i < game.MeshTable.size(); ++i) {
-		Mesh* mesh = game.MeshTable[i];
-		for (int k = 0; k < mesh->subMeshNum; ++k) {
-			mesh->InstanceData[k].InstancingSRVIndex.index += InstancingSRVdelta;
-		}
-	}
-
-	InitDescArrCap = newInitDescArrCap;
-	TextureSRVCap = newTextureSRVCap;
-	MaterialCBVCap = newMaterialCBVCap;
-	InstancingSRVCap = newInstancingSRVCap;
-
-	SourceHandleArr[0] = NSVDescHeapCopyHandle[0].hcpu;
-	SourceSizeArr[0] = ImmortalSize;
-	DestHandleArr[0] = NSVDescHeapCreationHandle[0].hcpu;
-	DestSizeArr[0] = ImmortalSize;
-	gd.pDevice->CopyDescriptors(1, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
-
-	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + TextureSRVSiz);
-	for (int i = 0; i < TextureSRVCap - TextureSRVSiz; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hCreation.hcpu, game.TextureTable[0]->descindex.hCreation.hcpu, descheaptype);
-		dummyTexSRV.index += 1;
-	}
-
-	DescIndex dummyMatCBV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVSiz);
-	for (int i = 0; i < MaterialCBVCap - MaterialCBVSiz; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hCreation.hcpu, game.MaterialTable[0].CB_Resource.descindex.hCreation.hcpu, descheaptype);
-		dummyMatCBV.index += 1;
-	}
-
-	DescIndex dummyInstancingSRV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVCap + InstancingSRVSiz);
-	for (int i = 0; i < InstancingSRVCap - InstancingSRVSiz; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, dummyInstancingSRV.hCreation.hcpu, game.MeshTable[0]->InstanceData[0].InstancingSRVIndex.hCreation.hcpu, descheaptype);
-		dummyInstancingSRV.index += 1;
-	}
-
-	Material::InitMaterialStructuredBuffer(true);
-
-	game.MyPBRShader1->ReBuild_Shader(ShaderType::InstancingWithShadow);
-}
-
-void SVDescPool2::BakeImmortalDesc()
-{
-	if (isImmortalChange) {
-		D3D12_DESCRIPTOR_HEAP_TYPE descheaptype = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-
-		// copy to SV
-		D3D12_CPU_DESCRIPTOR_HANDLE SourceHandleArr[1];
-		UINT SourceSizeArr[1];
-		SourceHandleArr[0] = NSVDescHeapCreationHandle[0].hcpu;
-		SourceSizeArr[0] = ImmortalSize;
-		D3D12_CPU_DESCRIPTOR_HANDLE DestHandleArr[1];
-		UINT DestSizeArr[1];
-		DestHandleArr[0] = SVDescHeapRenderHandle[0].hcpu;
-		DestSizeArr[0] = ImmortalSize;
-		gd.pDevice->CopyDescriptors(1, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
-		Material::InitMaterialStructuredBuffer();
-
-		isImmortalChange = false;
-	}
-}
-
-bool SVDescPool2::IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu)
-{
-	return (pSVDescHeapForRender->GetCPUDescriptorHandleForHeapStart().ptr <= hcpu.ptr) && (hcpu.ptr < pSVDescHeapForRender->GetCPUDescriptorHandleForHeapStart().ptr + gd.CBVSRVUAVSize * MaxDescCount);
-}
-
-void SVDescPool2::DynamicReset()
-{
-	DynamicSize = 0;
-}
-
 BOOL ShaderVisibleDescriptorPool::AllocDescriptorTable(D3D12_CPU_DESCRIPTOR_HANDLE* pOutCPUDescriptor, D3D12_GPU_DESCRIPTOR_HANDLE* pOutGPUDescriptor, UINT DescriptorCount)
 {
 	BOOL bResult = FALSE;
@@ -695,28 +437,4 @@ bool ShaderVisibleDescriptorPool::IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu
 void ShaderVisibleDescriptorPool::Reset()
 {
 	m_AllocatedDescriptorCount = m_srvImmortalDescriptorSize;
-}
-
-DescHandle DescIndex::GetCreationDescHandle() const
-{
-	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.NSVDescHeapCreationHandle[index];
-	else if (type == 'n') return DescHandle(gd.TextureDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'r') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index));
-	else if (type == 'd') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index));
-}
-
-DescHandle DescIndex::GetRenderDescHandle() const
-{
-	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.SVDescHeapRenderHandle[index];
-	else if (type == 'n') return DescHandle(D3D12_CPU_DESCRIPTOR_HANDLE(0), D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'r') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(0));
-	else if (type == 'd') return DescHandle(
-		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.DSVSize * index),
-		D3D12_GPU_DESCRIPTOR_HANDLE(0));
 }
