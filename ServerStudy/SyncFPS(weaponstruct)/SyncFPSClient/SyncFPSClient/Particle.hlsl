@@ -208,6 +208,56 @@ void MuzzleFlashCS(uint3 id : SV_DispatchThreadID)
     ParticlesRW[i] = p;
 }
 
+cbuffer TracerCB : register(b1)
+{
+    float4 TracerMuzzlePos;
+    float4 TracerDir;
+    float4 TracerParams; // x:Speed, y:Life, z:Size, w:Count
+};
+
+[numthreads(256, 1, 1)]
+void TracerCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+
+    float rawW = TracerParams.w;
+    
+    if (rawW >= 0.0f)
+    {
+        uint startIndex = (uint) rawW;
+        uint count = (uint) ((rawW - startIndex) * 10000.0f + 0.5f);
+
+        if (count > 0 && i >= startIndex && i < startIndex + count)
+        {
+            p.Age = 0;
+            p.Position = TracerMuzzlePos.xyz;
+            float spread = TracerDir.w;
+            float3 randDir = float3(rand(i) - 0.5, rand(i + 1) - 0.5, rand(i + 2) - 0.5) * spread;
+            p.Velocity = normalize(TracerDir.xyz + randDir) * TracerParams.x;
+            p.Life = TracerParams.y;
+            p.Size = TracerParams.z;
+            
+            ParticlesRW[i] = p;
+            return; 
+        }
+    }
+
+    if (p.Life > 0.0f)
+    {
+        p.Position += p.Velocity * dt;
+        p.Age += dt;
+        p.Life -= dt;
+    }
+    else
+    {
+        p.Size = 0.0f;
+        p.Life = -1.0f;
+    }
+
+    ParticlesRW[i] = p;
+}
+
 // Vertex Shader (SV_VertexID)
 // VS
 StructuredBuffer<Particle> Particles : register(t0);
@@ -237,9 +287,12 @@ VSOut VS(uint id : SV_VertexID)
     uint FrameCols = 6;
     uint FrameRows = 6;
 
+    // t는 0(탄생)에서 1(소멸)로 갑니다.
     float t = saturate(p.Age / max(p.Life, 0.001));
-    float sizeAnim = sin(t * 3.14159f);
-    float currentSize = p.Size * (0.5f + sizeAnim);
+    
+    // [총알 연출 1] 총알은 날아가는 동안 크기가 유지되어야 "덩어리"로 보입니다.
+    // 기존의 sin 애니메이션을 제거하고 수명 끝에서만 살짝 작아지게 변경합니다.
+    float currentSize = p.Size * (1.0f - t * 0.2f);
 
     float2 offsets[6] =
     {
@@ -247,24 +300,44 @@ VSOut VS(uint id : SV_VertexID)
         float2(-1, -1), float2(1, 1), float2(1, -1)
     };
 
-    float3 worldPos =
-        p.Position +
-        (CamRight * offsets[vId].x +
-         CamUp * offsets[vId].y) * currentSize;
+    float3 worldPos = p.Position;
+    float3 velocity = p.Velocity;
+    float speed = length(velocity);
+
+    // [총알 연출 2] 궤적(Line)이 아니라 탄환(Projectile) 느낌 내기
+    if (speed > 100.0f)
+    {
+        float3 vDir = normalize(velocity);
+        // 기존처럼 CamUp을 사용하여 연산 (추가 상수 버퍼 필요 없음)
+        float3 sideDir = normalize(cross(vDir, CamUp));
+        
+        // [핵심] stretch 값을 줄여서 궤적이 너무 길어지지 않게 합니다. (0.005 -> 0.002)
+        // 그리고 총알의 "두께"인 p.Size를 충분히 확보합니다.
+        float bulletStretch = min(speed * 0.002f, 0.7f);
+        
+        // worldPos 계산 시 offsets[vId].y에 더해지는 길이를 제한하여 "짧고 굵은" 느낌 유도
+        worldPos += (sideDir * offsets[vId].x * currentSize) +
+                    (vDir * offsets[vId].y * (currentSize + bulletStretch));
+    }
+    else
+    {
+        worldPos += (CamRight * offsets[vId].x + CamUp * offsets[vId].y) * currentSize;
+    }
 
     VSOut o;
     o.Pos = mul(float4(worldPos, 1), ViewProj);
 
-    float4 ColorStart = float4(1.0f, 0.9f, 0.5f, 1.0f);
-    float4 ColorMid = float4(1.0f, 0.4f, 0.0f, 1.0f);
+    // [총알 연출 3] 색상을 더 밝게 하여 "빛나는 탄환" 느낌 강조
+    float4 ColorStart = float4(2.0f, 1.8f, 1.0f, 1.0f); // HDR 느낌을 위해 수치를 1.0 이상으로
+    float4 ColorMid = float4(1.0f, 0.5f, 0.1f, 1.0f);
     float4 ColorEnd = float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-    if (t < 0.5f)
-        o.Color = lerp(ColorStart, ColorMid, t * 2.0f);
+    if (t < 0.2f)
+        o.Color = lerp(ColorStart, ColorMid, t * 5.0f);
     else
-        o.Color = lerp(ColorMid, ColorEnd, (t - 0.5f) * 2.0f);
+        o.Color = lerp(ColorMid, ColorEnd, (t - 0.2f) * 1.25f);
 
-
+    // UV 및 애니메이션 (기존 유지)
     float2 baseUVs[6] =
     {
         float2(0, 1), float2(0, 0), float2(1, 0),
@@ -272,7 +345,6 @@ VSOut VS(uint id : SV_VertexID)
     };
     
     float2 uv = baseUVs[vId];
-
     uint totalFrames = FrameCols * FrameRows;
     uint currentFrameIndex = (uint) (t * (totalFrames - 1));
 

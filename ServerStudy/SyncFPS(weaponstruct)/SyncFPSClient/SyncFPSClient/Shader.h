@@ -239,8 +239,8 @@ public:
 	ID3D12RootSignature* RootSig = nullptr;
 	ID3D12PipelineState* PSO = nullptr;
 
-	void Init(const wchar_t* hlslFile, const char* entry);
+	void Init(const wchar_t* hlslFile, const char* entry, UINT constantSizeInBytes);
 	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
 	void DispatchMuzzle(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, const MuzzleCB& data, float dt);
-
+	void DispatchTracer(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, const TracerCB& data, float dt);
 };

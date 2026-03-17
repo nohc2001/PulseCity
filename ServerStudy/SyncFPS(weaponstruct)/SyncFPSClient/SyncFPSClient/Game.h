@@ -170,11 +170,13 @@ public:
 	ParticlePool FirePillarPool;
 	ParticlePool FireRingPool;
 	ParticlePool MuzzlePool;
+	ParticlePool TracerPool;
 
 	ParticleCompute* FireCS = nullptr;
 	ParticleCompute* FirePillarCS = nullptr;
 	ParticleCompute* FireRingCS = nullptr;
 	ParticleCompute* MuzzleFlashCS = nullptr;
+	ParticleCompute* TracerCS = nullptr;
 
 	ParticleCompute* ParticleCS = nullptr;
 	ParticleShader* ParticleDraw = nullptr;

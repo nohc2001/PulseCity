@@ -80,8 +80,13 @@ public:
 	MuzzleCB m_muzzleData;        
 	float m_lastShootFlow = 0.0f;
 
+	TracerCB m_tracerData;
+	uint32_t m_currentTracerIdx = 0;
+	uint32_t m_tracerPoolSize = 2048;
+
 	Player() : HP{ 100 } {
 		m_pWeapon = new Weapon(WeaponType::Sniper);
+		m_tracerPoolSize = 2048;
 	}
 
 	virtual ~Player() { if (m_pWeapon) delete m_pWeapon; }

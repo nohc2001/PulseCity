@@ -215,6 +215,8 @@ void Player::ClientUpdate(float deltaTime)
 
 		m_bIsShooting = true;
 
+		const WeaponData& wData = GWeaponTable[m_currentWeaponType];
+
 		float offX = m_pWeapon->m_info.muzzleOffset.x;
 		float offY = m_pWeapon->m_info.muzzleOffset.y;
 		float offZ = m_pWeapon->m_info.muzzleOffset.z;
@@ -230,7 +232,27 @@ void Player::ClientUpdate(float deltaTime)
 		m_muzzleData.MuzzleDir.w = 0.6f;
 		m_muzzleData.MuzzleBurst = 1.0f;
 
-		m_muzzleData.pad[0] = 0.0f; m_muzzleData.pad[1] = 0.0f; m_muzzleData.pad[2] = 0.0f;
+		m_tracerData.TracerMuzzlePos = m_muzzleData.MuzzlePos;
+		m_tracerData.TracerDir = m_muzzleData.MuzzleDir;
+		m_tracerData.TracerDir.w = wData.tracerSpread;
+
+		m_tracerData.TracerParams.x = wData.tracerSpeed;
+		m_tracerData.TracerParams.y = wData.tracerLife;
+		m_tracerData.TracerParams.z = wData.tracerSize;
+
+		float shootCount = (wData.type == WeaponType::Shotgun) ? 20.0f : 1.0f;
+
+		m_tracerData.TracerParams.w = (float)m_currentTracerIdx + (shootCount * 0.0001f);
+
+		if (m_tracerPoolSize > 0) 
+		{
+			m_currentTracerIdx = (m_currentTracerIdx + (uint32_t)shootCount) % m_tracerPoolSize;
+		}
+		else
+		{
+			m_tracerPoolSize = 4096;
+			m_currentTracerIdx = (m_currentTracerIdx + (uint32_t)shootCount) % m_tracerPoolSize;
+		}
 	}
 	else
 	{

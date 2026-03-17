@@ -342,18 +342,22 @@ void Game::Init()
 	InitParticlePool(FirePillarPool, FIRE_PILLAR_COUNT);
 	InitParticlePool(FireRingPool, FIRE_RING_COUNT);
 	InitParticlePool(MuzzlePool, 1024);
+	InitParticlePool(TracerPool, 2048);
 
 	FireCS = new ParticleCompute();
-	FireCS->Init(L"Particle.hlsl", "FireCS");
+	FireCS->Init(L"Particle.hlsl", "FireCS", sizeof(Particle));
 
 	MuzzleFlashCS = new ParticleCompute();
-	MuzzleFlashCS->Init(L"Particle.hlsl", "MuzzleFlashCS");
+	MuzzleFlashCS->Init(L"Particle.hlsl", "MuzzleFlashCS", sizeof(MuzzleCB));
+
+	TracerCS = new ParticleCompute();
+	TracerCS->Init(L"Particle.hlsl", "TracerCS", sizeof(TracerCB));
 
 	FirePillarCS = new ParticleCompute();
-	FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS");
+	FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS", sizeof(Particle));
 
 	FireRingCS = new ParticleCompute();
-	FireRingCS->Init(L"Particle.hlsl", "FireRingCS");
+	FireRingCS->Init(L"Particle.hlsl", "FireRingCS", sizeof(Particle));
 
 	ParticleDraw = new ParticleShader();
 	ParticleDraw->InitShader();
@@ -489,11 +493,21 @@ void Game::Render() {
 		);
 
 		ParticleDraw->Render(gd.pCommandList, &MuzzlePool.Buffer, MuzzlePool.Count, true);
+
+		TracerCS->DispatchTracer(
+			gd.pCommandList,
+			&TracerPool.Buffer,
+			TracerPool.Count,
+			game.player->m_tracerData,
+			DeltaTime
+		);
+		
+		game.player->m_tracerData.TracerParams.w = -1.0f;
+
+		ParticleDraw->Render(gd.pCommandList, &TracerPool.Buffer, TracerPool.Count, false);
+
 	}
 
-	// 2. 렌더링 (Draw)
-	// MuzzlePool에 데이터가 (살아있는 파티클이) 있다면 화면에 그림
-	ParticleDraw->Render(gd.pCommandList, &MuzzlePool.Buffer, MuzzlePool.Count);
 	//////////////////
 
 	((Shader*)MyOnlyColorShader)->Add_RegisterShaderCommand(gd.pCommandList);

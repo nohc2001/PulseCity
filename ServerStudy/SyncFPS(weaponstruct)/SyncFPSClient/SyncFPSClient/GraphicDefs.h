@@ -380,3 +380,10 @@ struct MuzzleCB {
 	float MuzzleBurst;
 	float pad[3];
 };
+
+struct TracerCB
+{
+	vec4 TracerMuzzlePos;
+	vec4 TracerDir;      
+	vec4 TracerParams;    
+};
