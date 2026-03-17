@@ -111,6 +111,14 @@ ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/.vs/
 ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/x64/
 ServerStudy/SyncFPS(weaponstruct)/SyncFPSServer/SyncFPSServer/x64/
 
+ServerStudy/SyncFPS(weaponstruct)/SyncFPS_PortalWork/.vs/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPS_PortalWork/x64/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPS_PortalWork/SyncFPSClient/x64/
+
+ServerStudy/SyncFPS(weaponstruct)/SyncFPS_PortalWork/.vs/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPS_PortalWork/x64/
+ServerStudy/SyncFPS(weaponstruct)/SyncFPS_PortalWork/SyncFPSServer/x64/
+
 *.vsidx
 *.log
 *.iobj
