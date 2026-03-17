@@ -143,6 +143,9 @@ union Tag {
 enum GameObjectTag {
 	Tag_Enable = 1, // 게임오브젝트 활성화 여부
 	Tag_Dynamic = 2, // 게임오브젝트가 움직일 수 있는지 여부
+	// 만약 Tag_Dynamic == true 라면.
+	Tag_SkinMeshObject = 3,
+	// 만약 Tag_Dynamic == false 라면.
 };
 
 struct GameObject {
@@ -597,6 +600,9 @@ struct GameChunk {
 	UINT TourID = 0;
 
 	GameChunk() {
+		ZeroMemory(&Static_gameobjects, sizeof(vecset<StaticGameObject*>));
+		ZeroMemory(&Dynamic_gameobjects, sizeof(vecset<DynamicGameObject*>));
+		ZeroMemory(&SkinMesh_gameobjects, sizeof(vecset<SkinMeshGameObject*>));
 		Static_gameobjects.Init(32);
 		Dynamic_gameobjects.Init(32);
 		SkinMesh_gameobjects.Init(32);

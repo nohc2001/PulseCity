@@ -434,6 +434,14 @@ struct Color {
 	}
 };
 
+struct DirLightInfo {
+	matrix DirLightProjection;
+	matrix DirLightView;
+	vec4 DirLightPos;
+	vec4 DirLightDir;
+	vec4 DirLightColor;
+};
+
 struct DirectionLight
 {
 	XMFLOAT3 gLightDirection; // Light Direction
@@ -442,22 +450,55 @@ struct DirectionLight
 	float pad1;
 };
 
-struct PointLight
+struct PointLightCBData
 {
 	XMFLOAT3 LightPos;
 	float LightIntencity;
 	XMFLOAT3 LightColor; // Light_Color
 	float LightRange;
+
+	PointLightCBData() {}
+
+	PointLightCBData(XMFLOAT3 pos, float intencity, XMFLOAT3 color, float range)
+		: LightPos{ pos }, LightIntencity{ intencity }, LightColor{ color },
+		LightRange{ range }
+	{
+
+	}
+};
+
+struct PointLight {
+	inline static GPUResource UploadCBBuffer;
+	static constexpr UINT CBCapacity = 8192;
+	inline static UINT CBSize = 0;
+	inline static PointLightCBData* UploadCBMapped = nullptr;
+	UINT CBIndex = 0;
+
+	// 움직이지 않는 Static 오브젝트들을 미리 그려놓는 DSV CubeMap
+	GPUResource StaticShadowCubeMap;
+	DescHandle StaticCubeShadowMapHandleSRV;
+	D3D12_CPU_DESCRIPTOR_HANDLE StaticCubeShadowMapHandleDSV[6];
+	// 움직일 Dynamic 오브젝트들을 실시간으로 그리는 DSV CubeMap.
+	GPUResource DynamicShadowCubeMap;
+	DescHandle DynamicCubeShadowMapHandleSRV;
+	D3D12_CPU_DESCRIPTOR_HANDLE DynamicCubeShadowMapHandleDSV[6];
+
+	ViewportData FaceViewPort[6];
+	int Resolution = 512;
+
+	void CreatePointLight(PointLightCBData init, UINT resolution = 512);
+
+	void RenderShadow();
 };
 
 struct LightCB_DATA {
 	DirectionLight dirlight;
-	PointLight pointLights[8];
+	PointLightCBData pointLights[8];
 };
 
 struct LightCB_DATA_withShadow {
 	DirectionLight dirlight;
-	PointLight pointLights[8];
+	PointLightCBData pointLights[8];
 	XMMATRIX LightProjection;
 	XMMATRIX LightView;
 	XMFLOAT3 LightPos;
@@ -1107,7 +1148,7 @@ struct GlobalDevice {
 	RayTracingDevice raytracing;
 	bool debugDXGI = false;
 	bool isSupportRaytracing = true;
-	bool isRaytracingRender = true;
+	bool isRaytracingRender = false;
 
 	IDXGIAdapter1* pSelectedAdapter = nullptr;
 	IDXGIAdapter1* pOutputAdapter = nullptr;
@@ -1126,7 +1167,7 @@ struct GlobalDevice {
 	//DirectX 12 Device
 	ID3D12Device* pDevice;
 
-	//스왑체인의 버퍼 개수
+	// 스왑체인의 버퍼 개수
 	static constexpr unsigned int SwapChainBufferCount = 2;
 	// 현재 백 버퍼의 인덱스
 	ui32 CurrentSwapChainBufferIndex;
@@ -1137,6 +1178,8 @@ struct GlobalDevice {
 	ID3D12Resource* ppRenderTargetBuffers[SwapChainBufferCount];
 	// RTV Desc Heap
 	ID3D12DescriptorHeap* pRtvDescriptorHeap;
+	// RenderTargets SRV GPU HANDLE
+	D3D12_GPU_DESCRIPTOR_HANDLE RenderTargetSRV_pGPU[SwapChainBufferCount];
 	// 현재 해상도 width
 	ui32 ClientFrameWidth;
 	// 현재 해상도 height
@@ -1185,9 +1228,10 @@ struct GlobalDevice {
 	// 폰트 데이터 배열
 	TTFFontParser::FontData font_data[FontCount];
 	// 폰트 텍스쳐들을 접근하기 위한 Map. wchar_t 하나를 받는다.
-	unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_texture_map[FontCount];
+	unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_sdftexture_map[FontCount];
 	// 텍스쳐를 추가해야할 글자를 지정.
-	vector<wchar_t> addTextureStack;
+	vector<wchar_t> addSDFTextureStack;
+
 	// <폰트를 저장하는 방식또한 달라지면 좋다.>
 
 	/*
@@ -1359,25 +1403,9 @@ struct GlobalDevice {
 		_In_range_(0, D3D12_REQ_SUBRESOURCES) UINT FirstSubresource,
 		_In_range_(0, D3D12_REQ_SUBRESOURCES - FirstSubresource) UINT NumSubresources) noexcept;
 
-	//this function cannot be executing while command list update.
-	/*
-	* 설명 : 텍스트의 텍스쳐를 만든다.
-	* 매개변수 : 
-	* wchar_t key : 새로 텍스쳐를 추가할 문자.
-	*/
-	void AddTextTexture(wchar_t key);
+	
 
-	/*
-	* 설명 : RAM에 저장된 가로와 세로가 width, height인 텍스쳐 texture에 
-	*	startpos ~ endpos 로 연결되는 하나의 선을 귿는다.
-	* 매개변수 : 
-	* float_v2 startpos : 선의 시작점
-	* float_v2 endpos : 선의 끝점
-	* BYTE* texture : RAM 텍스쳐
-	* int width : 가로픽셀길이
-	* int height : 세로픽셀길이
-	*/
-	void AddLineInTexture(float_v2 startpos, float_v2 endpos, BYTE* texture, int width, int height);
+	
 
 	/*
 	* 설명 : bmp 파일을 dds로 바꾸는 함수
@@ -1504,6 +1532,327 @@ struct GlobalDevice {
 	void CreateDefaultHeap_IB(void* ptr, GPUResource& IndexBuffer, GPUResource& IndexUploadBuffer, D3D12_INDEX_BUFFER_VIEW& view, UINT IndexCount);
 
 	GPUResource CreateShadowMap(int width, int height, int DSVoffset, SpotLight& spotLight);
+
+	//this function cannot be executing while command list update.
+	/*
+	* 설명 : 텍스트의 텍스쳐를 만든다.
+	* 매개변수 :
+	* wchar_t key : 새로 텍스쳐를 추가할 문자.
+	*/
+	void AddTextSDFTexture(wchar_t key);
+	
+	/*
+	* 설명 : RAM에 저장된 가로와 세로가 width, height인 텍스쳐 texture에
+	*	startpos ~ endpos 로 연결되는 하나의 선을 귿는다.
+	* 매개변수 :
+	* float_v2 startpos : 선의 시작점
+	* float_v2 endpos : 선의 끝점
+	* BYTE* texture : RAM 텍스쳐
+	* int width : 가로픽셀길이
+	* int height : 세로픽셀길이
+	*/
+	void AddLineInSDFTexture(float_v2 startpos, float_v2 endpos, char* texture, int width, int height);
+	__forceinline char SignedFloatNormalizeToByte(float f);
+
+	struct squarePair {
+		int a, b;
+		squarePair() {
+
+		}
+
+		~squarePair() {}
+
+		squarePair(const squarePair& ref) {
+			a = ref.a;
+			b = ref.b;
+		}
+
+		bool operator==(squarePair ref) {
+			return (ref.a == a && ref.b == b);
+		}
+	};
+
+	vector<squarePair> Spairs;
+
+	// copliot
+	static inline float clampf(float v, float lo, float hi) {
+		return max(lo, min(v, hi));
+	}
+	// 간단한 2-pass distance transform (근사)
+	std::vector<float> edt(const std::vector<uint8_t>& mask, int width, int height) {
+		//init..
+		if (Spairs.size() == 0) {
+			for (int i = 0; i < height; ++i) {
+				for (int k = 0; k < height; ++k) {
+					squarePair p;
+					p.a = i;
+					p.b = k;
+					Spairs.push_back(p);
+				}
+			}
+			std::sort(Spairs.begin(), Spairs.end(), [](const squarePair& A, const squarePair& B) {
+				int an = A.a * A.a + A.b * A.b;
+				int bn = B.a * B.a + B.b * B.b;
+				return an < bn;
+				});
+			auto last = std::unique(Spairs.begin(), Spairs.end());
+			Spairs.erase(last, Spairs.end());
+		}
+
+		const float INF = 1e9f;
+		std::vector<float> d(width * height, INF);
+
+		// 초기화
+		for (int i = 0; i < width * height; ++i) {
+			if (mask[i]) d[i] = 0.0f;
+		}
+
+		for (int yi = 0; yi < height; ++yi) {
+			for (int xi = 0; xi < width; ++xi) {
+				if (d[yi * width + xi] != 0.0f) {
+					for (int i = 0; i < Spairs.size(); ++i) {
+						float multotal = 1.0f;
+						int yibmN = yi - Spairs[i].b;
+						int xiamN = xi - Spairs[i].a;
+						int yiamN = yi - Spairs[i].a;
+						int xibmN = xi - Spairs[i].b;
+						int yibpN = yi + Spairs[i].b;
+						int xiapN = xi + Spairs[i].a;
+						int yiapN = yi + Spairs[i].a;
+						int xibpN = xi + Spairs[i].b;
+						bool yibm = yibmN >= 0;
+						bool xiam = xiamN >= 0;
+						bool yiam = yiamN >= 0;
+						bool xibm = xibmN >= 0;
+						bool yibp = yibpN < height;
+						bool xiap = xiapN < width;
+						bool yiap = yiapN < height;
+						bool xibp = xibpN < width;
+						if (yibm) {
+							if (xiam) multotal *= d[yibmN * width + xiamN];
+							if (xiap) multotal *= d[yibmN * width + xiapN];
+						}
+						if (yibp) {
+							if (xiam) multotal *= d[yibpN * width + xiamN];
+							if (xiap) multotal *= d[yibpN * width + xiapN];
+						}
+						if (yiam) {
+							if (xibm) multotal *= d[yiamN * width + xibmN];
+							if (xibp) multotal *= d[yiamN * width + xibpN];
+						}
+						if (yiap) {
+							if (xibm) multotal *= d[yiapN * width + xibmN];
+							if (xibp) multotal *= d[yiapN * width + xibpN];
+						}
+
+						if (multotal == 0.0f) {
+							squarePair& p = Spairs[i];
+							d[yi * width + xi] = (float)(p.a * p.a + p.b * p.b);
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		// sqrt로 근사 유클리드 거리
+		for (float& v : d) v = std::sqrt(v);
+		return d;
+	}
+
+	std::vector<uint8_t> makeSDF(char* raw, int width, int height, float distanceMul, float radius = -1.0f) {
+		int N = width * height;
+		std::vector<uint8_t> mask(N);
+		vector<vec2f> outlines;
+
+		// mask 생성 (0 → 내부, 127 → 외부)
+		for (int i = 0; i < N; ++i) {
+			mask[i] = (raw[i] == 0) ? 1 : 0;
+			if (raw[i] == 0) {
+				outlines.push_back(vec2f(i % width, i / width));
+			}
+		}
+
+		// 내부/외부 거리 계산
+		auto d_in = edt(mask, width, height);
+
+		std::vector<uint8_t> inv(N);
+		for (int i = 0; i < N; ++i) inv[i] = 1 - mask[i];
+		auto d_out = edt(inv, width, height);
+
+		// signed distance
+		std::vector<float> sdf(N);
+		for (int i = 0; i < N; ++i) sdf[i] = distanceMul * d_in[i] - distanceMul * d_out[i];
+
+		// 반경 설정 (자동)
+		if (radius <= 0.0f) radius = max(1.0f, 0.05f * min(width, height));
+
+		// 0~255 매핑
+		std::vector<uint8_t> out(N);
+		for (int i = 0; i < N; ++i) {
+			float n = clampf(sdf[i] / radius, -1.0f, 1.0f);
+			float u = (n * 0.5f + 0.5f) * 255.0f;
+			out[i] = static_cast<uint8_t>(std::round(u));
+		}
+
+		return out;
+	}
+
+	struct TextureWithUAV
+	{
+		ID3D12Resource* texture;
+		DescIndex handle;
+	};
+
+	// width, height 크기의 텍스처와 UAV를 생성하는 함수
+	TextureWithUAV CreateTextureWithUAV(ID3D12Device* device, UINT width, UINT height, DXGI_FORMAT format)
+	{
+		TextureWithUAV result{};
+
+		// 1. 텍스처 리소스 생성
+		D3D12_RESOURCE_DESC texDesc = {};
+		texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+		texDesc.Alignment = 0;
+		texDesc.Width = width;
+		texDesc.Height = height;
+		texDesc.DepthOrArraySize = 1;
+		texDesc.MipLevels = 1;
+		texDesc.Format = format;
+		texDesc.SampleDesc.Count = 1;
+		texDesc.SampleDesc.Quality = 0;
+		texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+		texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+		CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+
+		HRESULT hr = device->CreateCommittedResource(
+			&heapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&texDesc,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			nullptr,
+			IID_PPV_ARGS(&result.texture)
+		);
+		if (FAILED(hr))
+		{
+			throw std::runtime_error("Failed to create texture resource");
+		}
+
+		// 2. UAV 생성
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.Format = format;
+		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+		uavDesc.Texture2D.MipSlice = 0;
+		uavDesc.Texture2D.PlaneSlice = 0;
+
+		ShaderVisibleDescPool.ImmortalAlloc(&result.handle, 1);
+		device->CreateUnorderedAccessView(result.texture, nullptr, &uavDesc, result.handle.hCreation.hcpu);
+		return result;
+	}
+	TextureWithUAV BlurTexture;
+
+	struct RenderTargetBundle
+	{
+		ID3D12Resource* resource;
+		DescHandle rtvHandle;
+		DescIndex srvHandle;
+	};
+
+	RenderTargetBundle CreateRenderTargetTextureWithRTV(
+		ID3D12Device* device,
+		ID3D12DescriptorHeap* rtvHeap,
+		UINT rtvIndex,
+		UINT width,
+		UINT height,
+		DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM)
+	{
+		// 결과 반환
+		RenderTargetBundle bundle;
+
+		UINT rtvDescriptorSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+		// 리소스 설명
+		D3D12_RESOURCE_DESC texDesc = {};
+		texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+		texDesc.Alignment = 0;
+		texDesc.Width = width;
+		texDesc.Height = height;
+		texDesc.DepthOrArraySize = 1;
+		texDesc.MipLevels = 1;
+		texDesc.Format = format;
+		texDesc.SampleDesc.Count = 1;
+		texDesc.SampleDesc.Quality = 0;
+		texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+		texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; // UAV도 허용
+
+		// RTV 클리어 값
+		D3D12_CLEAR_VALUE clearValue = {};
+		clearValue.Format = format;
+		clearValue.Color[0] = 0.0f;
+		clearValue.Color[1] = 0.0f;
+		clearValue.Color[2] = 0.0f;
+		clearValue.Color[3] = 1.0f;
+
+		// 리소스 생성
+		ID3D12Resource* renderTarget;
+		CD3DX12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+		HRESULT hr = device->CreateCommittedResource(
+			&hp,
+			D3D12_HEAP_FLAG_NONE,
+			&texDesc,
+			D3D12_RESOURCE_STATE_RENDER_TARGET, // 초기 상태 RTV
+			&clearValue,
+			IID_PPV_ARGS(&renderTarget)
+		);
+		if (FAILED(hr))
+		{
+			throw std::runtime_error("Failed to create render target texture.");
+		}
+
+		// RTV 핸들 할당
+		DescHandle rtvHandle;
+		rtvHandle.hcpu.ptr = rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + rtvIndex * rtvDescriptorSize;
+
+		// RTV 생성
+		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+		rtvDesc.Format = format;
+		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+		rtvDesc.Texture2D.MipSlice = 0;
+
+		device->CreateRenderTargetView(renderTarget, &rtvDesc, rtvHandle.hcpu);
+
+		// shader Resource View
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		srvDesc.Texture2D.MostDetailedMip = 0;
+		ShaderVisibleDescPool.ImmortalAlloc(&bundle.srvHandle, 1);
+		pDevice->CreateShaderResourceView(renderTarget, &srvDesc, bundle.srvHandle.hCreation.hcpu);
+
+		bundle.resource = renderTarget;
+		bundle.rtvHandle = rtvHandle;
+		return bundle;
+	}
+
+	RenderTargetBundle SubRenderTarget;
+
+	static constexpr UINT max_lightProbeCount = 1024;
+	__forceinline UINT GetLightProbeRTVIndex(UINT index) {
+		return SwapChainBufferCount + GbufferCount + 1 + 6 * index;
+	}
+
+	static constexpr UINT max_DirLightCascadingShadowCount = 4;
+	__forceinline UINT GetDirLightCascadingShadowDSVIndex(UINT index) {
+		return 2 + index;
+	}
+
+	static constexpr UINT max_PointLightMaxCount = 1024;
+	__forceinline UINT GetPointLightShadowDSVIndex(UINT index) {
+		return 2 + max_DirLightCascadingShadowCount + 6 * index;
+	}
 };
 
 /*
@@ -2404,7 +2753,7 @@ struct ModelNode {
 	// 자식노드들
 	ModelNode** Childrens;
 	// 메쉬의 개수
-	unsigned int numMesh;
+	unsigned int numMesh = 0;
 	// 메쉬의 인덱스 배열
 	unsigned int* Meshes; // array of int
 	// 메쉬가 가진 머터리얼 번호 배열
@@ -2631,7 +2980,7 @@ public:
 /*
 * 설명 : 단일 색상을 출력하는 셰이더
 */
-class OnlyColorShader : Shader {
+class OnlyColorShader : public Shader {
 public:
 	ID3D12PipelineState* pUiPipelineState;
 
@@ -2646,7 +2995,7 @@ public:
 /*
 * 설명 : 화면에 글자를 출력하는 셰이더 / 어떤 화면 영역에 텍스쳐를 렌더링 하는 셰이더
 */
-class ScreenCharactorShader : Shader {
+class ScreenCharactorShader : public Shader {
 public:
 	ScreenCharactorShader();
 	virtual ~ScreenCharactorShader();
@@ -2748,6 +3097,7 @@ class SkyBoxShader : public Shader {
 public:
 	GPUResource CurrentSkyBox;
 	GPUResource SkyBoxMesh;
+	GPUResource VertexUploadBuffer;
 	D3D12_VERTEX_BUFFER_VIEW SkyBoxMeshVBView;
 
 	void LoadSkyBox(const wchar_t* filename);
@@ -2758,11 +3108,12 @@ public:
 	virtual void InitShader();
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
+	virtual void CreatePipelineState_InnerMirror();
 
-	virtual void Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
 	virtual void Release();
 
-	void RenderSkyBox();
+	void RenderSkyBox(matrix parentMat = XMMatrixIdentity(), ShaderType reg = ShaderType::RenderNormal);
 };
 
 class ParticleShader : public Shader {
@@ -2787,6 +3138,16 @@ public:
 
 	void Init(const wchar_t* hlslFile, const char* entry);
 	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
+};
+
+class ComputeTestShader : public Shader {
+public:
+	virtual void InitShader();
+	virtual void CreateRootSignature();
+	virtual void CreatePipelineState();
+
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Release();
 };
 
 #pragma region DescHandleAndIndexCode

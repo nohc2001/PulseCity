@@ -516,7 +516,6 @@ struct StaticGameObject : public GameObject {
 	}
 
 	static void PrintOffset(ofstream& ofs) {
-		GameObject::PrintOffset(ofs);
 		for (int i = 0;i < g_members.size();++i) {
 			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
 		}
@@ -908,10 +907,7 @@ struct Player : public SkinMeshGameObject {
 	float m_yaw;
 	float m_pitch;
 
-	Player() : HP(100.0f), HeatGauge(0), MaxHeatGauge(200) {
-		m_currentWeaponType = (int)WeaponType::Sniper;
-		weapon = Weapon(WeaponType::Sniper);
-	}
+	Player();
 
 	virtual ~Player() { }
 
@@ -1139,7 +1135,7 @@ struct Monster : public SkinMeshGameObject {
 	//ServerOnly ??
 	float pathfindTimer = 0.0f;
 
-	Monster() {}
+	Monster();
 	virtual ~Monster() {}
 
 	virtual void Update(float deltaTime) override;
@@ -1204,7 +1200,7 @@ struct Monster : public SkinMeshGameObject {
 		header.size = reqsiz;
 		header.st = SendingType::SyncGameObject;
 		header.objindex = objindex;
-		header.type = GameObjectType::_DynamicGameObject;
+		header.type = GameObjectType::_Monster;
 		offset += sizeof(STC_SyncGameObject_Header);
 
 		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);

@@ -499,7 +499,6 @@ void GlobalDevice::Init()
 		uint8_t condition_variable = 0;
 		int8_t error = TTFFontParser::parse_file(font_filename[i].c_str(), &font_data[i], &font_parsed, &condition_variable);
 	}
-	addTextureStack.reserve(32);
 
 	constexpr D3D_FEATURE_LEVEL FeatureLevelPriority[11] = {
 		D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_9_3, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_1_0_CORE
@@ -557,12 +556,12 @@ void GlobalDevice::Init()
 	Create_RTV_DSV_DescriptorHeaps();
 	CreateRenderTargetViews();
 	CreateDepthStencilView();
-	if (RenderMod == DeferedRendering) {
-		//set gbuffer format ex>
-		//GbufferPixelFormatArr[0] = DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM;
+	//if (RenderMod == DeferedRendering) {
+	//	//set gbuffer format ex>
+	//	//GbufferPixelFormatArr[0] = DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM;
 
-		CreateGbufferRenderTargetViews();
-	}
+	//	CreateGbufferRenderTargetViews();
+	//}
 
 	TextureDescriptorAllotter.Init(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 16384);
 
@@ -676,9 +675,9 @@ void GlobalDevice::NewSwapChain()
 
 	CurrentSwapChainBufferIndex = pSwapChain->GetCurrentBackBufferIndex();
 
-	if (RenderMod == DeferedRendering) {
+	/*if (RenderMod == DeferedRendering) {
 		NewGbuffer();
-	}
+	}*/
 }
 
 void GlobalDevice::NewGbuffer()
@@ -1093,230 +1092,6 @@ void GlobalDevice::ReportLiveObjects()
 		DXGI_DEBUG_RLO_DETAIL);
 	pdxgiDebug->Release();
 #endif
-}
-
-void GlobalDevice::AddTextTexture(wchar_t key)
-{
-	constexpr int textureMipLevel = 16;
-	constexpr int textureMipLevel_pow2 = (1 << textureMipLevel) - 1;
-
-	constexpr int bezier_divide = 8;
-	constexpr float bezier_delta = 1.0f / bezier_divide;
-	int i = 0;
-	for (; i < gd.FontCount; ++i) {
-		if (font_data[i].glyphs.contains(key) == false) {
-			continue;
-		}
-
-		break;
-	}
-	if (i < gd.FontCount) {
-		if (font_texture_map[i].contains(key)) return;
-
-		Glyph g = font_data[i].glyphs[key];
-		int width = g.bounding_box[2] - g.bounding_box[0] + 1;
-		int height = g.bounding_box[3] - g.bounding_box[1] + 1;
-		float xBase = g.bounding_box[0];
-		float yBase = g.bounding_box[1];
-		BYTE* textureData = new BYTE[4 * width * height];
-		memset(textureData, 0, 4 * width * height);
-
-		/*imgform::PixelImageObject pio(width, height, textureData);
-		pio.rawDataToBMP("test.bmp");*/
-
-		vector<vector<XMFLOAT3>> polygons;
-		//reserved??
-		polygons.reserve(g.path_list.size());
-		
-		//outline
-		for (int k = 0; k < g.path_list.size(); ++k) {
-			polygons.push_back(vector<XMFLOAT3>());
-
-			Path p = g.path_list[k];
-			polygons.reserve(p.geometry.size());
-			polygons[k].push_back({ p.geometry[0].p0.x, p.geometry[0].p0.y, 0.0f });
-			for (int u = 0; u < p.geometry.size(); ++u) {
-				Curve c = p.geometry[u];
-				float_v2 startpos = c.p0;
-				float_v2 endpos = c.p1;
-				if (c.is_curve) {
-					float_v2 controlpos = endpos;
-					endpos = c.c;
-					
-					float t = 0;
-					vec4 s = vec4(startpos.x, startpos.y, controlpos.x, controlpos.y);
-					vec4 e = vec4(controlpos.x, controlpos.y, endpos.x, endpos.y);
-					float_v2 prevpos = startpos;
-					prevpos.x -= xBase;
-					prevpos.y -= yBase;
-					t += bezier_delta;
-					for (; t < 1.0f + bezier_delta; t += bezier_delta) {
-						vec4 r0 = s * (1.0f - t) + t * e;
-						vec4 r1 = vec4(r0.z, r0.w, 0, 0);
-						r1 = r0 * (1.0f - t) + t * r1;
-						float_v2 newpos = { r1.x, r1.y };
-
-						newpos.x -= xBase;
-						newpos.y -= yBase;
-						polygons[k].push_back({ newpos.x, newpos.y, 0.0f });
-						AddLineInTexture(prevpos, newpos, textureData, width, height);
-						prevpos = newpos;
-					}
-				}
-				else {
-					startpos.x -= xBase;
-					startpos.y -= yBase;
-					endpos.x -= xBase;
-					endpos.y -= yBase;
-
-					polygons[k].push_back({ endpos.x, endpos.y, 0.0f });
-					AddLineInTexture(startpos, endpos, textureData, width, height);
-				}
-			}
-		}
-		//pio.rawDataToBMP("ImageDbg.bmp");
-
-		//fill in
-		//for (int yi = 0; yi < height; ++yi) {
-		//	bool isfill = false;
-		//	for (int xi = 0; xi < width; ++xi) {
-		//		unsigned int* ptr = (unsigned int*)&textureData[yi * 4 * width + xi * 4];
-		//		if (*ptr == 0xFFFFFFFF) {
-		//			// seek : next position is inner position??
-		//			vec4 vp = vec4(xi + 20, yi, 0, 0);
-		//			bool b = false;
-		//			for (int pi = 0; pi < polygons.size(); ++pi) {
-		//				b = !b != !bPointInPolygonRange(vp, polygons[pi]); // xor
-		//			}
-		//			isfill = b;
-		//		}
-		//		if (isfill) {
-		//			*ptr = 0xFFFFFFFF;
-		//		}
-		//	}
-		//}
-
-		for (int yi = 1; yi < height; ++yi) {
-			/*if (key == L'4' && yi == 442) {
-				cout << "error!" << endl;
-			}*/
-
-			bool isfill = false;
-			
-			bool returning = 0;
-			int retcnt = 0;
-		ROW_RETURN:
-
-			int lastendxi = 0;
-			int lastturncnt = 0;
-			/*int last_fillstart_xi = 0;
-			int llfxi = -1;*/
-			
-			for (int xi = 0; xi < width; ++xi) {
-				unsigned int* ptr = (unsigned int*)&textureData[yi * 4 * width + xi * 4];
-				int pxi = xi;
-				if (*ptr == 0xFFFFFFFF) {
-					bool ret = false;
-					/*if (xi == width - 1) {
-						ret = true;
-						if (llfxi != last_fillstart_xi) {
-							xi = last_fillstart_xi;
-							llfxi = last_fillstart_xi;
-						}
-						continue;
-					}*/
-					
-					unsigned int* beginpaint = ptr;
-					while (*beginpaint == 0xFFFFFFFF && xi < width) {
-						xi += 1;
-						beginpaint += 1;
-					}
-
-					unsigned int* endpaint = beginpaint;
-					while (*endpaint != 0xFFFFFFFF && xi < width) {
-						xi += 1;
-						endpaint += 1;
-					}
-
-					for (; beginpaint < endpaint; beginpaint += 1) {
-						if (*(beginpaint - width) == 0xFFFFFFFF) {
-							*beginpaint = 0xFFFFFFFF;
-						}
-						else {
-							ret = true;
-						}
-					}
-
-					if (xi == width && (lastturncnt == 0 && beginpaint == endpaint)) {
-						xi = lastendxi-1;
-						unsigned int* insptr = (unsigned int*)&textureData[yi * 4 * width + lastendxi * 4];
-						*insptr = 0xFFFFFFFF;
-						lastturncnt += 1;
-						continue;
-					}
-
-					if (ret == false) {
-						while (*endpaint == 0xFFFFFFFF && xi < width) {
-							xi += 1;
-							endpaint += 1;
-						}
-						//last_fillstart_xi = pxi;
-						lastendxi = xi;
-						continue;
-					}
-					else {
-						/*if (llfxi != last_fillstart_xi) {
-							xi = last_fillstart_xi;
-							llfxi = last_fillstart_xi;
-						}*/
-
-						xi = ptr - (unsigned int*)&textureData[yi * 4 * width];
-						returning = true;
-					}
-				}
-				
-				
-			}
-
-			if (returning) {
-				retcnt += 1;
-				if(retcnt < 2) goto ROW_RETURN;
-			}
-			else retcnt = 0;
-		}
-
-		//for (int yi = 0; yi < height; ++yi) {
-		//	bool isfill = false;
-		//	for (int xi = 0; xi < width; ++xi) {
-		//		unsigned int* ptr = (unsigned int*)&textureData[yi * 4 * width + xi * 4];
-		//		vec4 vp = vec4(xi, yi, 0, 0);
-		//		bool b = false;
-		//		for (int pi = 0; pi < polygons.size(); ++pi) {
-		//			b = !b != !bPointInPolygonRange(vp, polygons[pi]); // xor
-		//		}
-		//		if (b) {
-		//			*ptr = 0xFFFFFFFF;
-		//		}
-		//	}
-		//}
-
-		//pio.rawDataToBMP("ImageDbg.bmp");
-
-		int mipW = width / textureMipLevel;
-		int mipH = height / textureMipLevel;
-		BYTE* mipTex = new BYTE[4 * mipW * mipH];
-		for (int yi = 0; yi < mipH; ++yi) {
-			for (int xi = 0; xi < mipW; ++xi) {
-				*(unsigned int*)&mipTex[yi * (4 * mipW) + xi * 4] = *(unsigned int*)&textureData[yi * textureMipLevel * 4 * width + xi* textureMipLevel * 4];
-			}
-		}
-		delete[] textureData;
-
-		GPUResource texture;
-		ZeroMemory(&texture, sizeof(GPUResource));
-		texture.CreateTexture_fromImageBuffer(mipW, mipH, mipTex, DXGI_FORMAT_R8G8B8A8_UNORM);
-		font_texture_map[i].insert(pair<wchar_t, GPUResource>(key, texture));
-	}
 }
 
 void GlobalDevice::AddTextSDFTexture(wchar_t key)
@@ -2785,7 +2560,7 @@ void Game::Render() {
 	//2. 프러스텀 업데이트
 	gd.viewportArr[0].UpdateFrustum();
 
-	//3. Shader Visible Desc Heap Dynamic Reset
+	//2.5. 인스턴싱 미리 계산
 	if (SceneRenderBatch) {
 		game.renderViewPort = &gd.viewportArr[0];
 		SetRenderMod(SceneRenderBatch);
@@ -2807,17 +2582,11 @@ void Game::Render() {
 		}
 	}
 
+	//3. Shader Visible Desc Heap Dynamic Reset
 	gd.ShaderVisibleDescPool.BakeImmortalDesc();
 	gd.ShaderVisibleDescPool.DynamicReset();
 
 	//4. 필요해진 텍스트 텍스쳐 로딩
-	// normal text texture load
-	//if (gd.addTextureStack.size() > 0) {
-	//	for (int i = 0; i < gd.addTextureStack.size(); ++i) {
-	//		gd.AddTextTexture(gd.addTextureStack[i]);
-	//	}
-	//}
-	//gd.addTextureStack.clear();
 	//SDF text texture loading
 	if (gd.addSDFTextureStack.size() > 0) {
 		for (int i = 0; i < gd.addSDFTextureStack.size(); ++i) {
@@ -2962,7 +2731,6 @@ void Game::Render() {
 	//				cnt += 1;
 	//			}
 	//		}
-
 	//		for (int i = 0; i < gc->Dynamic_gameobjects.size; ++i) {
 	//			if (gc->Dynamic_gameobjects.isnull(i)) continue;
 	//			if (gc->Dynamic_gameobjects[i]->TourID != TourID) {
@@ -3319,7 +3087,6 @@ void Game::Render_ShadowPass()
 		D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
 
 	// 2-5. 셰도우 맵을 렌더링 하기 위해 Shader 를 Set한다.
-
 	gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderShadowMap);
 
 	matrix xmf4x4View = game.MyDirLight.viewport.ViewMatrix;
@@ -3802,67 +3569,6 @@ void Game::FireRaycast(GameObject* owner, vec4 rayStart, vec4 rayDirection, floa
 }
 
 //this function must call after ScreenCharactorShader register in pipeline.
-void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth)
-{
-	//fontsize = 100 -> 0.1x | 10 -> 0.01x
-	vec4 pos = vec4(Rect.x, Rect.y, 0, 0);
-	constexpr float Default_LineHeight = 750;
-	float mul = fontsiz / Default_LineHeight;
-
-	constexpr float lineheight_mul = 2.5f;
-	float lineheight = lineheight_mul * fontsiz;
-	for (int i = 0; i < length; ++i) {
-		wchar_t wc = wstr[i];
-		if (wc == L'\n') {
-			pos.x = Rect.x;
-			pos.y -= lineheight;
-			continue;
-		}
-		else if (wc == L' ') {
-			pos.x += fontsiz;
-			continue;
-		}
-		bool textureExist = false;
-		GPUResource* texture = nullptr;
-		Glyph g;
-		for (int k = 0; k < gd.FontCount; ++k) {
-			if (gd.font_texture_map[k].find(wc) != gd.font_texture_map[k].end()) {
-				textureExist = true;
-				texture = &gd.font_texture_map[k][wc];
-				g = gd.font_data[k].glyphs[wc];
-				break;
-			}
-		}
-
-		if (textureExist == false) {
-			gd.addTextureStack.push_back(wc);
-			continue;
-		}
-
-		//set root variables
-		vec4 textRt = vec4(pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul);
-		float tConst[7] = { textRt.x, textRt.y, textRt.z, textRt.w, gd.ClientFrameWidth , gd.ClientFrameHeight, depth };
-		/*gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &textRt, 0);
-		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameWidth, 4);
-		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameHeight, 5);*/
-		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 6, &tConst, 0);
-		MyScreenCharactorShader->SetTextureCommand(texture);
-
-		//Render Text
-		TextMesh->Render(gd.gpucmd, 1);
-
-		//calculate next location of text
-		pos.x += g.advance_width * mul;
-		if (pos.x > Rect.z) {
-			pos.x = Rect.x;
-			pos.y -= lineheight;
-			if (pos.y > Rect.w) {
-				return;
-			}
-		}
-	}
-}
-
 void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth)
 {
 	//fontsize = 100 -> 0.1x | 10 -> 0.01x

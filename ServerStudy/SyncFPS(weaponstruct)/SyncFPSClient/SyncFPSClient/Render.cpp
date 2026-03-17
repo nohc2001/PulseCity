@@ -313,8 +313,12 @@ void GPUResource::UpdateTextureForWrite(ID3D12Resource* pSrcTexResource)
 	gd.pDevice->GetCopyableFootprints(&Desc, 0, Desc.MipLevels, 0, Footprint, Rows,
 		RowSize, &TotalBytes);
 
-	if (FAILED(gd.gpucmd.Reset()))
-		__debugbreak();
+	if (gd.gpucmd.isClose) {
+		gd.gpucmd.Reset();
+	}
+
+	/*if (FAILED(gd.gpucmd.Reset()))
+		__debugbreak();*/
 
 	if (CurrentState_InCommandWriteLine != D3D12_RESOURCE_STATE_COPY_DEST) {
 		this->AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -897,7 +901,7 @@ void GlobalDevice::Init()
 		uint8_t condition_variable = 0;
 		int8_t error = TTFFontParser::parse_file(font_filename[i].c_str(), &font_data[i], &font_parsed, &condition_variable);
 	}
-	addTextureStack.reserve(32);
+	addSDFTextureStack.reserve(32);
 
 	constexpr D3D_FEATURE_LEVEL FeatureLevelPriority[11] = {
 		D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_9_3, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_1_0_CORE
@@ -934,7 +938,11 @@ void GlobalDevice::Init()
 
 GlobalDeviceInit_InitMultisamplingVariable:
 
-	CBV_SRV_UAV_Desc_IncrementSiz = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	//Get Desc Increment Siz
+	RTVSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	DSVSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+	CBVSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	SamplerDescSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 
 	D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS d3dMsaaQualityLevels;
 	d3dMsaaQualityLevels.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -974,22 +982,22 @@ GlobalDeviceInit_InitMultisamplingVariable:
 
 	MainRenderTarget_PixelFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
+	ShaderVisibleDescPool.Initialize(1024 * 32);
+
 	NewSwapChain();
 	Create_RTV_DSV_DescriptorHeaps();
 	CreateRenderTargetViews();
 	CreateDepthStencilView();
-	if (RenderMod == DeferedRendering) {
-		//set gbuffer format ex>
-		//GbufferPixelFormatArr[0] = DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM;
+	//if (RenderMod == DeferedRendering) {
+	//	//set gbuffer format ex>
+	//	//GbufferPixelFormatArr[0] = DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM;
 
-		CreateGbufferRenderTargetViews();
-	}
+	//	CreateGbufferRenderTargetViews();
+	//}
 
-	TextureDescriptorAllotter.Init(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 4096);
+	TextureDescriptorAllotter.Init(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 16384);
 	//why cannot be shader visible in Saver DescriptorHeap?
 	//answer : CreateConstantBufferView, CreateShaderResourceView -> only CPU Descriptor Working. so Shader Invisible.
-
-	ShaderVisibleDescPool.Initialize(1024 * 32);
 
 	try {
 		raytracing.Init(this);
@@ -1085,9 +1093,9 @@ void GlobalDevice::NewSwapChain()
 
 	CurrentSwapChainBufferIndex = pSwapChain->GetCurrentBackBufferIndex();
 
-	if (RenderMod == DeferedRendering) {
+	/*if (RenderMod == DeferedRendering) {
 		NewGbuffer();
-	}
+	}*/
 }
 
 void GlobalDevice::NewGbuffer()
@@ -1136,24 +1144,20 @@ void GlobalDevice::Create_RTV_DSV_DescriptorHeaps()
 	//RTV heap
 	D3D12_DESCRIPTOR_HEAP_DESC d3dDescriptorHeapDesc;
 	::ZeroMemory(&d3dDescriptorHeapDesc, sizeof(D3D12_DESCRIPTOR_HEAP_DESC));
-	d3dDescriptorHeapDesc.NumDescriptors = SwapChainBufferCount;
+	d3dDescriptorHeapDesc.NumDescriptors = SwapChainBufferCount + GbufferCount + 1 + 6 * max_lightProbeCount;
 	d3dDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	d3dDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	d3dDescriptorHeapDesc.NodeMask = 0;
 	HRESULT hResult = pDevice->CreateDescriptorHeap(&d3dDescriptorHeapDesc,
 		__uuidof(ID3D12DescriptorHeap), (void**)&pRtvDescriptorHeap);
-	RtvDescriptorIncrementSize =
-		pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 	//DSV heap
-	d3dDescriptorHeapDesc.NumDescriptors = 1;
+	d3dDescriptorHeapDesc.NumDescriptors = 2 + max_DirLightCascadingShadowCount + 6 * max_PointLightMaxCount;
 	d3dDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	hResult = pDevice->CreateDescriptorHeap(&d3dDescriptorHeapDesc,
 		__uuidof(ID3D12DescriptorHeap), (void**)&pDsvDescriptorHeap);
-	DsvDescriptorIncrementSize =
-		pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-	if (RenderMod == DeferedRendering) {
+	/*if (RenderMod == DeferedRendering) {
 		D3D12_DESCRIPTOR_HEAP_DESC d3dDescriptorHeapDesc;
 		::ZeroMemory(&d3dDescriptorHeapDesc, sizeof(D3D12_DESCRIPTOR_HEAP_DESC));
 		d3dDescriptorHeapDesc.NumDescriptors = GbufferCount;
@@ -1162,7 +1166,7 @@ void GlobalDevice::Create_RTV_DSV_DescriptorHeaps()
 		d3dDescriptorHeapDesc.NodeMask = 0;
 		HRESULT hResult = pDevice->CreateDescriptorHeap(&d3dDescriptorHeapDesc,
 			__uuidof(ID3D12DescriptorHeap), (void**)&GbufferDescriptorHeap);
-	}
+	}*/
 }
 
 void GlobalDevice::CreateRenderTargetViews()
@@ -1179,10 +1183,35 @@ void GlobalDevice::CreateRenderTargetViews()
 	{
 		pSwapChain->GetBuffer(i, __uuidof(ID3D12Resource), (void
 			**)&ppRenderTargetBuffers[i]);
+
+		// renderTarget View
 		pDevice->CreateRenderTargetView(ppRenderTargetBuffers[i], &MainRenderTargetViewDesc,
 			d3dRtvCPUDescriptorHandle);
-		d3dRtvCPUDescriptorHandle.ptr += RtvDescriptorIncrementSize;
+
+		// shader Resource View
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		srvDesc.Texture2D.MostDetailedMip = 0;
+		srvDesc.Texture2D.PlaneSlice = 0;
+		srvDesc.Texture2D.ResourceMinLODClamp = 1;
+		D3D12_CPU_DESCRIPTOR_HANDLE pcpu;
+		D3D12_GPU_DESCRIPTOR_HANDLE pgpu;
+		DescIndex descI;
+		gd.ShaderVisibleDescPool.ImmortalAlloc(&descI, 1);
+		RenderTargetSRV_pGPU[i] = descI.hRender.hgpu;
+		pDevice->CreateShaderResourceView(ppRenderTargetBuffers[i], &srvDesc, descI.hCreation.hcpu);
+
+		d3dRtvCPUDescriptorHandle.ptr += gd.RTVSize;
 	}
+
+	//Bluring UAV
+	gd.BlurTexture = CreateTextureWithUAV(pDevice, gd.ClientFrameWidth, gd.ClientFrameHeight, DXGI_FORMAT_R8G8B8A8_UNORM);
+
+	SubRenderTarget = CreateRenderTargetTextureWithRTV(pDevice,
+		pRtvDescriptorHeap, 2, gd.ClientFrameWidth, gd.ClientFrameHeight);
 }
 
 void GlobalDevice::CreateGbufferRenderTargetViews()
@@ -1416,7 +1445,7 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 		gr.resource = pBuffer2;
 
 		dbgc[0] += 1;
-		//dbgbreak(dbgc[0] == 8);
+		//dbgbreak(dbgc[0] == 14);
 		dbglog2(L"GPUResource %llx Created. dbgc0 = %d \n", gr.resource->GetGPUVirtualAddress(), dbgc[0]);
 
 		gr.CurrentState_InCommandWriteLine = d3dResourceInitialStates;
@@ -1466,276 +1495,6 @@ UINT64 GlobalDevice::GetRequiredIntermediateSize(ID3D12Resource* pDestinationRes
 	UINT64 RequiredSize = 0;
 	pDevice->GetCopyableFootprints(&Desc, FirstSubresource, NumSubresources, 0, nullptr, nullptr, nullptr, &RequiredSize);
 	return RequiredSize;
-}
-
-void GlobalDevice::AddTextTexture(wchar_t key)
-{
-	constexpr int textureMipLevel = 16;
-	constexpr int textureMipLevel_pow2 = (1 << textureMipLevel) - 1;
-
-	constexpr int bezier_divide = 8;
-	constexpr float bezier_delta = 1.0f / bezier_divide;
-	int i = 0;
-	for (; i < gd.FontCount; ++i) {
-		if (font_data[i].glyphs.contains(key) == false) {
-			continue;
-		}
-
-		break;
-	}
-	if (i < gd.FontCount) {
-		if (font_texture_map[i].contains(key)) return;
-
-		Glyph g = font_data[i].glyphs[key];
-		int width = g.bounding_box[2] - g.bounding_box[0] + 1;
-		int height = g.bounding_box[3] - g.bounding_box[1] + 1;
-		float xBase = g.bounding_box[0];
-		float yBase = g.bounding_box[1];
-		BYTE* textureData = new BYTE[4 * width * height];
-		memset(textureData, 0, 4 * width * height);
-
-		//imgform::PixelImageObject pio(width, height, textureData);
-
-		vector<vector<XMFLOAT3>> polygons;
-		//reserved??
-		polygons.reserve(g.path_list.size());
-
-		//outline
-		for (int k = 0; k < g.path_list.size(); ++k) {
-			polygons.push_back(vector<XMFLOAT3>());
-
-			Path p = g.path_list[k];
-			polygons.reserve(p.geometry.size());
-			polygons[k].push_back({ p.geometry[0].p0.x, p.geometry[0].p0.y, 0.0f });
-			for (int u = 0; u < p.geometry.size(); ++u) {
-				Curve c = p.geometry[u];
-				float_v2 startpos = c.p0;
-				float_v2 endpos = c.p1;
-				if (c.is_curve) {
-					float_v2 controlpos = endpos;
-					endpos = c.c;
-
-					float t = 0;
-					vec4 s = vec4(startpos.x, startpos.y, controlpos.x, controlpos.y);
-					vec4 e = vec4(controlpos.x, controlpos.y, endpos.x, endpos.y);
-					float_v2 prevpos = startpos;
-					prevpos.x -= xBase;
-					prevpos.y -= yBase;
-					t += bezier_delta;
-					for (; t < 1.0f + bezier_delta; t += bezier_delta) {
-						vec4 r0 = s * (1.0f - t) + t * e;
-						vec4 r1 = vec4(r0.z, r0.w, 0, 0);
-						r1 = r0 * (1.0f - t) + t * r1;
-						float_v2 newpos = { r1.x, r1.y };
-
-						newpos.x -= xBase;
-						newpos.y -= yBase;
-						polygons[k].push_back({ newpos.x, newpos.y, 0.0f });
-						AddLineInTexture(prevpos, newpos, textureData, width, height);
-						prevpos = newpos;
-					}
-				}
-				else {
-					startpos.x -= xBase;
-					startpos.y -= yBase;
-					endpos.x -= xBase;
-					endpos.y -= yBase;
-
-					polygons[k].push_back({ endpos.x, endpos.y, 0.0f });
-					AddLineInTexture(startpos, endpos, textureData, width, height);
-				}
-			}
-		}
-		//pio.rawDataToBMP("ImageDbg.bmp");
-
-		//fill in
-		//for (int yi = 0; yi < height; ++yi) {
-		//	bool isfill = false;
-		//	for (int xi = 0; xi < width; ++xi) {
-		//		unsigned int* ptr = (unsigned int*)&textureData[yi * 4 * width + xi * 4];
-		//		if (*ptr == 0xFFFFFFFF) {
-		//			// seek : next position is inner position??
-		//			vec4 vp = vec4(xi + 20, yi, 0, 0);
-		//			bool b = false;
-		//			for (int pi = 0; pi < polygons.size(); ++pi) {
-		//				b = !b != !bPointInPolygonRange(vp, polygons[pi]); // xor
-		//			}
-		//			isfill = b;
-		//		}
-		//		if (isfill) {
-		//			*ptr = 0xFFFFFFFF;
-		//		}
-		//	}
-		//}
-
-		for (int yi = 1; yi < height; ++yi) {
-			/*if (key == L'4' && yi == 442) {
-				cout << "error!" << endl;
-			}*/
-
-			bool isfill = false;
-
-			bool returning = 0;
-			int retcnt = 0;
-		ROW_RETURN:
-
-			int lastendxi = 0;
-			int lastturncnt = 0;
-			/*int last_fillstart_xi = 0;
-			int llfxi = -1;*/
-
-			for (int xi = 0; xi < width; ++xi) {
-				unsigned int* ptr = (unsigned int*)&textureData[yi * 4 * width + xi * 4];
-				int pxi = xi;
-				if (*ptr == 0xFFFFFFFF) {
-					bool ret = false;
-					/*if (xi == width - 1) {
-						ret = true;
-						if (llfxi != last_fillstart_xi) {
-							xi = last_fillstart_xi;
-							llfxi = last_fillstart_xi;
-						}
-						continue;
-					}*/
-
-					unsigned int* beginpaint = ptr;
-					while (*beginpaint == 0xFFFFFFFF && xi < width) {
-						xi += 1;
-						beginpaint += 1;
-					}
-
-					unsigned int* endpaint = beginpaint;
-					while (*endpaint != 0xFFFFFFFF && xi < width) {
-						xi += 1;
-						endpaint += 1;
-					}
-
-					for (; beginpaint < endpaint; beginpaint += 1) {
-						if (*(beginpaint - width) == 0xFFFFFFFF) {
-							*beginpaint = 0xFFFFFFFF;
-						}
-						else {
-							ret = true;
-						}
-					}
-
-					if (xi == width && (lastturncnt == 0 && beginpaint == endpaint)) {
-						xi = lastendxi - 1;
-						unsigned int* insptr = (unsigned int*)&textureData[yi * 4 * width + lastendxi * 4];
-						*insptr = 0xFFFFFFFF;
-						lastturncnt += 1;
-						continue;
-					}
-
-					if (ret == false) {
-						while (*endpaint == 0xFFFFFFFF && xi < width) {
-							xi += 1;
-							endpaint += 1;
-						}
-						//last_fillstart_xi = pxi;
-						lastendxi = xi;
-						continue;
-					}
-					else {
-						/*if (llfxi != last_fillstart_xi) {
-							xi = last_fillstart_xi;
-							llfxi = last_fillstart_xi;
-						}*/
-
-						xi = ptr - (unsigned int*)&textureData[yi * 4 * width];
-						returning = true;
-					}
-				}
-
-
-			}
-
-			if (returning) {
-				retcnt += 1;
-				if (retcnt < 2) goto ROW_RETURN;
-			}
-			else retcnt = 0;
-		}
-
-		//for (int yi = 0; yi < height; ++yi) {
-		//	bool isfill = false;
-		//	for (int xi = 0; xi < width; ++xi) {
-		//		unsigned int* ptr = (unsigned int*)&textureData[yi * 4 * width + xi * 4];
-		//		vec4 vp = vec4(xi, yi, 0, 0);
-		//		bool b = false;
-		//		for (int pi = 0; pi < polygons.size(); ++pi) {
-		//			b = !b != !bPointInPolygonRange(vp, polygons[pi]); // xor
-		//		}
-		//		if (b) {
-		//			*ptr = 0xFFFFFFFF;
-		//		}
-		//	}
-		//}
-
-		//pio.rawDataToBMP("ImageDbg.bmp");
-
-		int mipW = width / textureMipLevel;
-		int mipH = height / textureMipLevel;
-		BYTE* mipTex = new BYTE[4 * mipW * mipH];
-		for (int yi = 0; yi < mipH; ++yi) {
-			for (int xi = 0; xi < mipW; ++xi) {
-				*(unsigned int*)&mipTex[yi * (4 * mipW) + xi * 4] = *(unsigned int*)&textureData[yi * textureMipLevel * 4 * width + xi * textureMipLevel * 4];
-			}
-		}
-		delete[] textureData;
-
-		GPUResource texture;
-		ZeroMemory(&texture, sizeof(GPUResource));
-		texture.CreateTexture_fromImageBuffer(mipW, mipH, mipTex, DXGI_FORMAT_R8G8B8A8_UNORM);
-		font_texture_map[i].insert(pair<wchar_t, GPUResource>(key, texture));
-		delete[] mipTex;
-	}
-}
-
-void GlobalDevice::AddLineInTexture(float_v2 startpos, float_v2 endpos, BYTE* texture, int width, int height)
-{
-	//draw line
-	float dy = (endpos.y - startpos.y);
-	float dx = (endpos.x - startpos.x);
-
-	if (fabsf(dy) > fabsf(dx)) {
-		//y access
-		float minY = min(startpos.y, endpos.y);
-		float maxY = max(startpos.y, endpos.y);
-
-		for (float di = minY; di < maxY + 1; di += 1.0f) {
-			int x = dx / dy * (di - startpos.y) + startpos.x;
-
-			if (x < 0) x = 0;
-			if (x >= width) x = width - 1;
-			int y = di;
-			if (y < 0) y = 0;
-			if (y >= height) y = height - 1;
-
-			unsigned int* ptr = (unsigned int*)&texture[(int)y * 4 * width + x * 4];
-			*ptr = 0xFFFFFFFF;
-		}
-	}
-	else {
-		//x access
-
-		float minX = min(startpos.x, endpos.x);
-		float maxX = max(startpos.x, endpos.x);
-
-		for (float di = minX; di < maxX + 1; di += 1.0f) {
-			int y = dy / dx * (di - startpos.x) + startpos.y;
-
-			int x = di;
-			if (x < 0) x = 0;
-			if (x >= width) x = width - 1;
-
-			if (y < 0) y = 0;
-			if (y >= height) y = height - 1;
-
-			unsigned int* ptr = (unsigned int*)&texture[y * 4 * width + (int)x * 4];
-			*ptr = 0xFFFFFFFF;
-		}
-	}
 }
 
 void GlobalDevice::bmpTodds(int mipmap_level, const char* Format, const char* filename)
@@ -1822,6 +1581,244 @@ GPUResource GlobalDevice::CreateShadowMap(int width, int height, int DSVoffset, 
 	gd.pDevice->CreateShaderResourceView(shadowMap.resource, &srv_desc, spotLight.descindex.hCreation.hcpu);
 	//shadowMap.handle.hgpu = spotLight.descindex.hRender.hgpu; // CBV, SRV, UAV DescHeap ÀÇ GPU HANDLE
 	return shadowMap;
+}
+
+void GlobalDevice::AddTextSDFTexture(wchar_t key)
+{
+	char Zero = 0;
+	// gpu texture byte to signed float normalize
+	// : float f = max((float)b / 127.0f, -1.0f)
+	// so 127 is 0. 0x8F;
+	// signed float normalize to byte
+	// : b = f * 127 + 128;
+
+	constexpr int textureMipLevel = 16;
+	constexpr int textureMipLevel_pow2 = (1 << textureMipLevel) - 1;
+
+	constexpr int bezier_divide = 8;
+	constexpr float bezier_delta = 1.0f / bezier_divide;
+	int i = 0;
+	for (; i < gd.FontCount; ++i) {
+		if (font_data[i].glyphs.contains(key) == false) {
+			continue;
+		}
+
+		break;
+	}
+	if (i < gd.FontCount) {
+		if (font_sdftexture_map[i].contains(key)) return;
+
+		Glyph g = font_data[i].glyphs[key];
+		int width = g.bounding_box[2] - g.bounding_box[0] + 1;
+		int height = g.bounding_box[3] - g.bounding_box[1] + 1;
+		float xBase = g.bounding_box[0];
+		float yBase = g.bounding_box[1];
+		char* textureData = new char[width * height];
+		memset(textureData, (char)127, width * height);
+
+		vector<vector<XMFLOAT3>> polygons;
+		//reserved??
+		polygons.reserve(g.path_list.size());
+
+		//outline
+		for (int k = 0; k < g.path_list.size(); ++k) {
+			polygons.push_back(vector<XMFLOAT3>());
+
+			Path p = g.path_list[k];
+			polygons.reserve(p.geometry.size());
+			polygons[k].push_back({ p.geometry[0].p0.x, p.geometry[0].p0.y, 0.0f });
+			for (int u = 0; u < p.geometry.size(); ++u) {
+				Curve c = p.geometry[u];
+				float_v2 startpos = c.p0;
+				float_v2 endpos = c.p1;
+				if (c.is_curve) {
+					float_v2 controlpos = endpos;
+					endpos = c.c;
+
+					float t = 0;
+					vec4 s = vec4(startpos.x, startpos.y, controlpos.x, controlpos.y);
+					vec4 e = vec4(controlpos.x, controlpos.y, endpos.x, endpos.y);
+					float_v2 prevpos = startpos;
+					prevpos.x -= xBase;
+					prevpos.y -= yBase;
+					t += bezier_delta;
+					for (; t < 1.0f + bezier_delta; t += bezier_delta) {
+						vec4 r0 = s * (1.0f - t) + t * e;
+						vec4 r1 = vec4(r0.z, r0.w, 0, 0);
+						r1 = r0 * (1.0f - t) + t * r1;
+						float_v2 newpos = { r1.x, r1.y };
+
+						newpos.x -= xBase;
+						newpos.y -= yBase;
+						polygons[k].push_back({ newpos.x, newpos.y, 0.0f });
+						AddLineInSDFTexture(prevpos, newpos, textureData, width, height);
+						prevpos = newpos;
+					}
+				}
+				else {
+					startpos.x -= xBase;
+					startpos.y -= yBase;
+					endpos.x -= xBase;
+					endpos.y -= yBase;
+
+					polygons[k].push_back({ endpos.x, endpos.y, 0.0f });
+					AddLineInSDFTexture(startpos, endpos, textureData, width, height);
+				}
+			}
+		}
+
+		for (int yi = 1; yi < height; ++yi) {
+
+			bool isfill = false;
+
+			bool returning = 0;
+			int retcnt = 0;
+		ROW_RETURN:
+
+			int lastendxi = 0;
+			int lastturncnt = 0;
+
+			for (int xi = 0; xi < width; ++xi) {
+				char* ptr = (char*)&textureData[yi * width + xi];
+				//float distance = getSDF(polygons, vec2f(xi, yi), false);
+				//if(distance >= 0) *ptr = SignedFloatNormalizeToByte(distance);
+
+				int pxi = xi;
+				if (*ptr <= Zero) {
+					bool ret = false;
+
+					char* beginpaint = ptr;
+					while (*beginpaint <= Zero && xi < width) {
+						xi += 1;
+						beginpaint += 1;
+					}
+
+					char* endpaint = beginpaint;
+					while (*endpaint > Zero && xi < width) {
+						xi += 1;
+						endpaint += 1;
+					}
+
+					for (; beginpaint < endpaint; beginpaint += 1) {
+						if (*(beginpaint - width) <= Zero) {
+							*beginpaint = Zero; // distance
+						}
+						else {
+							ret = true;
+						}
+					}
+
+					if (xi == width && (lastturncnt == 0 && beginpaint == endpaint)) {
+						xi = lastendxi - 1;
+						char* insptr = (char*)&textureData[yi * width + lastendxi];
+						*insptr = Zero; // distance
+						lastturncnt += 1;
+						continue;
+					}
+
+					if (ret == false) {
+						while (*endpaint <= Zero && xi < width) {
+							xi += 1;
+							endpaint += 1;
+						}
+						lastendxi = xi;
+						continue;
+					}
+					else {
+						xi = ptr - (char*)&textureData[yi * width];
+						returning = true;
+					}
+				}
+			}
+
+			if (returning) {
+				retcnt += 1;
+				if (retcnt < 2) goto ROW_RETURN;
+			}
+			else retcnt = 0;
+		}
+
+		int mipW = width / textureMipLevel;
+		int mipH = height / textureMipLevel;
+		int realW = mipW * 2;
+		int realH = mipH * 2;
+		int startX = mipW / 2;
+		int startY = mipH / 2;
+		char* mipTex = new char[realW * realH];
+		memset(mipTex, 127, realW * realH);
+		for (int yi = 0; yi < mipH; ++yi) {
+			for (int xi = 0; xi < mipW; ++xi) {
+				*(char*)&mipTex[(startY + yi) * (realW)+startX + xi] = *(char*)&textureData[yi * textureMipLevel * width + xi * textureMipLevel];
+			}
+		}
+		delete[] textureData;
+
+		imgform::PixelImageObject pio;
+		pio.width = realW;
+		pio.height = realH;
+		vector<uint8_t> sdfbuffer = makeSDF((char*)mipTex, realW, realH, 0.25f, -1.0f * realH * 0.5f);
+		pio.data = (imgform::RGBA_pixel*)sdfbuffer.data();
+		//pio.rawDataToBMP("SDFTestImage.bmp", DXGI_FORMAT_R8_SNORM);
+
+		GPUResource texture;
+		ZeroMemory(&texture, sizeof(GPUResource));
+		texture.CreateTexture_fromImageBuffer(realW, realH, sdfbuffer.data(), DXGI_FORMAT_R8_SNORM);
+		font_sdftexture_map[i].insert(pair<wchar_t, GPUResource>(key, texture));
+		delete[] mipTex;
+	}
+}
+
+void GlobalDevice::AddLineInSDFTexture(float_v2 startpos, float_v2 endpos, char* texture, int width, int height)
+{
+	char Zero = 0;
+	//draw line
+	float dy = (endpos.y - startpos.y);
+	float dx = (endpos.x - startpos.x);
+
+	if (fabsf(dy) > fabsf(dx)) {
+		//y access
+		float minY = min(startpos.y, endpos.y);
+		float maxY = max(startpos.y, endpos.y);
+
+		for (float di = minY; di < maxY + 1; di += 1.0f) {
+			int x = dx / dy * (di - startpos.y) + startpos.x;
+
+			if (x < 0) x = 0;
+			if (x >= width) x = width - 1;
+			int y = di;
+			if (y < 0) y = 0;
+			if (y >= height) y = height - 1;
+
+			char* ptr = (char*)&texture[(int)y * width + x];
+			*ptr = Zero;
+		}
+	}
+	else {
+		//x access
+
+		float minX = min(startpos.x, endpos.x);
+		float maxX = max(startpos.x, endpos.x);
+
+		for (float di = minX; di < maxX + 1; di += 1.0f) {
+			int y = dy / dx * (di - startpos.x) + startpos.y;
+
+			int x = di;
+			if (x < 0) x = 0;
+			if (x >= width) x = width - 1;
+
+			if (y < 0) y = 0;
+			if (y >= height) y = height - 1;
+
+			char* ptr = (char*)&texture[y * width + (int)x];
+			*ptr = Zero;
+		}
+	}
+}
+
+char GlobalDevice::SignedFloatNormalizeToByte(float f)
+{
+	char b = (char)(f * 127.0f + 128.0f);
+	return b;
 }
 
 template <int indexByteSize>
@@ -2903,6 +2900,11 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering) {
 	VertexNum = temp_vertices.size();
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	/*MeshOBB = BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));*/
+
+	subMeshNum = 1;
+	SubMeshIndexStart = new int[2];
+	SubMeshIndexStart[0] = 0;
+	SubMeshIndexStart[1] = IndexNum;
 }
 
 void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex)
@@ -3536,6 +3538,11 @@ void UVMesh::CreateTextRectMesh()
 	IndexNum = indices.size();
 	VertexNum = vertices.size();
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+	subMeshNum = 1;
+	SubMeshIndexStart = new int[2];
+	SubMeshIndexStart[0] = 0;
+	SubMeshIndexStart[1] = IndexNum;
 }
 
 #pragma endregion
@@ -7009,7 +7016,7 @@ void SkyBoxShader::LoadSkyBox(const wchar_t* filename)
 	m_pxmf3Positions[35] = XMFLOAT3(+fx, -fx, -fx);
 
 	SkyBoxMesh = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
-	GPUResource VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * sizeof(XMFLOAT3), 1);
 	gd.UploadToCommitedGPUBuffer(&m_pxmf3Positions[0], &VertexUploadBuffer, &SkyBoxMesh, true);
 
 	SkyBoxMeshVBView.BufferLocation = SkyBoxMesh.resource->GetGPUVirtualAddress();
@@ -7029,6 +7036,7 @@ void SkyBoxShader::InitShader()
 {
 	CreateRootSignature();
 	CreatePipelineState();
+	CreatePipelineState_InnerMirror();
 }
 
 void SkyBoxShader::CreateRootSignature()
@@ -7215,21 +7223,142 @@ void SkyBoxShader::CreatePipelineState()
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
 
-void SkyBoxShader::Add_RegisterShaderCommand(ID3D12GraphicsCommandList* commandList, ShaderType reg)
+void SkyBoxShader::CreatePipelineState_InnerMirror()
 {
-	commandList->SetPipelineState(pPipelineState);
-	commandList->SetGraphicsRootSignature(pRootSignature);
+	D3D12_SHADER_BYTECODE NULLCODE;
+	NULLCODE.BytecodeLength = 0;
+	NULLCODE.pShaderBytecode = nullptr;
+
+	ID3DBlob* pd3dVertexShaderBlob = NULL, * pd3dPixelShaderBlob = NULL;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC gPipelineStateDesc;
+	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+
+	gPipelineStateDesc.pRootSignature = pRootSignature;
+
+	gPipelineStateDesc.NodeMask = 0;
+
+	//Input Asm
+	gPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	D3D12_INPUT_ELEMENT_DESC inputElementDesc[1] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // pos vec3
+	};
+	gPipelineStateDesc.InputLayout.NumElements = 1;
+	gPipelineStateDesc.InputLayout.pInputElementDescs = inputElementDesc;
+
+	//Vertex Shader
+	gPipelineStateDesc.VS = Shader::GetShaderByteCode(L"Resources/Shaders/SkyBox.hlsl", "VSSkyBox", "vs_5_1", &pd3dVertexShaderBlob);
+
+	//Hull Shader
+	//gPipelineStateDesc.HS = NULLCODE;
+
+	//Tessellation
+
+	//Domain Shader
+	//gPipelineStateDesc.DS = NULLCODE;
+
+	//Geometry Shader
+	//gPipelineStateDesc.GS = NULLCODE;
+
+	//Stream Output
+	//gPipelineStateDesc.StreamOutput
+
+	//Rasterazer
+	gPipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	gPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+	gPipelineStateDesc.RasterizerState.FrontCounterClockwise = FALSE; // front = clock wise
+	//Rasterazer-depth
+	gPipelineStateDesc.RasterizerState.DepthBias = 0;
+	gPipelineStateDesc.RasterizerState.DepthBiasClamp = 0;
+	gPipelineStateDesc.RasterizerState.SlopeScaledDepthBias = 0;
+	gPipelineStateDesc.RasterizerState.DepthClipEnable = TRUE; // if depth > 1, cliping vertex.
+	//Rasterazer-MSAA
+	gPipelineStateDesc.RasterizerState.MultisampleEnable = TRUE;
+	gPipelineStateDesc.RasterizerState.AntialiasedLineEnable = TRUE;
+	gPipelineStateDesc.RasterizerState.ForcedSampleCount = 0; // sample count of UAV rendering // question 003 : what is UAV rendering?
+	//Rasterazer - Conservative Rendering On/Off - (bosujuk rendering)
+	gPipelineStateDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+	//Pixel Shader
+	gPipelineStateDesc.PS = Shader::GetShaderByteCode(L"Resources/Shaders/SkyBox.hlsl", "PSSkyBox", "ps_5_1", &pd3dPixelShaderBlob);
+
+	//Output Merger
+	//Output Merger-Blend
+	D3D12_BLEND_DESC d3dBlendDesc;
+	::ZeroMemory(&d3dBlendDesc, sizeof(D3D12_BLEND_DESC));
+	d3dBlendDesc.AlphaToCoverageEnable = FALSE;
+	d3dBlendDesc.IndependentBlendEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
+	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+	d3dBlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	gPipelineStateDesc.BlendState = d3dBlendDesc;
+	//Output Merger - MSAA
+	gPipelineStateDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
+	gPipelineStateDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable) ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+	gPipelineStateDesc.SampleMask = 0xFFFFFFFF; // pass every sampling.
+	//Output Merger - DepthStencil
+	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
+	//Output Merger - DepthStencil - depth
+	depthStencilDesc.DepthEnable = TRUE;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
+	//Output Merger - DepthStencil - stencil
+	depthStencilDesc.StencilEnable = TRUE;
+	depthStencilDesc.StencilReadMask = 0xFF;
+	depthStencilDesc.StencilWriteMask = 0xFF;
+	depthStencilDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	depthStencilDesc.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	gPipelineStateDesc.DepthStencilState = depthStencilDesc;
+	//Output Merger - RenderTagets / DepthStencil Buffer
+	gPipelineStateDesc.NumRenderTargets = 1;
+	gPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	gPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	gd.pDevice->CreateGraphicsPipelineState(&gPipelineStateDesc,
+		__uuidof(ID3D12PipelineState), (void**)&pPipelineState_RenderInnerMirror);
+	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
+	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
+}
+
+void SkyBoxShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg)
+{
+	switch (reg) {
+	case ShaderType::RenderInnerMirror:
+		gd.gpucmd->SetPipelineState(pPipelineState_RenderInnerMirror);
+		gd.gpucmd->SetGraphicsRootSignature(pRootSignature);
+		break;
+	default:
+		gd.gpucmd->SetPipelineState(pPipelineState);
+		gd.gpucmd->SetGraphicsRootSignature(pRootSignature);
+		break;
+	}
 }
 
 void SkyBoxShader::Release()
 {
 	if (pPipelineState) pPipelineState->Release();
 	if (pRootSignature) pRootSignature->Release();
+	CurrentSkyBox.Release();
+	SkyBoxMesh.Release();
+	VertexUploadBuffer.Release();
 }
 
-void SkyBoxShader::RenderSkyBox()
+void SkyBoxShader::RenderSkyBox(matrix parentMat, ShaderType reg)
 {
-	Add_RegisterShaderCommand(gd.gpucmd);
+	gd.gpucmd.SetShader(this, reg);
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 
 	XMFLOAT4X4 xmf4x4Projection;
@@ -7237,16 +7366,23 @@ void SkyBoxShader::RenderSkyBox()
 	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4Projection, 0);
 
 	matrix mat = gd.viewportArr[0].ViewMatrix;
+	//mat.transpose();
+	mat.pos = 0;
+	mat.pos.w = 1;
+	//mat.transpose();
 	mat *= gd.viewportArr[0].ProjectMatrix;
 
 	XMFLOAT4X4 xmf4x4View;
 	XMStoreFloat4x4(&xmf4x4View, XMMatrixTranspose(mat));
 	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
 
-	matrix mat2;
-	mat2.Id();
-	mat2.pos = gd.viewportArr[0].Camera_Pos;
+	vec4 pos = gd.viewportArr[0].Camera_Pos;
+	pos.w = 1;
+	pos *= parentMat;
+	matrix mat2 = parentMat;
+	//mat2.pos = pos;
 	mat2.pos.w = 1;
+
 	mat2.transpose();
 	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &mat2, 0);
 
@@ -8036,6 +8172,131 @@ void SkinMeshModifyShader::Release()
 }
 #pragma endregion
 
+#pragma region BluringShaderCode
+void ComputeTestShader::InitShader() {
+	CreateRootSignature();
+	CreatePipelineState();
+}
+void ComputeTestShader::CreateRootSignature() {
+	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
+
+	constexpr int RootParamCount = 3;
+	D3D12_ROOT_PARAMETER1 rootParam[RootParamCount] = {};
+
+	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	rootParam[0].Constants.Num32BitValues = 2;
+	rootParam[0].Constants.ShaderRegister = 0; // b0 : Camera Matrix (Projection, View) + Camera Positon
+	rootParam[0].Constants.RegisterSpace = 0;
+
+	rootParam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	rootParam[1].DescriptorTable.NumDescriptorRanges = 1;
+	D3D12_DESCRIPTOR_RANGE1 ranges[1];
+	ranges[0].BaseShaderRegister = 0; // t0 prev renderTarget
+	ranges[0].RegisterSpace = 0;
+	ranges[0].NumDescriptors = 1;
+	ranges[0].OffsetInDescriptorsFromTableStart = 0;
+	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
+	rootParam[1].DescriptorTable.pDescriptorRanges = &ranges[0];
+
+	//rootParam[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	//rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	//rootParam[2].DescriptorTable.NumDescriptorRanges = 1;
+	//D3D12_DESCRIPTOR_RANGE1 ranges2[1];
+	//ranges2[0].BaseShaderRegister = 1; // t1 prev renderTarget
+	//ranges2[0].RegisterSpace = 0;
+	//ranges2[0].NumDescriptors = 1;
+	//ranges2[0].OffsetInDescriptorsFromTableStart = 0;
+	//ranges2[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	//ranges2[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
+	//rootParam[2].DescriptorTable.pDescriptorRanges = &ranges2[0];
+
+	rootParam[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	rootParam[2].DescriptorTable.NumDescriptorRanges = 1;
+	D3D12_DESCRIPTOR_RANGE1 ranges3[1];
+	ranges3[0].BaseShaderRegister = 0; // u0 blur output
+	ranges3[0].RegisterSpace = 0;
+	ranges3[0].NumDescriptors = 1;
+	ranges3[0].OffsetInDescriptorsFromTableStart = 0;
+	ranges3[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+	ranges3[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
+	rootParam[2].DescriptorTable.pDescriptorRanges = &ranges3[0];
+
+	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS*/;
+
+		/// default sampler
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	// sampler register index.
+	sampler.ShaderRegister = 0;
+	// setting
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.MipLODBias = 0.0f;
+	sampler.MaxAnisotropy = 16;
+	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+	sampler.MinLOD = -FLT_MAX;
+	sampler.MaxLOD = D3D12_FLOAT32_MAX;
+	sampler.RegisterSpace = 0;
+	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+
+	rootSigDesc1.NumParameters = RootParamCount;
+	rootSigDesc1.pParameters = rootParam;
+	rootSigDesc1.NumStaticSamplers = 1; // question002 : what is static samplers?
+	rootSigDesc1.pStaticSamplers = &sampler;
+	rootSigDesc1.Flags = d3dRootSignatureFlags;
+
+	ID3DBlob* pd3dSignatureBlob = NULL;
+	ID3DBlob* pd3dErrorBlob = NULL;
+	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
+	versioned_rootSigDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+	versioned_rootSigDesc.Desc_1_1 = rootSigDesc1;
+	D3D12SerializeVersionedRootSignature(&versioned_rootSigDesc, &pd3dSignatureBlob, &pd3dErrorBlob);
+	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
+		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
+			**)&pRootSignature);
+	if (pd3dErrorBlob) pd3dErrorBlob->Release();
+	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
+}
+void ComputeTestShader::CreatePipelineState() {
+	D3D12_SHADER_BYTECODE NULLCODE;
+	NULLCODE.BytecodeLength = 0;
+	NULLCODE.pShaderBytecode = nullptr;
+
+	ID3DBlob* pd3dComputeShaderBlob = NULL;
+	D3D12_COMPUTE_PIPELINE_STATE_DESC gPipelineStateDesc;
+	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_COMPUTE_PIPELINE_STATE_DESC));
+
+	gPipelineStateDesc.pRootSignature = pRootSignature;
+	gPipelineStateDesc.NodeMask = 0;
+
+	//Compute Shader
+	gPipelineStateDesc.CS = Shader::GetShaderByteCode(L"Resources/Shaders/TestComputeShader.hlsl", "CSMain", "cs_5_1", &pd3dComputeShaderBlob);
+
+	gd.pDevice->CreateComputePipelineState(&gPipelineStateDesc,
+		__uuidof(ID3D12PipelineState), (void**)&pPipelineState);
+	if (pd3dComputeShaderBlob) pd3dComputeShaderBlob->Release();
+}
+void ComputeTestShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
+	cmd->SetComputeRootSignature(pRootSignature);
+	cmd->SetPipelineState(pPipelineState);
+}
+void ComputeTestShader::Release() {
+	if (pRootSignature) pRootSignature->Release();
+	if (pPipelineState) pPipelineState->Release();
+}
+#pragma endregion
+
 #pragma endregion
 
 #pragma region AnimationCode
@@ -8152,6 +8413,138 @@ matrix AnimChannel::GetLocalMatrixAtTime(float time, matrix original)
 	//mat.transpose();
 
 	return mat;
+}
+
+#pragma endregion
+
+#pragma region LightCode
+
+void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
+	if (UploadCBMapped == nullptr) {
+		UploadCBBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(PointLightCBData) * 8192, 1);
+		UploadCBBuffer.resource->Map(0, NULL, (void**)&UploadCBMapped);
+	}
+	CBIndex = CBSize;
+	UploadCBMapped[CBIndex] = init;
+	// static shadow cube map
+	StaticShadowCubeMap = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_TEXTURE2D, resolution, resolution, DXGI_FORMAT_D32_FLOAT, 6, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+
+	int i = gd.TextureDescriptorAllotter.Alloc();
+	StaticCubeShadowMapHandleSRV.hcpu = gd.TextureDescriptorAllotter.GetCPUHandle(i);
+	StaticCubeShadowMapHandleSRV.hgpu = gd.TextureDescriptorAllotter.GetGPUHandle(i);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+	srv_desc.Format = DXGI_FORMAT_R32_FLOAT;
+	srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srv_desc.Texture2D.MostDetailedMip = 0;
+	srv_desc.Texture2D.MipLevels = 1;
+	srv_desc.Texture2D.ResourceMinLODClamp = 0;
+	srv_desc.Texture2D.PlaneSlice = 0;
+	gd.pDevice->CreateShaderResourceView(StaticShadowCubeMap.resource, &srv_desc, StaticCubeShadowMapHandleSRV.hcpu);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	dsvHandle.ptr += gd.GetPointLightShadowDSVIndex(CBIndex) * gd.DSVSize;
+	for (int i = 0; i < 6; ++i)
+	{
+		StaticCubeShadowMapHandleDSV[i] = dsvHandle;
+		D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+		dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+		dsvDesc.Texture2DArray.MipSlice = 0;
+		dsvDesc.Texture2DArray.FirstArraySlice = i; // Å¥ºê¸ÊÀÇ Æ¯Á¤ ¸é
+		dsvDesc.Texture2DArray.ArraySize = 1;
+
+		gd.pDevice->CreateDepthStencilView(StaticShadowCubeMap.resource, &dsvDesc, StaticCubeShadowMapHandleDSV[i]);
+
+		dsvHandle.ptr += gd.DSVSize;
+	}
+
+	//// dynamic shadow cube map
+	//DynamicShadowCubeMap = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_TEXTURE2D, resolution, resolution, DXGI_FORMAT_R32_FLOAT, 6, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+	//int i = gd.TextureDescriptorAllotter.Alloc();
+	//DynamicCubeShadowMapHandleSRV.hcpu = gd.TextureDescriptorAllotter.GetCPUHandle(i);
+	//DynamicCubeShadowMapHandleSRV.hgpu = gd.TextureDescriptorAllotter.GetGPUHandle(i);
+	//D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+	//srv_desc.Format = DXGI_FORMAT_R32_FLOAT;
+	//srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	//srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	//srv_desc.Texture2D.MostDetailedMip = 0;
+	//srv_desc.Texture2D.MipLevels = 1;
+	//srv_desc.Texture2D.ResourceMinLODClamp = 0;
+	//srv_desc.Texture2D.PlaneSlice = 0;
+	//gd.pDevice->CreateShaderResourceView(DynamicShadowCubeMap.resource, &srv_desc, DynamicCubeShadowMapHandleSRV.hcpu);
+
+	//D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	//dsvHandle.ptr += gd.GetPointLightShadowDSVIndex(CBIndex) * gd.DSVSize;
+	//for (int i = 0; i < 6; ++i)
+	//{
+	//	DynamicCubeShadowMapHandleDSV[i] = dsvHandle;
+	//	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+	//	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	//	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+	//	dsvDesc.Texture2DArray.MipSlice = 0;
+	//	dsvDesc.Texture2DArray.FirstArraySlice = i; // Å¥ºê¸ÊÀÇ Æ¯Á¤ ¸é
+	//	dsvDesc.Texture2DArray.ArraySize = 1;
+
+	//	gd.pDevice->CreateDepthStencilView(DynamicShadowCubeMap.resource, &dsvDesc, DynamicCubeShadowMapHandleDSV[i]);
+
+	//	dsvHandle.ptr += gd.DSVSize;
+	//}
+
+	CBSize += 1;
+
+	vec4 eye = init.LightPos;
+	matrix outProj = XMMatrixPerspectiveFovLH(XM_PIDIV2, 1.0f, 0.1f, 1000.0f);
+	matrix outView[6] = {};
+	outView[0] = XMMatrixLookAtLH(eye, eye + XMVectorSet(1, 0, 0, 0), XMVectorSet(0, 1, 0, 0)); // +X
+	outView[1] = XMMatrixLookAtLH(eye, eye + XMVectorSet(-1, 0, 0, 0), XMVectorSet(0, 1, 0, 0)); // -X
+	outView[2] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0)); // +Y (Up º¤ÅÍ ÁÖÀÇ)
+	outView[3] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, -1, 0, 0), XMVectorSet(0, 0, 1, 0)); // -Y
+	outView[4] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 0, 1, 0), XMVectorSet(0, 1, 0, 0)); // +Z
+	outView[5] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0)); // -Z
+	Resolution = resolution;
+	for (int i = 0; i < 6; ++i) {
+		FaceViewPort[i].ViewMatrix = outView[i];
+		FaceViewPort[i].ProjectMatrix = outProj;
+		FaceViewPort[i].Camera_Pos = init.LightPos;
+		FaceViewPort[i].Viewport.Width = Resolution;
+		FaceViewPort[i].Viewport.Height = Resolution;
+		FaceViewPort[i].Viewport.MaxDepth = 1.0f;
+		FaceViewPort[i].Viewport.MinDepth = 0.0f;
+		FaceViewPort[i].Viewport.TopLeftX = 0.0f;
+		FaceViewPort[i].Viewport.TopLeftY = 0.0f;
+		FaceViewPort[i].ScissorRect = { 0, 0, (long)Resolution, (long)Resolution };
+	}
+}
+
+void PointLight::RenderShadow() {
+	gd.gpucmd.ResBarrierTr(&StaticShadowCubeMap, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	gd.gpucmd.SetShader(game.MyPBRShader1, ShaderType::RenderShadowMap);
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	game.PresentShaderType = ShaderType::RenderShadowMap;
+	for (int i = 0; i < 6; ++i) {
+		gd.gpucmd->RSSetViewports(1, &FaceViewPort[i].Viewport);
+		gd.gpucmd->RSSetScissorRects(1, &FaceViewPort[i].ScissorRect);
+		gd.gpucmd->OMSetRenderTargets(0, nullptr, TRUE, &StaticCubeShadowMapHandleDSV[i]);
+		gd.gpucmd->ClearDepthStencilView(StaticCubeShadowMapHandleDSV[i],
+			D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
+		game.renderViewPort = &FaceViewPort[i];
+		game.renderViewPort->UpdateFrustum();
+
+		matrix xmf4x4View = FaceViewPort[i].ViewMatrix;
+		xmf4x4View *= FaceViewPort[i].ProjectMatrix;
+		xmf4x4View.transpose();
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &FaceViewPort[i].Camera_Pos, 16); // no matter
+
+		//game.Map->MapObjects[0]->Render(XMMatrixIdentity());
+
+		/*for (auto& gbj : game.m_gameObjects) {
+			gbj->Render();
+		}*/
+	}
+	gd.gpucmd.ResBarrierTr(&StaticShadowCubeMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
 #pragma endregion

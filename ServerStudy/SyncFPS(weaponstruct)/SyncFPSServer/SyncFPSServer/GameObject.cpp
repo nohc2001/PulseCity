@@ -112,6 +112,7 @@ GameObject::GameObject()
 {
 	tag[GameObjectTag::Tag_Enable] = false;
 	tag[GameObjectTag::Tag_Dynamic] = false;
+	tag[GameObjectTag::Tag_SkinMeshObject] = false;
 	worldMat.Id();
 	shapeindex = -1;
 }
@@ -270,6 +271,12 @@ void StaticGameObject::Release() {
 DynamicGameObject::DynamicGameObject() :
 	chunkAllocIndexs{ nullptr }
 {
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	tag[GameObjectTag::Tag_SkinMeshObject] = false;
+	worldMat.Id();
+	shapeindex = -1;
+
 	tickLVelocity = vec4(0, 0, 0, 0);
 	tickAVelocity = vec4(0, 0, 0, 0);
 	LastQuerternion = vec4(0, 0, 0, 0);
@@ -711,6 +718,8 @@ SkinMeshGameObject::SkinMeshGameObject() {
 	tag[GameObjectTag::Tag_Enable] = false;
 	tag[GameObjectTag::Tag_Dynamic] = true;
 	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+	worldMat.Id();
+	shapeindex = -1;
 }
 
 SkinMeshGameObject::~SkinMeshGameObject() {
@@ -1510,6 +1519,28 @@ void ModelNode::BakeAABB(void* origin, const matrix& parentMat)
 	}
 }
 
+Player::Player() {
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+	worldMat.Id();
+	shapeindex = -1;
+
+	m_currentWeaponType = (int)WeaponType::Sniper;
+	weapon = Weapon(WeaponType::Sniper);
+
+	HP = 100;
+	MaxHP = 100;
+	bullets = 30;
+	KillCount = 0;
+	DeathCount = 0;
+	HeatGauge = 0;
+	MaxHeatGauge = 200;
+	HealSkillCooldown = 10.0f;
+	HealSkillCooldownFlow = 0.0f;
+	ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
+}
+
 void Player::Update(float deltaTime)
 {
 	weapon.Update(deltaTime);
@@ -1710,7 +1741,7 @@ void Player::OnCollision(GameObject* other)
 
 	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
 
-	if (belowhit && belowDist < Shape::ShapeTable[shapeindex].GetMesh()->GetOBB().Extents.y + 1.0f) {
+	if (belowhit && belowDist < Shape::ShapeTable[shapeindex].GetModel()->GetOBB().Extents.y + 1.0f) {
 		LVelocity.y = 0;
 		isGround = true;
 	}
@@ -1724,7 +1755,7 @@ void Player::OnStaticCollision(BoundingOrientedBox obb)
 
 	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
 
-	if (belowhit && belowDist < Shape::ShapeTable[shapeindex].GetMesh()->GetOBB().Extents.y + 1.0f) {
+	if (belowhit && belowDist < Shape::ShapeTable[shapeindex].GetModel()->GetOBB().Extents.y + 1.0f) {
 		LVelocity.y = 0;
 		isGround = true;
 	}
@@ -1732,7 +1763,7 @@ void Player::OnStaticCollision(BoundingOrientedBox obb)
 
 BoundingOrientedBox Player::GetOBB()
 {
-	BoundingOrientedBox obb_local = Shape::ShapeTable[shapeindex].GetMesh()->GetOBB();
+	BoundingOrientedBox obb_local = Shape::ShapeTable[shapeindex].GetModel()->GetOBB();
 	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
 	matrix id = XMMatrixIdentity();
@@ -1773,6 +1804,18 @@ void Player::Respawn() {
 	bool isExist = true;
 	gameworld.Sending_ChangeGameObjectMember<Tag>(gameworld.CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &tag);
 	gameworld.Sending_ChangeGameObjectMember<float>(gameworld.CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+}
+
+Monster::Monster() {
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+	worldMat.Id();
+	shapeindex = -1;
+
+	HP = 30;
+	MaxHP = 30;
+	isDead = false;
 }
 
 void Monster::Update(float deltaTime)
@@ -2835,16 +2878,27 @@ void World::PrintCangoGrid(const std::vector<AstarNode*>& all, int gridWidth, in
 
 void World::PrintOffset() {
 	ofstream ofs{ "STC_GameObjectOffsets.txt" };
+	ofs << "GameObject" << endl;
 	ofs << GameObject::g_members.size() << endl;
 	GameObject::PrintOffset(ofs);
-	ofs << GameObject::g_members.size() + StaticGameObject::g_members.size() << endl;
+
+	ofs << "StaticGameObject" << endl;
+	ofs << StaticGameObject::g_members.size() << endl;
 	StaticGameObject::PrintOffset(ofs);
+
+	ofs << "DynamicGameObject" << endl;
 	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() << endl;
 	DynamicGameObject::PrintOffset(ofs);
+
+	ofs << "SkinMeshGameObject" << endl;
 	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() + SkinMeshGameObject::g_members.size() << endl;
 	SkinMeshGameObject::PrintOffset(ofs);
+
+	ofs << "Player" << endl;
 	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() + SkinMeshGameObject::g_members.size() + Player::g_members.size() << endl;
 	Player::PrintOffset(ofs);
+
+	ofs << "Monster" << endl;
 	ofs << GameObject::g_members.size() + DynamicGameObject::g_members.size() + SkinMeshGameObject::g_members.size() + Monster::g_members.size() << endl;
 	Monster::PrintOffset(ofs);
 	ofs.close();

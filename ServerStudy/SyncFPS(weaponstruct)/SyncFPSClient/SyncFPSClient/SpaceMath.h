@@ -338,3 +338,35 @@ bool PointInTriangle(XMVECTOR point, XMVECTOR p0, XMVECTOR p1, XMVECTOR p2);
 bool bPointInTriangleRange(float px, float py, float t0x, float t0y, float t1x, float t1y, float t2x, float t2y);
 
 bool bTriangleInPolygonRange(float t0x, float t0y, float t1x, float t1y, float t2x, float t2y, vector<XMFLOAT3> polygon);
+
+class vec2f {
+public:
+	float x;
+	float y;
+
+	vec2f() { x = 0; y = 0; }
+	vec2f(const vec2f& ref) { x = ref.x; y = ref.y; }
+	vec2f(float ix, float iy) { x = ix; y = iy; }
+
+	vec2f operator+(vec2f v2) { return vec2f(x + v2.x, y + v2.y); }
+	vec2f operator-(vec2f v2) { return vec2f(x - v2.x, y - v2.y); }
+	vec2f operator/(float div) { return vec2f(x / div, y / div); }
+	vec2f operator*(float div) { return vec2f(x * div, y * div); }
+	bool operator==(const vec2f& v2) {
+		if (x == v2.x && y == v2.y) return true;
+		else return false;
+	}
+	bool operator!=(const vec2f& v2) {
+		if (x != v2.x || y != v2.y) return true;
+		else return false;
+	}
+
+	vec2f Inverse() const { return vec2f(-x, -y); }
+
+	bool isActive() const {
+		if ((isnan(x) == false && isinf(x) == false) && (isnan(y) == false && isinf(y) == false)) {
+			return true;
+		}
+		else return false;
+	}
+};

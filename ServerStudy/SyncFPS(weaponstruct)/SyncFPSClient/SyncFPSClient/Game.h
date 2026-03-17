@@ -30,6 +30,8 @@ public:
 	PBRShader1* MyPBRShader1;
 	//스카이박스를 그리는 셰이더.
 	SkyBoxShader* MySkyBoxShader;
+	// 블러링 셰이더
+	ComputeTestShader* MyComputeTestShader;
 	//레이트레이싱 셰이더
 	RayTracingShader* MyRayTracingShader;
 
@@ -78,12 +80,6 @@ public:
 	// y는 -200 ~ 200 까지의 값만 가질 수 있다.
 	vec4 DeltaMousePos;
 
-	// 현재 1인칭 시점인지
-	bool bFirstPersonVision = true;
-
-	// 업데이트에 쓰이는 DeltaTime
-	float DeltaTime;
-
 	// 어떤 Key가 눌려있는지 표현하는 배열
 	UCHAR pKeyBuffer[256];
 
@@ -122,7 +118,7 @@ public:
 
 	// SpotLight 라고 되어있지만, 사실 씬 전체를 덮는 DirectionLight 정보가 있다.
 	// improve : 이름 바꾸세요.
-	SpotLight MySpotLight;
+	SpotLight MyDirLight;
 
 	// 라이트 정보를 초기화 한다.
 	void SetLight();
@@ -197,9 +193,6 @@ public:
 
 	void InitParticlePool(ParticlePool& pool, UINT count);
 
-	// 현재 렌더링을 수행하는 viewport
-	static ViewportData* renderViewPort;
-
 	Game() {}
 	~Game() {}
 	/*
@@ -230,11 +223,27 @@ public:
 	*/
 	void Render_ShadowPass();
 
+	GPUResource DirLightRes;
+	DirLightInfo* MappedDirLightData = nullptr;
+	DescIndex DirLightResCBV;
+	void InitDirLightGPURes();
+
+	//-----------dynamic Global-----------
+	// 현재 렌더링을 수행하는 viewport
+	inline static ViewportData* renderViewPort;
+	// 현재 렌더링을 수행하는 셰이더 타입
+	inline static ShaderType PresentShaderType = ShaderType::RenderNormal;
+	// 1인칭 여부
+	bool bFirstPersonVision = false;
+	// delta time
+	float DeltaTime;
+
 	UINT TourID = 0;
 	// 렌더링을 할때 배치처리 렌더링 사용 여부
 	bool SceneRenderBatch = false;
 	// 렌더커맨드를 삽입할때 오브젝트의 렌더링 함수를 교체하는 bool 변수
 	bool CurrentRenderBatch = false;
+
 	void SetRenderMod(bool isbatch);
 	void ClearAllMeshInstancing();
 

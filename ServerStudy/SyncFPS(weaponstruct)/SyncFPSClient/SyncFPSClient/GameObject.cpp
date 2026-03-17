@@ -6,7 +6,6 @@
 extern int dbgc[128];
 
 Mesh* BulletRay::mesh = nullptr;
-ViewportData* Game::renderViewPort = nullptr;
 extern GlobalDevice gd;
 extern Game game;
 
@@ -22,7 +21,7 @@ void GameObject::StaticInit()
 
 void GameObject::STATICINIT(int typeindex) {
 	for (int i = 0; i < GameObject::g_members.size();++i) {
-		GameObjectType::Server_STCMembers[typeindex].push_back(GameObject::g_members[i]);
+		GameObjectType::Client_STCMembers[typeindex].push_back(GameObject::g_members[i]);
 	}
 }
 
@@ -271,6 +270,11 @@ void GameObject::RecvSTC_SyncObj(char* data) {
 	if (mesh) {
 		int& materialCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
 		for (int i = 0;i < materialCount;++i) {
 			material[i] = *(int*)(data + offset);
 			offset += sizeof(int);
@@ -279,6 +283,11 @@ void GameObject::RecvSTC_SyncObj(char* data) {
 	else {
 		int& NodeCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
 		for (int i = 0;i < NodeCount;++i) {
 			transforms_innerModel[i] = *(matrix*)(data + offset);
 			offset += sizeof(matrix);
@@ -288,7 +297,7 @@ void GameObject::RecvSTC_SyncObj(char* data) {
 
 void StaticGameObject::STATICINIT(int typeindex) {
 	for (int i = 0; i < GameObject::g_members.size();++i) {
-		GameObjectType::Server_STCMembers[typeindex].push_back(GameObject::g_members[i]);
+		GameObjectType::Client_STCMembers[typeindex].push_back(GameObject::g_members[i]);
 	}
 }
 
@@ -436,6 +445,11 @@ void StaticGameObject::RecvSTC_SyncObj(char* data) {
 	if (mesh) {
 		int& materialCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
 		for (int i = 0;i < materialCount;++i) {
 			material[i] = *(int*)(data + offset);
 			offset += sizeof(int);
@@ -444,6 +458,11 @@ void StaticGameObject::RecvSTC_SyncObj(char* data) {
 	else {
 		int& NodeCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
 		for (int i = 0;i < NodeCount;++i) {
 			transforms_innerModel[i] = *(matrix*)(data + offset);
 			offset += sizeof(matrix);
@@ -466,7 +485,7 @@ void StaticGameObject::RecvSTC_SyncObj(char* data) {
 void DynamicGameObject::STATICINIT(int typeindex) {
 	GameObject::STATICINIT(typeindex);
 	for (int i = 0; i < DynamicGameObject::g_members.size();++i) {
-		GameObjectType::Server_STCMembers[typeindex].push_back(DynamicGameObject::g_members[i]);
+		GameObjectType::Client_STCMembers[typeindex].push_back(DynamicGameObject::g_members[i]);
 	}
 }
 
@@ -919,6 +938,11 @@ void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 	if (mesh) {
 		int& materialCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
 		for (int i = 0;i < materialCount;++i) {
 			material[i] = *(int*)(data + offset);
 			offset += sizeof(int);
@@ -927,6 +951,11 @@ void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 	else {
 		int& NodeCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
 		for (int i = 0;i < NodeCount;++i) {
 			transforms_innerModel[i] = *(matrix*)(data + offset);
 			offset += sizeof(matrix);
@@ -937,7 +966,7 @@ void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 void SkinMeshGameObject::STATICINIT(int typeindex) {
 	DynamicGameObject::STATICINIT(typeindex);
 	for (int i = 0; i < SkinMeshGameObject::g_members.size();++i) {
-		GameObjectType::Server_STCMembers[typeindex].push_back(SkinMeshGameObject::g_members[i]);
+		GameObjectType::Client_STCMembers[typeindex].push_back(SkinMeshGameObject::g_members[i]);
 	}
 }
 
@@ -1216,6 +1245,11 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	if (mesh) {
 		int& materialCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
 		for (int i = 0;i < materialCount;++i) {
 			material[i] = *(int*)(data + offset);
 			offset += sizeof(int);
@@ -1224,17 +1258,24 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	else {
 		int& NodeCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
 		for (int i = 0;i < NodeCount;++i) {
 			transforms_innerModel[i] = *(matrix*)(data + offset);
 			offset += sizeof(matrix);
 		}
 	}
+
+	SetShape(shape);
 }
 
 void Monster::STATICINIT(int typeindex) {
 	SkinMeshGameObject::STATICINIT(typeindex);
 	for (int i = 0; i < Monster::g_members.size();++i) {
-		GameObjectType::Server_STCMembers[typeindex].push_back(Monster::g_members[i]);
+		GameObjectType::Client_STCMembers[typeindex].push_back(Monster::g_members[i]);
 	}
 }
 
@@ -1262,7 +1303,7 @@ void Monster::Render(matrix parent)
 	if (isDead) {
 		return;
 	}
-	GameObject::Render();
+	SkinMeshGameObject::Render();
 }
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
@@ -1293,6 +1334,11 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	if (mesh) {
 		int& materialCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
 		for (int i = 0;i < materialCount;++i) {
 			material[i] = *(int*)(data + offset);
 			offset += sizeof(int);
@@ -1301,11 +1347,18 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	else {
 		int& NodeCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
 		for (int i = 0;i < NodeCount;++i) {
 			transforms_innerModel[i] = *(matrix*)(data + offset);
 			offset += sizeof(matrix);
 		}
 	}
+
+	SetShape(shape);
 }
 
 Player::Player() : HP{ 100 } {
@@ -1318,7 +1371,7 @@ Player::~Player() {
 void Player::STATICINIT(int typeindex) {
 	SkinMeshGameObject::STATICINIT(typeindex);
 	for (int i = 0; i < Player::g_members.size();++i) {
-		GameObjectType::Server_STCMembers[typeindex].push_back(Player::g_members[i]);
+		GameObjectType::Client_STCMembers[typeindex].push_back(Player::g_members[i]);
 	}
 }
 
@@ -1506,40 +1559,41 @@ void Player::Render()
 {
 	if (game.player == this) {
 		if (game.bFirstPersonVision == false) {
-			GameObject::Render();
+			SkinMeshGameObject::Render();
 
-			matrix gunmat = gunMatrix_thirdPersonView;
+			//// 음 이건 오브젝트 타입도 다르고 그리는 방법도 다르기 때문에
+			//// 따로 무기를 렌더하는 함수를 빼야한다.
+			//matrix gunmat = gunMatrix_thirdPersonView;
 
-			const float PI = 3.141592f;
-			gunmat *= XMMatrixRotationY(PI);
+			//const float PI = 3.141592f;
+			//gunmat *= XMMatrixRotationY(PI);
 
-			gunmat.pos.y -= 0.40f;
-			gunmat.pos.x += 0.55f;
-			gunmat.pos.z += 0.80f;
+			//gunmat.pos.y -= 0.40f;
+			//gunmat.pos.x += 0.55f;
+			//gunmat.pos.z += 0.80f;
 
-			gunmat *= worldMat;
-			//gunmat.LookAt(worldMat.look);
-			//gunmat.transpose();
+			//gunmat *= worldMat;
+			////gunmat.LookAt(worldMat.look);
+			////gunmat.transpose();
 
-			//gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
-			//Gun->Render(gd.gpucmd, 1);
-			if (Game::renderViewPort == &game.MySpotLight.viewport) {
-				//shadowMapping
-				if (GunModel) {
+			////gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
+			////Gun->Render(gd.gpucmd, 1);
+			//if (Game::renderViewPort == &game.MyDirLight.viewport) {
+			//	//shadowMapping
+			//	if (GunModel) {
 
-					GunModel->Render(gd.gpucmd, gunmat, nullptr);
-				}
-			}
-			else {
-				if (GunModel) {
-					GunModel->Render(gd.gpucmd, gunmat, nullptr);
-				}
-			}
-
+			//		GunModel->Render(gd.gpucmd, gunmat, nullptr);
+			//	}
+			//}
+			//else {
+			//	if (GunModel) {
+			//		GunModel->Render(gd.gpucmd, gunmat, nullptr);
+			//	}
+			//}
 		}
 	}
 	else {
-		GameObject::Render();
+		SkinMeshGameObject::Render();
 	}
 }
 
@@ -1623,7 +1677,7 @@ void Player::Render_AfterDepthClear()
 			if (pTargetModel) {
 				gunmat *= viewmat;
 
-				if (Game::renderViewPort == &game.MySpotLight.viewport) {
+				if (Game::renderViewPort == &game.MyDirLight.viewport) {
 					pTargetModel->Render(gd.gpucmd, gunmat);
 					return;
 				}
@@ -1715,6 +1769,11 @@ void Player::RecvSTC_SyncObj(char* data) {
 	if (mesh) {
 		int& materialCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
 		for (int i = 0;i < materialCount;++i) {
 			material[i] = *(int*)(data + offset);
 			offset += sizeof(int);
@@ -1723,11 +1782,18 @@ void Player::RecvSTC_SyncObj(char* data) {
 	else {
 		int& NodeCount = *(int*)(data + offset);
 		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
 		for (int i = 0;i < NodeCount;++i) {
 			transforms_innerModel[i] = *(matrix*)(data + offset);
 			offset += sizeof(matrix);
 		}
 	}
+
+	SetShape(shape);
 }
 
 BulletRay::BulletRay()
@@ -2285,4 +2351,3 @@ BoundingBox ChunkIndex::GetAABB() {
 	AABB.Extents = XMFLOAT3(halfW, halfW, halfW);
 	return AABB;
 }
-

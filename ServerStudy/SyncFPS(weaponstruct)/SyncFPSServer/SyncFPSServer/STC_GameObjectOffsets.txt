@@ -1,3 +1,4 @@
+GameObject
 8
 tag 4 4
 shapeindex 8 4
@@ -7,7 +8,8 @@ sibling 20 4
 material 24 8
 transforms_innerModel 24 8
 worldMat 32 64
-16
+StaticGameObject
+8
 tag 4 4
 shapeindex 8 4
 parent 12 4
@@ -16,14 +18,7 @@ sibling 20 4
 material 24 8
 transforms_innerModel 24 8
 worldMat 32 64
-tag 4 4
-shapeindex 8 4
-parent 12 4
-childs 16 4
-sibling 20 4
-material 24 8
-transforms_innerModel 24 8
-worldMat 32 64
+DynamicGameObject
 9
 tag 4 4
 shapeindex 8 4
@@ -34,6 +29,7 @@ material 24 8
 transforms_innerModel 24 8
 worldMat 32 64
 LVelocity 192 16
+SkinMeshGameObject
 11
 tag 4 4
 shapeindex 8 4
@@ -46,6 +42,7 @@ worldMat 32 64
 LVelocity 192 16
 AnimationFlowTime 208 4
 PlayingAnimationIndex 212 4
+Player
 23
 tag 4 4
 shapeindex 8 4
@@ -70,6 +67,7 @@ HealSkillCooldownFlow 256 4
 m_currentWeaponType 260 4
 Inventory 264 288
 weapon 552 48
+Monster
 14
 tag 4 4
 shapeindex 8 4

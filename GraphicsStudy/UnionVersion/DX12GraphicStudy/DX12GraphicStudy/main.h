@@ -1360,9 +1360,9 @@ struct GlobalDevice {
 	static constexpr int FontCount = 2;
 	string font_filename[FontCount];
 	FontData font_data[FontCount];
-	unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_texture_map[FontCount];
+	//unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_texture_map[FontCount];
 	unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_sdftexture_map[FontCount];
-	vector<wchar_t> addTextureStack;
+	//vector<wchar_t> addTextureStack;
 	vector<wchar_t> addSDFTextureStack;
 
 	// OS에서 전체화면을 지원하는 해상도 리스트

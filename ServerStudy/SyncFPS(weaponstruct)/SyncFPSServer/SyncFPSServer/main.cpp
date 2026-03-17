@@ -59,7 +59,8 @@ int main() {
 					int err = WSASend(gameworld.clients[k].socket, sendbuf, 2, &retval, 0, NULL, NULL);
 					if (err == SOCKET_ERROR) {
 						int error = WSAGetLastError();
-						printf("Error code: %d\n", error);
+						ClientData::DisconnectToServer(k);
+						continue;
 					}
 					if (retval != sendbuf[0].len + sendbuf[1].len) {
 						int sav = sendbuf[0].len;
@@ -250,6 +251,7 @@ READ_START:
 	{
 		CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
 		p->InputBuffer[header.Key] = header.isdown;
+		cout << "client" << clientIndex << " : " << header.Key << " isdown : " << header.isdown << endl;
 		currentPivot += header.size;
 		offset += header.size;
 	}
