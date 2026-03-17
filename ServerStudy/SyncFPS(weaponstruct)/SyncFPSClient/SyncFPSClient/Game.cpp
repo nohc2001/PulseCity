@@ -484,15 +484,6 @@ void Game::Render() {
 
 	if (game.player)
 	{
-		MuzzleFlashCS->DispatchMuzzle(
-			gd.pCommandList,
-			&MuzzlePool.Buffer,
-			MuzzlePool.Count,
-			game.player->m_muzzleData,
-			DeltaTime
-		);
-
-		ParticleDraw->Render(gd.pCommandList, &MuzzlePool.Buffer, MuzzlePool.Count, true);
 
 		TracerCS->DispatchTracer(
 			gd.pCommandList,
@@ -549,6 +540,17 @@ void Game::Render() {
 	// UI/AfterDepthClear Render
 	if (game.player != nullptr) {
 		game.player->Render_AfterDepthClear();
+
+		MuzzleFlashCS->DispatchMuzzle(
+			gd.pCommandList,
+			&MuzzlePool.Buffer,
+			MuzzlePool.Count,
+			game.player->m_muzzleData,
+			DeltaTime
+		);
+
+		ParticleDraw->Render(gd.pCommandList, &MuzzlePool.Buffer, MuzzlePool.Count, true);
+
 		hhpp = game.player->HP;
 		HeatGauge = game.player->HeatGauge;
 		kill = game.player->KillCount;

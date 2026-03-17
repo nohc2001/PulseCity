@@ -8,7 +8,9 @@ struct Particle
     float Age;
 
     float Size;
-    float Padding;
+    uint Type;
+    uint SpriteIdx;
+    float Rotation;
 };
 
 // Compute Shader (Particle Update)
@@ -170,39 +172,80 @@ void MuzzleFlashCS(uint3 id : SV_DispatchThreadID)
     uint i = id.x;
     Particle p = ParticlesRW[i];
 
-    if (MuzzleBurst > 0.5f)
+    if (MuzzleBurst > 0.5f && p.Life <= 0.0f)
     {
-        if (rand(i + MuzzlePos.x) > 0.4f)
+        float spawnChance = rand(i + MuzzlePos.x + MuzzlePos.y);
+        
+        if (spawnChance < 0.06f)
         {
             p.Age = 0;
-
-            p.Life = 0.03f + rand(i) * 0.03f;
-            
-            p.Size = 0.01f + rand(i + 1) * 0.04f;
             p.Position = MuzzlePos.xyz;
             
-            float spread = MuzzleDir.w; 
-            float3 randDir = float3(rand(i) - 0.5, rand(i + 1) - 0.5, rand(i + 2) - 0.5) * spread;
+            float typeRand = rand(i * 13.0f);
             
-            float3 fireDir = normalize(MuzzleDir.xyz * 4.0f + randDir);
-            p.Velocity = fireDir * (130.0f + rand(i + 3) * 70.0f);
+            if (typeRand < 0.1f)
+            {
+                p.Type = 2;
+                p.SpriteIdx = 5; 
+                p.Rotation = rand(i * 7.0f) * 6.28318f; 
+                p.Size = 0.2f + rand(i) * 0.15f;
+                p.Life = 0.03f + rand(i) * 0.02f; 
+                
+                p.Velocity = MuzzleDir.xyz * 2.0f;
+            }
+            else if (typeRand < 0.4f)
+            {
+                p.Type = 0;
+                p.SpriteIdx = 10; 
+                p.Rotation = rand(i * 3.0f) * 6.28318f;
+                p.Size = 0.08f + rand(i) * 0.05f; 
+                p.Life = 0.15f + rand(i) * 0.1f; 
+                
+                float3 randDir = float3(rand(i) - 0.5, rand(i + 1) - 0.5, rand(i + 2) - 0.5);
+                p.Velocity = normalize(MuzzleDir.xyz * 1.5f + randDir) * (15.0f + rand(i) * 15.0f);
+            }
+            else
+            {
+                p.Type = 1;
+                p.SpriteIdx = 0; 
+                p.Rotation = 0.0f;
+                p.Size = 0.015f + rand(i) * 0.02f; 
+                p.Life = 0.2f + rand(i) * 0.3f; 
+                
+                float spread = MuzzleDir.w * 2.5f;
+                float3 randDir = float3(rand(i) - 0.5, rand(i + 1) - 0.5, rand(i + 2) - 0.5) * spread;
+                p.Velocity = normalize(MuzzleDir.xyz * 4.0f + randDir) * (50.0f + rand(i) * 80.0f);
+            }
         }
     }
 
     if (p.Life > 0.0f)
     {
-        p.Velocity *= 0.88f; 
-        p.Position += p.Velocity * dt;
-        
         p.Age += dt;
         p.Life -= dt;
         
-        p.Size *= 0.9f;
+        if (p.Type == 1) 
+        {
+            p.Velocity.y -= 30.0f * dt; 
+            p.Velocity *= 0.95f; 
+            p.Position += p.Velocity * dt;
+        }
+        else if (p.Type == 0) 
+        {
+            p.Velocity *= 0.85f;
+            p.Position += p.Velocity * dt;
+            p.Position.y += 0.5f * dt; 
+        }
+        else if (p.Type == 2) 
+        {
+            p.Position += p.Velocity * dt;
+        }
     }
     else
     {
         p.Size = 0.0f;
         p.Life = -1.0f;
+        p.Type = 0;
     }
 
     ParticlesRW[i] = p;
@@ -223,6 +266,7 @@ void TracerCS(uint3 id : SV_DispatchThreadID)
 
     float rawW = TracerParams.w;
     
+    // [1] 생성 로직
     if (rawW >= 0.0f)
     {
         uint startIndex = (uint) rawW;
@@ -232,22 +276,43 @@ void TracerCS(uint3 id : SV_DispatchThreadID)
         {
             p.Age = 0;
             p.Position = TracerMuzzlePos.xyz;
+            
+            // 탄퍼짐(Spread)
             float spread = TracerDir.w;
             float3 randDir = float3(rand(i) - 0.5, rand(i + 1) - 0.5, rand(i + 2) - 0.5) * spread;
+            
             p.Velocity = normalize(TracerDir.xyz + randDir) * TracerParams.x;
             p.Life = TracerParams.y;
             p.Size = TracerParams.z;
             
             ParticlesRW[i] = p;
-            return; 
+            return;
         }
     }
 
+    // [2] 업데이트 (탄도학 및 물리 법칙 적용)
     if (p.Life > 0.0f)
     {
-        p.Position += p.Velocity * dt;
         p.Age += dt;
         p.Life -= dt;
+        
+        // 1. 공기 저항 (Drag): 총알은 날아가면서 점점 속도를 잃습니다.
+        // dt에 곱해서 프레임 독립적으로 만듭니다.
+        p.Velocity *= (1.0f - 0.5f * dt);
+        
+        // 2. 중력 (Gravity - Bullet Drop): 장거리 사격 시 총알이 아래로 미세하게 떨어집니다.
+        p.Velocity.y -= 9.8f * dt;
+        
+        // 위치 업데이트
+        p.Position += p.Velocity * dt;
+        
+        // 3. 예광탄 연소 (Burn-out): 예광탄은 빛을 내며 타기 때문에 수명이 다해갈수록 작아집니다.
+        // 처음 부여받은 전체 수명(Age + Life) 대비 남은 생명력의 비율을 구합니다.
+        float maxLife = p.Age + p.Life;
+        float lifeRatio = p.Life / maxLife;
+        
+        // 수명이 20% 이하로 남았을 때부터 크기가 스르륵 줄어들며 자연스럽게 소멸합니다.
+        p.Size = TracerParams.z * saturate(lifeRatio * 5.0f);
     }
     else
     {
@@ -287,11 +352,7 @@ VSOut VS(uint id : SV_VertexID)
     uint FrameCols = 6;
     uint FrameRows = 6;
 
-    // t는 0(탄생)에서 1(소멸)로 갑니다.
     float t = saturate(p.Age / max(p.Life, 0.001));
-    
-    // [총알 연출 1] 총알은 날아가는 동안 크기가 유지되어야 "덩어리"로 보입니다.
-    // 기존의 sin 애니메이션을 제거하고 수명 끝에서만 살짝 작아지게 변경합니다.
     float currentSize = p.Size * (1.0f - t * 0.2f);
 
     float2 offsets[6] =
@@ -304,31 +365,52 @@ VSOut VS(uint id : SV_VertexID)
     float3 velocity = p.Velocity;
     float speed = length(velocity);
 
-    // [총알 연출 2] 궤적(Line)이 아니라 탄환(Projectile) 느낌 내기
-    if (speed > 100.0f)
+    float cosR = cos(p.Rotation);
+    float sinR = sin(p.Rotation);
+    float2 rotatedOffset = float2(
+        offsets[vId].x * cosR - offsets[vId].y * sinR,
+        offsets[vId].x * sinR + offsets[vId].y * cosR
+    );
+
+    if (p.Type == 0) 
     {
-        float3 vDir = normalize(velocity);
-        // 기존처럼 CamUp을 사용하여 연산 (추가 상수 버퍼 필요 없음)
-        float3 sideDir = normalize(cross(vDir, CamUp));
-        
-        // [핵심] stretch 값을 줄여서 궤적이 너무 길어지지 않게 합니다. (0.005 -> 0.002)
-        // 그리고 총알의 "두께"인 p.Size를 충분히 확보합니다.
-        float bulletStretch = min(speed * 0.002f, 0.7f);
-        
-        // worldPos 계산 시 offsets[vId].y에 더해지는 길이를 제한하여 "짧고 굵은" 느낌 유도
-        worldPos += (sideDir * offsets[vId].x * currentSize) +
-                    (vDir * offsets[vId].y * (currentSize + bulletStretch));
+        float expandSize = currentSize * (1.0f + t);
+        worldPos += (CamRight * rotatedOffset.x + CamUp * rotatedOffset.y) * expandSize;
     }
-    else
+    else if (p.Type == 1)
     {
-        worldPos += (CamRight * offsets[vId].x + CamUp * offsets[vId].y) * currentSize;
+        if (speed > 10.0f) 
+        {
+            float3 vDir = normalize(velocity);
+            float3 sideDir = normalize(cross(vDir, CamUp));
+            
+            float bulletStretch = min(speed * 0.002f, 0.7f);
+            
+            worldPos += (sideDir * offsets[vId].x * currentSize * 0.5f) +
+                        (vDir * offsets[vId].y * (currentSize + bulletStretch));
+        }
+        else
+        {
+            worldPos += (CamRight * rotatedOffset.x + CamUp * rotatedOffset.y) * currentSize;
+        }
+    }
+    else if (p.Type == 2) 
+    {
+        float flashScale = sin(t * 3.14159f) * 1.5f;
+        
+        worldPos += (CamRight * rotatedOffset.x + CamUp * rotatedOffset.y) * (currentSize * flashScale);
+    }
+    else if (p.Type == 3) 
+    {
+        float3 right = float3(1, 0, 0);
+        float3 forward = float3(0, 0, 1);
+        worldPos += (right * rotatedOffset.x + forward * rotatedOffset.y) * currentSize;
     }
 
     VSOut o;
     o.Pos = mul(float4(worldPos, 1), ViewProj);
 
-    // [총알 연출 3] 색상을 더 밝게 하여 "빛나는 탄환" 느낌 강조
-    float4 ColorStart = float4(2.0f, 1.8f, 1.0f, 1.0f); // HDR 느낌을 위해 수치를 1.0 이상으로
+    float4 ColorStart = float4(2.0f, 1.8f, 1.0f, 1.0f);
     float4 ColorMid = float4(1.0f, 0.5f, 0.1f, 1.0f);
     float4 ColorEnd = float4(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -337,25 +419,16 @@ VSOut VS(uint id : SV_VertexID)
     else
         o.Color = lerp(ColorMid, ColorEnd, (t - 0.2f) * 1.25f);
 
-    // UV 및 애니메이션 (기존 유지)
-    float2 baseUVs[6] =
-    {
-        float2(0, 1), float2(0, 0), float2(1, 0),
-        float2(0, 1), float2(1, 0), float2(1, 1)
-    };
-    
+    float2 baseUVs[6] = { float2(0, 1), float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 0), float2(1, 1) };
     float2 uv = baseUVs[vId];
-    uint totalFrames = FrameCols * FrameRows;
-    uint currentFrameIndex = (uint) (t * (totalFrames - 1));
 
-    uint col = currentFrameIndex % FrameCols;
-    uint row = currentFrameIndex / FrameCols;
+    uint col = p.SpriteIdx % FrameCols;
+    uint row = p.SpriteIdx / FrameCols;
 
     uv.x = (uv.x / (float) FrameCols) + ((float) col / (float) FrameCols);
     uv.y = (uv.y / (float) FrameRows) + ((float) row / (float) FrameRows);
 
     o.UV = uv;
-    
     return o;
 }
 

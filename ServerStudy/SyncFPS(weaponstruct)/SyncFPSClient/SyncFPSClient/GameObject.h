@@ -317,11 +317,11 @@ struct WeaponData {
 };
 
 static WeaponData GWeaponTable[] = {
-	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f, {0.4f, -0.50f, 0.4f, 0.0f}, 200.0f, 1.0f, 0.1f, 0.04f },
-	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f, {0.80f, -0.40f, 3.0f, 0.0f}, 150.0f, 1.0f, 0.3f, 0.0f },
-	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f, {0.75f, -0.4f, 1.50f, 0.0f}, 120.0f, 1.0f, 0.05f, 0.2f },
-	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f, {0.70f, -0.4f, 0.80f, 0.0f}, 150.0f, 1.0f, 0.05f, 0.02f },
-	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f, {1.0f, -0.50f, 0.70f, 0.0f}, 140.0f, 1.0f, 0.2f, 0.01f },
+	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f, {0.6f, -0.60f, 3.9f, 0.0f}, 200.0f, 1.0f, 0.4f, 0.04f },
+	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f, {0.80f, -0.40f, 6.0f, 0.0f}, 150.0f, 1.0f, 0.4f, 0.0f },
+	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f, {0.75f, -0.4f, 3.50f, 0.0f}, 120.0f, 1.0f, 0.1f, 0.2f },
+	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f, {0.70f, -0.4f, 2.80f, 0.0f}, 150.0f, 1.0f, 0.1f, 0.02f },
+	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f, {1.0f, -0.50f, 2.70f, 0.0f}, 140.0f, 1.0f, 0.3f, 0.01f },
 	// 
 };
 

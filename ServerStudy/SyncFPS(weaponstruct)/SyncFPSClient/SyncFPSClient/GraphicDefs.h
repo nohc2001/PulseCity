@@ -365,7 +365,9 @@ struct Particle
 	float Age;
 
 	float Size;
-	float Padding[3];
+	uint32_t Type;
+	uint32_t SpriteIdx;
+	float Rotation;
 };
 
 struct ParticlePool
