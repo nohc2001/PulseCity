@@ -1,0 +1,259 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\main.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\main.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Zone.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Zone.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Monster.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Monster.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Zone.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Zone.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Player.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Player.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Player.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Player.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\GameObject.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\GameObject.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\GameObject.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\GameObject.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Portal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Portal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Portal.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Portal.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Program Files\\Microsoft Visual Studio\\2022\\Preview\\VC\\Tools\\MSVC\\14.44.34918\\include\\vector||{3B902123-F8A7-4915-9F01-361F908088D0}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\vecset.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\vecset.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\ucrt\\corecrt_memcpy_s.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Monster.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{E50B2AC2-9589-4A11-BA06-C83CA2145AA4}|SyncFPSServer\\SyncFPSServer.vcxproj|solutionrelative:SyncFPSServer\\Monster.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 4,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "GameObject.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\GameObject.cpp",
+              "RelativeDocumentMoniker": "SyncFPSServer\\GameObject.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\GameObject.cpp",
+              "RelativeToolTip": "SyncFPSServer\\GameObject.cpp",
+              "ViewState": "AgIAAMUDAAAAAAAAAAAnwNQDAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-03-03T07:19:51.596Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "vecset.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\vecset.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\vecset.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\vecset.h",
+              "RelativeToolTip": "SyncFPSServer\\vecset.h",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAA5AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-03T06:11:25.444Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "corecrt_memcpy_s.h",
+              "DocumentMoniker": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\ucrt\\corecrt_memcpy_s.h",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\..\\..\\..\\..\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\ucrt\\corecrt_memcpy_s.h",
+              "ToolTip": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\ucrt\\corecrt_memcpy_s.h",
+              "RelativeToolTip": "..\\..\\..\\..\\..\\..\\..\\..\\..\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\ucrt\\corecrt_memcpy_s.h",
+              "ViewState": "AgIAAC0AAAAAAAAAAAAAABUAAAAGAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-03T06:07:57.19Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "main.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\main.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\main.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\main.h",
+              "RelativeToolTip": "SyncFPSServer\\main.h",
+              "ViewState": "AgIAAOYAAAAAAAAAAADgv/oAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-03T05:47:34.523Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "main.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\main.cpp",
+              "RelativeDocumentMoniker": "SyncFPSServer\\main.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\main.cpp",
+              "RelativeToolTip": "SyncFPSServer\\main.cpp",
+              "ViewState": "AgIAAPcAAAAAAAAAAAAAABwAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-03-03T05:47:32.806Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Zone.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Zone.cpp",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Zone.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Zone.cpp",
+              "RelativeToolTip": "SyncFPSServer\\Zone.cpp",
+              "ViewState": "AgIAABYBAAAAAAAAAAAAACwBAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-03-03T05:35:00.547Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Monster.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Monster.cpp",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Monster.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Monster.cpp",
+              "RelativeToolTip": "SyncFPSServer\\Monster.cpp",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABgAAAAoAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-03-15T23:03:03.25Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "Player.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Player.cpp",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Player.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Player.cpp",
+              "RelativeToolTip": "SyncFPSServer\\Player.cpp",
+              "ViewState": "AgIAALAAAAAAAAAAAAAzwM4AAAAOAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-03-16T00:27:11.761Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "Portal.cpp",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Portal.cpp",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Portal.cpp",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Portal.cpp",
+              "RelativeToolTip": "SyncFPSServer\\Portal.cpp",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAEAAAALAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2026-03-03T08:37:40.477Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "Portal.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Portal.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Portal.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Portal.h",
+              "RelativeToolTip": "SyncFPSServer\\Portal.h",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-03T08:37:48.489Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "Player.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Player.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Player.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Player.h",
+              "RelativeToolTip": "SyncFPSServer\\Player.h",
+              "ViewState": "AgIAAGIAAAAAAAAAAAAjwHUAAAARAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-16T00:31:55.293Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "vector",
+              "DocumentMoniker": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Preview\\VC\\Tools\\MSVC\\14.44.34918\\include\\vector",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\..\\..\\..\\..\\Program Files\\Microsoft Visual Studio\\2022\\Preview\\VC\\Tools\\MSVC\\14.44.34918\\include\\vector",
+              "ToolTip": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Preview\\VC\\Tools\\MSVC\\14.44.34918\\include\\vector",
+              "RelativeToolTip": "..\\..\\..\\..\\..\\..\\..\\..\\..\\Program Files\\Microsoft Visual Studio\\2022\\Preview\\VC\\Tools\\MSVC\\14.44.34918\\include\\vector",
+              "ViewState": "AgIAAGwHAAAAAAAAAAAnwHoHAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-03-15T12:18:08.502Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Zone.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Zone.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Zone.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Zone.h",
+              "RelativeToolTip": "SyncFPSServer\\Zone.h",
+              "ViewState": "AgIAADIAAAAAAAAAAAApwEAAAAAJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-03T05:34:57.537Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "GameObject.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\GameObject.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\GameObject.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\GameObject.h",
+              "RelativeToolTip": "SyncFPSServer\\GameObject.h",
+              "ViewState": "AgIAADQCAAAAAAAAAAD4v0ICAAAjAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-15T20:40:42.212Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "Monster.h",
+              "DocumentMoniker": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Monster.h",
+              "RelativeDocumentMoniker": "SyncFPSServer\\Monster.h",
+              "ToolTip": "C:\\Users\\\uC9C4\uC131\uC900\\Desktop\\school\\3-1\\\uAC8C\uC784 \uC5D4\uC9C4\\PulseCity\\SyncFPS_PortalWork\\SyncFPSServer\\SyncFPSServer\\Monster.h",
+              "RelativeToolTip": "SyncFPSServer\\Monster.h",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2026-03-03T05:33:37.373Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
