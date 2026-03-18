@@ -610,6 +610,7 @@ union SendingType {
 	operator short() { return n; }
 };
 
+#pragma region ProtocolStruct
 #pragma pack(push, 1)
 /*
 * 설명 : 전체 오브젝트 하나를 통체로 동기화 하고 싶을때 사용된다.
@@ -746,4 +747,6 @@ struct CTS_SyncRotation_Header {
 	float pitch;
 };
 
+
 #pragma pack(pop)
+#pragma endregion

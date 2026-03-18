@@ -1830,10 +1830,10 @@ struct GlobalDevice {
 	ui64 tickStack[128] = {};
 	ui64 ft[128] = {};
 	ui32 cnt[128] = {};
-	__forceinline void AverageTimerStart(int id = 0) {
+	__forceinline void AverageTickStart(int id = 0) {
 		ft[id] = GetTicks();
 	}
-	__forceinline void AverageTimerEnd(int id = 0) {
+	__forceinline void AverageTickEnd(int id = 0) {
 		ui64 et = GetTicks();
 		cnt[id] += 1;
 		tickStack[id] += et - ft[id];
@@ -4030,7 +4030,7 @@ public:
 
 	void FireRaycast(GameObject* owner, vec4 rayStart, vec4 rayDirection, float rayDistance);
 
-	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
+	//void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
 
 	void RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth = 0.01f);
 

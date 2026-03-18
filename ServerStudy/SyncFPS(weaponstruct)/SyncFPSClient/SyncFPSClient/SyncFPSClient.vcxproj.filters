@@ -51,9 +51,6 @@
     <ClCompile Include="GameObject.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="DDSTextureLoader12.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="D3D_Util\D3DUtil.cpp">
       <Filter>소스 파일\Utill</Filter>
     </ClCompile>
@@ -62,6 +59,9 @@
     </ClCompile>
     <ClCompile Include="SpaceMath.cpp">
       <Filter>소스 파일\UtillSource</Filter>
+    </ClCompile>
+    <ClCompile Include="DDSTextureLoader12.cpp">
+      <Filter>소스 파일\Utill</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

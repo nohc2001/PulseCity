@@ -45,6 +45,10 @@
 #include "D3D_Util/ShaderUtil.h"
 #include "D3D_Util/DirectXRaytracingHelper.h"
 
+#ifdef PIX_DEBUGING
+#include "C:/Users/nohc2/OneDrive/Desktop/WorkRoom/PixEvents/include/pix3.h" // PIX 관련 헤더 (예시)
+#endif
+
 typedef unsigned char byte8;
 typedef unsigned short ui16;
 typedef unsigned int ui32;

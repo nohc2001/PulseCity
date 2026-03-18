@@ -49,8 +49,6 @@ void font_parsed(void* args, void* _font_data, int error)
 	}
 }
 
-
-
 #pragma region GPUResourceCode
 
 void GPUResource::AddResourceBarrierTransitoinToCommand(ID3D12GraphicsCommandList* cmd, D3D12_RESOURCE_STATES afterState)
@@ -685,7 +683,7 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	IDXGIInfoQueue* DebugInterface;
 	debugDXGI = false;
 #ifdef PIX_DEBUGING
-	LoadLibrary(L"C:/Program Files/Microsoft PIX/2601.15/WinPixGpuCapturer.dll");
+	LoadLibrary(L"C:/Program Files/Microsoft PIX/2602.25/WinPixGpuCapturer.dll");
 #endif
 
 	UINT nDXGIFactoryFlags = 0;
@@ -890,10 +888,6 @@ DXGI_FINISH_SELECT_ADAPTER:
 void GlobalDevice::Init()
 {
 	HRESULT hr;
-
-#ifdef PIX_DEBUGING
-	LoadLibrary(L"C:/Program Files/Microsoft PIX/2509.25/WinPixGpuCapturer.dll");
-#endif
 
 	font_filename[0] = "consola.ttf"; // english
 	font_filename[1] = "malgunbd.ttf"; // korean
@@ -4061,6 +4055,10 @@ void BumpMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList) {
 
 #pragma region BumpSkinMeshCode
 
+BumpSkinMesh::~BumpSkinMesh()
+{
+}
+
 void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<BoneData>& bonedata, vector<TriangleIndex>& inds, int SubMeshNum, int* SubMeshIndexArr, matrix* NodeLocalMatrixs, int matrixCount)
 {
 	if (SubMeshIndexArr == nullptr) {
@@ -4199,6 +4197,18 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 
 void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex)
 {
+	pCommandList->IASetVertexBuffers(0, 2, RenderVBufferView);
+	pCommandList->IASetPrimitiveTopology(topology);
+	if (IndexNum > 0)
+	{
+		pCommandList->IASetIndexBuffer(&IndexBufferView);
+		pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+	}
+	else
+	{
+		ui32 VertexOffset = 0;
+		pCommandList->DrawInstanced(VertexNum, instanceNum, VertexOffset, 0);
+	}
 }
 
 void BumpSkinMesh::Release()
@@ -4206,10 +4216,6 @@ void BumpSkinMesh::Release()
 }
 
 void BumpSkinMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList)
-{
-}
-
-BumpSkinMesh::~BumpSkinMesh()
 {
 }
 

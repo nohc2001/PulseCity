@@ -393,6 +393,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	virtual void SetShape(Shape _shape);
 
 	virtual void Update(float delatTime);
+	virtual void AnimationUpdate(float deltaTime);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {

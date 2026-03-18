@@ -1211,6 +1211,7 @@ void SkinMeshGameObject::Update(float delatTime)
 }
 
 void SkinMeshGameObject::Render(matrix parent) {
+	
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	BoundingOrientedBox obb_local, obb;
@@ -1226,6 +1227,7 @@ void SkinMeshGameObject::Render(matrix parent) {
 	if (mesh == nullptr) {
 		model->Render<true>(gd.gpucmd, world, this);
 	}
+	
 }
 
 void SkinMeshGameObject::PushRenderBatch(matrix parent)
@@ -1312,6 +1314,23 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	SetShape(shape);
 }
 
+void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
+	// 수행시간 평균 0.0000031초
+	constexpr float frameSpeed = 1;
+	Model* pModel = shape.GetModel();
+	if (AnimationFlowTime > game.HumanoidAnimationTable[PlayingAnimationIndex].Duration) AnimationFlowTime = 0;
+	AnimationFlowTime += deltaTime * frameSpeed;
+	for (int i = 0; i < pModel->nodeCount; ++i) {
+		transforms_innerModel[i].Id();
+	}
+	GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[PlayingAnimationIndex], transforms_innerModel, AnimationFlowTime);
+	for (int i = 0; i < pModel->nodeCount; ++i) {
+		transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
+	}
+	transforms_innerModel[0] = worldMat;
+	SetRootMatrixs();
+}
+
 Monster::Monster() {
 	HP = 30;
 	MaxHP = 30;
@@ -1348,6 +1367,11 @@ void Monster::Update(float deltaTime)
 	hpBarWorldMat.look *= 2 * HP / MaxHP;
 
 	game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
+
+	//AnimationUpdate(deltaTime);
+	if (AnimationFlowTime < 1) {
+		AnimationUpdate(deltaTime);
+	}
 }
 
 void Monster::Render(matrix parent)
@@ -1463,6 +1487,8 @@ void Player::STATICINIT(int typeindex) {
 void Player::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
+	PlayingAnimationIndex = 0;
+	AnimationUpdate(deltaTime);
 }
 
 void Player::ClientUpdate(float deltaTime)

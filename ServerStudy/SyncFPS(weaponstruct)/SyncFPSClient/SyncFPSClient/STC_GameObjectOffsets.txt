@@ -7,7 +7,7 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 64 64
+worldMat 48 64
 StaticGameObject
 8
 tag 20 4
@@ -17,7 +17,7 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 64 64
+worldMat 48 64
 DynamicGameObject
 9
 tag 20 4
@@ -27,8 +27,8 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 64 64
-LVelocity 208 16
+worldMat 48 64
+LVelocity 192 16
 SkinMeshGameObject
 11
 tag 20 4
@@ -38,10 +38,10 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 64 64
-LVelocity 208 16
-AnimationFlowTime 224 4
-PlayingAnimationIndex 228 4
+worldMat 48 64
+LVelocity 192 16
+AnimationFlowTime 208 4
+PlayingAnimationIndex 212 4
 Player
 23
 tag 20 4
@@ -51,22 +51,22 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 64 64
-LVelocity 208 16
-AnimationFlowTime 224 4
-PlayingAnimationIndex 228 4
-HP 240 4
-MaxHP 244 4
-bullets 248 4
-KillCount 252 4
-DeathCount 256 4
-HeatGauge 260 4
-MaxHeatGauge 264 4
-HealSkillCooldown 268 4
-HealSkillCooldownFlow 272 4
-m_currentWeaponType 276 4
-Inventory 280 288
-weapon 568 48
+worldMat 48 64
+LVelocity 192 16
+AnimationFlowTime 208 4
+PlayingAnimationIndex 212 4
+HP 224 4
+MaxHP 228 4
+bullets 232 4
+KillCount 236 4
+DeathCount 240 4
+HeatGauge 244 4
+MaxHeatGauge 248 4
+HealSkillCooldown 252 4
+HealSkillCooldownFlow 256 4
+m_currentWeaponType 260 4
+Inventory 264 288
+weapon 552 48
 Monster
 14
 tag 20 4
@@ -76,10 +76,10 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 64 64
-LVelocity 208 16
-AnimationFlowTime 224 4
-PlayingAnimationIndex 228 4
-HP 240 4
-MaxHP 244 4
-isDead 248 1
+worldMat 48 64
+LVelocity 192 16
+AnimationFlowTime 208 4
+PlayingAnimationIndex 212 4
+HP 224 4
+MaxHP 228 4
+isDead 232 1

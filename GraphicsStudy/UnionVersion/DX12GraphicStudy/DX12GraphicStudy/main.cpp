@@ -2904,11 +2904,11 @@ void Game::Render() {
 
 	gd.gpucmd.SetShader(MyScreenCharactorShader);
 	
-	wchar_t KillCountStr[256] = {};
+	/*wchar_t KillCountStr[256] = {};
 	wsprintfW(KillCountStr, L"KillCount : %d", KillCount);
 	RenderText(KillCountStr, wcslen(KillCountStr), vec4(-1.0f * gd.ClientFrameWidth, -1.0f * gd.ClientFrameHeight + 100, 200, 100), 20 + 10 * KillFlow);
 	KillFlow -= game.DeltaTime;
-	if (KillFlow < 0) KillFlow = 0;
+	if (KillFlow < 0) KillFlow = 0;*/
 
 	//float MiniMapRootConstant[7] = { gd.ClientFrameWidth - 700, gd.ClientFrameHeight - 700,
 	//gd.ClientFrameWidth, gd.ClientFrameHeight, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.02f };

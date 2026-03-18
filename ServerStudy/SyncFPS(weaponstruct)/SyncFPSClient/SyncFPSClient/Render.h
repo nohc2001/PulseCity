@@ -1853,6 +1853,56 @@ struct GlobalDevice {
 	__forceinline UINT GetPointLightShadowDSVIndex(UINT index) {
 		return 2 + max_DirLightCascadingShadowCount + 6 * index;
 	}
+
+#pragma region TimeMeasureCode
+	static constexpr int TimeMeasureSamepleCount = 1024;
+	ui64 tickStack[128] = {};
+	ui64 ft[128] = {};
+	ui32 cnt[128] = {};
+	__forceinline void AverageClockStart(int id = 0) {
+		unsigned int aux = 0;
+		ft[id] = __rdtscp(&aux);
+	}
+	__forceinline void AverageClockEnd(int id = 0) {
+		unsigned int aux = 0;
+		ui64 et = __rdtscp(&aux) - 33;
+		cnt[id] += 1;
+		tickStack[id] += et - ft[id];
+		if (cnt[id] > TimeMeasureSamepleCount) {
+			ui64 avrtick = tickStack[id] / TimeMeasureSamepleCount;
+			dbglog2(L"average[%d] : %d clock \n", id, avrtick);
+			tickStack[id] = 0;
+		}
+	}
+
+	__forceinline void AverageTickStart(int id = 0) {
+		ft[id] = GetTicks();
+	}
+	__forceinline void AverageTickEnd(int id = 0) {
+		ui64 et = GetTicks();
+		cnt[id] += 1;
+		tickStack[id] += et - ft[id];
+		if (cnt[id] > TimeMeasureSamepleCount) {
+			ui64 avrtick = tickStack[id] / TimeMeasureSamepleCount;
+			dbglog2(L"average[%d] : %d tick \n", id, avrtick);
+			tickStack[id] = 0;
+		}
+	}
+
+	__forceinline void AverageSECStart(int id = 0) {
+		ft[id] = GetTicks();
+	}
+	__forceinline void AverageSECEnd(int id = 0) {
+		ui64 et = GetTicks();
+		cnt[id] += 1;
+		tickStack[id] += et - ft[id];
+		if (cnt[id] > TimeMeasureSamepleCount) {
+			double average = (double)(tickStack[id] / TimeMeasureSamepleCount) / (double)QUERYPERFORMANCE_HZ;
+			dbglog2(L"average[%d] : %g sec \n", id, average);
+			tickStack[id] = 0;
+		}
+	}
+#pragma endregion
 };
 
 /*

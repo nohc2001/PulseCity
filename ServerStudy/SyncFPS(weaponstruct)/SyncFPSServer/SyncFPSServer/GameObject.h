@@ -335,8 +335,6 @@ struct GameObject {
 		GameObject obj{}; char* base = reinterpret_cast<char*>(&obj); char* mem = reinterpret_cast<char*>(&obj.transforms_innerModel); return (mem - base);
 	} inline static MemberInfo _reg_transforms_innerModel{ "transforms_innerModel", _offset_fn_transforms_innerModel, sizeof(matrix*) };;
 
-	int objindex = 0;
-
 	// transform
 	STCDef(matrix, worldMat);
 
