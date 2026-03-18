@@ -114,36 +114,43 @@ struct Server {
 };
 
 #pragma region STCSyncCode
-struct STCMemberInfo {
-	const char* name;
-	unsigned int offset;
-	unsigned int size;
-};
-
-template <typename T, typename M> constexpr unsigned int offset_of(M T::* member) { return reinterpret_cast<size_t>(&(((T*)0)->*member)); }
-
-#define STC_STATICINIT_innerStruct inline static vector<STCMemberInfo> g_members; \
-    struct OffsetRegister { \
-        OffsetRegister(const char* name, unsigned int offset, unsigned int size) { \
-            STC_CurrentStruct::g_members.push_back({name, offset, size}); \
+#define STC_CurrentStruct int
+#define STC_STATICINIT_innerStruct struct MemberInfo; \
+    static inline vector<MemberInfo> g_member; \
+    struct MemberInfo { \
+        const char* name; \
+        unsigned int(*get_offset)(); \
+        unsigned int offset; \
+        unsigned int size; \
+        MemberInfo(const char* n, unsigned int(*get_off)(), unsigned int siz) { \
+            name = n; \
+            get_offset = get_off; \
+            size = siz; \
+            g_member.push_back(*this); \
         } \
     };
-#define STC_STATICINIT_outerStruct(MyStruct) vector<STCMemberInfo> MyStruct::g_members;
 
-#define STC_CurrentStruct int
-#define STCDef(type, member) \
-    type member; \
-    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(type)};
+#define STCDef(Type, Name) Type Name;\
+    static unsigned int _offset_fn_##Name() {\
+        STC_CurrentStruct obj{};\
+        char* base = reinterpret_cast<char*>(&obj);\
+        char* mem  = reinterpret_cast<char*>(&obj.Name);\
+        return (mem - base);\
+    }\
+    inline static MemberInfo _reg_##Name{ #Name, _offset_fn_##Name, sizeof(Type)};
 
-#define STCDefArr(type, member, Count) \
-    type member[Count]; \
-    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(type) * Count};
-
-#define STCDefStdArr(type, member, Count) \
-    array<type, Count> member; \
-    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(array<type, Count>)};
+#define STCDefArr(Type, Name, Count) Type Name[Count];\
+    static unsigned int _offset_fn_##Name() {\
+        STC_CurrentStruct obj{};\
+        char* base = reinterpret_cast<char*>(&obj);\
+        char* mem  = reinterpret_cast<char*>(&obj.Name);\
+        return (mem - base);\
+    }\
+    inline static MemberInfo _reg_##Name{ #Name, _offset_fn_##Name, sizeof(Type) * Count};
 #pragma endregion
 
+
+void dbgbreak(bool condition);
 /*
 * 설명 : 출력창에 로드를 찍기 위한 매크로 함수
 */

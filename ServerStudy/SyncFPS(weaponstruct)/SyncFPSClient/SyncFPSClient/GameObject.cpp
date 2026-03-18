@@ -20,15 +20,26 @@ void GameObject::StaticInit()
 }
 
 void GameObject::STATICINIT(int typeindex) {
-	for (int i = 0; i < GameObject::g_members.size();++i) {
-		GameObjectType::Client_STCMembers[typeindex].push_back(GameObject::g_members[i]);
+	for (int i = 0; i < GameObject::g_member.size();++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
 	}
 }
 
 GameObject::GameObject()
 {
+	tag = 0;
 	tag[GameObjectTag::Tag_Enable] = false;
 	tag[GameObjectTag::Tag_Dynamic] = false;
+	TourID = 0;
+	shape.SetMesh(nullptr);
+	parent = nullptr;
+	childs = nullptr;
+	sibling = nullptr;
+	worldMat.Id();
 }
 
 GameObject::~GameObject()
@@ -134,6 +145,7 @@ void GameObject::Release()
 BoundingOrientedBox GameObject::GetOBB()
 {
 	BoundingOrientedBox obb_local;
+	obb_local.Extents.x = -1;
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	shape.GetRealShape(mesh, model);
@@ -259,8 +271,8 @@ void GameObject::RecvSTC_SyncObj(char* data) {
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
 	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
-	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
 	worldMat = stcsod.worldMatrix;
 	offset += sizeof(STC_SyncObjData);
 
@@ -296,8 +308,12 @@ void GameObject::RecvSTC_SyncObj(char* data) {
 }
 
 void StaticGameObject::STATICINIT(int typeindex) {
-	for (int i = 0; i < GameObject::g_members.size();++i) {
-		GameObjectType::Client_STCMembers[typeindex].push_back(GameObject::g_members[i]);
+	for (int i = 0; i < GameObject::g_member.size();++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
 	}
 }
 
@@ -434,8 +450,8 @@ void StaticGameObject::RecvSTC_SyncObj(char* data) {
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
 	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
-	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
 	worldMat = stcsod.worldMatrix;
 	offset += sizeof(STC_SyncObjData);
 
@@ -484,8 +500,12 @@ void StaticGameObject::RecvSTC_SyncObj(char* data) {
 
 void DynamicGameObject::STATICINIT(int typeindex) {
 	GameObject::STATICINIT(typeindex);
-	for (int i = 0; i < DynamicGameObject::g_members.size();++i) {
-		GameObjectType::Client_STCMembers[typeindex].push_back(DynamicGameObject::g_members[i]);
+	for (int i = 0; i < DynamicGameObject::g_member.size();++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
 	}
 }
 
@@ -506,6 +526,8 @@ matrix DynamicGameObject::GetWorld() {
 	while (obj != nullptr) {
 		sav *= obj->worldMat;
 		if (GameObject::IsType<StaticGameObject>(obj)) break;
+
+		//dbglog1(L"obj->parent : %p\n", obj->parent);
 		obj = obj->parent;
 	}
 	return sav;
@@ -892,6 +914,14 @@ DynamicGameObject::DynamicGameObject() :
 	//LastQuerternion = vec4(0, 0, 0, 0);
 	chunkAllocIndexsCapacity = 0;
 	ZeroMemory(&IncludeChunks, sizeof(GameObjectIncludeChunks));
+
+	LVelocity = 0;
+	DestPos = 0;
+	DestRot = 0;
+	DestScale = vec4(1, 1, 1);
+
+	chunkAllocIndexs = nullptr;
+	chunkAllocIndexsCapacity = 0;
 }
 
 DynamicGameObject::~DynamicGameObject()
@@ -925,8 +955,8 @@ void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
 	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr; // fix
-	childs = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
 
@@ -965,8 +995,12 @@ void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 
 void SkinMeshGameObject::STATICINIT(int typeindex) {
 	DynamicGameObject::STATICINIT(typeindex);
-	for (int i = 0; i < SkinMeshGameObject::g_members.size();++i) {
-		GameObjectType::Client_STCMembers[typeindex].push_back(SkinMeshGameObject::g_members[i]);
+	for (int i = 0; i < SkinMeshGameObject::g_member.size();++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
 	}
 }
 
@@ -976,6 +1010,12 @@ SkinMeshGameObject::SkinMeshGameObject()
 	tag[GameObjectTag::Tag_Dynamic] = true;
 	chunkAllocIndexsCapacity = 0;
 	ZeroMemory(&IncludeChunks, sizeof(GameObjectIncludeChunks));
+
+	OutVertexUAV = nullptr;
+	modifyMeshes = nullptr;
+	AnimationFlowTime = 0;
+	DestAnimationFlowTime = 0;
+	PlayingAnimationIndex = 0;
 }
 
 SkinMeshGameObject::~SkinMeshGameObject()
@@ -1230,9 +1270,9 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
-	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
-	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
 	AnimationFlowTime = stcsod.AnimationFlowTime;
@@ -1272,10 +1312,22 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	SetShape(shape);
 }
 
+Monster::Monster() {
+	HP = 30;
+	MaxHP = 30;
+	isDead = false;
+	HPBarIndex = 0;
+	HPMatrix.Id();
+}
+
 void Monster::STATICINIT(int typeindex) {
 	SkinMeshGameObject::STATICINIT(typeindex);
-	for (int i = 0; i < Monster::g_members.size();++i) {
-		GameObjectType::Client_STCMembers[typeindex].push_back(Monster::g_members[i]);
+	for (int i = 0; i < Monster::g_member.size();++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
 	}
 }
 
@@ -1316,9 +1368,10 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
-	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
-	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	//dbglog1(L"parent : %d \n", stcsod.parent);
+	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
 	AnimationFlowTime = stcsod.AnimationFlowTime;
@@ -1363,6 +1416,34 @@ void Monster::RecvSTC_SyncObj(char* data) {
 
 Player::Player() : HP{ 100 } {
 	weapon = Weapon(WeaponType::Sniper);
+	HP = 100;
+	MaxHP = 100;
+	bullets = 100;
+	KillCount = 0;
+	DeathCount = 0;
+	HeatGauge = 0;
+	MaxHeatGauge = 200;
+	HealSkillCooldown = 10.0f;
+	HealSkillCooldownFlow = 0;
+	m_currentWeaponType = 0;
+	ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
+
+	DeltaMousePos = 0;
+	GunModel = nullptr;
+	ShootPointMesh = nullptr;
+	gunMatrix_thirdPersonView.Id();
+	gunMatrix_firstPersonView.Id();
+	HPBarMesh = nullptr;
+	HPMatrix.Id();
+	HeatBarMesh = nullptr;
+	HeatBarMatrix.Id();
+	gunBarrelAngle = 0;
+	gunBarrelSpeed = 0;
+	m_isZooming = false;
+	m_currentFov = 60.0f;
+	m_targetFov = 60.0f;
+	m_yaw = 0.0f;
+	m_pitch = 0.0f;
 }
 
 Player::~Player() {
@@ -1370,8 +1451,12 @@ Player::~Player() {
 
 void Player::STATICINIT(int typeindex) {
 	SkinMeshGameObject::STATICINIT(typeindex);
-	for (int i = 0; i < Player::g_members.size();++i) {
-		GameObjectType::Client_STCMembers[typeindex].push_back(Player::g_members[i]);
+	for (int i = 0; i < Player::g_member.size();++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
 	}
 }
 
@@ -1743,9 +1828,9 @@ void Player::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	shape = Shape::ShapeTable[stcsod.shapeindex];
-	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
-	childs = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
-	sibling = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.sibling] : nullptr;
+	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
 	AnimationFlowTime = stcsod.AnimationFlowTime;
@@ -2234,6 +2319,7 @@ void GameMap::LoadMap(const char* MapName)
 			}
 		}
 		else if (Mod == 'm') {
+
 			// is model
 			//go->rmod = GameObject::eRenderMeshMod::_Model;
 			//Model

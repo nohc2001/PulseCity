@@ -7,10 +7,10 @@
 * NULL = (MAXpos.x < 0 || MAXpos.y < 0 || MAXpos.z < 0);
 */
 struct Mesh {
-	// OBB.Extends
-	vec4 MAXpos;
 	// OBB.Center
 	vec4 Center;
+	// OBB.Extends
+	vec4 MAXpos;
 	// submeshCount
 	int subMeshNum = 0;
 
@@ -109,6 +109,11 @@ struct ModelNode {
 * NULL = (nodeCount == 0 && RootNode == nullptr && Nodes == nullptr && mNumMeshes == 0 && mMeshes == nullptr)
 */
 struct Model {
+	// 충돌처리를 빠르게 하기 위해 OBB 정보를 맨 앞에 위치시킨다.
+	// 모델의 OBB.Center
+	vec4 OBB_Tr;
+	// 모델의 OBB.Extends
+	vec4 OBB_Ext;
 	// 모델의 이름
 	std::string mName;
 	// 모델이 포함한 모든 노드들의 개수
@@ -134,10 +139,6 @@ struct Model {
 
 	// 모델의 기본상태에서 모델을 모두 포함하는 가장 작은 AABB.
 	vec4 AABB[2];
-	// 모델의 OBB.Center
-	vec4 OBB_Tr;
-	// 모델의 OBB.Extends
-	vec4 OBB_Ext;
 
 	/*
 	* 설명 : MyModelExporter에서 뽑아온 모델 바이너리 정보를 로드함.
@@ -311,7 +312,7 @@ struct GameObject {
 	* 게임오브젝트를 구분하고 탐색하기 위한 tag. 32개의 tag를 보유할 수 있다.
 	* 항상 tag의 첫번째 비트는 enable이다. (게임오브젝트가 활성화 되어있는지 여부)
 	*/
-	STCDef(Tag , tag);
+	STCDef(Tag, tag);
 
 	// appearance
 	STCDef(int, shapeindex);
@@ -327,8 +328,14 @@ struct GameObject {
 		int* material = nullptr; // mesh 일 경우에만 활성화됨. slotNum만큼. game.MaterialTable에서 접근.
 		matrix* transforms_innerModel; // model 일 경우만 활성화됨. nodeCount 만큼.
 	};
-	inline static OffsetRegister reg_material{ "material", offset_of(&GameObject::material), sizeof(int*) };
-	inline static OffsetRegister reg_transforms_innerModel{ "transforms_innerModel", offset_of(&GameObject::transforms_innerModel), sizeof(matrix*) };
+	static unsigned int _offset_fn_material() {
+		GameObject obj{}; char* base = reinterpret_cast<char*>(&obj); char* mem = reinterpret_cast<char*>(&obj.material); return (mem - base);
+	} inline static MemberInfo _reg_material{ "material", _offset_fn_material, sizeof(int*) };;
+	static unsigned int _offset_fn_transforms_innerModel() {
+		GameObject obj{}; char* base = reinterpret_cast<char*>(&obj); char* mem = reinterpret_cast<char*>(&obj.transforms_innerModel); return (mem - base);
+	} inline static MemberInfo _reg_transforms_innerModel{ "transforms_innerModel", _offset_fn_transforms_innerModel, sizeof(matrix*) };;
+
+	int objindex = 0;
 
 	// transform
 	STCDef(matrix, worldMat);
@@ -415,8 +422,9 @@ struct GameObject {
 	}
 
 	static void PrintOffset(ofstream& ofs) {
-		for (int i = 0;i < g_members.size();++i) {
-			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
+		for (int i = 0;i < g_member.size();++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
 	}
 #undef STC_CurrentStruct
@@ -425,7 +433,7 @@ struct GameObject {
 struct StaticGameObject : public GameObject {
 	StaticGameObject();
 	virtual ~StaticGameObject();
-	vector<BoundingBox> aabbArr;
+	vector<BoundingOrientedBox> aabbArr;
 
 	virtual matrix GetWorld();
 	virtual void SetWorld(matrix localWorldMat);
@@ -516,8 +524,9 @@ struct StaticGameObject : public GameObject {
 	}
 
 	static void PrintOffset(ofstream& ofs) {
-		for (int i = 0;i < g_members.size();++i) {
-			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
+		for (int i = 0;i < g_member.size();++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
 	}
 };
@@ -530,6 +539,34 @@ struct GameObjectIncludeChunks {
 	unsigned char ylen;
 	unsigned char zlen;
 	unsigned char extraByte;
+
+	void operator+=(const GameObjectIncludeChunks& range) {
+		int xmax = xmin + xlen;
+		int ymax = ymin + ylen;
+		int zmax = zmin + zlen;
+		int rxmax = range.xmin + range.xlen;
+		int rymax = range.ymin + range.ylen;
+		int rzmax = range.zmin + range.zlen;
+		xmax = max(xmax, rxmax);
+		ymax = max(ymax, rymax);
+		zmax = max(zmax, rzmax);
+		xmin = min(xmin, range.xmin);
+		ymin = min(ymin, range.ymin);
+		zmin = min(zmin, range.zmin);
+		xlen = xmax - xmin;
+		ylen = ymax - ymin;
+		zlen = zmax - zmin;
+	}
+
+	bool operator==(GameObjectIncludeChunks range) {
+		bool b = (xmin == range.xmin);
+		b = b && (ymin == range.ymin);
+		b = b && (zmin == range.zmin);
+		b = b && (xlen == range.xlen);
+		b = b && (ylen == range.ylen);
+		b = b && (zlen == range.zlen);
+		return b;
+	}
 };
 
 struct DynamicGameObject : public GameObject {
@@ -693,8 +730,9 @@ struct DynamicGameObject : public GameObject {
 
 	static void PrintOffset(ofstream& ofs) {
 		GameObject::PrintOffset(ofs);
-		for (int i = 0;i < g_members.size();++i) {
-			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
+		for (int i = 0;i < g_member.size();++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
 	}
 
@@ -788,8 +826,9 @@ struct SkinMeshGameObject : public DynamicGameObject {
 
 	static void PrintOffset(ofstream& ofs) {
 		DynamicGameObject::PrintOffset(ofs);
-		for (int i = 0;i < g_members.size();++i) {
-			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
+		for (int i = 0;i < g_member.size();++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
 	}
 #undef STC_CurrentStruct
@@ -1072,8 +1111,9 @@ struct Player : public SkinMeshGameObject {
 
 	static void PrintOffset(ofstream& ofs) {
 		SkinMeshGameObject::PrintOffset(ofs);
-		for (int i = 0;i < g_members.size();++i) {
-			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
+		for (int i = 0;i < g_member.size();++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
 	}
 #undef STC_CurrentStruct
@@ -1245,8 +1285,9 @@ struct Monster : public SkinMeshGameObject {
 
 	static void PrintOffset(ofstream& ofs) {
 		SkinMeshGameObject::PrintOffset(ofs);
-		for (int i = 0;i < g_members.size();++i) {
-			ofs << g_members[i].name << " " << g_members[i].offset << " " << g_members[i].size << endl;
+		for (int i = 0;i < g_member.size();++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
 	}
 #undef STC_CurrentStruct
@@ -1293,6 +1334,10 @@ struct GameChunk {
 	vecset<StaticGameObject*> Static_gameobjects;
 	vecset<DynamicGameObject*> Dynamic_gameobjects;
 	vecset<SkinMeshGameObject*> SkinMesh_gameobjects;
+	vector<indexRange> IR_Dynamic;
+	vector<indexRange> IR_SkinMesh;
+	int dynamicIRSiz = 0;
+	int SkinMeshIRSiz = 0;
 
 	ChunkIndex cindex;
 	BoundingBox AABB;
@@ -1811,7 +1856,7 @@ struct World {
 
 
 	//하나의 청크의 정육면체의 한 변의 길이를 결정한다.
-	static constexpr float chunck_divide_Width = 10.0f;
+	static constexpr float chunck_divide_Width = 50.0f;
 
 	//게임내의 Chunck들의 모임.
 	unordered_map<ChunkIndex, GameChunk*> chunck;

@@ -737,24 +737,6 @@ public:
 class Monster : public SkinMeshGameObject {
 #define STC_CurrentStruct Monster
 	STC_STATICINIT_innerStruct;
-private:
-	/*float m_speed = 2.0f;
-	float m_patrolRange = 20.0f;
-	float m_chaseRange = 10.0f;
-	vec4 m_homePos;
-	vec4 m_targetPos;
-
-	bool m_isMove = false;
-	float m_patrolTimer = 0.0f;
-	float m_fireDelay = 1.0f;
-	float m_fireTimer = 0.0f;
-
-	int collideCount = 0;
-	bool isGround = false;
-
-	float HP = 30;
-	const float MAXHP = 30;*/
-
 public:
 	// 몬스터 HP
 	STCDef(float, HP);// = 30;
@@ -768,7 +750,7 @@ public:
 	// HP 바를 표현하는 월드 행렬
 	matrix HPMatrix;
 
-	Monster() {}
+	Monster();
 	virtual ~Monster() {}
 
 	/*
@@ -821,7 +803,7 @@ public:
 class Player : public SkinMeshGameObject {
 public:
 #define STC_CurrentStruct Player
-	inline static vector<STCMemberInfo> g_members;
+	STC_STATICINIT_innerStruct
 
 	//STC HP
 	STCDef(float, HP);

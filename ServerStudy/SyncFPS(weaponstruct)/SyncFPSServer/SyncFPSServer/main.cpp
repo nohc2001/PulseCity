@@ -9,6 +9,10 @@ float DeltaTime = 0;
 Server server;
 vector<Item> ItemTable;
 
+void dbgbreak(bool condition) {
+	if (condition) __debugbreak();
+}
+
 int main() {
 	// 오류등이 한글로 표시되도록 한다.
 	wcout.imbue(locale("korean"));
@@ -134,7 +138,7 @@ int main() {
 						Player* p = new Player();
 						p->clientIndex = clientindex;
 						p->worldMat.Id();
-						p->worldMat.pos.f3.y = 10;
+						p->worldMat.pos.f3.y = 100;
 						p->SetShape(Shape::StrToShapeIndex["Player"]);
 						//p->mesh = Mesh::StrToShapeMap["Player"];
 						for (int i = 0; i < 36; ++i) {
@@ -145,6 +149,7 @@ int main() {
 						int objindex = gameworld.NewPlayer(gameworld.CommonSDS, p, clientindex);
 						gameworld.Sending_NewGameObject(gameworld.clients[newindex].PersonalSDS, objindex, p);
 						gameworld.clients[clientindex].pObjData = p;
+						gameworld.PushGameObject(p);
 
 						//int datacap = gameworld.Sending_AllocPlayerIndex(newindex, objindex);
 

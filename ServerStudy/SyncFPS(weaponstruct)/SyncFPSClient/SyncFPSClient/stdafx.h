@@ -61,35 +61,62 @@ using namespace std;
 #pragma comment(lib, "dxguid.lib")
 
 #pragma region STCSyncCode
-struct STCMemberInfo {
+
+struct MemberInfo {
 	const char* name;
+	unsigned int(*get_offset)();
 	unsigned int offset;
 	unsigned int size;
+	MemberInfo() {}
+	MemberInfo(const char* n, unsigned int(*get_off)(), unsigned int siz) {
+		name = n;
+		get_offset = get_off;
+		size = siz;
+	}
+	MemberInfo(const MemberInfo& ref) {
+		name = ref.name;
+		get_offset = ref.get_offset;
+		offset = ref.offset;
+		size = ref.size;
+	}
 };
 
-template <typename T, typename M> constexpr unsigned int offset_of(M T::* member) { return reinterpret_cast<size_t>(&(((T*)0)->*member)); }
-
-#define STC_STATICINIT_innerStruct inline static vector<STCMemberInfo> g_members; \
-    struct OffsetRegister { \
-        OffsetRegister(const char* name, unsigned int offset, unsigned int size) { \
-            STC_CurrentStruct::g_members.push_back({name, offset, size}); \
+#define STC_CurrentStruct int
+#define STC_STATICINIT_innerStruct struct MemberInfo; \
+    static inline vector<MemberInfo> g_member; \
+    struct MemberInfo { \
+        const char* name; \
+        unsigned int(*get_offset)(); \
+        unsigned int offset; \
+        unsigned int size; \
+		MemberInfo(){} \
+        MemberInfo(const char* n, unsigned int(*get_off)(), unsigned int siz) { \
+            name = n; \
+            get_offset = get_off; \
+            size = siz; \
+            g_member.push_back(*this); \
         } \
     };
-#define STC_STATICINIT_outerStruct(MyStruct) vector<STCMemberInfo> MyStruct::g_members;
 
-#define STC_CurrentStruct int
-#define STCDef(type, member) \
-    type member; \
-    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(type)};
+#define STCDef(Type, Name) Type Name;\
+    static unsigned int _offset_fn_##Name() {\
+        STC_CurrentStruct obj{};\
+        char* base = reinterpret_cast<char*>(&obj);\
+        char* mem  = reinterpret_cast<char*>(&obj.Name);\
+        return (mem - base);\
+    }\
+    inline static MemberInfo _reg_##Name{ #Name, _offset_fn_##Name, sizeof(Type)};
 
-#define STCDefArr(type, member, Count) \
-    type member[Count]; \
-    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(type) * Count};
-
-#define STCDefStdArr(type, member, Count) \
-    array<type, Count> member; \
-    inline static OffsetRegister reg_##member{#member, offset_of(&STC_CurrentStruct::member), sizeof(array<type, Count>)};
+#define STCDefArr(Type, Name, Count) Type Name[Count];\
+    static unsigned int _offset_fn_##Name() {\
+        STC_CurrentStruct obj{};\
+        char* base = reinterpret_cast<char*>(&obj);\
+        char* mem  = reinterpret_cast<char*>(&obj.Name);\
+        return (mem - base);\
+    }\
+    inline static MemberInfo _reg_##Name{ #Name, _offset_fn_##Name, sizeof(Type) * Count};
 #pragma endregion
+
 
 void dbgbreak(bool condition);
 #pragma region dbglogDefines
@@ -204,8 +231,8 @@ union GameObjectType {
 	operator short() { return id; }
 
 	static void* vptr[ObjectTypeCount];
-	static vector<STCMemberInfo> Server_STCMembers[ObjectTypeCount];
-	static vector<STCMemberInfo> Client_STCMembers[ObjectTypeCount];
+	static vector<MemberInfo> Server_STCMembers[ObjectTypeCount];
+	static vector<MemberInfo> Client_STCMembers[ObjectTypeCount];
 	static unordered_map<int, SyncWay> STC_OffsetMap[ObjectTypeCount];
 
 	// 싱크되는 변수의 서버이름과 클라이언트 이름이 다른 경우 연결을 위해 사용.

@@ -4302,7 +4302,6 @@ void Model::LoadModelFile2(string filename)
 	int BSMCount = 0;
 	MaterialTableStart = game.MaterialTable.size();
 	for (int i = 0; i < mNumMeshes; ++i) {
-
 		bool hasBone = false;
 		ifs.read((char*)&hasBone, sizeof(bool));
 
@@ -4462,7 +4461,6 @@ void Model::LoadModelFile2(string filename)
 				vertices[k].position.z *= unitMulRate;
 			}
 
-			
 			mesh->CreateMesh_FromVertexAndIndexData(vertices, indexs, subMeshCount, SubMeshSlots);
 			mMeshes[i] = mesh;
 		}

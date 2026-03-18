@@ -19,17 +19,17 @@ extern GlobalDevice gd;
 Game game;
 
 void* GameObjectType::vptr[GameObjectType::ObjectTypeCount];
-vector<STCMemberInfo> GameObjectType::Server_STCMembers[GameObjectType::ObjectTypeCount];
-vector<STCMemberInfo> GameObjectType::Client_STCMembers[GameObjectType::ObjectTypeCount];
+vector<MemberInfo> GameObjectType::Server_STCMembers[GameObjectType::ObjectTypeCount];
+vector<MemberInfo> GameObjectType::Client_STCMembers[GameObjectType::ObjectTypeCount];
 unordered_map<int, SyncWay> GameObjectType::STC_OffsetMap[GameObjectType::ObjectTypeCount];
 
 // 싱크되는 변수의 서버이름과 클라이언트 이름이 다른 경우 연결을 위해 사용.
 void GameObjectType::LinkOffsetByName(short type, const char* ServerVarName, const char* ClientVarName) {
 	for (int k = 0;k < Server_STCMembers[type].size();++k) {
-		STCMemberInfo& minfo = Server_STCMembers[type][k];
+		MemberInfo& minfo = Server_STCMembers[type][k];
 		if (strcmp(minfo.name, ServerVarName) == 0) {
 			for (int u = 0;u < Client_STCMembers[type].size();++u) {
-				STCMemberInfo& cminfo = Client_STCMembers[type][u];
+				MemberInfo& cminfo = Client_STCMembers[type][u];
 				if (strcmp(cminfo.name, ClientVarName) == 0) {
 					auto f = STC_OffsetMap[type].find(minfo.offset);
 					if (f != STC_OffsetMap[type].end()) {
@@ -48,7 +48,7 @@ void GameObjectType::LinkOffsetByName(short type, const char* ServerVarName, con
 void GameObjectType::LinkOffsetAsFunction(short type, const char* ServerVarName, void (*func)(GameObject*, char*, int))
 {
 	for (int k = 0;k < Server_STCMembers[type].size();++k) {
-		STCMemberInfo& minfo = Server_STCMembers[type][k];
+		MemberInfo& minfo = Server_STCMembers[type][k];
 		if (strcmp(minfo.name, ServerVarName) == 0) {
 			auto f = STC_OffsetMap[type].find(minfo.offset);
 			if (f != STC_OffsetMap[type].end()) {
@@ -77,7 +77,7 @@ void GameObjectType::STATICINIT() {
 		int n;
 		ifs >> n;
 		for (int i = 0;i < n;++i) {
-			STCMemberInfo stcmi;
+			MemberInfo stcmi;
 			string str;
 			ifs >> str;
 			stcmi.name = new char[str.size() + 1];
@@ -99,10 +99,12 @@ void GameObjectType::STATICINIT() {
 	//이름이 같은 것 끼리 링크한다.
 	for (int i = 0;i < ObjectTypeCount;++i) {
 		for (int k = 0;k < Server_STCMembers[i].size();++k) {
-			STCMemberInfo& minfo = Server_STCMembers[i][k];
+			MemberInfo minfo = Server_STCMembers[i][k];
+			//dbgbreak(strcmp(minfo.name, "DeathCount") == 0);
 			for (int u = 0;u < Client_STCMembers[i].size();++u) {
-				STCMemberInfo& cminfo = Client_STCMembers[i][u];
+				MemberInfo cminfo = Client_STCMembers[i][u];
 				if (strcmp(minfo.name, cminfo.name) == 0) {
+					//dbgbreak(strcmp(minfo.name, "DeathCount") == 0);
 					STC_OffsetMap[i].insert(pair<int, SyncWay>(minfo.offset, SyncWay(cminfo.offset)));
 					break;
 				}
@@ -397,6 +399,38 @@ void Game::Init()
 
 	Map = new GameMap();
 	Map->LoadMap("The_Port");
+	for (int i = 0; i < Map->MapObjects.size(); ++i) {
+		PushGameObject(Map->MapObjects[i]);
+	}
+
+	/*ofstream ofs{ "ClientStaticGameObjectOBBData.txt" };
+	for (int i = 0;i < Map->MapObjects.size();++i) {
+		ofs << i << " obj : \n";
+		for (int k = 0;k < 4;++k) {
+			for (int j = 0;j < 4;++j) {
+				ofs << Map->MapObjects[i]->worldMat.f16.m[k][j] << ", ";
+			}
+			ofs << endl;
+		}
+
+		BoundingOrientedBox obb = Map->MapObjects[i]->GetOBB();
+		if (obb.Extents.x <= 0) {
+			ofs << "invalid obb" << endl;
+		}
+		else {
+			ofs << obb.Center.x << ", ";
+			ofs << obb.Center.y << ", ";
+			ofs << obb.Center.z << endl;
+			ofs << obb.Extents.x << ", ";
+			ofs << obb.Extents.y << ", ";
+			ofs << obb.Extents.z << endl;
+			ofs << obb.Orientation.x << ", ";
+			ofs << obb.Orientation.y << ", ";
+			ofs << obb.Orientation.z << ", ";
+			ofs << obb.Orientation.w << endl;
+		}
+	}
+	ofs.close();*/
 
 	SetLight();
 
@@ -1244,6 +1278,8 @@ void Game::Update()
 	}
 
 	if (player != nullptr) {
+		//dbglog1(L"playerpos y : %f \n", player->worldMat.pos.y);
+
 		const float rate = 0.005f;
 
 		player->m_yaw += DeltaMousePos.x * rate;
@@ -1306,10 +1342,10 @@ void Game::Update()
 	}
 
 	// chunk에서 업데이트 수행.
-	/*for (int i = 0; i < m_gameObjects.size(); ++i) {
-		if (m_gameObjects[i] == nullptr || m_gameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
-		m_gameObjects[i]->Update(DeltaTime);
-	}*/
+	for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
+		if (DynmaicGameObjects[i] == nullptr || DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
+		DynmaicGameObjects[i]->Update(DeltaTime);
+	}
 
 	if (playerGameObjectIndex >= 0 && playerGameObjectIndex < DynmaicGameObjects.size()) {
 		Player* p = (Player*)DynmaicGameObjects[playerGameObjectIndex];
