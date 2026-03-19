@@ -363,6 +363,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	vector<matrix*> RootBoneMatrixs_PerSkinMesh;
 	// [bone 0] [...] [bone N]
 	vector<GPUResource> BoneToWorldMatrixCB;
+	vector<GPUResource> BoneToWorldMatrixCB_Default;
 	vector<HumanoidAnimation*> HumanoidAnimationArr;
 	
 	// non shader visible desc heap에 위치함. 

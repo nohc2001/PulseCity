@@ -124,6 +124,55 @@ struct MemberInfo {
 
 void dbgbreak(bool condition);
 #pragma region dbglogDefines
+#define dbglog1_noline(format, A) \
+	{\
+		wchar_t str[512] = {}; \
+		swprintf_s(str, 512, format, A); \
+		OutputDebugString(str);\
+	}
+#define dbglog2_noline(format, A, B) \
+	{\
+		wchar_t str[512] = {}; \
+		swprintf_s(str, 512, format, A, B); \
+		OutputDebugString(str);\
+	}
+#define dbglog3_noline(format, A, B, C) \
+	{\
+		wchar_t str[512] = {}; \
+		swprintf_s(str, 512, format, A, B, C); \
+		OutputDebugString(str);\
+	}
+#define dbglog4_noline(format, A, B, C, D) \
+	{\
+		wchar_t str[512] = {}; \
+		swprintf_s(str, 512, format, A, B, C, D); \
+		OutputDebugString(str);\
+	}
+#define dbglog1a_noline(format, A) \
+	{\
+		char str[512] = {}; \
+		sprintf_s(str, 512, format, A); \
+		OutputDebugStringA(str);\
+	}
+#define dbglog2a_noline(format, A, B) \
+	{\
+		char str[512] = {}; \
+		sprintf_s(str, 512, format, A, B); \
+		OutputDebugStringA(str);\
+	}
+#define dbglog3a_noline(format, A, B, C) \
+	{\
+		char str[512] = {}; \
+		sprintf_s(str, 512, format, A, B, C); \
+		OutputDebugStringA(str);\
+	}
+#define dbglog4a_noline(format, A, B, C, D) \
+	{\
+		char str[512] = {}; \
+		sprintf_s(str, 512, format, A, B, C, D); \
+		OutputDebugStringA(str);\
+	}
+
 #define dbglog1(format, A) \
 	{\
 		wchar_t str[512] = {}; \
@@ -153,7 +202,7 @@ void dbgbreak(bool condition);
 		wchar_t str[512] = {}; \
 		wchar_t format0[128] = L"%s line %d : "; \
 		wcscpy_s(format0+13, 128-13, format);\
-		swprintf_s(str, 512, format, _T(__FUNCTION__), __LINE__, A, B, C, D); \
+		swprintf_s(str, 512, format0, _T(__FUNCTION__), __LINE__, A, B, C, D); \
 		OutputDebugString(str);\
 	}
 #define dbglog1a(format, A) \
@@ -185,7 +234,7 @@ void dbgbreak(bool condition);
 		char str[512] = {}; \
 		char format0[128] = "%s line %d : "; \
 		strcpy_s(format0+13, 128-13, format);\
-		sprintf_s(str, 512, format, __FUNCTION__, __LINE__, A, B, C, D); \
+		sprintf_s(str, 512, format0, __FUNCTION__, __LINE__, A, B, C, D); \
 		OutputDebugStringA(str);\
 	}
 #pragma endregion

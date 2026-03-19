@@ -445,6 +445,16 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 					using PBRRPI = PBRShader1::RootParamId;
 					BumpSkinMesh* bmesh = (BumpSkinMesh*)((BumpSkinMesh*)pModel->mMeshes[Meshes[i]]);
 
+					//copying
+					int skindex = Mesh_SkinMeshindex[i];
+					int boneNum = pModel->mBumpSkinMeshs[skindex]->MatrixCount;
+					UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ÀÇ ¹è¼ö
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_COPY_DEST);
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_COPY_SOURCE);
+					gd.gpucmd->CopyBufferRegion(smgo->BoneToWorldMatrixCB_Default[skindex].resource, 0, smgo->BoneToWorldMatrixCB[skindex].resource, 0, ncbElementBytes);
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_GENERIC_READ);
+
 					//Set Offset
 					DescHandle OffsetMatrixCBVHandle;
 					gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);
@@ -454,7 +464,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 					//Set ToWorld
 					DescHandle ToWorldMatrixCBVHandle;
 					gd.ShaderVisibleDescPool.DynamicAlloc(&ToWorldMatrixCBVHandle, 1);
-					gd.pDevice->CopyDescriptorsSimple(1, ToWorldMatrixCBVHandle.hcpu, smgo->BoneToWorldMatrixCB[Mesh_SkinMeshindex[i]].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+					gd.pDevice->CopyDescriptorsSimple(1, ToWorldMatrixCBVHandle.hcpu, smgo->BoneToWorldMatrixCB_Default[Mesh_SkinMeshindex[i]].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 					cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
 
 					for (int k = 0; k < bmesh->subMeshNum; ++k) {

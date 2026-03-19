@@ -887,6 +887,8 @@ DXGI_FINISH_SELECT_ADAPTER:
 
 void GlobalDevice::Init()
 {
+	TIMER_STATICINIT();
+
 	HRESULT hr;
 
 	font_filename[0] = "consola.ttf"; // english
@@ -2106,6 +2108,16 @@ void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up)
 
 #pragma region RaytracingMeshCode
 
+void RayTracingMesh::MeshAddingMap() {
+	Upload_vertexBuffer->Map(0, nullptr, (void**)&pVBMappedStart);
+	Upload_indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
+	UAV_Upload_vertexBuffer->Map(0, nullptr, (void**)&pUAV_VBMappedStart);
+}
+void RayTracingMesh::MeshAddingUnMap() {
+	Upload_vertexBuffer->Unmap(0, nullptr);
+	Upload_indexBuffer->Unmap(0, nullptr);
+	UAV_Upload_vertexBuffer->Unmap(0, nullptr);
+}
 void RayTracingMesh::StaticInit()
 {
 	auto uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -2118,7 +2130,7 @@ void RayTracingMesh::StaticInit()
 		nullptr,
 		IID_PPV_ARGS(&Upload_vertexBuffer)));
 	Upload_vertexBuffer->SetName(L"UploadVertexBuffer");
-	Upload_vertexBuffer->Map(0, nullptr, (void**)&pVBMappedStart);
+	
 
 	auto IbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(Upload_IndexBufferCapacity);
 	ThrowIfFailed(gd.pDevice->CreateCommittedResource(
@@ -2129,7 +2141,7 @@ void RayTracingMesh::StaticInit()
 		nullptr,
 		IID_PPV_ARGS(&Upload_indexBuffer)));
 	Upload_indexBuffer->SetName(L"UploadSceneIndexBuffer");
-	Upload_indexBuffer->Map(0, nullptr, (void**)&pIBMappedStart);
+	
 
 	uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	auto UAV_VbufferDesc = CD3DX12_RESOURCE_DESC::Buffer(UAV_Upload_VertexBufferCapacity);
@@ -2141,7 +2153,7 @@ void RayTracingMesh::StaticInit()
 		nullptr,
 		IID_PPV_ARGS(&UAV_Upload_vertexBuffer)));
 	UAV_Upload_vertexBuffer->SetName(L"UploadUAV_VertexBuffer");
-	UAV_Upload_vertexBuffer->Map(0, nullptr, (void**)&pUAV_VBMappedStart);
+	
 
 	////////////////
 
@@ -2250,6 +2262,8 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		AllocateUAVBuffer(gd.raytracing.dxrDevice, gd.raytracing.ASBuild_ScratchResource_Maxsiz, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
 	}
 
+	MeshAddingMap();
+
 	constexpr UINT64 VBAlign = 768; //2816;
 	constexpr UINT64 IBAlign = 256;//768;
 
@@ -2275,6 +2289,8 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
 		}
 		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
+
+		
 
 		pVBMapped = &pVBMappedStart[0];
 		pIBMapped = &pIBMappedStart[0];
@@ -2433,6 +2449,8 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 			}
 		}
 	}
+
+	MeshAddingUnMap();
 }
 
 void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum, int* SubMeshIndexes)
@@ -2449,6 +2467,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 	if (gd.raytracing.ASBuild_ScratchResource == nullptr) {
 		AllocateUAVBuffer(gd.raytracing.dxrDevice, gd.raytracing.ASBuild_ScratchResource_Maxsiz, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
 	}
+
+	MeshAddingMap();
 
 	constexpr UINT64 VBAlign = 768; //2816;
 	constexpr UINT64 IBAlign = 256; //768;
@@ -2575,6 +2595,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 			}
 		}
 	}
+
+	MeshAddingUnMap();
 }
 
 void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes)
@@ -2600,6 +2622,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 	if (gd.raytracing.ASBuild_ScratchResource == nullptr) {
 		AllocateUAVBuffer(gd.raytracing.dxrDevice, gd.raytracing.ASBuild_ScratchResource_Maxsiz, &gd.raytracing.ASBuild_ScratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
 	}
+
+	MeshAddingMap();
 
 	constexpr UINT64 VBAlign = 768; //2816;
 	constexpr UINT64 IBAlign = 256;//768;
@@ -2681,6 +2705,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 			}
 		}
 	}
+
+	MeshAddingUnMap();
 }
 
 void RayTracingMesh::UAV_BLAS_Refit()
@@ -4174,15 +4200,22 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 
 	MatrixCount = matrixCount;
 	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256ÀÇ ¹è¼ö
-	ToOffsetMatrixsCB = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-	ToOffsetMatrixsCB.resource->Map(0, NULL, (void**)&OffsetMatrixs);
+	GPUResource ToOffsetMatrixsCB_Upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	//ToOffsetMatrixsCB_Upload.resource->Map(0, NULL, (void**)&OffsetMatrixs);
+	////make DefaultToWorldArr, ToLocalArr
+	//for (int i = 0; i < MatrixCount; ++i) {
+	//	OffsetMatrixs[i] = NodeLocalMatrixs[i];
+	//}
+	//ToOffsetMatrixsCB_Upload.resource->Unmap(0, nullptr);
+	ToOffsetMatrixsCB = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	gd.UploadToCommitedGPUBuffer(NodeLocalMatrixs, &ToOffsetMatrixsCB_Upload, &ToOffsetMatrixsCB);
 
-	//make DefaultToWorldArr, ToLocalArr
-	for (int i = 0; i < MatrixCount; ++i) {
-		OffsetMatrixs[i] = NodeLocalMatrixs[i];
-	}
-
-	ToOffsetMatrixsCB.resource->Unmap(0, nullptr);
+	gd.gpucmd.Close(true);
+	gd.gpucmd.Execute(true);
+	gd.gpucmd.WaitGPUComplete();
+	//ToOffsetMatrixsCB
+	ToOffsetMatrixsCB_Upload.Release();
+	gd.gpucmd.Reset(true);
 
 	int n = gd.TextureDescriptorAllotter.Alloc();
 	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
@@ -4390,14 +4423,14 @@ void Model::LoadModelFile2(string filename)
 			}
 
 			ifs.read((char*)&mesh->MatrixCount, sizeof(int));
-			matrix* OffsetMatrixs = new matrix[mesh->MatrixCount];
+			mesh->OffsetMatrixs = new matrix[mesh->MatrixCount];
 			mesh->toNodeIndex = new int[mesh->MatrixCount];
 			for (int k = 0; k < mesh->MatrixCount; ++k) {
 				matrix offset;
-				ifs.read((char*)&OffsetMatrixs[k], sizeof(matrix));
+				ifs.read((char*)&mesh->OffsetMatrixs[k], sizeof(matrix));
 				//OffsetMatrixs[k].pos /= 100;
 				//OffsetMatrixs[k].pos.w = 1;
-				OffsetMatrixs[k].transpose();
+				mesh->OffsetMatrixs[k].transpose();
 			}
 			for (int k = 0; k < mesh->MatrixCount; ++k) {
 				ifs.read((char*)&mesh->toNodeIndex[k], sizeof(int));
@@ -4410,7 +4443,7 @@ void Model::LoadModelFile2(string filename)
 				skinvertices[k].position.z *= unitMulRate;
 			}
 
-			mesh->CreateMesh_FromVertexAndIndexData(skinvertices, skinboneWeights, indexs, subMeshCount, SubMeshSlots, OffsetMatrixs, mesh->MatrixCount);
+			mesh->CreateMesh_FromVertexAndIndexData(skinvertices, skinboneWeights, indexs, subMeshCount, SubMeshSlots, mesh->OffsetMatrixs, mesh->MatrixCount);
 			mMeshes[i] = mesh;
 		}
 		else {
@@ -8073,6 +8106,7 @@ void RayTracingShader::SkinMeshModify()
 	if (gd.gpucmd.isClose) {
 		gd.gpucmd.Reset(true);
 	}
+
 	gd.raytracing.UsingScratchSize = 0;
 	for (int i = 0; i < RebuildBLASBuffer.size(); ++i) {
 		SkinMeshGameObject* smgo = (SkinMeshGameObject*)RebuildBLASBuffer[i];
@@ -8156,7 +8190,7 @@ void SkinMeshModifyShader::CreatePipelineState()
 	gPipelineStateDesc.NodeMask = 0;
 
 	//Compute Shader
-	gPipelineStateDesc.CS = Shader::GetShaderByteCode(L"Resources/Shaders/RayTracing/ComputeSkinMeshGeometry.hlsl", "CSMain", "cs_5_1", &pd3dComputeShaderBlob);
+	gPipelineStateDesc.CS = Shader::GetShaderByteCode(L"Resources/Shaders/AnimationCompute/ComputeSkinMeshGeometry.hlsl", "CSMain", "cs_5_1", &pd3dComputeShaderBlob);
 
 	gd.pDevice->CreateComputePipelineState(&gPipelineStateDesc,
 		__uuidof(ID3D12PipelineState), (void**)&pPipelineState);

@@ -34,6 +34,9 @@
     <Filter Include="Shaders\Raytracing">
       <UniqueIdentifier>{d6f6e729-a0cd-47a2-9108-0afa7a287b7b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders\AnimationCompute">
+      <UniqueIdentifier>{577eca99-8539-4b13-aeed-c7e4019d3d00}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -187,11 +190,14 @@
     <FxCompile Include="Resources\Shaders\PBRShader01_SkinMeshwithShadow.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
-    <FxCompile Include="Resources\Shaders\RayTracing\ComputeSkinMeshGeometry.hlsl">
-      <Filter>Shaders\Raytracing</Filter>
-    </FxCompile>
     <FxCompile Include="Resources\Shaders\RayTracing\Raytracing.hlsl">
       <Filter>Shaders\Raytracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\AnimationCompute\ComputeSkinMeshGeometry.hlsl">
+      <Filter>Shaders\AnimationCompute</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\AnimationCompute\ModifyBoneToWorldMatrix.hlsl">
+      <Filter>Shaders\AnimationCompute</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

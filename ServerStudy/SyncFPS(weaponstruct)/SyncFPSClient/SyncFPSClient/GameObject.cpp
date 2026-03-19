@@ -1027,14 +1027,14 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 	Model* pModel = shape.GetModel();
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255); //256의 배수
-		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-		BoneToWorldMatrixCB.push_back(res);
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
+		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+
+		BoneToWorldMatrixCB.push_back(res_upload);
+		BoneToWorldMatrixCB_Default.push_back(res);
 		matrix* mapped = nullptr;
-		D3D12_RANGE range;
-		range.Begin = 0;
-		range.End = boneNum * sizeof(matrix);
-		BoneToWorldMatrixCB[i].resource->Map(0, &range, (void**)&mapped);
+		BoneToWorldMatrixCB[i].resource->Map(0, nullptr, (void**)&mapped);
 		RootBoneMatrixs_PerSkinMesh.push_back(mapped);
 	}
 
@@ -1043,27 +1043,46 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i)
 	{
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * boneNum) + 255) & ~255);
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255);
 		int n = gd.TextureDescriptorAllotter.Alloc();
 		D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-		cbvDesc.BufferLocation = BoneToWorldMatrixCB[i].resource->GetGPUVirtualAddress();
+		cbvDesc.BufferLocation = BoneToWorldMatrixCB_Default[i].resource->GetGPUVirtualAddress();
 		cbvDesc.SizeInBytes = ncbElementBytes;
 		gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
-		BoneToWorldMatrixCB[i].descindex.Set(false, n);
+		BoneToWorldMatrixCB_Default[i].descindex.Set(false, n);
 	}
 }
 
 void SkinMeshGameObject::SetRootMatrixs()
 {
+	// 알고리즘 때문에 병목이 생겼었음. 그래서 고쳤다.
+	// 다만 20명의 스킨메쉬 애니메이션 각 출력하는데 
+	// 한 프레임의 0.029124 을 잡아먹는건 좀 심하다. 그럼 50명만 있어도 프레임은 개 낮아질거 아닌가?
+	// 때문에 GPU 최적화 도 충분히 고려해야 할 것 같다.
+
+	static matrix TempMatBuffer[128] = {};
 	Model* pModel = shape.GetModel();
+	for (int i = 0;i < pModel->nodeCount;++i) {
+		ModelNode* node = &pModel->Nodes[i];
+		if (node->parent != nullptr) {
+			ModelNode* parent_node = &pModel->Nodes[i];
+			int pni = ((char*)node->parent - (char*)pModel->Nodes) / sizeof(ModelNode);
+			TempMatBuffer[i] = transforms_innerModel[i] * TempMatBuffer[pni];
+		}
+		else {
+			TempMatBuffer[i] = transforms_innerModel[i];
+		}
+	}
+	
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		matrix* marr = RootBoneMatrixs_PerSkinMesh[i];
 		BumpSkinMesh* bsm = pModel->mBumpSkinMeshs[i];
 		for (int k = 0; k < bsm->MatrixCount; ++k) {
 			int nodeindex = bsm->toNodeIndex[k];
-			ModelNode* node = &pModel->Nodes[nodeindex];
-			int ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
+			RootBoneMatrixs_PerSkinMesh[i][k] = TempMatBuffer[nodeindex];
+			RootBoneMatrixs_PerSkinMesh[i][k].transpose();
+			/*int ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
 
 			RootBoneMatrixs_PerSkinMesh[i][k].Id();
 			while (node != nullptr) {
@@ -1072,7 +1091,7 @@ void SkinMeshGameObject::SetRootMatrixs()
 				node = node->parent;
 				ni = ((char*)node - (char*)pModel->Nodes) / sizeof(ModelNode);
 			}
-			RootBoneMatrixs_PerSkinMesh[i][k].transpose();
+			RootBoneMatrixs_PerSkinMesh[i][k].transpose();*/
 		}
 	}
 }
@@ -1242,12 +1261,21 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 		BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[i];
 		unsigned int VertexSiz = bsmesh->vertexData.size();
 		using SMMSRPI = SkinMeshModifyShader::RootParamId;
+
+		int boneNum = model->mBumpSkinMeshs[i]->MatrixCount;
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_COPY_DEST);
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_COPY_SOURCE);
+		gd.CScmd->CopyBufferRegion(BoneToWorldMatrixCB_Default[i].resource, 0, BoneToWorldMatrixCB[i].resource, 0, ncbElementBytes);
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_GENERIC_READ);
+
 		gd.CScmd->SetComputeRoot32BitConstants(SMMSRPI::Const_OutputVertexBufferSize, 1, &VertexSiz, 0);
 
 		DescHandle hCBV;
 		gd.ShaderVisibleDescPool.DynamicAlloc(&hCBV, 2);
 		gd.pDevice->CopyDescriptorsSimple(1, hCBV[0].hcpu, bsmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.pDevice->CopyDescriptorsSimple(1, hCBV[1].hcpu, BoneToWorldMatrixCB[i].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, hCBV[1].hcpu, BoneToWorldMatrixCB_Default[i].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		gd.CScmd->SetComputeRootDescriptorTable(SMMSRPI::CBVTable_OffsetMatrixs_ToWorldMatrixs, hCBV.hgpu);
 
 		DescHandle hSRV;
@@ -1323,12 +1351,19 @@ void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
 	for (int i = 0; i < pModel->nodeCount; ++i) {
 		transforms_innerModel[i].Id();
 	}
+	
+	gd.AverageSecPer60Start(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
 	GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[PlayingAnimationIndex], transforms_innerModel, AnimationFlowTime);
+	gd.AverageSecPer60End(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
+
 	for (int i = 0; i < pModel->nodeCount; ++i) {
 		transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
 	}
 	transforms_innerModel[0] = worldMat;
+
+	gd.AverageSecPer60Start(Update_Monster_Animation_SetRootMatrixs);
 	SetRootMatrixs();
+	gd.AverageSecPer60End(Update_Monster_Animation_SetRootMatrixs);
 }
 
 Monster::Monster() {
@@ -1352,6 +1387,7 @@ void Monster::STATICINIT(int typeindex) {
 
 void Monster::Update(float deltaTime)
 {
+	
 	PositionInterpolation(deltaTime);
 
 	if (this->HPBarIndex < 0) return;
@@ -1368,10 +1404,12 @@ void Monster::Update(float deltaTime)
 
 	game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
 
-	//AnimationUpdate(deltaTime);
-	if (AnimationFlowTime < 1) {
-		AnimationUpdate(deltaTime);
-	}
+	gd.AverageSecPer60Start(Update_Monster_Animation);
+	AnimationUpdate(deltaTime);
+	//if (AnimationFlowTime < 1) {
+	//	AnimationUpdate(deltaTime);
+	//}
+	gd.AverageSecPer60End(Update_Monster_Animation);
 }
 
 void Monster::Render(matrix parent)

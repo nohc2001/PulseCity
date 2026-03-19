@@ -97,13 +97,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		{
 			if (DeltaFlow >= 0.016) { // limiting fps.
 				game.DeltaTime = (float)DeltaFlow;
+				//gd.AverageSecPer60Start(0);
 				if (gd.isRaytracingRender) {
 					game.Render_RayTracing();
 				}
 				else {
 					game.Render();
 				}
+				//gd.AverageSecPer60End(0);
+
+				//gd.AverageSecPer60Start(1);
 				game.Update();
+				//gd.AverageSecPer60End(1);
 				DeltaFlow = 0;
 			}
 		}

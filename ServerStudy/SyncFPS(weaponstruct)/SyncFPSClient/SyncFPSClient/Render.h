@@ -933,6 +933,8 @@ struct RayTracingMesh {
 	inline static char* pVBMappedStart = nullptr;
 	inline static char* pIBMappedStart = nullptr;
 	inline static char* pUAV_VBMappedStart = nullptr;
+	void MeshAddingMap();
+	void MeshAddingUnMap();
 
 	// VB, IB의 현재 크기
 	inline static int VertexBufferByteSize = 0;
@@ -1855,10 +1857,18 @@ struct GlobalDevice {
 	}
 
 #pragma region TimeMeasureCode
-	static constexpr int TimeMeasureSamepleCount = 1024;
-	ui64 tickStack[128] = {};
-	ui64 ft[128] = {};
-	ui32 cnt[128] = {};
+	static constexpr int TimeMeasureSamepleCount = 32;
+	static constexpr int MeasureCount = 1024;
+	ui64 tickStack[MeasureCount] = {};
+	ui64 tickMin[MeasureCount] = {};
+	ui64 tickMax[MeasureCount] = {};
+	ui64 ft[MeasureCount] = {};
+	ui32 cnt[MeasureCount] = {};
+	__forceinline void TIMER_STATICINIT() {
+		for (int i = 0;i < MeasureCount;++i) {
+			tickMin[i] = numeric_limits<unsigned long long>::lowest() - 1;
+		}
+	}
 	__forceinline void AverageClockStart(int id = 0) {
 		unsigned int aux = 0;
 		ft[id] = __rdtscp(&aux);
@@ -1867,11 +1877,15 @@ struct GlobalDevice {
 		unsigned int aux = 0;
 		ui64 et = __rdtscp(&aux) - 33;
 		cnt[id] += 1;
-		tickStack[id] += et - ft[id];
+		ui64 del = et - ft[id];
+		tickMin[id] = min(tickMin[id], del);
+		tickMax[id] = max(tickMax[id], del);
+		tickStack[id] += del;
 		if (cnt[id] > TimeMeasureSamepleCount) {
 			ui64 avrtick = tickStack[id] / TimeMeasureSamepleCount;
-			dbglog2(L"average[%d] : %d clock \n", id, avrtick);
+			dbglog4_noline(L"Clock Interval [%d] : Avg : %d clock \t Min : %d clock \n Max : %d clock \n", id, avrtick, tickMin[id], tickMax[id]);
 			tickStack[id] = 0;
+			cnt[id] = 0;
 		}
 	}
 
@@ -1881,28 +1895,50 @@ struct GlobalDevice {
 	__forceinline void AverageTickEnd(int id = 0) {
 		ui64 et = GetTicks();
 		cnt[id] += 1;
-		tickStack[id] += et - ft[id];
+		ui64 del = et - ft[id];
+		tickMin[id] = min(tickMin[id], del);
+		tickMax[id] = max(tickMax[id], del);
+		tickStack[id] += del;
 		if (cnt[id] > TimeMeasureSamepleCount) {
 			ui64 avrtick = tickStack[id] / TimeMeasureSamepleCount;
-			dbglog2(L"average[%d] : %d tick \n", id, avrtick);
+			dbglog4_noline(L"Tick Interval [%d] Avg : %d tick \t Min : %d tick \n Max : %d tick \n", id, avrtick, tickMin[id], tickMax[id]);
 			tickStack[id] = 0;
+			cnt[id] = 0;
 		}
 	}
 
-	__forceinline void AverageSECStart(int id = 0) {
+	__forceinline void AverageSecPer60Start(int id = 0) {
 		ft[id] = GetTicks();
 	}
-	__forceinline void AverageSECEnd(int id = 0) {
+	__forceinline void AverageSecPer60End(int id = 0) {
 		ui64 et = GetTicks();
 		cnt[id] += 1;
-		tickStack[id] += et - ft[id];
+		ui64 del = et - ft[id];
+		tickMin[id] = min(tickMin[id], del);
+		tickMax[id] = max(tickMax[id], del);
+		tickStack[id] += del;
 		if (cnt[id] > TimeMeasureSamepleCount) {
-			double average = (double)(tickStack[id] / TimeMeasureSamepleCount) / (double)QUERYPERFORMANCE_HZ;
-			dbglog2(L"average[%d] : %g sec \n", id, average);
+			double average = 60.0 * (double)(tickStack[id] / TimeMeasureSamepleCount) / (double)QUERYPERFORMANCE_HZ;
+			double Min = 60.0 * ((double)tickMin[id] / (double)QUERYPERFORMANCE_HZ);
+			double Max = 60.0 * ((double)tickMax[id] / (double)QUERYPERFORMANCE_HZ);
+			dbglog4_noline(L"Step Interval [%d] Avg : %g step \t Min : %g step \t MAX : %g step \n", id, average, Min, Max);
 			tickStack[id] = 0;
+			cnt[id] = 0;
 		}
 	}
 #pragma endregion
+};
+
+//Enum Measure Time
+enum EMTime {
+	Render = 0,
+	Update = 1,
+	Update_ClientRecv = 2,
+	Update_ChunksUpdate = 3,
+	Update_ClientUpdate = 4,
+	Update_Monster_Animation = 5,
+	Update_Monster_Animation_GetBoneLocalMatrixAtTime = 6,
+	Update_Monster_Animation_SetRootMatrixs = 7,
 };
 
 /*

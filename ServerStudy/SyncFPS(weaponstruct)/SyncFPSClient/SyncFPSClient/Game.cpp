@@ -607,18 +607,18 @@ void Game::Render() {
 		RenderTour<false>();
 		SetRenderMod(false);
 
-		for (int i = 0; i < MeshTable.size(); ++i) {
-			for (int k = 0; k < MeshTable[i]->subMeshNum; ++k) {
-				//dbglog2(L"Instancing %d : %llx\n", MeshTable[i]->InstanceData[k].InstancingSRVIndex.index, MeshTable[i]->InstanceData[k].StructuredBuffer.resource->GetGPUVirtualAddress());
-				uint64_t raw[4];
-				memcpy(raw, (void*)MeshTable[i]->InstanceData[k].InstancingSRVIndex.hCreation.hcpu.ptr, 32);
-				uint64_t gpuVA = raw[3];
-				if (MeshTable[i]->InstanceData[k].StructuredBuffer.resource->GetGPUVirtualAddress() != gpuVA)
-				{
-					dbglog2(L"desc error! %llx %llx \n", MeshTable[i]->InstanceData[k].StructuredBuffer.resource->GetGPUVirtualAddress(), gpuVA);
-				}
-			}
-		}
+		//for (int i = 0; i < MeshTable.size(); ++i) {
+		//	for (int k = 0; k < MeshTable[i]->subMeshNum; ++k) {
+		//		//dbglog2(L"Instancing %d : %llx\n", MeshTable[i]->InstanceData[k].InstancingSRVIndex.index, MeshTable[i]->InstanceData[k].StructuredBuffer.resource->GetGPUVirtualAddress());
+		//		uint64_t raw[4];
+		//		memcpy(raw, (void*)MeshTable[i]->InstanceData[k].InstancingSRVIndex.hCreation.hcpu.ptr, 32);
+		//		uint64_t gpuVA = raw[3];
+		//		if (MeshTable[i]->InstanceData[k].StructuredBuffer.resource->GetGPUVirtualAddress() != gpuVA)
+		//		{
+		//			dbglog2(L"desc error! %llx %llx \n", MeshTable[i]->InstanceData[k].StructuredBuffer.resource->GetGPUVirtualAddress(), gpuVA);
+		//		}
+		//	}
+		//}
 	}
 
 	//3. Shader Visible Desc Heap Dynamic Reset
@@ -1304,6 +1304,7 @@ void Game::Update()
 		}
 	}
 
+	//gd.AverageSecPer60Start(Update_ClientRecv);
 	while (true) {
 		int result = client.recv(client.rBuf + client.rbufOffset, client.rbufMax - client.rbufOffset);
 		if (result > 0) {
@@ -1332,6 +1333,7 @@ void Game::Update()
 		}
 		else break; // ??
 	}
+	//gd.AverageSecPer60End(Update_ClientRecv);
 
 	if (isPrepared == false) {
 		if (game.isPreparedGo) {
@@ -1341,17 +1343,21 @@ void Game::Update()
 		return;
 	}
 
+	gd.AverageSecPer60Start(Update_ChunksUpdate);
 	// chunk에서 업데이트 수행.
 	for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
 		if (DynmaicGameObjects[i] == nullptr || DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
 		DynmaicGameObjects[i]->Update(DeltaTime);
 	}
+	gd.AverageSecPer60End(Update_ChunksUpdate);
 
+	//gd.AverageSecPer60Start(Update_ClientUpdate);
 	if (playerGameObjectIndex >= 0 && playerGameObjectIndex < DynmaicGameObjects.size()) {
 		Player* p = (Player*)DynmaicGameObjects[playerGameObjectIndex];
 		p->ClientUpdate(DeltaTime);
 		player = (Player*)DynmaicGameObjects[playerGameObjectIndex];
 	}
+	//gd.AverageSecPer60End(Update_ClientUpdate);
 
 	if (player != nullptr) {
 		XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, player->m_yaw, 0);
@@ -1486,10 +1492,10 @@ READ_START:
 			}
 
 			DynmaicGameObjects[header.objindex]->RecvSTC_SyncObj(datapivot);
-			if (DynmaicGameObjects[header.objindex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
+			/*if (DynmaicGameObjects[header.objindex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
 				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[header.objindex];
 				smgo->InitRootBoneMatrixs();
-			}
+			}*/
 			game.PushGameObject(DynmaicGameObjects[header.objindex]);
 		}
 			break;
