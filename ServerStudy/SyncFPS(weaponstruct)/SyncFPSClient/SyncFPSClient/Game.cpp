@@ -388,6 +388,12 @@ void Game::Init()
 	MyComputeTestShader = new ComputeTestShader();
 	MyComputeTestShader->InitShader();
 
+	MyAnimationBlendingShader = new AnimationBlendingShader();
+	MyAnimationBlendingShader->InitShader();
+
+	MyHBoneLocalToWorldShader = new HBoneLocalToWorldShader();
+	MyHBoneLocalToWorldShader->InitShader();
+
 	DefaultTex.CreateTexture_fromFile(L"Resources/DefaultTexture.png", game.basicTexFormat, game.basicTexMip);
 	DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
 	DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
@@ -987,6 +993,13 @@ void Game::Render() {
 	int disPatchW = (gd.ClientFrameWidth / 8) + 1;
 	int disPatchH = (gd.ClientFrameHeight / 8) + 1;
 	gd.CScmd->Dispatch(disPatchW, disPatchH, 1);
+
+	if constexpr (gd.PlayAnimationByGPU) {
+		//Adding Animation Compute Shaders Execute Command
+		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::AnimationComputeDispatch;
+		RenderTour<true>();
+	}
+	
 	hResult = gd.CScmd.Close();
 	gd.CScmd.Execute();
 	gd.CScmd.WaitGPUComplete();

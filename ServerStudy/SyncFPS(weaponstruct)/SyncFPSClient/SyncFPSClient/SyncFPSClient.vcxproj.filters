@@ -196,7 +196,10 @@
     <FxCompile Include="Resources\Shaders\AnimationCompute\ComputeSkinMeshGeometry.hlsl">
       <Filter>Shaders\AnimationCompute</Filter>
     </FxCompile>
-    <FxCompile Include="Resources\Shaders\AnimationCompute\ModifyBoneToWorldMatrix.hlsl">
+    <FxCompile Include="Resources\Shaders\AnimationCompute\ModifyBoneAnimLocalMatrix.hlsl">
+      <Filter>Shaders\AnimationCompute</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\AnimationCompute\ModifyLocalToWorldMatrix.hlsl">
       <Filter>Shaders\AnimationCompute</Filter>
     </FxCompile>
   </ItemGroup>

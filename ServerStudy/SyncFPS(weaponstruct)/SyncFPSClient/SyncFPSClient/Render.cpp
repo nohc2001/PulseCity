@@ -2290,8 +2290,6 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		}
 		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
 
-		
-
 		pVBMapped = &pVBMappedStart[0];
 		pIBMapped = &pIBMappedStart[0];
 
@@ -2408,11 +2406,9 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
 
-
 		VertexBufferByteSize += addtionalVB_Bytesiz;
 		VertexBufferByteSize = VBAlign * (1 + ((VertexBufferByteSize - 1) / VBAlign));
 		//VertexBufferByteSize = ((VertexBufferByteSize + 255) & ~255);
-
 
 		IndexBufferByteSize += addtionalIB_Bytesiz;
 		IndexBufferByteSize = IBAlign * (1 + ((IndexBufferByteSize - 1) / IBAlign));
@@ -4338,6 +4334,8 @@ void Model::LoadModelFile2(string filename)
 	ifs.read((char*)&mNumTextures, sizeof(unsigned int));
 	ifs.read((char*)&mNumMaterials, sizeof(unsigned int));
 
+	vector<vector<BumpSkinMesh::BoneData>> skinboneWeights_Arr;
+
 	int BSMCount = 0;
 	MaterialTableStart = game.MaterialTable.size();
 	for (int i = 0; i < mNumMeshes; ++i) {
@@ -4358,7 +4356,7 @@ void Model::LoadModelFile2(string filename)
 
 		vector<BumpMesh::Vertex> vertices;
 		vector<BumpSkinMesh::Vertex> skinvertices;
-		vector<BumpSkinMesh::BoneData> skinboneWeights;
+		
 		vector<TriangleIndex> indexs;
 		int stackSiz = 0;
 		int prevSiz = 0;
@@ -4366,6 +4364,8 @@ void Model::LoadModelFile2(string filename)
 		SubMeshSlots[0] = 0;
 
 		if (hasBone) {
+			skinboneWeights_Arr.push_back(vector<BumpSkinMesh::BoneData>());
+			vector<BumpSkinMesh::BoneData>& skinboneWeights = skinboneWeights_Arr[skinboneWeights_Arr.size() - 1];
 			BSMCount += 1;
 			BumpSkinMesh* mesh = new BumpSkinMesh();
 			mesh->type = Mesh::MeshType::SkinedBumpMesh;
@@ -4824,6 +4824,8 @@ void Model::LoadModelFile2(string filename)
 			DefaultNodelocalTr[nodeindex] = invBoneWorld * parentBoneOffset;
 		}
 	}
+
+	Retargeting_Humanoid();
 
 	BakeAABB();
 }
@@ -8335,12 +8337,186 @@ void ComputeTestShader::Release() {
 }
 #pragma endregion
 
+#pragma region AnimationBlendingShaderCode
+void AnimationBlendingShader::InitShader() {
+	CreateRootSignature();
+	CreatePipelineState();
+}
+void AnimationBlendingShader::CreateRootSignature() {
+	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
+	D3D12_ROOT_PARAMETER1 rootParam[RootParamId::Normal_RootParamCapacity] = {};
+
+	RootParam1 DescTable0;
+	DescTable0.PushDescRange(GRegID('b', 0), "CBV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable0.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::CBVTable_CBStruct] = DescTable0;
+	
+	RootParam1 DescTable1;
+	DescTable1.PushDescRange(GRegID('t', 0), "SRV", 4, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable1.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::SRVTable_Animation1to4] = DescTable1;
+
+	RootParam1 DescTable2;
+	DescTable2.PushDescRange(GRegID('t', 4), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable2.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::SRVTable_HumanoidToNodeindex] = DescTable2;
+
+	RootParam1 DescTable3;
+	DescTable3.PushDescRange(GRegID('u', 0), "UAV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE);
+	DescTable3.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::UAVTable_Out_LocalMatrix] = DescTable3;
+
+	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS*/;
+
+	rootSigDesc1.NumParameters = Normal_RootParamCapacity;
+	rootSigDesc1.pParameters = rootParam;
+	rootSigDesc1.NumStaticSamplers = 0; // question002 : what is static samplers?
+	rootSigDesc1.pStaticSamplers = nullptr;
+	rootSigDesc1.Flags = d3dRootSignatureFlags;
+
+	ID3DBlob* pd3dSignatureBlob = NULL;
+	ID3DBlob* pd3dErrorBlob = NULL;
+	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
+	versioned_rootSigDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+	versioned_rootSigDesc.Desc_1_1 = rootSigDesc1;
+	D3D12SerializeVersionedRootSignature(&versioned_rootSigDesc, &pd3dSignatureBlob, &pd3dErrorBlob);
+	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
+		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
+			**)&pRootSignature);
+	if (pd3dErrorBlob) pd3dErrorBlob->Release();
+	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
+}
+void AnimationBlendingShader::CreatePipelineState() {
+	D3D12_SHADER_BYTECODE NULLCODE;
+	NULLCODE.BytecodeLength = 0;
+	NULLCODE.pShaderBytecode = nullptr;
+
+	ID3DBlob* pd3dComputeShaderBlob = NULL;
+	D3D12_COMPUTE_PIPELINE_STATE_DESC gPipelineStateDesc;
+	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_COMPUTE_PIPELINE_STATE_DESC));
+
+	gPipelineStateDesc.pRootSignature = pRootSignature;
+	gPipelineStateDesc.NodeMask = 0;
+
+	//Compute Shader
+	gPipelineStateDesc.CS = Shader::GetShaderByteCode(L"Resources/Shaders/AnimationCompute/ModifyBoneAnimLocalMatrix.hlsl", "CSMain", "cs_5_1", &pd3dComputeShaderBlob);
+
+	gd.pDevice->CreateComputePipelineState(&gPipelineStateDesc,
+		__uuidof(ID3D12PipelineState), (void**)&pPipelineState);
+	if (pd3dComputeShaderBlob) pd3dComputeShaderBlob->Release();
+}
+
+void AnimationBlendingShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
+	cmd->SetComputeRootSignature(pRootSignature);
+	cmd->SetPipelineState(pPipelineState);
+}
+void AnimationBlendingShader::Release() {
+	if (pRootSignature) pRootSignature->Release();
+	if (pPipelineState) pPipelineState->Release();
+}
+#pragma endregion
+
+#pragma region HBoneLocalToWorldShaderCode
+void HBoneLocalToWorldShader::InitShader() {
+	CreateRootSignature();
+	CreatePipelineState();
+}
+void HBoneLocalToWorldShader::CreateRootSignature() {
+	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
+	D3D12_ROOT_PARAMETER1 rootParam[RootParamId::Normal_RootParamCapacity] = {};
+
+	rootParam[Constant_WorldMat] = RootParam1::Const32s(GRegID('b', 0), 16, D3D12_SHADER_VISIBILITY_ALL, 0);
+
+	RootParam1 DescTable1;
+	DescTable1.PushDescRange(GRegID('t', 0), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable1.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::SRVTable_LocalMatrixs] = DescTable1;
+
+	RootParam1 DescTable2;
+	DescTable2.PushDescRange(GRegID('t', 1), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable2.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::SRVTable_TPOSLocalTr] = DescTable2;
+
+	RootParam1 DescTable3;
+	DescTable3.PushDescRange(GRegID('t', 2), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable3.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::SRVTable_toParent] = DescTable3;
+
+	RootParam1 DescTable4;
+	DescTable4.PushDescRange(GRegID('t', 3), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable4.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::SRVTable_NodeToBoneIndex] = DescTable4;
+
+	RootParam1 DescTable5;
+	DescTable5.PushDescRange(GRegID('u', 0), "UAV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE);
+	DescTable5.DescTable(D3D12_SHADER_VISIBILITY_ALL);
+	rootParam[RootParamId::UAVTable_Out_ToWorldMatrix] = DescTable5;
+
+	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS*/;
+
+	rootSigDesc1.NumParameters = Normal_RootParamCapacity;
+	rootSigDesc1.pParameters = rootParam;
+	rootSigDesc1.NumStaticSamplers = 0;
+	rootSigDesc1.pStaticSamplers = nullptr;
+	rootSigDesc1.Flags = d3dRootSignatureFlags;
+
+	ID3DBlob* pd3dSignatureBlob = NULL;
+	ID3DBlob* pd3dErrorBlob = NULL;
+	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
+	versioned_rootSigDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+	versioned_rootSigDesc.Desc_1_1 = rootSigDesc1;
+	D3D12SerializeVersionedRootSignature(&versioned_rootSigDesc, &pd3dSignatureBlob, &pd3dErrorBlob);
+	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
+		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
+			**)&pRootSignature);
+	if (pd3dErrorBlob) pd3dErrorBlob->Release();
+	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
+}
+void HBoneLocalToWorldShader::CreatePipelineState() {
+	D3D12_SHADER_BYTECODE NULLCODE;
+	NULLCODE.BytecodeLength = 0;
+	NULLCODE.pShaderBytecode = nullptr;
+
+	ID3DBlob* pd3dComputeShaderBlob = NULL;
+	D3D12_COMPUTE_PIPELINE_STATE_DESC gPipelineStateDesc;
+	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_COMPUTE_PIPELINE_STATE_DESC));
+
+	gPipelineStateDesc.pRootSignature = pRootSignature;
+	gPipelineStateDesc.NodeMask = 0;
+
+	//Compute Shader
+	gPipelineStateDesc.CS = Shader::GetShaderByteCode(L"Resources/Shaders/AnimationCompute/ModifyLocalToWorldMatrix.hlsl", "CSMain", "cs_5_1", &pd3dComputeShaderBlob);
+
+	gd.pDevice->CreateComputePipelineState(&gPipelineStateDesc,
+		__uuidof(ID3D12PipelineState), (void**)&pPipelineState);
+	if (pd3dComputeShaderBlob) pd3dComputeShaderBlob->Release();
+}
+void HBoneLocalToWorldShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
+	cmd->SetComputeRootSignature(pRootSignature);
+	cmd->SetPipelineState(pPipelineState);
+}
+void HBoneLocalToWorldShader::Release() {
+	if (pRootSignature) pRootSignature->Release();
+	if (pPipelineState) pPipelineState->Release();
+}
+#pragma endregion
+
 #pragma endregion
 
 #pragma region AnimationCode
 
 void HumanoidAnimation::LoadHumanoidAnimation(string filename)
 {
+	bool initialState = gd.gpucmd.isClose;
+
 	ifstream ifs{ filename, ios_base::binary };
 	Duration = 0;
 	for (int i = 0; i < 55; ++i) {
@@ -8371,6 +8547,70 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename)
 			ifs.read((char*)&channels[i].scaleKeys[k].value, sizeof(XMFLOAT3));
 			Duration = max(channels[i].scaleKeys[k].time, Duration);
 		}
+	}
+
+	if constexpr (gd.PlayAnimationByGPU) {
+		frameRate = channels[0].posKeys[1].time - channels[0].posKeys[0].time;
+		frameRate = 1.0 / frameRate;
+		int fr = frameRate * Duration;
+
+		UINT datasiz = fr * 64 * sizeof(AnimGPUKey);
+		UINT ncbElementBytes = ((datasiz + 255) & ~255); //256ÀÇ ¹è¼ö
+		AnimationRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+		GPUResource AnimationRes_Upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+		AnimGPUKey* animMapped = nullptr;
+		AnimationRes_Upload.resource->Map(0, nullptr, (void**)&animMapped);
+		for (int i = 0;i < fr;++i) {
+			int keyStart = i << 6;
+			for (int b = 0;b < 55;++b) {
+				AnimGPUKey& key = animMapped[keyStart + b];
+				if (channels[b].posKeys.size() > i) {
+					key.pos = channels[b].posKeys[i].value;
+				}
+				else {
+					key.pos = vec4(0, 0, 0, 0);
+				}
+				if (channels[b].rotKeys.size() > i) {
+					key.rot = channels[b].rotKeys[i].value;
+				}
+				else {
+					key.rot = vec4(0, 0, 0, 1);
+				}
+			}
+		}
+		AnimationRes_Upload.resource->Unmap(0, nullptr);
+
+		if (gd.gpucmd.isClose) {
+			gd.gpucmd.Reset();
+		}
+
+		gd.gpucmd.ResBarrierTr(&AnimationRes, D3D12_RESOURCE_STATE_COPY_DEST);
+		gd.gpucmd.ResBarrierTr(&AnimationRes_Upload, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		gd.gpucmd->CopyResource(AnimationRes.resource, AnimationRes_Upload.resource);
+		gd.gpucmd.ResBarrierTr(&AnimationRes, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+
+		gd.gpucmd.Close();
+		gd.gpucmd.Execute();
+		gd.gpucmd.WaitGPUComplete();
+
+		if (initialState = false) {
+			gd.gpucmd.Reset(true);
+		}
+
+		AnimationRes_Upload.Release();
+
+		//create SRV
+		int index = gd.TextureDescriptorAllotter.Alloc();
+		AnimationDescIndex.Set(false, index, 'n');
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Buffer.FirstElement = 0;
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		srvDesc.Buffer.NumElements = fr * 64;
+		srvDesc.Buffer.StructureByteStride = sizeof(vec4) * 2;
+		gd.pDevice->CreateShaderResourceView(AnimationRes.resource, &srvDesc, AnimationDescIndex.hCreation.hcpu);
 	}
 }
 

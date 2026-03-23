@@ -364,7 +364,48 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	// [bone 0] [...] [bone N]
 	vector<GPUResource> BoneToWorldMatrixCB;
 	vector<GPUResource> BoneToWorldMatrixCB_Default;
-	vector<HumanoidAnimation*> HumanoidAnimationArr;
+	vector<DescIndex> BoneToWorldMatrix_UAVDescIndex;
+
+	vector<GPUResource> NodeToBone;
+	vector<DescIndex> NodeToBone_SRVDescIndex;
+
+#pragma region GPUAnimation
+	struct AnimationBlendingCBStruct
+	{
+		// 블랜딩할 4개의 애니메이션 각각의 시간
+		float animTime[4];
+
+		// 블랜딩할 4개의 애니메이션 각각의 최대시간
+		float MAXTime[4];
+
+		// 블랜딩할 4개의 애니메이션 각각의 블랜딩 가중치
+		float animWeight[4];
+
+		// Root를 제외한 64개의 Humanoid Bone의 마스킹.
+		ui64 animMask[4];
+
+		// 애니메이션 프레임 레이트
+		float frameRate;
+	};
+
+	// 이 세개 쓸모 없음.
+	GPUResource NodeLocalMatrixs;
+	DescIndex NodeLocalMatrixs_UAVDescIndex;
+	DescIndex NodeLocalMatrixs_SRVDescIndex;
+
+	GPUResource NodeTposMatrixs;
+	DescIndex NodeTposMatrixs_SRVDescIndex;
+
+	GPUResource Node_ToParentRes;
+	DescIndex NodeToParentSRVIndex;
+
+	GPUResource HumanoidToNodeIndexRes;
+	DescIndex HumanoidToNodeIndexSRVIndex;
+
+	GPUResource AnimationBlendConstantUploadBuffer;
+	AnimationBlendingCBStruct* AnimBlendingCB_Mapped;
+	DescIndex AnimBlendingCBVDescIndex;
+#pragma endregion
 	
 	// non shader visible desc heap에 위치함. 
 	// model->mNumSkinMesh 만큼 존재함.
@@ -374,19 +415,28 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	// model의 skinmeshcount 만큼 존재함.
 	RayTracingMesh* modifyMeshes = nullptr;
 
-	float AnimationFlowTime = 0;
-	STCDef(float, DestAnimationFlowTime);
-	STCDef(int, PlayingAnimationIndex);
+	float AnimationFlowTime[4] = {};
+	STCDefArr(float, DestAnimationFlowTime, 4);
+	STCDefArr(int, PlayingAnimationIndex, 4);
 
 	void InitRootBoneMatrixs();
 	void SetRootMatrixs();
 
-	void PushHumanoidAnimation(HumanoidAnimation* hanim);
 	void GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time);
 
 	virtual void Render(matrix parent = XMMatrixIdentity());
 	virtual void PushRenderBatch(matrix parent = XMMatrixIdentity());
 	void ModifyVertexs(matrix parent = XMMatrixIdentity());
+	
+	// 애니메이션 실행의 결과인 각 뼈들의 Local Matrix를 계산하는 것을 GPU에게 맞긴다.
+	void BlendingAnimation();
+	
+	// 애니메이션 실행의 결과인 Local Matrix 를 스킨메쉬를 렌더링할 수 있도록 ToWorldMatrix로 변환하는 과정을 
+	// GPU에게 맞긴다.
+	void ModifyLocalToWorld();
+
+	// 위 두개의 함수를 차례로 실행하게끔 커맨드를 넣는다.
+	void AnimationComputeDispatch(matrix parent = XMMatrixIdentity());
 
 	using RenderFuncType = void (SkinMeshGameObject::*)(matrix parent);
 	inline static RenderFuncType CurrentRenderFunc = &SkinMeshGameObject::Render;

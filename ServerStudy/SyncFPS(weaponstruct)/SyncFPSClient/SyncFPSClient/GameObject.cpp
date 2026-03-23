@@ -1013,9 +1013,11 @@ SkinMeshGameObject::SkinMeshGameObject()
 
 	OutVertexUAV = nullptr;
 	modifyMeshes = nullptr;
-	AnimationFlowTime = 0;
-	DestAnimationFlowTime = 0;
-	PlayingAnimationIndex = 0;
+	for (int i = 0;i < 4;++i) {
+		AnimationFlowTime[4] = 0;
+		DestAnimationFlowTime[i] = 0;
+		PlayingAnimationIndex[i] = 0;
+	}
 }
 
 SkinMeshGameObject::~SkinMeshGameObject()
@@ -1024,12 +1026,52 @@ SkinMeshGameObject::~SkinMeshGameObject()
 
 void SkinMeshGameObject::InitRootBoneMatrixs()
 {
+	bool initialState = gd.gpucmd.isClose;
+
+	if (BoneToWorldMatrixCB_Default.size() > 0) {
+		// 사실 이 코드는 실행이 되면 안되지 않나? 흠..
+		// >> 하지만 서버에서 자신의 플레이어 오브젝트 데이터를 통짜로 두번 보내기 때문에..
+		// >> 결국 두번 되는건 어쩔 수 없는 것으로 보인다. 잘 릴리즈를 해보자.
+		// >> 게임 상황에서 shape가 바뀔 수도 있잖음? ㅇㅇ..
+
+		for (int i = 0;i < BoneToWorldMatrixCB_Default.size();++i) {
+			BoneToWorldMatrixCB_Default[i].Release();
+			BoneToWorldMatrixCB[i].resource->Unmap(0, nullptr);
+			BoneToWorldMatrixCB[i].Release();
+			RootBoneMatrixs_PerSkinMesh[i] = nullptr;
+			if constexpr (gd.PlayAnimationByGPU) {
+				gd.TextureDescriptorAllotter.Free(BoneToWorldMatrix_UAVDescIndex[i].index);
+				NodeToBone[i].Release();
+				gd.TextureDescriptorAllotter.Free(NodeToBone_SRVDescIndex[i].index);
+			}
+		}
+		BoneToWorldMatrixCB_Default.clear();
+		BoneToWorldMatrixCB.clear();
+		RootBoneMatrixs_PerSkinMesh.clear();
+		if constexpr (gd.PlayAnimationByGPU) {
+			BoneToWorldMatrix_UAVDescIndex.clear();
+			NodeTposMatrixs.Release();
+			gd.TextureDescriptorAllotter.Free(NodeTposMatrixs_SRVDescIndex.index);
+			Node_ToParentRes.Release();
+			gd.TextureDescriptorAllotter.Free(NodeToParentSRVIndex.index);
+			HumanoidToNodeIndexRes.Release();
+			gd.TextureDescriptorAllotter.Free(HumanoidToNodeIndexSRVIndex.index);
+			AnimationBlendConstantUploadBuffer.resource->Unmap(0, nullptr);
+			AnimationBlendConstantUploadBuffer.Release();
+			AnimBlendingCB_Mapped = nullptr;
+			gd.TextureDescriptorAllotter.Free(AnimBlendingCBVDescIndex.index);
+			NodeToBone_SRVDescIndex.clear();
+			NodeToBone.clear();
+		}
+		// 리소스 개많아
+	}
+
 	Model* pModel = shape.GetModel();
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
 		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
 		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
 		BoneToWorldMatrixCB.push_back(res_upload);
 		BoneToWorldMatrixCB_Default.push_back(res);
@@ -1051,6 +1093,290 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		cbvDesc.SizeInBytes = ncbElementBytes;
 		gd.pDevice->CreateConstantBufferView(&cbvDesc, hCPU);
 		BoneToWorldMatrixCB_Default[i].descindex.Set(false, n);
+	}
+
+	if constexpr (gd.PlayAnimationByGPU) {
+		int datasize;
+		UINT ncbElementBytes;
+		int index;
+		Model* model = shape.GetModel();
+		
+		//Node To Parent
+		{
+			int nodeCount = model->nodeCount;
+			datasize = sizeof(int) * nodeCount;
+			ncbElementBytes = ((datasize + 255) & ~255); //256의 배수
+			Node_ToParentRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			GPUResource Node_ToParentRes_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+
+			int* tempMapped = nullptr;
+			Node_ToParentRes_upload.resource->Map(0, nullptr, (void**)&tempMapped);
+			for (int i = 0;i < nodeCount;++i) {
+				ModelNode* pnode = model->Nodes[i].parent;
+				int pindex = 0;
+				if (pnode == nullptr) {
+					pindex = -1;
+				}
+				else {
+					pindex = ((char*)pnode - (char*)model->Nodes) / sizeof(ModelNode);
+				}
+				tempMapped[i] = pindex;
+			}
+			Node_ToParentRes_upload.resource->Unmap(0, nullptr);
+
+			if (gd.gpucmd.isClose) {
+				gd.gpucmd.Reset();
+			}
+			gd.gpucmd.ResBarrierTr(&Node_ToParentRes, D3D12_RESOURCE_STATE_COPY_DEST);
+			gd.gpucmd.ResBarrierTr(&Node_ToParentRes_upload, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			gd.gpucmd->CopyResource(Node_ToParentRes.resource, Node_ToParentRes_upload.resource);
+			gd.gpucmd.ResBarrierTr(&Node_ToParentRes, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			gd.gpucmd.Close();
+			gd.gpucmd.Execute();
+			gd.gpucmd.WaitGPUComplete();
+			Node_ToParentRes_upload.Release();
+
+			//SRV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			NodeToParentSRVIndex.Set(false, index, 'n');
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			srvDesc.Buffer.NumElements = nodeCount;
+			srvDesc.Buffer.StructureByteStride = sizeof(int);
+			gd.pDevice->CreateShaderResourceView(Node_ToParentRes.resource, &srvDesc, NodeToParentSRVIndex.hCreation.hcpu);
+		}
+
+		//HumanoidToNodeIndexRes
+		{
+			datasize = sizeof(int) * 64;
+			ncbElementBytes = ((datasize + 255) & ~255); //256의 배수
+			HumanoidToNodeIndexRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			GPUResource HumanoidToNodeIndexRes_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+
+			int* tempMapped = nullptr;
+			HumanoidToNodeIndexRes_upload.resource->Map(0, nullptr, (void**)&tempMapped);
+			for (int i = 0;i < 64;++i) {
+				tempMapped[i] = -1;
+			}
+			for (int i = 0;i < model->nodeCount;++i) {
+				int hindex = model->Humanoid_retargeting[i];
+				if(hindex >=0) tempMapped[hindex] = i;
+			}
+			HumanoidToNodeIndexRes_upload.resource->Unmap(0, nullptr);
+
+			if (gd.gpucmd.isClose) {
+				gd.gpucmd.Reset();
+			}
+			gd.gpucmd.ResBarrierTr(&HumanoidToNodeIndexRes, D3D12_RESOURCE_STATE_COPY_DEST);
+			gd.gpucmd.ResBarrierTr(&HumanoidToNodeIndexRes_upload, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			gd.gpucmd->CopyResource(HumanoidToNodeIndexRes.resource, HumanoidToNodeIndexRes_upload.resource);
+			gd.gpucmd.ResBarrierTr(&HumanoidToNodeIndexRes, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			gd.gpucmd.Close();
+			gd.gpucmd.Execute();
+			gd.gpucmd.WaitGPUComplete();
+			HumanoidToNodeIndexRes_upload.Release();
+
+			//SRV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			HumanoidToNodeIndexSRVIndex.Set(false, index, 'n');
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			srvDesc.Buffer.NumElements = 64;
+			srvDesc.Buffer.StructureByteStride = sizeof(int);
+			gd.pDevice->CreateShaderResourceView(HumanoidToNodeIndexRes.resource, &srvDesc, HumanoidToNodeIndexSRVIndex.hCreation.hcpu);
+		}
+		
+		///NodeLocalMatrixs
+		{
+			int nodeCount = model->nodeCount;
+			datasize = sizeof(matrix) * nodeCount;
+			ncbElementBytes = ((datasize + 255) & ~255); //256의 배수
+			NodeLocalMatrixs = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+			GPUResource NodeLocalMatrixs_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			matrix* tempMapped = nullptr;
+			NodeLocalMatrixs_upload.resource->Map(0, nullptr, (void**)&tempMapped);
+			for (int i = 0;i < nodeCount;++i) {
+				/*tempMapped[i] = transforms_innerModel[i];
+				tempMapped[i].transpose();*/
+				tempMapped[i].Id();
+			}
+			NodeLocalMatrixs_upload.resource->Unmap(0, nullptr);
+
+			if (gd.gpucmd.isClose) {
+				gd.gpucmd.Reset();
+			}
+			gd.gpucmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_COPY_DEST);
+			gd.gpucmd.ResBarrierTr(&NodeLocalMatrixs_upload, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			gd.gpucmd->CopyResource(NodeLocalMatrixs.resource, NodeLocalMatrixs_upload.resource);
+			gd.gpucmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			gd.gpucmd.Close();
+			gd.gpucmd.Execute();
+			gd.gpucmd.WaitGPUComplete();
+			NodeLocalMatrixs_upload.Release();
+
+			//UAV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			NodeLocalMatrixs_UAVDescIndex.Set(false, index, 'n');
+			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
+			uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+			uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+			uavDesc.Buffer.FirstElement = 0;
+			uavDesc.Buffer.CounterOffsetInBytes = 0;
+			uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+			uavDesc.Buffer.NumElements = nodeCount;
+			uavDesc.Buffer.StructureByteStride = sizeof(matrix);
+			gd.pDevice->CreateUnorderedAccessView(NodeLocalMatrixs.resource, nullptr, &uavDesc, NodeLocalMatrixs_UAVDescIndex.hCreation.hcpu);
+			//SRV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			NodeLocalMatrixs_SRVDescIndex.Set(false, index, 'n');
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			srvDesc.Buffer.NumElements = nodeCount;
+			srvDesc.Buffer.StructureByteStride = sizeof(matrix);
+			gd.pDevice->CreateShaderResourceView(NodeLocalMatrixs.resource, &srvDesc, NodeLocalMatrixs_SRVDescIndex.hCreation.hcpu);
+		}
+
+		//NodeToBoneIndex
+		NodeToBone.reserve(model->mNumSkinMesh);
+		NodeToBone_SRVDescIndex.reserve(model->mNumSkinMesh);
+		for (int i = 0;i < model->mNumSkinMesh;++i) {
+			int nodeCount = model->nodeCount;
+			datasize = sizeof(int) * 128;
+			ncbElementBytes = ((datasize + 255) & ~255); //256의 배수
+			DescIndex resdescindex;
+			GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+
+			int* tempMapped = nullptr;
+			res_upload.resource->Map(0, nullptr, (void**)&tempMapped);
+			BumpSkinMesh* bsm = model->mBumpSkinMeshs[i];
+			for (int i = 0;i < 128;++i) {
+				tempMapped[i] = -1;
+			}
+			for (int i = 0;i < bsm->MatrixCount; ++i) {
+				tempMapped[bsm->toNodeIndex[i]] = i;
+			}
+			res_upload.resource->Unmap(0, nullptr);
+
+			if (gd.gpucmd.isClose) {
+				gd.gpucmd.Reset();
+			}
+			gd.gpucmd.ResBarrierTr(&res, D3D12_RESOURCE_STATE_COPY_DEST);
+			gd.gpucmd.ResBarrierTr(&res_upload, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			gd.gpucmd->CopyResource(res.resource, res_upload.resource);
+			gd.gpucmd.ResBarrierTr(&res, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			gd.gpucmd.Close();
+			gd.gpucmd.Execute();
+			gd.gpucmd.WaitGPUComplete();
+			res_upload.Release();
+
+			//SRV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			resdescindex.Set(false, index, 'n');
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			srvDesc.Buffer.NumElements = 128;
+			srvDesc.Buffer.StructureByteStride = sizeof(int);
+			gd.pDevice->CreateShaderResourceView(res.resource, &srvDesc, resdescindex.hCreation.hcpu);
+			NodeToBone.push_back(res);
+			NodeToBone_SRVDescIndex.push_back(resdescindex);
+		}
+
+		//Node Tpos Matrixs
+		{
+			int nodeCount = model->nodeCount;
+			datasize = sizeof(matrix) * nodeCount;
+			ncbElementBytes = ((datasize + 255) & ~255); //256의 배수
+			NodeTposMatrixs = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			GPUResource NodeTposMatrixs_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			matrix* tempMapped = nullptr;
+			NodeTposMatrixs_upload.resource->Map(0, nullptr, (void**)&tempMapped);
+			for (int i = 0;i < nodeCount;++i) {
+				tempMapped[i] = model->DefaultNodelocalTr[i];
+				tempMapped[i].transpose();
+			}
+			NodeTposMatrixs_upload.resource->Unmap(0, nullptr);
+
+			if (gd.gpucmd.isClose) {
+				gd.gpucmd.Reset();
+			}
+			gd.gpucmd.ResBarrierTr(&NodeTposMatrixs, D3D12_RESOURCE_STATE_COPY_DEST);
+			gd.gpucmd.ResBarrierTr(&NodeTposMatrixs_upload, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			gd.gpucmd->CopyResource(NodeTposMatrixs.resource, NodeTposMatrixs_upload.resource);
+			gd.gpucmd.ResBarrierTr(&NodeTposMatrixs, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			gd.gpucmd.Close();
+			gd.gpucmd.Execute();
+			gd.gpucmd.WaitGPUComplete();
+			NodeTposMatrixs_upload.Release();
+
+			if (initialState == false) {
+				gd.gpucmd.Reset();
+			}
+
+			//SRV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			NodeTposMatrixs_SRVDescIndex.Set(false, index, 'n');
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			srvDesc.Buffer.NumElements = nodeCount;
+			srvDesc.Buffer.StructureByteStride = sizeof(matrix);
+			gd.pDevice->CreateShaderResourceView(NodeTposMatrixs.resource, &srvDesc, NodeTposMatrixs_SRVDescIndex.hCreation.hcpu);
+		}
+
+		///AnimationBlendConstantUploadBuffer
+		{
+			datasize = sizeof(AnimationBlendingCBStruct);
+			ncbElementBytes = ((datasize + 255) & ~255); //256의 배수
+			AnimationBlendConstantUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
+			AnimationBlendConstantUploadBuffer.resource->Map(0, nullptr, (void**)&AnimBlendingCB_Mapped);
+			//CBV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			AnimBlendingCBVDescIndex.Set(false, index, 'n');
+			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+			cbvDesc.BufferLocation = AnimationBlendConstantUploadBuffer.resource->GetGPUVirtualAddress();
+			cbvDesc.SizeInBytes = ncbElementBytes;
+			gd.pDevice->CreateConstantBufferView(&cbvDesc, AnimBlendingCBVDescIndex.hCreation.hcpu);
+		}
+
+		//Make Bone ToWorld UAV
+		BoneToWorldMatrix_UAVDescIndex.reserve(BoneToWorldMatrixCB_Default.size());
+		for (int i = 0;i < BoneToWorldMatrixCB_Default.size();++i) {
+			DescIndex di;
+			BumpSkinMesh* bsm = model->mBumpSkinMeshs[i];
+			//UAV
+			index = gd.TextureDescriptorAllotter.Alloc();
+			di.Set(false, index, 'n');
+			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
+			uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+			uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+			uavDesc.Buffer.FirstElement = 0;
+			uavDesc.Buffer.CounterOffsetInBytes = 0;
+			uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+			uavDesc.Buffer.NumElements = bsm->MatrixCount;
+			uavDesc.Buffer.StructureByteStride = sizeof(matrix);
+			gd.pDevice->CreateUnorderedAccessView(BoneToWorldMatrixCB_Default[i].resource, nullptr, &uavDesc, di.hCreation.hcpu);
+			BoneToWorldMatrix_UAVDescIndex.push_back(di);
+		}
 	}
 }
 
@@ -1096,10 +1422,6 @@ void SkinMeshGameObject::SetRootMatrixs()
 	}
 }
 
-void SkinMeshGameObject::PushHumanoidAnimation(HumanoidAnimation* hanim) {
-	HumanoidAnimationArr.push_back(hanim);
-}
-
 void SkinMeshGameObject::GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time)
 {
 	float t = time;
@@ -1128,6 +1450,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 		transforms_innerModel = new matrix[model->nodeCount];
 		for (int i = 0; i < model->nodeCount; ++i) {
 			transforms_innerModel[i] = model->Nodes[i].transform;
+			transforms_innerModel[i].transpose();
 		}
 
 		InitRootBoneMatrixs();
@@ -1215,18 +1538,20 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 
 void SkinMeshGameObject::Update(float delatTime)
 {
-	constexpr float frameSpeed = 1;
-	Model* pModel = shape.GetModel();
-	AnimationFlowTime += delatTime * frameSpeed;
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		transforms_innerModel[i].Id();
+	if constexpr (gd.PlayAnimationByGPU == false) {
+		constexpr float frameSpeed = 1;
+		Model* pModel = shape.GetModel();
+		AnimationFlowTime[0] += delatTime * frameSpeed;
+		for (int i = 0; i < pModel->nodeCount; ++i) {
+			transforms_innerModel[i].Id();
+		}
+		//GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[PlayingAnimationIndex[0]], transforms_innerModel, AnimationFlowTime[0]);
+		for (int i = 0; i < pModel->nodeCount; ++i) {
+			transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
+		}//?
+		transforms_innerModel[0] = worldMat;
+		SetRootMatrixs();
 	}
-	GetBoneLocalMatrixAtTime(HumanoidAnimationArr[0], transforms_innerModel, AnimationFlowTime);
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
-	}//?
-	transforms_innerModel[0] = worldMat;
-	SetRootMatrixs();
 }
 
 void SkinMeshGameObject::Render(matrix parent) {
@@ -1246,7 +1571,6 @@ void SkinMeshGameObject::Render(matrix parent) {
 	if (mesh == nullptr) {
 		model->Render<true>(gd.gpucmd, world, this);
 	}
-	
 }
 
 void SkinMeshGameObject::PushRenderBatch(matrix parent)
@@ -1296,6 +1620,79 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 	game.MyRayTracingShader->RebuildBLASBuffer.push_back(this);
 }
 
+void SkinMeshGameObject::BlendingAnimation() {
+	using ABSRPI = AnimationBlendingShader::RootParamId;
+	gd.CScmd.SetShader(game.MyAnimationBlendingShader);
+	gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.CScmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+	DescHandle AllocDescHandle;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&AllocDescHandle, 7);
+	DescHandle tempDescHandle_CBVTable_CBStruct = AllocDescHandle[0];
+	DescHandle tempDescHandle_SRVTable_Animation1to4 = AllocDescHandle[1];
+	DescHandle tempDescHandle_SRVTable_HumanoidToNodeindex = AllocDescHandle[5];
+	DescHandle tempDescHandle_UAVTable_Out_LocalMatrix = AllocDescHandle[6];
+
+	gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_CBVTable_CBStruct.hcpu, AnimBlendingCBVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	for (int i = 0;i < 4;++i) {
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_Animation1to4[i].hcpu, game.HumanoidAnimationTable[PlayingAnimationIndex[i]].AnimationDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+	gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_HumanoidToNodeindex.hcpu, HumanoidToNodeIndexSRVIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_UAVTable_Out_LocalMatrix.hcpu, NodeLocalMatrixs_UAVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	
+	gd.CScmd->SetComputeRootDescriptorTable(ABSRPI::CBVTable_CBStruct, tempDescHandle_CBVTable_CBStruct.hgpu);
+	gd.CScmd->SetComputeRootDescriptorTable(ABSRPI::SRVTable_Animation1to4, tempDescHandle_SRVTable_Animation1to4.hgpu);
+	gd.CScmd->SetComputeRootDescriptorTable(ABSRPI::SRVTable_HumanoidToNodeindex, tempDescHandle_SRVTable_HumanoidToNodeindex.hgpu);
+	gd.CScmd->SetComputeRootDescriptorTable(ABSRPI::UAVTable_Out_LocalMatrix, tempDescHandle_UAVTable_Out_LocalMatrix.hgpu);
+
+	//const float clear[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	//gd.CScmd->ClearUnorderedAccessViewFloat(tempDescHandle_UAVTable_Out_LocalMatrix.hgpu, NodeLocalMatrixs_UAVDescIndex.hCreation.hcpu, NodeLocalMatrixs.resource, clear, 0, nullptr);
+	gd.CScmd->Dispatch(1, 1, 1); // numthread(32, 1, 1)
+}
+
+void SkinMeshGameObject::ModifyLocalToWorld() {
+	Model* model = shape.GetModel();
+	matrix rootworld = worldMat;
+	rootworld.transpose();
+	for (int i = 0;i < model->mNumSkinMesh;++i) {
+		using HBLTWSRPI = HBoneLocalToWorldShader::RootParamId;
+		gd.CScmd.SetShader(game.MyHBoneLocalToWorldShader);
+		gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		gd.CScmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+		DescHandle AllocDescHandle;
+		gd.ShaderVisibleDescPool.DynamicAlloc(&AllocDescHandle, 5);
+		DescHandle tempDescHandle_SRVTable_LocalMatrixs = AllocDescHandle[0];
+		DescHandle tempDescHandle_SRVTable_TPOSLocalTr = AllocDescHandle[1];
+		DescHandle tempDescHandle_SRVTable_toParent = AllocDescHandle[2];
+		DescHandle tempDescHandle_SRVTable_NodeToBoneIndex = AllocDescHandle[3];
+		DescHandle tempDescHandle_UAVTable_Out_ToWorldMatrix = AllocDescHandle[4];
+
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_LocalMatrixs.hcpu, NodeLocalMatrixs_SRVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_TPOSLocalTr.hcpu, NodeTposMatrixs_SRVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_toParent.hcpu, 
+			NodeToParentSRVIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_NodeToBoneIndex.hcpu, NodeToBone_SRVDescIndex[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_UAVTable_Out_ToWorldMatrix.hcpu, BoneToWorldMatrix_UAVDescIndex[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		gd.CScmd->SetComputeRoot32BitConstants(HBLTWSRPI::Constant_WorldMat, 16, &rootworld, 0);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_LocalMatrixs, tempDescHandle_SRVTable_LocalMatrixs.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_TPOSLocalTr, tempDescHandle_SRVTable_TPOSLocalTr.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_toParent, tempDescHandle_SRVTable_toParent.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_NodeToBoneIndex, tempDescHandle_SRVTable_NodeToBoneIndex.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::UAVTable_Out_ToWorldMatrix, tempDescHandle_UAVTable_Out_ToWorldMatrix.hgpu);
+		gd.CScmd->Dispatch(1, 1, 1); // numthread(64, 1, 1)
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	}
+}
+
+void SkinMeshGameObject::AnimationComputeDispatch(matrix parent)
+{
+	BlendingAnimation();
+	ModifyLocalToWorld();
+}
+
 void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
@@ -1305,8 +1702,8 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
-	AnimationFlowTime = stcsod.AnimationFlowTime;
-	PlayingAnimationIndex = stcsod.PlayingAnimationIndex;
+	AnimationFlowTime[0] = stcsod.AnimationFlowTime;
+	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
 	offset += sizeof(STC_SyncObjData);
 
 	Mesh* mesh = nullptr;
@@ -1343,27 +1740,57 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 }
 
 void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
-	// 수행시간 평균 0.0000031초
-	constexpr float frameSpeed = 1;
-	Model* pModel = shape.GetModel();
-	if (AnimationFlowTime > game.HumanoidAnimationTable[PlayingAnimationIndex].Duration) AnimationFlowTime = 0;
-	AnimationFlowTime += deltaTime * frameSpeed;
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		transforms_innerModel[i].Id();
-	}
-	
-	gd.AverageSecPer60Start(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
-	GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[PlayingAnimationIndex], transforms_innerModel, AnimationFlowTime);
-	gd.AverageSecPer60End(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
+	if constexpr (gd.PlayAnimationByGPU) {
+		if (AnimBlendingCB_Mapped) {
+			AnimBlendingCB_Mapped->frameRate = game.HumanoidAnimationTable[0].frameRate;
 
-	for (int i = 0; i < pModel->nodeCount; ++i) {
-		transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
-	}
-	transforms_innerModel[0] = worldMat;
+			AnimBlendingCB_Mapped->animWeight[0] = 1.0f;
+			AnimBlendingCB_Mapped->animWeight[1] = 0;
+			AnimBlendingCB_Mapped->animWeight[2] = 0;
+			AnimBlendingCB_Mapped->animWeight[3] = 0;
 
-	gd.AverageSecPer60Start(Update_Monster_Animation_SetRootMatrixs);
-	SetRootMatrixs();
-	gd.AverageSecPer60End(Update_Monster_Animation_SetRootMatrixs);
+			AnimBlendingCB_Mapped->MAXTime[0] = game.HumanoidAnimationTable[0].Duration;
+			AnimBlendingCB_Mapped->MAXTime[1] = 0;
+			AnimBlendingCB_Mapped->MAXTime[2] = 0;
+			AnimBlendingCB_Mapped->MAXTime[3] = 0;
+
+			for (int i = 0;i < 4;++i) {
+				AnimBlendingCB_Mapped->animMask[i] = 0xFFFFFFFFFFFFFFFF;
+				AnimBlendingCB_Mapped->animTime[i] += deltaTime;
+				if (AnimBlendingCB_Mapped->animTime[i] > AnimBlendingCB_Mapped->MAXTime[i]) {
+					//Looping
+					AnimBlendingCB_Mapped->animTime[i] -= AnimBlendingCB_Mapped->MAXTime[i];
+
+					//One Shot
+					//AnimBlendingCB_Mapped->animTime[i] = AnimBlendingCB_Mapped->MAXTime[i];
+				}
+			}
+		}
+	}
+	else {
+		// 수행시간 평균 0.0000031초
+		constexpr float frameSpeed = 1;
+		Model* pModel = shape.GetModel();
+		if (AnimationFlowTime[0] > game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration) AnimationFlowTime[0] = 0;
+		AnimationFlowTime[0] += deltaTime * frameSpeed;
+
+		for (int i = 0; i < pModel->nodeCount; ++i) {
+			transforms_innerModel[i].Id();
+		}
+
+		gd.AverageSecPer60Start(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
+		GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[PlayingAnimationIndex[0]], transforms_innerModel, AnimationFlowTime[0]);
+		gd.AverageSecPer60End(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
+
+		for (int i = 0; i < pModel->nodeCount; ++i) {
+			transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
+		}
+		transforms_innerModel[0] = worldMat;
+
+		gd.AverageSecPer60Start(Update_Monster_Animation_SetRootMatrixs);
+		SetRootMatrixs();
+		gd.AverageSecPer60End(Update_Monster_Animation_SetRootMatrixs);
+	}
 }
 
 Monster::Monster() {
@@ -1387,7 +1814,6 @@ void Monster::STATICINIT(int typeindex) {
 
 void Monster::Update(float deltaTime)
 {
-	
 	PositionInterpolation(deltaTime);
 
 	if (this->HPBarIndex < 0) return;
@@ -1436,8 +1862,8 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
-	AnimationFlowTime = stcsod.AnimationFlowTime;
-	PlayingAnimationIndex = stcsod.PlayingAnimationIndex;
+	AnimationFlowTime[0] = stcsod.AnimationFlowTime;
+	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
 	HP = stcsod.HP;
 	MaxHP = stcsod.MaxHP;
 	isDead = stcsod.isDead;
@@ -1525,7 +1951,7 @@ void Player::STATICINIT(int typeindex) {
 void Player::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
-	PlayingAnimationIndex = 0;
+	PlayingAnimationIndex[0] = 0;
 	AnimationUpdate(deltaTime);
 }
 
@@ -1897,8 +2323,8 @@ void Player::RecvSTC_SyncObj(char* data) {
 	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
 	LVelocity = stcsod.LVelocity;
-	AnimationFlowTime = stcsod.AnimationFlowTime;
-	PlayingAnimationIndex = stcsod.PlayingAnimationIndex;
+	AnimationFlowTime[0] = stcsod.AnimationFlowTime;
+	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
 	HP = stcsod.HP;
 	MaxHP = stcsod.MaxHP;
 	bullets = stcsod.bullets;

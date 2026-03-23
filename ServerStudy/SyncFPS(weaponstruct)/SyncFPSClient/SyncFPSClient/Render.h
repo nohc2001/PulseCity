@@ -1405,10 +1405,6 @@ struct GlobalDevice {
 		_In_range_(0, D3D12_REQ_SUBRESOURCES) UINT FirstSubresource,
 		_In_range_(0, D3D12_REQ_SUBRESOURCES - FirstSubresource) UINT NumSubresources) noexcept;
 
-	
-
-	
-
 	/*
 	* 설명 : bmp 파일을 dds로 바꾸는 함수
 	* 매개변수 : 
@@ -1855,6 +1851,8 @@ struct GlobalDevice {
 	__forceinline UINT GetPointLightShadowDSVIndex(UINT index) {
 		return 2 + max_DirLightCascadingShadowCount + 6 * index;
 	}
+
+	static constexpr bool PlayAnimationByGPU = true;
 
 #pragma region TimeMeasureCode
 	static constexpr int TimeMeasureSamepleCount = 32;
@@ -2699,6 +2697,11 @@ struct AnimChannel {
 	matrix GetLocalMatrixAtTime(float time, matrix original);
 };
 
+struct AnimGPUKey {
+	vec4 pos;
+	vec4 rot;
+};
+
 struct HumanoidAnimation {
 	static constexpr UINT HumanBoneCount = 55;
 	enum HumanBodyBones
@@ -2820,6 +2823,11 @@ struct HumanoidAnimation {
 
 	AnimChannel channels[HumanBoneCount];
 	double Duration = 0;
+	double frameRate = 0;
+	GPUResource AnimationRes;
+	DescIndex AnimationDescIndex;
+	
+	
 
 	void LoadHumanoidAnimation(string filename);
 };
@@ -2920,6 +2928,12 @@ struct Model {
 
 	matrix* DefaultNodelocalTr = nullptr;
 	matrix* NodeOffsetMatrixArr = nullptr;
+
+	//When GPU Animation
+	GPUResource DefaultlocalTr_Humanoid;
+	DescIndex DefaultlocalTr_Humanoid_SRV;
+	GPUResource Offset_Humanoid;
+	DescIndex Offset_Humanoid_CBV;
 
 	unsigned int mNumTextures;
 	//GPUResource** mTextures;
@@ -3234,6 +3248,44 @@ public:
 
 	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
 	virtual void Release();
+};
+
+class AnimationBlendingShader : public Shader {
+public:
+	virtual void InitShader();
+	virtual void CreateRootSignature();
+	virtual void CreatePipelineState();
+
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Release();
+
+	enum RootParamId {
+		CBVTable_CBStruct = 0,
+		SRVTable_Animation1to4 = 1,
+		SRVTable_HumanoidToNodeindex = 2,
+		UAVTable_Out_LocalMatrix = 3,
+		Normal_RootParamCapacity = 4,
+	};
+};
+
+class HBoneLocalToWorldShader : public Shader {
+public:
+	virtual void InitShader();
+	virtual void CreateRootSignature();
+	virtual void CreatePipelineState();
+
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Release();
+
+	enum RootParamId {
+		Constant_WorldMat = 0,
+		SRVTable_LocalMatrixs = 1,
+		SRVTable_TPOSLocalTr = 2,
+		SRVTable_toParent = 3,
+		SRVTable_NodeToBoneIndex = 4,
+		UAVTable_Out_ToWorldMatrix = 5,
+		Normal_RootParamCapacity = 6,
+	};
 };
 
 #pragma region DescHandleAndIndexCode

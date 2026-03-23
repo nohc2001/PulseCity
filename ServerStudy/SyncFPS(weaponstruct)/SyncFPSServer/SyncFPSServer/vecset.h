@@ -154,6 +154,10 @@ template <typename T> struct vecset {
 	}
 
 	void GetTourPairs(indexRange* out, int* outlen) {
+		if (size == 0) {
+			outlen = 0;
+			return;
+		}
 		bool enable = isAlloc(0);
 		indexRange curr;
 		if (enable) {

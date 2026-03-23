@@ -3147,13 +3147,34 @@ bool World::CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfS
 }
 
 void ClientData::DisconnectToServer(int index) {
-	cout << "client " << index << " Left the Game. \n";
 	int objindex = gameworld.clients[index].objindex;
-	delete gameworld.clients[index].pObjData;
-	gameworld.clients[index].pObjData = nullptr;
+	Player* go = gameworld.clients[index].pObjData;
+	
+	// 청크 갱신
+	go->Move(vec4(0, 0, 0, 0), vec4(0, 0, 0, 1));
+	
+	int n = 0;
+	for (int ix = go->IncludeChunks.xmin; ix <= go->IncludeChunks.xmin + go->IncludeChunks.xlen;++ix) {
+		for (int iy = go->IncludeChunks.ymin; iy <= go->IncludeChunks.ymin + go->IncludeChunks.ylen;++iy) {
+			for (int iz = go->IncludeChunks.zmin; iz <= go->IncludeChunks.zmin + go->IncludeChunks.zlen;++iz) {
+				auto f = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
+				if (f != gameworld.chunck.end()) {
+					GameChunk* c = f->second;
+					c->Dynamic_gameobjects[go->chunkAllocIndexs[n]] = nullptr;
+					c->Dynamic_gameobjects.Free(go->chunkAllocIndexs[n]);
+				}
+				n += 1;
+			}
+		}
+	}
+
 	gameworld.Dynamic_gameObjects[objindex] = nullptr;
 	gameworld.Dynamic_gameObjects.Free(objindex);
+	gameworld.clients[index].pObjData = nullptr;
 	gameworld.clients.Free(index);
+	delete go;
+
+	cout << "client " << index << " Left the Game. \n";
 }
 
 void HumanoidAnimation::LoadHumanoidAnimation(string filename) {
