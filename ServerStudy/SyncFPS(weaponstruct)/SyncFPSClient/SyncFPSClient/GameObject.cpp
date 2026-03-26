@@ -1066,13 +1066,12 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		// 리소스 개많아
 	}
 
-	
 	Model* pModel = shape.GetModel();
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		dbgc[5] += 1;
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
 		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
-		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
 		BoneToWorldMatrixCB.push_back(res_upload);
@@ -1590,11 +1589,11 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 
 		int boneNum = model->mBumpSkinMeshs[i]->MatrixCount;
 		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
-		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_COPY_DEST);
-		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_COPY_SOURCE);
-		gd.CScmd->CopyBufferRegion(BoneToWorldMatrixCB_Default[i].resource, 0, BoneToWorldMatrixCB[i].resource, 0, ncbElementBytes);
 		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_GENERIC_READ);
+		//gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_COPY_SOURCE);
+		//gd.CScmd->CopyBufferRegion(BoneToWorldMatrixCB_Default[i].resource, 0, BoneToWorldMatrixCB[i].resource, 0, ncbElementBytes);
+		//gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		//gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		gd.CScmd->SetComputeRoot32BitConstants(SMMSRPI::Const_OutputVertexBufferSize, 1, &VertexSiz, 0);
 
@@ -1624,8 +1623,8 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 
 void SkinMeshGameObject::BlendingAnimation() {
 	using ABSRPI = AnimationBlendingShader::RootParamId;
-	gd.CScmd.SetShader(game.MyAnimationBlendingShader);
-	gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	//gd.CScmd.SetShader(game.MyAnimationBlendingShader);
+	//gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.CScmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
 	DescHandle AllocDescHandle;
@@ -1658,8 +1657,7 @@ void SkinMeshGameObject::ModifyLocalToWorld() {
 	rootworld.transpose();
 	for (int i = 0;i < model->mNumSkinMesh;++i) {
 		using HBLTWSRPI = HBoneLocalToWorldShader::RootParamId;
-		gd.CScmd.SetShader(game.MyHBoneLocalToWorldShader);
-		gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		//gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 		gd.CScmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
@@ -1793,6 +1791,10 @@ void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
 		SetRootMatrixs();
 		gd.AverageSecPer60End(Update_Monster_Animation_SetRootMatrixs);
 	}
+}
+
+void SkinMeshGameObject::CollectSkinMeshObject(matrix parent) {
+	collection.push_back(this);
 }
 
 Monster::Monster() {

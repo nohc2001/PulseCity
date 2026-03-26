@@ -342,6 +342,7 @@ void DynamicGameObject::SetWorld(matrix localWorldMat)
 	worldMat = localWorldMat;
 }
 
+
 void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc)
 {
 	static int temp[512] = {};
@@ -366,7 +367,9 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
 		// 안 곂치는 부분은 Free 한다.
 		auto f = gameworld.chunck.find(ci);
 		if (f != gameworld.chunck.end()) {
+#ifdef ChunckDEBUG
 			dbgbreak(f->second->Dynamic_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
+#endif
 			f->second->Dynamic_gameobjects.Free(chunkAllocIndexs[ci.extra]);
 		}
 	}
@@ -725,7 +728,6 @@ void SkinMeshGameObject::Update(float delatTime) {
 	AnimationFlowTime += DeltaTime;
 }
 
-//#define ChunckDEBUG
 void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc) {
 	static int temp[512] = {};
 	GameObjectIncludeChunks intersection = beforeChunckInc;
@@ -762,7 +764,9 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 			f->second->SkinMesh_gameobjects.Free(chunkAllocIndexs[ci.extra]);
 		}
 	}
+#ifdef ChunckDEBUG
 	cout << endl;
+#endif
 
 #ifdef ChunckDEBUG 
 	dbgbreak(inter_Count != inter_ci.extra);
@@ -818,7 +822,9 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 		cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << allocN << "\t";
 #endif
 	}
+#ifdef ChunckDEBUG
 	cout << endl;
+#endif
 
 	IncludeChunks = afterChunkInc;
 }
@@ -3095,7 +3101,10 @@ void World::PushGameObject(GameObject* go) {
 			ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
 			ci.extra = 0;
 			int chunckCount = chunkIds.GetChunckSize();
+			
+#ifdef ChunckDEBUG
 			cout << "objptr = " << smgo << ", ";
+#endif
 			for (;ci.extra < chunckCount;chunkIds.Inc(ci)) {
 				auto c = chunck.find(ci);
 				GameChunk* gc;
@@ -3109,9 +3118,13 @@ void World::PushGameObject(GameObject* go) {
 				int allocN = gc->SkinMesh_gameobjects.Alloc();
 				gc->SkinMesh_gameobjects[allocN] = smgo;
 				smgo->chunkAllocIndexs[ci.extra] = allocN;
+#ifdef ChunckDEBUG
 				cout << smgo->chunkAllocIndexs[ci.extra] << ", ";
+#endif
 			}
+#ifdef ChunckDEBUG
 			cout << endl;
+#endif
 		}
 		else {
 			// dynamic game object

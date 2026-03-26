@@ -1002,8 +1002,17 @@ void Game::Render() {
 
 	if constexpr (gd.PlayAnimationByGPU) {
 		//Adding Animation Compute Shaders Execute Command
-		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::AnimationComputeDispatch;
+		SkinMeshGameObject::collection.clear();
+		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::CollectSkinMeshObject;
 		RenderTour<true>();
+		gd.CScmd.SetShader(game.MyAnimationBlendingShader);
+		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+			SkinMeshGameObject::collection[i]->BlendingAnimation();
+		}
+		gd.CScmd.SetShader(game.MyHBoneLocalToWorldShader);
+		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+			SkinMeshGameObject::collection[i]->ModifyLocalToWorld();
+		}
 	}
 	
 	hResult = gd.CScmd.Close();

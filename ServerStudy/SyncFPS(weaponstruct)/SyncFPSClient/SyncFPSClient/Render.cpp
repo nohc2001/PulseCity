@@ -8121,13 +8121,25 @@ void RayTracingShader::SkinMeshModify()
 {
 	RebuildBLASBuffer.clear();
 	HRESULT hResult = gd.CScmd.Reset();
-	MySkinMeshModifyShader->Add_RegisterShaderCommand(gd.CScmd);
+	
 	gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 
 	game.renderViewPort = &gd.viewportArr[0];
-	SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::ModifyVertexs;
+	SkinMeshGameObject::collection.clear();
+	SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::CollectSkinMeshObject;
 	game.RenderTour<true>();
-
+	gd.CScmd.SetShader(game.MyAnimationBlendingShader);
+	for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+		SkinMeshGameObject::collection[i]->BlendingAnimation();
+	}
+	gd.CScmd.SetShader(game.MyHBoneLocalToWorldShader);
+	for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+		SkinMeshGameObject::collection[i]->ModifyLocalToWorld();
+	}
+	MySkinMeshModifyShader->Add_RegisterShaderCommand(gd.CScmd);
+	for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+		SkinMeshGameObject::collection[i]->ModifyVertexs();
+	}
 	hResult = gd.CScmd.Close();
 	gd.CScmd.Execute();
 	gd.CScmd.WaitGPUComplete();
