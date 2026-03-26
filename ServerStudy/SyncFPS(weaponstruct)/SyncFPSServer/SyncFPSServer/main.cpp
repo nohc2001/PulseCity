@@ -22,6 +22,8 @@ int main() {
 		return 1;
 
 	gameworld.PrintOffset();
+	cout << "PrintOffset" << endl;
+
 	gameworld.CommonSDS.Init(4096);
 
 	server.Init("127.0.0.1", 9000);
@@ -246,7 +248,7 @@ int World::Receiving(int clientIndex, char* rBuffer, int totallen) {
 	int size;
 	CTS_Protocol type = CTS_Protocol::KeyInput;
 READ_START:
-	//if (offset + sizeof(int) > totallen) return offset;
+	//if (offset + sizeof(int) > totallen) return offset; // 이거 살리는게 좋지 않나? 흠. // fix
 	size = *(int*)currentPivot;
 	if (offset + size >= totallen) return offset;
 	type = *(CTS_Protocol*)(currentPivot + sizeof(int));

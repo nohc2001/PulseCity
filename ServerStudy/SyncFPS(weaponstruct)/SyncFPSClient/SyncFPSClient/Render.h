@@ -1925,6 +1925,14 @@ struct GlobalDevice {
 		}
 	}
 #pragma endregion
+
+#pragma region GPUDebug
+	void DeviceRemoveResonDebug() {
+		volatile HRESULT hr = pDevice->GetDeviceRemovedReason();
+		cout << hr << endl;
+		dbgbreak(hr != S_OK);
+	}
+#pragma endregion
 };
 
 //Enum Measure Time

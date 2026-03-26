@@ -529,6 +529,42 @@ struct StaticGameObject : public GameObject {
 	}
 };
 
+/*
+* 설명 : 청크를 찾아가기 위한 인덱스
+* Sentinal Value :
+* NULL = (x == -2,147,483,648 || y == -2,147,483,648 || z == -2,147,483,648)
+*/
+struct ChunkIndex {
+	int x = 0;
+	int y = 0;
+	int z = 0;
+	int extra = 0;
+
+	ChunkIndex() {}
+	~ChunkIndex() {}
+
+	ChunkIndex(int X, int Y, int Z) {
+		x = X;
+		y = Y;
+		z = Z;
+	}
+	ChunkIndex(const ChunkIndex& ref) {
+		x = ref.x;
+		y = ref.y;
+		z = ref.z;
+	}
+
+	__forceinline bool operator==(const ChunkIndex& ci) const {
+		return (x == ci.x && y == ci.y) && z == ci.z;
+	}
+	__forceinline bool operator!=(const ChunkIndex& ci) const {
+		return x != ci.x || y != ci.y || z != ci.z;
+	}
+
+	BoundingBox GetAABB();
+};
+
+//이 연산이 simd로 최적화 가능하겠다 생각이 든다.
 struct GameObjectIncludeChunks {
 	int xmin;
 	int ymin;
@@ -551,9 +587,58 @@ struct GameObjectIncludeChunks {
 		xmin = min(xmin, range.xmin);
 		ymin = min(ymin, range.ymin);
 		zmin = min(zmin, range.zmin);
-		xlen = xmax - xmin;
-		ylen = ymax - ymin;
-		zlen = zmax - zmin;
+		xlen = max(xmax - xmin, 0);
+		ylen = max(ymax - ymin, 0);
+		zlen = max(zmax - zmin, 0);
+	}
+
+	void operator&=(const GameObjectIncludeChunks& range) {
+		int xmax = xmin + xlen;
+		int ymax = ymin + ylen;
+		int zmax = zmin + zlen;
+		int rxmax = range.xmin + range.xlen;
+		int rymax = range.ymin + range.ylen;
+		int rzmax = range.zmin + range.zlen;
+		xmax = min(xmax, rxmax);
+		ymax = min(ymax, rymax);
+		zmax = min(zmax, rzmax);
+		xmin = max(xmin, range.xmin);
+		ymin = max(ymin, range.ymin);
+		zmin = max(zmin, range.zmin);
+		xlen = max(xmax - xmin, 0);
+		ylen = max(ymax - ymin, 0);
+		zlen = max(zmax - zmin, 0);
+		extraByte = 0;
+	}
+
+	__forceinline int GetChunckSize() const {
+		return (int)(xlen + 1) * (int)(ylen + 1) * (int)(zlen + 1);
+	}
+
+	__forceinline ChunkIndex& Inc(ChunkIndex& ref) const {
+		if (ref.z + 1 <= zmin + zlen) {
+			ref.z = ref.z + 1;
+			ref.extra += 1;
+			return ref;
+		}
+		else {
+			ref.z = zmin;
+			if (ref.y + 1 <= ymin + ylen) {
+				ref.y = ref.y + 1;
+				ref.extra += 1;
+				return ref;
+			}
+			else {
+				ref.y = ymin;
+				if (ref.x + 1 <= xmin + xlen) {
+					ref.x = ref.x + 1;
+					ref.extra += 1;
+					return ref;
+				}
+			}
+		}
+		ref.extra += 1;
+		return ref;
 	}
 
 	bool operator==(GameObjectIncludeChunks range) {
@@ -564,6 +649,12 @@ struct GameObjectIncludeChunks {
 		b = b && (ylen == range.ylen);
 		b = b && (zlen == range.zlen);
 		return b;
+	}
+
+	__forceinline bool isInclude(const ChunkIndex& ci) const {
+		return ((xmin <= ci.x && ci.x <= xmin + xlen) &&
+			(ymin <= ci.y && ci.y <= ymin + ylen)) &&
+			(zmin <= ci.z && ci.z <= zmin + zlen);
 	}
 };
 
@@ -588,8 +679,8 @@ struct DynamicGameObject : public GameObject {
 	STCDef(vec4, LVelocity);
 
 	void InitialChunkSetting();
-	void Move(vec4 velocity, vec4 Q);
-	void Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afterChunkInc);
+	//void Move(vec4 velocity, vec4 Q);
+	virtual void MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
 	virtual void Update(float delatTime);
 
 	//virtual void Event(WinEvent evt);
@@ -747,6 +838,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	STCDef(int, PlayingAnimationIndex);
 
 	virtual void Update(float delatTime);
+
+	virtual void MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -1289,37 +1382,6 @@ struct Monster : public SkinMeshGameObject {
 		}
 	}
 #undef STC_CurrentStruct
-};
-
-/*
-* 설명 : 청크를 찾아가기 위한 인덱스
-* Sentinal Value :
-* NULL = (x == -2,147,483,648 || y == -2,147,483,648 || z == -2,147,483,648)
-*/
-struct ChunkIndex {
-	int x = 0;
-	int y = 0;
-	int z = 0;
-
-	ChunkIndex() {}
-	~ChunkIndex() {}
-
-	ChunkIndex(int X, int Y, int Z) {
-		x = X;
-		y = Y;
-		z = Z;
-	}
-	ChunkIndex(const ChunkIndex& ref) {
-		x = ref.x;
-		y = ref.y;
-		z = ref.z;
-	}
-
-	bool operator==(const ChunkIndex& ci) const {
-		return (x == ci.x && y == ci.y) && z == ci.z;
-	}
-
-	BoundingBox GetAABB();
 };
 
 /*

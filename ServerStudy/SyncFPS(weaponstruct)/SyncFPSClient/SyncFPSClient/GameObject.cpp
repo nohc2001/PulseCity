@@ -1066,8 +1066,10 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		// 리소스 개많아
 	}
 
+	
 	Model* pModel = shape.GetModel();
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
+		dbgc[5] += 1;
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
 		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
 		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, /*D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);

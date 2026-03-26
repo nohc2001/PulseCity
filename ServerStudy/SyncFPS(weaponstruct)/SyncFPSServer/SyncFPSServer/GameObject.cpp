@@ -342,22 +342,32 @@ void DynamicGameObject::SetWorld(matrix localWorldMat)
 	worldMat = localWorldMat;
 }
 
-void DynamicGameObject::Move(vec4 velocity, vec4 Q)
+void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc)
 {
-	int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
-	int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
-	int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
-	int up = 0;
-	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
-		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
-			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				auto f = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
-				if (f != gameworld.chunck.end()) {
-					GameChunk* gc = f->second;
-					gc->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
-					up += 1;
-				}
-			}
+	static int temp[512] = {};
+	GameObjectIncludeChunks intersection = beforeChunckInc;
+	intersection &= afterChunkInc;
+
+	int inter_Count = intersection.GetChunckSize();
+	ChunkIndex inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+	int inter_up = 0;
+	int chunckCount = beforeChunckInc.GetChunckSize();
+	ChunkIndex ci = ChunkIndex(beforeChunckInc.xmin, beforeChunckInc.ymin, beforeChunckInc.zmin);
+	ci.extra = 0;
+	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
+		if (ci == inter_ci) { // 곂치는 부분을 Free 하지 않는다.
+			intersection.Inc(inter_ci);
+			temp[inter_up] = chunkAllocIndexs[ci.extra];
+			inter_up += 1;
+			continue;
+		}
+
+		// 안 곂치는 부분은 Free 한다.
+		auto f = gameworld.chunck.find(ci);
+		if (f != gameworld.chunck.end()) {
+			dbgbreak(f->second->Dynamic_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
+			f->second->Dynamic_gameobjects.Free(chunkAllocIndexs[ci.extra]);
 		}
 	}
 
@@ -367,80 +377,37 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q)
 	worldMat.pos = pos + velocity;
 	worldMat.pos.w = 1;
 
-	// 포함 청크 탐색
-	IncludeChunks = gameworld.GetChunks_Include_OBB(GetOBB());
+	inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
 
-	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
-	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
-	zmax = IncludeChunks.zmin + IncludeChunks.zlen;
-	up = 0;
-	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
-		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
-			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				auto c = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
-				GameChunk* gc;
-				if (c == gameworld.chunck.end()) {
-					// new game chunk
-					gc = new GameChunk();
-					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-					gameworld.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
-				}
-				else gc = c->second;
-				int allocN = gc->Dynamic_gameobjects.Alloc();
-				gc->Dynamic_gameobjects[allocN] = this;
-				chunkAllocIndexs[up] = allocN;
-				up += 1;
-			}
-		}
-	}
-}
+	chunckCount = afterChunkInc.GetChunckSize();
+	ci = ChunkIndex(afterChunkInc.xmin, afterChunkInc.ymin, afterChunkInc.zmin);
+	ci.extra = 0;
 
-void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afterChunkInc)
-{
-	int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
-	int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
-	int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
-	int up = 0;
-	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
-		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
-			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				gameworld.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
-				up += 1;
-			}
+	inter_up = 0;
+	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
+		if (ci == inter_ci) { // 곂치는 부분을 Alloc 하지 않는다.
+			intersection.Inc(inter_ci);
+			chunkAllocIndexs[ci.extra] = temp[inter_up];
+			inter_up += 1;
+			continue;
 		}
+
+		auto c = gameworld.chunck.find(ci);
+		GameChunk* gc;
+		if (c == gameworld.chunck.end()) {
+			// new game chunk
+			gc = new GameChunk();
+			gc->SetChunkIndex(ci);
+			gameworld.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+		}
+		else gc = c->second;
+		int allocN = gc->Dynamic_gameobjects.Alloc();
+		gc->Dynamic_gameobjects[allocN] = this;
+		chunkAllocIndexs[ci.extra] = allocN;
 	}
 
-	// 위치 이동 / 회전
-	vec4 pos = worldMat.pos;
-	worldMat.trQ(Q);
-	worldMat.pos = pos + velocity;
-	worldMat.pos.w = 1;
-
-	// 포함 청크 탐색
 	IncludeChunks = afterChunkInc;
-	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
-	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
-	zmax = IncludeChunks.zmin + IncludeChunks.zlen;
-	up = 0;
-	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
-		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
-			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				auto c = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
-				GameChunk* gc;
-				if (c == gameworld.chunck.end()) {
-					// new game chunk
-					gc = new GameChunk();
-					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-					gameworld.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
-				}
-				else gc = c->second;
-				int allocN = gc->Dynamic_gameobjects.Alloc();
-				gc->Dynamic_gameobjects[allocN] = this;
-				chunkAllocIndexs[up] = allocN;
-				up += 1;
-			}
-		}
-	}
 }
 
 void DynamicGameObject::Update(float delatTime) {
@@ -756,6 +723,104 @@ SkinMeshGameObject::~SkinMeshGameObject() {
 
 void SkinMeshGameObject::Update(float delatTime) {
 	AnimationFlowTime += DeltaTime;
+}
+
+//#define ChunckDEBUG
+void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc) {
+	static int temp[512] = {};
+	GameObjectIncludeChunks intersection = beforeChunckInc;
+	intersection &= afterChunkInc;
+
+#ifdef ChunckDEBUG 
+	cout << "objptr = " << this << " FREE";
+#endif
+
+	int inter_Count = intersection.GetChunckSize();
+	ChunkIndex inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+	int inter_up = 0;
+	int chunckCount = beforeChunckInc.GetChunckSize();
+	ChunkIndex ci = ChunkIndex(beforeChunckInc.xmin, beforeChunckInc.ymin, beforeChunckInc.zmin);
+	ci.extra = 0;
+	
+	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
+		if (ci == inter_ci) { // 곂치는 부분을 Free 하지 않는다.
+			intersection.Inc(inter_ci);
+			temp[inter_up] = chunkAllocIndexs[ci.extra];
+			inter_up += 1;
+			
+			continue;
+		}
+
+		// 안 곂치는 부분은 Free 한다.
+		auto f = gameworld.chunck.find(ci);
+		if (f != gameworld.chunck.end()) {
+#ifdef ChunckDEBUG 
+			dbgbreak(f->second->SkinMesh_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
+			cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << chunkAllocIndexs[ci.extra] << "\t";
+#endif
+			f->second->SkinMesh_gameobjects.Free(chunkAllocIndexs[ci.extra]);
+		}
+	}
+	cout << endl;
+
+#ifdef ChunckDEBUG 
+	dbgbreak(inter_Count != inter_ci.extra);
+#endif
+
+	// 위치 이동 / 회전
+	vec4 pos = worldMat.pos;
+	worldMat.trQ(Q);
+	worldMat.pos = pos + velocity;
+	worldMat.pos.w = 1;
+
+	inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+
+	chunckCount = afterChunkInc.GetChunckSize();
+	ci = ChunkIndex(afterChunkInc.xmin, afterChunkInc.ymin, afterChunkInc.zmin);
+	ci.extra = 0;
+
+	ChunkIndex pastCI = ChunkIndex(-99999, -99999, -99999);
+
+#ifdef ChunckDEBUG 
+	cout << "objptr = " << this << " ALLOC";
+#endif
+	inter_up = 0;
+	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
+		if (ci == inter_ci) { // 곂치는 부분을 Alloc 하지 않는다.
+			intersection.Inc(inter_ci);
+			chunkAllocIndexs[ci.extra] = temp[inter_up];
+			inter_up += 1;
+#ifdef ChunckDEBUG 
+			cout << "ci_move(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << temp[inter_up-1] << "\t";
+			dbgbreak(pastCI == ci);
+			dbgbreak(afterChunkInc.isInclude(ci) == false);
+			pastCI = ci;
+#endif
+			continue;
+		}
+
+		auto c = gameworld.chunck.find(ci);
+		GameChunk* gc;
+		if (c == gameworld.chunck.end()) {
+			// new game chunk
+			gc = new GameChunk();
+			gc->SetChunkIndex(ci);
+			gameworld.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+		}
+		else gc = c->second;
+		int allocN = gc->SkinMesh_gameobjects.Alloc();
+		gc->SkinMesh_gameobjects[allocN] = this;
+		chunkAllocIndexs[ci.extra] = allocN;
+
+#ifdef ChunckDEBUG
+		cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << allocN << "\t";
+#endif
+	}
+	cout << endl;
+
+	IncludeChunks = afterChunkInc;
 }
 
 void GameMap::ExtendMapAABB(BoundingOrientedBox obb)
@@ -2663,100 +2728,91 @@ void World::Update() {
 			GameObjectIncludeChunks goic_sum = goic_before;
 			goic_sum += goic_after;
 
-			for (int ix = goic_sum.xmin;ix <= goic_sum.xmin + goic_sum.xlen;++ix) {
-				for (int iy = goic_sum.ymin;iy <= goic_sum.ymin + goic_sum.ylen;++iy) {
-					for (int iz = goic_sum.zmin;iz <= goic_sum.zmin + goic_sum.zlen;++iz) {
-						auto ch = chunck.find(ChunkIndex(ix, iy, iz));
-						if (ch != chunck.end()) {
-							GameChunk* c = ch->second;
-							for (int k = 0; k < c->dynamicIRSiz; ++k) {
-								for (int u = c->IR_Dynamic[k].start; u <= c->IR_Dynamic[k].end; ++u) {
-									DynamicGameObject* gbj2 = c->Dynamic_gameobjects[u];
-									if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
-									if (gbj2 == gbj1) continue;
-									ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
-									if (obbptr2 == 0) continue;
-									vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);
-									float fsl2 = obb2[1].fast_square_of_len3;
-									vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
-									if (fsl1 + fsl2 > dist.fast_square_of_len3) {
-										DynamicGameObject::CollisionMove(gbj1, gbj2);
+			ChunkIndex ci = ChunkIndex(goic_sum.xmin, goic_sum.ymin, goic_sum.zmin);
+			ci.extra = 0;
+			int chunckCount = goic_sum.GetChunckSize();
+			for (; ci.extra < chunckCount; goic_sum.Inc(ci)) {
+				auto ch = chunck.find(ci);
+				if (ch != chunck.end()) {
+					GameChunk* c = ch->second;
+					for (int k = 0; k < c->dynamicIRSiz; ++k) {
+						for (int u = c->IR_Dynamic[k].start; u <= c->IR_Dynamic[k].end; ++u) {
+							DynamicGameObject* gbj2 = c->Dynamic_gameobjects[u];
+							if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
+							if (gbj2 == gbj1) continue;
 
-										if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-											// 다음 오브젝트의 움직임으로 넘어간다.
-										}
-									}
+							//ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
+							//if (obbptr2 == 0) continue;
+							//vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);
+
+							BoundingOrientedBox obb2 = gbj2->GetOBB();
+							float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
+							vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+							if (fsl1 + fsl2 > dist.fast_square_of_len3) {
+								DynamicGameObject::CollisionMove(gbj1, gbj2);
+
+								if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+									// 다음 오브젝트의 움직임으로 넘어간다.
 								}
 							}
-							for (int k = 0; k < c->SkinMeshIRSiz; ++k) {
-								for (int u = c->IR_SkinMesh[k].start; u <= c->IR_SkinMesh[k].end; ++u) {
-									SkinMeshGameObject* gbj2 = c->SkinMesh_gameobjects[u];
-									if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
-									if (gbj2 == gbj1) continue;
-									ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
-									if (obbptr2 == 0) continue;
-									vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);
-									float fsl2 = obb2[1].fast_square_of_len3;
-									vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
-									if (fsl1 + fsl2 > dist.fast_square_of_len3) {
-										DynamicGameObject::CollisionMove(gbj1, gbj2);
+						}
+					}
+					for (int k = 0; k < c->SkinMeshIRSiz; ++k) {
+						for (int u = c->IR_SkinMesh[k].start; u <= c->IR_SkinMesh[k].end; ++u) {
+							SkinMeshGameObject* gbj2 = c->SkinMesh_gameobjects[u];
+							if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
+							if (gbj2 == gbj1) continue;
 
-										if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+							/*ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
+							if (obbptr2 == 0) continue;
+							vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);*/
 
-										}
-									}
+							BoundingOrientedBox obb2 = gbj2->GetOBB();
+							float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
+							vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+							if (fsl1 + fsl2 > dist.fast_square_of_len3) {
+								DynamicGameObject::CollisionMove(gbj1, gbj2);
+
+								if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+
 								}
 							}
+						}
+					}
 
-							for (int k = 0; k < c->Static_gameobjects.size; ++k) {
-								StaticGameObject* sgo = c->Static_gameobjects[k];
-								/*for (int u = 0;u < sgo->aabbArr.size();++u) {
-									BoundingOrientedBox()
-								}*/
-								BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
+					for (int k = 0; k < c->Static_gameobjects.size; ++k) {
+						StaticGameObject* sgo = c->Static_gameobjects[k];
+						/*for (int u = 0;u < sgo->aabbArr.size();++u) {
+							BoundingOrientedBox()
+						}*/
+						BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
 
-								if (obb_after.Intersects(staticobb)) {
-									gbj1->OnStaticCollision(staticobb);
-									DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+						if (obb_after.Intersects(staticobb)) {
+							gbj1->OnStaticCollision(staticobb);
+							DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
 
-									if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+							if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
 
-									}
-								}
 							}
 						}
 					}
 				}
 			}
 
-			//for (int j = i + 1; j < Dynamic_gameObjects.size; ++j) {
-			//	if (Dynamic_gameObjects.isnull(j)) continue;
-			//	DynamicGameObject* gbj2 = Dynamic_gameObjects[j];
-			//	Shape s2 = Shape::ShapeTable[gbj2->shapeindex];
-
-			//	ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
-			//	vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);
-			//	float fsl2 = obb2[1].fast_square_of_len3;
-
-			//	vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
-			//	//if (gbj2->tickLVelocity.fast_square_of_len3 <= 0.001f && bFixed) continue;
-
-			//	if (fsl1 + fsl2 > dist.fast_square_of_len3) {
-			//		DynamicGameObject::CollisionMove(gbj1, gbj2);
-			//	}
-			//	//GameObject::CollisionMove(gbj1, gbj2);
-			//}
-
-			//map.StaticCollisionMove(gbj1);
-
-			//gbj1->tickLVelocity.w = 0;
 			if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) continue;
+
+			// 아마 충돌처리하면서 tickVelocity가 줄어들었을 수도 있음.
+			// 때문에 after정보가 달라진것.
+			gbj1->worldMat.pos += gbj1->tickLVelocity;
+			obb_after = gbj1->GetOBB();
+			gbj1->worldMat.pos -= gbj1->tickLVelocity;
+			goic_after = gameworld.GetChunks_Include_OBB(obb_after);
 
 			if (goic_before == goic_after) {
 				gbj1->worldMat.pos += gbj1->tickLVelocity;
 			}
 			else {
-				gbj1->Move(gbj1->tickLVelocity, vec4(0, 0, 0, 1));
+				gbj1->MoveChunck(gbj1->tickLVelocity, vec4(0, 0, 0, 1), goic_before, goic_after);
 			}
 			//gbj1->worldMat.pos += gbj1->tickLVelocity;
 			/*if (fabsf(gbj1->m_worldMatrix.pos.x) > 40.0f || fabsf(gbj1->m_worldMatrix.pos.z) > 40.0f) {
@@ -3004,28 +3060,30 @@ void World::PushGameObject(GameObject* go) {
 		// static game object
 		StaticGameObject* sgo = (StaticGameObject*)go;
 		GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(sgo->GetOBB());
-		int xmax = chunkIds.xmin + chunkIds.xlen;
-		int ymax = chunkIds.ymin + chunkIds.ylen;
-		int zmax = chunkIds.zmin + chunkIds.zlen;
+		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
+		ci.extra = 0;
+		int chunckCount = chunkIds.GetChunckSize();
 		bool pushing = false;
-		for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
-			for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
-				for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
-					auto c = chunck.find(ChunkIndex(ix, iy, iz));
-					GameChunk* gc;
-					if (c == chunck.end()) {
-						// new game chunk
-						gc = new GameChunk();
-						gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-						chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
-					}
-					else gc = c->second;
-
-					int allocN = gc->Static_gameobjects.Alloc();
-					gc->Static_gameobjects[allocN] = sgo;
-					pushing = true;
-				}
+		for (;ci.extra < chunckCount;chunkIds.Inc(ci)) {
+			GameChunk* gc = nullptr;
+			bool isExist = false;
+			{
+				auto c = chunck.find(ci);
+				isExist = (c != chunck.end());
+				if(isExist) gc = c->second;
 			}
+
+			if(isExist == false)
+			{
+				// new game chunk
+				gc = new GameChunk();
+				gc->SetChunkIndex(ci);
+				chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+			}
+
+			int allocN = gc->Static_gameobjects.Alloc();
+			gc->Static_gameobjects[allocN] = sgo;
+			pushing = true;
 		}
 	}
 	else {
@@ -3034,57 +3092,48 @@ void World::PushGameObject(GameObject* go) {
 			SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
 			smgo->InitialChunkSetting();
 			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
-			int xmax = chunkIds.xmin + chunkIds.xlen;
-			int ymax = chunkIds.ymin + chunkIds.ylen;
-			int zmax = chunkIds.zmin + chunkIds.zlen;
-			int up = 0;
-			for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
-				for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
-					for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
-						auto c = chunck.find(ChunkIndex(ix, iy, iz));
-						GameChunk* gc;
-						if (c == chunck.end()) {
-							// new game chunk
-							gc = new GameChunk();
-							gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-							chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
-						}
-						else gc = c->second;
-						int allocN = gc->SkinMesh_gameobjects.Alloc();
-						gc->SkinMesh_gameobjects[allocN] = smgo;
-						smgo->chunkAllocIndexs[up] = allocN;
-						up += 1;
-					}
+			ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
+			ci.extra = 0;
+			int chunckCount = chunkIds.GetChunckSize();
+			cout << "objptr = " << smgo << ", ";
+			for (;ci.extra < chunckCount;chunkIds.Inc(ci)) {
+				auto c = chunck.find(ci);
+				GameChunk* gc;
+				if (c == chunck.end()) {
+					// new game chunk
+					gc = new GameChunk();
+					gc->SetChunkIndex(ci);
+					chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
 				}
+				else gc = c->second;
+				int allocN = gc->SkinMesh_gameobjects.Alloc();
+				gc->SkinMesh_gameobjects[allocN] = smgo;
+				smgo->chunkAllocIndexs[ci.extra] = allocN;
+				cout << smgo->chunkAllocIndexs[ci.extra] << ", ";
 			}
+			cout << endl;
 		}
 		else {
 			// dynamic game object
 			DynamicGameObject* dgo = (DynamicGameObject*)go;
 			dgo->InitialChunkSetting();
 			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
-			int xmax = chunkIds.xmin + chunkIds.xlen;
-			int ymax = chunkIds.ymin + chunkIds.ylen;
-			int zmax = chunkIds.zmin + chunkIds.zlen;
-			int up = 0;
-			for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
-				for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
-					for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
-						auto c = chunck.find(ChunkIndex(ix, iy, iz));
-						GameChunk* gc;
-						if (c == chunck.end()) {
-							// new game chunk
-							gc = new GameChunk();
-							gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-							chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
-						}
-						else gc = c->second;
-						int allocN = gc->Dynamic_gameobjects.Alloc();
-						gc->Dynamic_gameobjects[allocN] = dgo;
-						dgo->chunkAllocIndexs[up] = allocN;
-						up += 1;
-					}
+			ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
+			ci.extra = 0;
+			int chunckCount = chunkIds.GetChunckSize();
+			for (;ci.extra < chunckCount;chunkIds.Inc(ci)) {
+				auto c = chunck.find(ci);
+				GameChunk* gc;
+				if (c == chunck.end()) {
+					// new game chunk
+					gc = new GameChunk();
+					gc->SetChunkIndex(ci);
+					chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
 				}
+				else gc = c->second;
+				int allocN = gc->Dynamic_gameobjects.Alloc();
+				gc->Dynamic_gameobjects[allocN] = dgo;
+				dgo->chunkAllocIndexs[ci.extra] = allocN;
 			}
 		}
 	}
@@ -3150,21 +3199,18 @@ void ClientData::DisconnectToServer(int index) {
 	int objindex = gameworld.clients[index].objindex;
 	Player* go = gameworld.clients[index].pObjData;
 	
-	// 청크 갱신
-	go->Move(vec4(0, 0, 0, 0), vec4(0, 0, 0, 1));
-	
 	int n = 0;
-	for (int ix = go->IncludeChunks.xmin; ix <= go->IncludeChunks.xmin + go->IncludeChunks.xlen;++ix) {
-		for (int iy = go->IncludeChunks.ymin; iy <= go->IncludeChunks.ymin + go->IncludeChunks.ylen;++iy) {
-			for (int iz = go->IncludeChunks.zmin; iz <= go->IncludeChunks.zmin + go->IncludeChunks.zlen;++iz) {
-				auto f = gameworld.chunck.find(ChunkIndex(ix, iy, iz));
-				if (f != gameworld.chunck.end()) {
-					GameChunk* c = f->second;
-					c->Dynamic_gameobjects[go->chunkAllocIndexs[n]] = nullptr;
-					c->Dynamic_gameobjects.Free(go->chunkAllocIndexs[n]);
-				}
-				n += 1;
-			}
+	ChunkIndex ci = ChunkIndex(go->IncludeChunks.xmin, go->IncludeChunks.ymin, go->IncludeChunks.zmin);
+	ci.extra = 0;
+	int chunckCount = go->IncludeChunks.GetChunckSize();
+	for (;ci.extra < chunckCount; go->IncludeChunks.Inc(ci)) {
+		auto f = gameworld.chunck.find(ci);
+		if (f != gameworld.chunck.end()) {
+			GameChunk* c = f->second;
+			c->SkinMesh_gameobjects[go->chunkAllocIndexs[ci.extra]] = nullptr;
+			dbgbreak(c->SkinMesh_gameobjects.isAlloc(go->chunkAllocIndexs[ci.extra]) == false);
+			c->SkinMesh_gameobjects.Free(go->chunkAllocIndexs[ci.extra]);
+			cout << "[Free] ci : (" << ci.x << ", " << ci.y << ", " << ci.z << ") extra : " << ci.extra << ", AllocIndex : " << go->chunkAllocIndexs[ci.extra] << endl;
 		}
 	}
 

@@ -687,7 +687,8 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 #endif
 
 	UINT nDXGIFactoryFlags = 0;
-#if defined(_DEBUG)
+
+#if defined(_DEBUG) || defined(RELEASE_GPUDEBUG)
 	ID3D12Debug* pd3dDebugController = NULL;
 
 	hr = D3D12GetDebugInterface(__uuidof(ID3D12Debug), (void
@@ -696,6 +697,14 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	if (pd3dDebugController)
 	{
 		pd3dDebugController->EnableDebugLayer();
+
+		// GPU Validation 끄기 - Device가 문제 생기면 바로 삭제하도록 한다?
+		ComPtr<ID3D12Debug1> debug1;
+		if (SUCCEEDED(pd3dDebugController->QueryInterface<ID3D12Debug1>(&debug1)))
+		{
+			debug1->SetEnableGPUBasedValidation(FALSE);
+		}
+
 		pd3dDebugController->Release();
 	}
 	else
@@ -883,6 +892,23 @@ DXGI_FINISH_SELECT_ADAPTER:
 
 	hr = D3D12CreateDevice(pSelectedAdapter, minFeatureLevel, _uuidof(ID3D12Device), (void**)&pDevice);
 	if (FAILED(hr)) throw "D3D12CreateDevice Failed.";
+
+	Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue;
+	if (SUCCEEDED(pDevice->QueryInterface(IID_PPV_ARGS(&infoQueue))))
+	{
+		// 에러 발생 시 자동 브레이크
+		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+
+		//// 디바이스 리무브 관련 메시지에만 브레이크를 걸고 싶다면
+		infoQueue->SetBreakOnID(D3D12_MESSAGE_ID_DEVICE_REMOVAL_PROCESS_AT_FAULT, TRUE);
+	}
+
+	/*ID3D12DeviceRemovedExtendedDataSettings* dredSettings = nullptr;
+	pDevice->QueryInterface(IID_PPV_ARGS(&dredSettings));
+	dredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+	dredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+	dredSettings->Release();*/
 }
 
 void GlobalDevice::Init()
@@ -1426,6 +1452,8 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 	else {
 		hResult = gd.pDevice->CreateCommittedResource(&d3dHeapPropertiesDesc, heapFlags, &d3dResourceDesc, d3dResourceInitialStates, NULL, __uuidof(ID3D12Resource), (void**)&pBuffer);
 	}
+
+	dbgbreak(pBuffer == nullptr);
 
 	pBuffer->QueryInterface<ID3D12Resource2>(&pBuffer2);
 	pBuffer->Release();

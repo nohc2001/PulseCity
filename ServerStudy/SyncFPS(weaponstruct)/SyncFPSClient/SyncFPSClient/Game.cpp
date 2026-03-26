@@ -648,6 +648,8 @@ void Game::Render() {
 	//5. 쉐도우 패스
 	Render_ShadowPass();
 
+	//gd.DeviceRemoveResonDebug();
+
 	//6. 렌더패스 시작, 커맨드리스트 리셋
 	HRESULT hResult = gd.gpucmd.Reset();
 
@@ -977,10 +979,14 @@ void Game::Render() {
 
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
+	//gd.DeviceRemoveResonDebug();
+
 	//Command execution
 	hResult = gd.gpucmd.Close();
 	gd.gpucmd.Execute();
 	gd.gpucmd.WaitGPUComplete();
+
+	//gd.DeviceRemoveResonDebug();
 
 	//Bluring (Compute Shader)
 	hResult = gd.CScmd.Reset();
@@ -1003,6 +1009,8 @@ void Game::Render() {
 	hResult = gd.CScmd.Close();
 	gd.CScmd.Execute();
 	gd.CScmd.WaitGPUComplete();
+
+	//gd.DeviceRemoveResonDebug();
 
 	// retuen to graphic command list. to copy resource to render back buffer;
 	hResult = gd.gpucmd.Reset();
@@ -1029,6 +1037,8 @@ void Game::Render() {
 	gd.gpucmd.Execute();
 	gd.gpucmd.WaitGPUComplete();
 
+	//gd.DeviceRemoveResonDebug();
+
 	// Present to Swapchain BackBuffer & RenderTargetIndex Update
 	DXGI_PRESENT_PARAMETERS dxgiPresentParameters;
 	dxgiPresentParameters.DirtyRectsCount = 0;
@@ -1037,10 +1047,12 @@ void Game::Render() {
 	dxgiPresentParameters.pScrollOffset = NULL;
 	gd.pSwapChain->Present1(1, 0, &dxgiPresentParameters);
 
+	//gd.DeviceRemoveResonDebug();
+
 	//Get Present RenderTarget Index
 	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
 
-	HRESULT hr = gd.pDevice->GetDeviceRemovedReason();
+	gd.DeviceRemoveResonDebug();
 }
 
 void Game::Render_RayTracing()
