@@ -2293,44 +2293,45 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 	MeshAddingMap();
 
 	constexpr UINT64 VBAlign = 768; //2816;
-	constexpr UINT64 IBAlign = 256;//768;
+	constexpr UINT64 IBAlign = 768; //768; // 삼각형의 첫번째 인덱스로 나열되야함.
 
 	int addtionalVB_Bytesiz = vbarr.size() * sizeof(RayTracingMesh::Vertex);
 	int addtionalIB_Bytesiz = 0;
-	vector<int> IBByteStart(subMeshCount);
+	/*vector<int> IBByteStart(subMeshCount);
 	for (int i = 0; i < subMeshCount; ++i) {
 		IBByteStart[i] = addtionalIB_Bytesiz;
 		addtionalIB_Bytesiz += (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT);
 		addtionalIB_Bytesiz = IBAlign * (1 + ((addtionalIB_Bytesiz - 1) / IBAlign));
-	}
-	//int addtionalIB_Bytesiz = ibarr.size() * sizeof(TriangleIndex);
+	}*/
+	addtionalIB_Bytesiz = ibarr.size() * sizeof(TriangleIndex);
 
 	bool vb_con = VertexBufferByteSize + addtionalVB_Bytesiz <= VertexBufferCapacity;
 	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
 
-	IBStartOffset = new UINT64[subMeshCount + 1];
+	IBStartOffset = new UINT64[2]; /*new UINT64[subMeshCount + 1];*/
 	if (vb_con && ib_con) {
 		// Create New Mesh
-
 		VBStartOffset = VertexBufferByteSize;
-		for (int i = 0; i < subMeshCount; ++i) {
+		/*for (int i = 0; i < subMeshCount; ++i) {
 			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
-		}
-		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
+		}*/
+		//IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
+		IBStartOffset[0] = IndexBufferByteSize;
+		IBStartOffset[1] = IndexBufferByteSize + addtionalIB_Bytesiz;
 
 		pVBMapped = &pVBMappedStart[0];
 		pIBMapped = &pIBMappedStart[0];
 
 		// Copy Mesh Data
 		memcpy(pVBMapped, vbarr.data(), addtionalVB_Bytesiz);
-		for (int i = 0; i < subMeshCount; ++i) {
-
+		memcpy(pIBMapped, ibarr.data(), addtionalIB_Bytesiz);
+		/*for (int i = 0; i < subMeshCount; ++i) {
 			memcpy(pIBMapped + IBByteStart[i], (char*)ibarr.data() + SubMeshIndexArr[i] * sizeof(UINT), (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT));
 			UINT lastIndex = *((UINT*)ibarr.data() + SubMeshIndexArr[i + 1] - 1);
 			for (int k = 0; k < IBAlign; ++k) {
 				((UINT*)(pIBMapped + IBByteStart[i]))[SubMeshIndexArr[i + 1] - SubMeshIndexArr[i] + k] = lastIndex;
 			}
-		}
+		}*/
 
 		//Build BLAS
 		ID3D12Device5* device = gd.raytracing.dxrDevice;
@@ -2371,25 +2372,41 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		gd.gpucmd.Execute(true);
 		gd.WaitGPUComplete();
 
-		//Geometry
-		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[subMeshCount];
-		for (int i = 0; i < subMeshCount; ++i) {
-			GeometryDescs[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-			GeometryDescs[i].Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + IBStartOffset[i];
-			GeometryDescs[i].Triangles.IndexCount = (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]);
-			GeometryDescs[i].Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-			GeometryDescs[i].Triangles.Transform3x4 = 0;
-			GeometryDescs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-			GeometryDescs[i].Triangles.VertexCount = vbarr.size();
-			GeometryDescs[i].Triangles.VertexBuffer.StartAddress = vertexBuffer->GetGPUVirtualAddress() + VBStartOffset;
-			GeometryDescs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-			GeometryDescs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
-		}
+		////Geometry
+		////느려서 폐기한 코드.
+		///*
+		//* 그럼 왜 느린가? 다양한 Geometry가 하나의 BLAS에 위치하면, BLAS는 Geometry마다 각자 다른 AABB를 할당한다.
+		//* 하지만 AABB가 곂치게 되면(대부분의 서브메쉬의 AABB의 영역은 곂칠 수 밖에 없음.), 결국 Ray가 쏘아졌을때 두 AABB중 가장 가까운 삼각형이 항상 가까운 AABB에 있다고 보장을 하지 못하기 때문에, 결국 두 Geometry에 대한 AABB를 검사하게 되고, 그것이 프레임을 낮춘다.
+		//*/
+		//GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[subMeshCount];
+		//for (int i = 0; i < subMeshCount; ++i) {
+		//	GeometryDescs[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		//	GeometryDescs[i].Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + IBStartOffset[i];
+		//	GeometryDescs[i].Triangles.IndexCount = (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]);
+		//	GeometryDescs[i].Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
+		//	GeometryDescs[i].Triangles.Transform3x4 = 0;
+		//	GeometryDescs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+		//	GeometryDescs[i].Triangles.VertexCount = vbarr.size();
+		//	GeometryDescs[i].Triangles.VertexBuffer.StartAddress = vertexBuffer->GetGPUVirtualAddress() + VBStartOffset;
+		//	GeometryDescs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+		//	GeometryDescs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
+		//}
+		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC();
+		GeometryDescs->Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		GeometryDescs->Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + IBStartOffset[0];
+		GeometryDescs->Triangles.IndexCount = SubMeshIndexArr[subMeshCount];
+		GeometryDescs->Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
+		GeometryDescs->Triangles.Transform3x4 = 0;
+		GeometryDescs->Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+		GeometryDescs->Triangles.VertexCount = vbarr.size();
+		GeometryDescs->Triangles.VertexBuffer.StartAddress = vertexBuffer->GetGPUVirtualAddress() + VBStartOffset;
+		GeometryDescs->Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+		GeometryDescs->Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
 
 		//BLAS Input
 		BLAS_Input.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 		BLAS_Input.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
-		BLAS_Input.NumDescs = subMeshCount;
+		BLAS_Input.NumDescs = 1;
 		BLAS_Input.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 		BLAS_Input.pGeometryDescs = GeometryDescs;
 
@@ -2498,7 +2515,7 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 	constexpr UINT64 IBAlign = 256; //768;
 
 	int addtionalVB_Bytesiz = vbarr.size() * sizeof(RayTracingMesh::Vertex);
-
+	IBStartOffset = inIBStartOffset;
 	bool vb_con = UAV_VertexBufferByteSize + addtionalVB_Bytesiz <= UAV_VertexBufferCapacity;
 	if (vb_con) {
 		// Create New Mesh
@@ -2535,26 +2552,37 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 		gd.WaitGPUComplete();
 
 		//Geometry
-		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[SubMeshNum];
-		for (int i = 0; i < SubMeshNum; ++i) {
-			GeometryDescs[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-			GeometryDescs[i].Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + inIBStartOffset[i];
-			GeometryDescs[i].Triangles.IndexCount = (SubMeshIndexes[i + 1] - SubMeshIndexes[i]);
-			GeometryDescs[i].Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-			GeometryDescs[i].Triangles.Transform3x4 = 0;
-			GeometryDescs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-			GeometryDescs[i].Triangles.VertexCount = vbarr.size();
-			GeometryDescs[i].Triangles.VertexBuffer.StartAddress = UAV_vertexBuffer->GetGPUVirtualAddress() + UAV_VBStartOffset;
-			GeometryDescs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-			GeometryDescs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
-		}
+		//GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[SubMeshNum];
+		//for (int i = 0; i < SubMeshNum; ++i) {
+		//	GeometryDescs[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		//	GeometryDescs[i].Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + inIBStartOffset[i];
+		//	GeometryDescs[i].Triangles.IndexCount = (SubMeshIndexes[i + 1] - SubMeshIndexes[i]);
+		//	GeometryDescs[i].Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
+		//	GeometryDescs[i].Triangles.Transform3x4 = 0;
+		//	GeometryDescs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+		//	GeometryDescs[i].Triangles.VertexCount = vbarr.size();
+		//	GeometryDescs[i].Triangles.VertexBuffer.StartAddress = UAV_vertexBuffer->GetGPUVirtualAddress() + UAV_VBStartOffset;
+		//	GeometryDescs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+		//	GeometryDescs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
+		//}
+		GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC();
+		GeometryDescs->Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		GeometryDescs->Triangles.IndexBuffer = indexBuffer->GetGPUVirtualAddress() + inIBStartOffset[0];
+		GeometryDescs->Triangles.IndexCount = SubMeshIndexes[subMeshCount];
+		GeometryDescs->Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
+		GeometryDescs->Triangles.Transform3x4 = 0;
+		GeometryDescs->Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+		GeometryDescs->Triangles.VertexCount = vbarr.size();
+		GeometryDescs->Triangles.VertexBuffer.StartAddress = UAV_vertexBuffer->GetGPUVirtualAddress() + UAV_VBStartOffset;
+		GeometryDescs->Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+		GeometryDescs->Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // Closest Hit Shader
 
 		//BLAS Input
 		BLAS_Input.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 		BLAS_Input.Flags =
 			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
 			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
-		BLAS_Input.NumDescs = subMeshCount;
+		BLAS_Input.NumDescs = 1;
 		BLAS_Input.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 		BLAS_Input.pGeometryDescs = GeometryDescs;
 
@@ -2653,31 +2681,37 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 	constexpr UINT64 IBAlign = 256;//768;
 
 	int addtionalIB_Bytesiz = 0;
-	vector<int> IBByteStart(subMeshCount);
+	/*vector<int> IBByteStart(subMeshCount);
 	for (int i = 0; i < subMeshCount; ++i) {
 		IBByteStart[i] = addtionalIB_Bytesiz;
 		addtionalIB_Bytesiz += (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT);
 		addtionalIB_Bytesiz = IBAlign * (1 + ((addtionalIB_Bytesiz - 1) / IBAlign));
-	}
+	}*/
+	addtionalIB_Bytesiz = ibarr.size() * sizeof(TriangleIndex);
 
 	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
-	IBStartOffset = new UINT64[subMeshCount + 1];
+	//IBStartOffset = new UINT64[subMeshCount + 1];
+	IBStartOffset = new UINT64[2];
 	if (ib_con) {
 		// Create New Mesh
-		for (int i = 0; i < subMeshCount; ++i) {
+		/*for (int i = 0; i < subMeshCount; ++i) {
 			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
 		}
-		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
+		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;*/
+		IBStartOffset[0] = IndexBufferByteSize;
+		IBStartOffset[1] = IndexBufferByteSize + addtionalIB_Bytesiz;
+
 		pIBMapped = &pIBMappedStart[0];
 
 		// Copy Mesh Data
-		for (int i = 0; i < subMeshCount; ++i) {
+		/*for (int i = 0; i < subMeshCount; ++i) {
 			memcpy(pIBMapped + IBByteStart[i], (char*)ibarr.data() + SubMeshIndexArr[i] * sizeof(UINT), (SubMeshIndexArr[i + 1] - SubMeshIndexArr[i]) * sizeof(UINT));
 			UINT lastIndex = *((UINT*)ibarr.data() + SubMeshIndexArr[i + 1] - 1);
 			for (int k = 0; k < IBAlign; ++k) {
 				((UINT*)(pIBMapped + IBByteStart[i]))[SubMeshIndexArr[i + 1] - SubMeshIndexArr[i] + k] = lastIndex;
 			}
-		}
+		}*/
+		memcpy(pIBMapped, ibarr.data(), addtionalIB_Bytesiz);
 
 		//Build BLAS
 		ID3D12Device5* device = gd.raytracing.dxrDevice;
@@ -3705,15 +3739,15 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 		VertexBufferView.StrideInBytes = sizeof(RayTracingMesh::Vertex);
 		VertexBufferView.SizeInBytes = sizeof(RayTracingMesh::Vertex) * vert.size();
 
-		// update raster submesh index range
-		for (int i = 0; i < subMeshNum + 1; ++i) {
-			SubMeshIndexStart[i] = (rmesh.IBStartOffset[i] - rmesh.IBStartOffset[0]) / sizeof(UINT);
-		}
+		//// update raster submesh index range
+		//for (int i = 0; i < subMeshNum + 1; ++i) {
+		//	SubMeshIndexStart[i] = (rmesh.IBStartOffset[i] - rmesh.IBStartOffset[0]) / sizeof(UINT);
+		//}
 
 		IndexBufferView.BufferLocation = RayTracingMesh::indexBuffer->GetGPUVirtualAddress() + rmesh.IBStartOffset[0];
 		IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
-		IndexBufferView.SizeInBytes = rmesh.IBStartOffset[subMeshNum] - rmesh.IBStartOffset[0];
-		IndexNum = (rmesh.IBStartOffset[subMeshNum] - rmesh.IBStartOffset[0]) / sizeof(UINT);
+		IndexBufferView.SizeInBytes = rmesh.IBStartOffset[1/*subMeshNum*/] - rmesh.IBStartOffset[0];
+		IndexNum = (rmesh.IBStartOffset[1/*subMeshNum*/] - rmesh.IBStartOffset[0]) / sizeof(UINT);
 		VertexNum = vert.size();
 		topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	}
@@ -4143,14 +4177,14 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 		RenderVBufferView[0] = VertexBufferView; // 레스터를 위한 조치
 
 		// update raster submesh index range
-		for (int i = 0; i < subMeshNum + 1; ++i) {
-			SubMeshIndexStart[i] = (rmesh.IBStartOffset[i] - rmesh.IBStartOffset[0]) / sizeof(UINT);
-		}
+		//for (int i = 0; i < subMeshNum + 1; ++i) {
+		//	SubMeshIndexStart[i] = (rmesh.IBStartOffset[i] - rmesh.IBStartOffset[0]) / sizeof(UINT);
+		//}
 
 		IndexBufferView.BufferLocation = RayTracingMesh::indexBuffer->GetGPUVirtualAddress() + rmesh.IBStartOffset[0];
 		IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
-		IndexBufferView.SizeInBytes = rmesh.IBStartOffset[subMeshNum] - rmesh.IBStartOffset[0];
-		IndexNum = (rmesh.IBStartOffset[subMeshNum] - rmesh.IBStartOffset[0]) / sizeof(UINT);
+		IndexBufferView.SizeInBytes = rmesh.IBStartOffset[1/*subMeshNum*/] - rmesh.IBStartOffset[0];
+		IndexNum = (rmesh.IBStartOffset[1/*subMeshNum*/] - rmesh.IBStartOffset[0]) / sizeof(UINT);
 		VertexNum = vert.size();
 		topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
@@ -4441,10 +4475,13 @@ void Model::LoadModelFile2(string filename)
 				stackSiz += tricnt;
 				indexs.reserve(stackSiz);
 				indexs.resize(stackSiz);
-				for (int k = 0; k < tricnt; ++k) {
-					ifs.read((char*)&indexs[prevSiz + k].v[0], sizeof(UINT));
-					ifs.read((char*)&indexs[prevSiz + k].v[1], sizeof(UINT));
-					ifs.read((char*)&indexs[prevSiz + k].v[2], sizeof(UINT));
+				for (int u = 0; u < tricnt; ++u) {
+					ifs.read((char*)&indexs[prevSiz + u].v[0], sizeof(UINT));
+					ifs.read((char*)&indexs[prevSiz + u].v[1], sizeof(UINT));
+					ifs.read((char*)&indexs[prevSiz + u].v[2], sizeof(UINT));
+					skinvertices[indexs[prevSiz + u].v[0]].materialIndex = k;
+					skinvertices[indexs[prevSiz + u].v[1]].materialIndex = k;
+					skinvertices[indexs[prevSiz + u].v[2]].materialIndex = k;
 				}
 				prevSiz = stackSiz;
 				SubMeshSlots[k + 1] = 3 * prevSiz;
@@ -4512,10 +4549,13 @@ void Model::LoadModelFile2(string filename)
 				stackSiz += tricnt;
 				indexs.reserve(stackSiz);
 				indexs.resize(stackSiz);
-				for (int k = 0; k < tricnt; ++k) {
-					ifs.read((char*)&indexs[prevSiz + k].v[0], sizeof(UINT));
-					ifs.read((char*)&indexs[prevSiz + k].v[1], sizeof(UINT));
-					ifs.read((char*)&indexs[prevSiz + k].v[2], sizeof(UINT));
+				for (int u = 0; u < tricnt; ++u) {
+					ifs.read((char*)&indexs[prevSiz + u].v[0], sizeof(UINT));
+					ifs.read((char*)&indexs[prevSiz + u].v[1], sizeof(UINT));
+					ifs.read((char*)&indexs[prevSiz + u].v[2], sizeof(UINT));
+					vertices[indexs[prevSiz + u].v[0]].materialIndex = k;
+					vertices[indexs[prevSiz + u].v[1]].materialIndex = k;
+					vertices[indexs[prevSiz + u].v[2]].materialIndex = k;
 				}
 				prevSiz = stackSiz;
 				SubMeshSlots[k + 1] = 3 * prevSiz;
@@ -7658,7 +7698,10 @@ float** RayTracingShader::push_rins_immortal(RayTracingMesh* mesh, matrix mat, L
 	dbgc[1] += 1;
 	//dbgbreak(dbgc[1] == 6167);
 	std::unordered_map<ShaderRecord, int>::iterator f;
-	int LRSCount = mesh->subMeshCount;
+	
+	// 현재는 LRS를 1로 고정해놔서 결국 단일 ShaderRecord를 만드는 작업을 할 것임. 하지만 
+	// 언젠가 하나의 메쉬를 여러개의 Record로 나누어야 하는 일이 생긴다면 LRSCount를 조정하면 되겠다.
+	int LRSCount = 1; // mesh->subMeshCount;
 	static float* RaytracingInputWorldMatptr[1024] = {};
 	int curindex[1024] = {};
 	void* HGSI = hitGroupShaderIdentifier[hitGroupShaderIdentifyerIndex];
@@ -7728,7 +7771,7 @@ void RayTracingShader::clear_rins()
 float** RayTracingShader::push_rins(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex)
 {
 	std::unordered_map<ShaderRecord, int>::iterator f;
-	int LRSCount = mesh->subMeshCount;
+	int LRSCount = 1; //mesh->subMeshCount;
 	static float* RaytracingInputWorldMatptr[1024] = {};
 	int curindex[1024] = {};
 	void* HGSI = hitGroupShaderIdentifier[hitGroupShaderIdentifyerIndex];

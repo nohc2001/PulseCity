@@ -342,7 +342,6 @@ void DynamicGameObject::SetWorld(matrix localWorldMat)
 	worldMat = localWorldMat;
 }
 
-
 void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc)
 {
 	static int temp[512] = {};

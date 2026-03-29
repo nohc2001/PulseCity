@@ -170,20 +170,22 @@ void GameObject::SetShape(Shape _shape)
 		}
 
 		if (gd.isSupportRaytracing) {
-			RaytracingWorldMatInput_Model = new float** [model->nodeCount];
+			RaytracingWorldMatInput_Model = new float* [model->nodeCount];
 			for (int i = 0; i < model->nodeCount; ++i) {
 				RaytracingWorldMatInput_Model[i] = nullptr;
 				if (model->Nodes[i].numMesh > 0) {
 					BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-					for (int k = 0; k < bmesh->subMeshNum; ++k) {
+					/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 						tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-					}
+					}*/
+					tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
 
 					float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
-					RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
+					/*RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
 					for (int k = 0; k < bmesh->subMeshNum; ++k) {
 						RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-					}
+					}*/
+					RaytracingWorldMatInput_Model[i] = WorldMatInputs[0];
 				}
 			}
 			RaytracingUpdateTransform();
@@ -196,14 +198,17 @@ void GameObject::SetShape(Shape _shape)
 		}
 		if (gd.isSupportRaytracing) {
 			BumpMesh* bmesh = (BumpMesh*)mesh;
-			for (int i = 0; i < bmesh->subMeshNum; ++i) {
+			/*for (int i = 0; i < bmesh->subMeshNum; ++i) {
 				tempLRSSaver[i] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[i] / sizeof(unsigned int));
-			}
+			}*/
+			tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
+
 			float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
-			RaytracingWorldMatInput = new float* [bmesh->subMeshNum];
+			/*RaytracingWorldMatInput = new float* [bmesh->subMeshNum];
 			for (int i = 0; i < bmesh->subMeshNum; ++i) {
 				RaytracingWorldMatInput[i] = WorldMatInputs[i];
-			}
+			}*/
+			RaytracingWorldMatInput = WorldMatInputs[0];
 
 			RaytracingUpdateTransform();
 		}
@@ -238,9 +243,10 @@ void GameObject::RaytracingUpdateTransform()
 		if (mesh != nullptr) {
 			matrix mat = worldMat;
 			mat.transpose();
-			for (int i = 0; i < mesh->subMeshNum; ++i) {
+			/*for (int i = 0; i < mesh->subMeshNum; ++i) {
 				memcpy(RaytracingWorldMatInput[i], &mat, sizeof(float) * 12);
-			}
+			}*/
+			memcpy(RaytracingWorldMatInput, &mat, sizeof(float) * 12);
 		}
 		else {
 			RaytracingUpdateTransform(model, model->RootNode, worldMat);
@@ -260,9 +266,10 @@ void GameObject::RaytracingUpdateTransform(Model* model, ModelNode* node, matrix
 
 	if (RaytracingWorldMatInput_Model[nodeIndex] != nullptr) {
 		mat.transpose();
-		for (int i = 0; i < model->mMeshes[node->Meshes[0]]->subMeshNum; ++i) {
+		/*for (int i = 0; i < model->mMeshes[node->Meshes[0]]->subMeshNum; ++i) {
 			memcpy(RaytracingWorldMatInput_Model[nodeIndex][i], &mat, sizeof(float) * 12);
-		}
+		}*/
+		memcpy(RaytracingWorldMatInput_Model[nodeIndex], &mat, sizeof(float) * 12);
 	}
 }
 
@@ -1462,9 +1469,9 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 			for (int i = 0; i < model->mNumSkinMesh; ++i) {
 				// 수정할 버택스만 만들어 rmesh에 저장. 출력시 LRS에서 버택스는 여기에서, 인덱스는 원본메쉬에서 가져온다.
 				modifyMeshes[i].AllocateRaytracingUAVMesh(model->mBumpSkinMeshs[i]->vertexData, model->mBumpSkinMeshs[i]->rmesh.IBStartOffset, model->mBumpSkinMeshs[i]->subMeshNum, model->mBumpSkinMeshs[i]->SubMeshIndexStart);
-				modifyMeshes[i].IBStartOffset = new UINT64[model->mBumpSkinMeshs[i]->subMeshNum + 1];
+				modifyMeshes[i].IBStartOffset = new UINT64[/*model->mBumpSkinMeshs[i]->subMeshNum */1+ 1];
 				modifyMeshes[i].subMeshCount = model->mBumpSkinMeshs[i]->subMeshNum;
-				for (int k = 0; k < model->mBumpSkinMeshs[i]->subMeshNum + 1; ++k) {
+				for (int k = 0; k < /*model->mBumpSkinMeshs[i]->subMeshNum*/1 + 1; ++k) {
 					modifyMeshes[i].IBStartOffset[k] = model->mBumpSkinMeshs[i]->rmesh.IBStartOffset[k];
 				}
 
@@ -1481,7 +1488,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 				gd.pDevice->CreateUnorderedAccessView(RayTracingMesh::UAV_vertexBuffer, nullptr, &uavDesc, OutVertexUAV[i].hCreation.hcpu);
 			}
 
-			RaytracingWorldMatInput_Model = new float** [model->nodeCount];
+			RaytracingWorldMatInput_Model = new float* [model->nodeCount];
 			for (int i = 0; i < model->nodeCount; ++i) {
 				RaytracingWorldMatInput_Model[i] = nullptr;
 				if (model->Nodes[i].Mesh_SkinMeshindex != nullptr) {
@@ -1489,43 +1496,51 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 						if (model->Nodes[i].Mesh_SkinMeshindex != nullptr && model->Nodes[i].Mesh_SkinMeshindex[k] >= 0) {
 							int skinmeshIndex = model->Nodes[i].Mesh_SkinMeshindex[k];
 							BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[skinmeshIndex];
-							for (int k = 0; k < bsmesh->subMeshNum; ++k) {
+							/*for (int k = 0; k < bsmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-							}
-
+							}*/
+							tempLRSSaver[0] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
 							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&modifyMeshes[skinmeshIndex], worldMat, tempLRSSaver, 1);
-							RaytracingWorldMatInput_Model[i] = new float* [bsmesh->subMeshNum];
-							for (int k = 0; k < bsmesh->subMeshNum; ++k) {
+
+							//RaytracingWorldMatInput_Model[i] = new float* [bsmesh->subMeshNum];
+							/*for (int k = 0; k < bsmesh->subMeshNum; ++k) {
 								RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-							}
+							}*/
+							RaytracingWorldMatInput_Model[i] = WorldMatInputs[0];
 						}
 						else {
 							// BumpMesh 처리.
 							BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-							for (int k = 0; k < bmesh->subMeshNum; ++k) {
+							/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-							}
+							}*/
+							tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
 
 							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
-							RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
+
+							/*RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
 							for (int k = 0; k < bmesh->subMeshNum; ++k) {
 								RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-							}
+							}*/
+							RaytracingWorldMatInput_Model[i] = WorldMatInputs[0];
 						}
 					}
 				}
 				else {
 					if (model->Nodes[i].numMesh > 0) {
 						BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-						for (int k = 0; k < bmesh->subMeshNum; ++k) {
+						/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 							tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
-						}
+						}*/
+						tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
 
 						float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
-						RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
+
+						/*RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
 						for (int k = 0; k < bmesh->subMeshNum; ++k) {
 							RaytracingWorldMatInput_Model[i][k] = WorldMatInputs[k];
-						}
+						}*/
+						RaytracingWorldMatInput_Model[i] = WorldMatInputs[0];
 					}
 				}
 			}
@@ -2530,10 +2545,13 @@ void GameMap::LoadMap(const char* MapName)
 			stackSiz += tricnt;
 			indexs.reserve(stackSiz);
 			indexs.resize(stackSiz);
-			for (int k = 0; k < tricnt; ++k) {
-				ifs2.read((char*)&indexs[prevSiz + k].v[0], sizeof(UINT));
-				ifs2.read((char*)&indexs[prevSiz + k].v[1], sizeof(UINT));
-				ifs2.read((char*)&indexs[prevSiz + k].v[2], sizeof(UINT));
+			for (int u = 0; u < tricnt; ++u) {
+				ifs2.read((char*)&indexs[prevSiz + u].v[0], sizeof(UINT));
+				ifs2.read((char*)&indexs[prevSiz + u].v[1], sizeof(UINT));
+				ifs2.read((char*)&indexs[prevSiz + u].v[2], sizeof(UINT));
+				verts[indexs[prevSiz + u].v[0]].materialIndex = k;
+				verts[indexs[prevSiz + u].v[1]].materialIndex = k;
+				verts[indexs[prevSiz + u].v[2]].materialIndex = k;
 			}
 			prevSiz = stackSiz;
 			SubMeshSlots[k + 1] = prevSiz * 3;

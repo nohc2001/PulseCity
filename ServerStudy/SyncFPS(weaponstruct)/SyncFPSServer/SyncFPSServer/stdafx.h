@@ -4,7 +4,7 @@
 //
 #pragma once
 
-//#define ChunckDEBUG
+#define ChunckDEBUG
 
 #include "NWLib/targetver.h"
 

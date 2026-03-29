@@ -975,7 +975,7 @@ struct RayTracingMesh {
 		float v;
 		XMFLOAT3 normal;
 		XMFLOAT3 tangent;
-		float padding;
+		int materialIndex; // 4바이트 패딩을 머터리얼의 인덱스로 활용한다..
 
 		operator RayTracingMesh::Vertex() {
 			return RayTracingMesh::Vertex(position, normal, XMFLOAT2(u, v), tangent);

@@ -185,8 +185,10 @@ struct GameObject {
 	GameObject* sibling = nullptr;
 	union {
 		char extra[8];
-		float** RaytracingWorldMatInput = nullptr;
-		float*** RaytracingWorldMatInput_Model;
+		float* RaytracingWorldMatInput = nullptr;
+		float** RaytracingWorldMatInput_Model; // float*의 2차원 배열의 형태임.
+		// [nodeIndex][subMeshIndex] 였는데.. 이제 subMesh를 Raytracing 자체에서 관리하지를 않으니..
+		// 이건 그냥 1차원 배열로 바뀌어야 함.
 	};
 
 	// transform
