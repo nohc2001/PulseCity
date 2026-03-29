@@ -236,6 +236,7 @@ void World::Sending_SyncGameState(SendDataSaver& sds) {
 	header.st = SendingType::SyncGameState;
 	header.DynamicGameObjectCapacity = Dynamic_gameObjects.Capacity;
 	header.StaticGameObjectCapacity = Static_gameObjects.Capacity;
+
 	sds.postpush_end();
 }
 

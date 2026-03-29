@@ -32,6 +32,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 
 	gd.Factory_Adaptor_Output_Init();
 	
+	int i = (int)((float)gd.EnableFullScreenMode_Resolusions.size() * 0.75f);
+	//16:9 비율의 해상도를 찾으면 채택한다.
+	for (;i < gd.EnableFullScreenMode_Resolusions.size();++i) {
+		float rate = (float)gd.EnableFullScreenMode_Resolusions[i].height / (float)gd.EnableFullScreenMode_Resolusions[i].width;
+		if (fabsf(rate - 0.5625f) < 0.001f) {
+			resolutionLevel = i;
+			break;
+		}
+	}
 	gd.ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
 	gd.ClientFrameHeight = gd.EnableFullScreenMode_Resolusions[resolutionLevel].height;
 

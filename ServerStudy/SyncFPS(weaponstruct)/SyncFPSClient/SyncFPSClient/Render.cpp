@@ -639,7 +639,9 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 
 	Material::InitMaterialStructuredBuffer(true);
 
+	// 텍스쳐 용량이 달라짐에 따라 셰이더 코드의 매크로가 달라질 수 있도록 다시 빌드한다.
 	game.MyPBRShader1->ReBuild_Shader(ShaderType::InstancingWithShadow);
+	game.MyRayTracingShader->ReInit();
 }
 
 void SVDescPool2::BakeImmortalDesc()
@@ -1976,7 +1978,7 @@ lb_return:
 	return bResult;
 }
 
-SHADER_HANDLE* RayTracingDevice::CreateShaderDXC(const wchar_t* shaderPath, const WCHAR* wchShaderFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, DWORD dwFlags)
+SHADER_HANDLE* RayTracingDevice::CreateShaderDXC(const wchar_t* shaderPath, const WCHAR* wchShaderFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, DWORD dwFlags, vector<LPWSTR>* macros)
 {
 	BOOL				bResult = FALSE;
 
@@ -2012,7 +2014,7 @@ SHADER_HANDLE* RayTracingDevice::CreateShaderDXC(const wchar_t* shaderPath, cons
 #endif
 
 	SetCurrentDirectory(shaderPath);
-	HRESULT	hr = CompileShaderFromFileWithDXC(pDXCLib, pDXCCompiler, pDSCIncHandle, wchShaderFileName, wchEntryPoint, wchShaderModel, &pBlob, bDisableOptimize, &CreationTime, 0);
+	HRESULT	hr = CompileShaderFromFileWithDXC(pDXCLib, pDXCCompiler, pDSCIncHandle, wchShaderFileName, wchEntryPoint, wchShaderModel, &pBlob, bDisableOptimize, &CreationTime, 0, macros);
 
 	if (FAILED(hr))
 	{
@@ -5125,6 +5127,26 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 				MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
 			}
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
+			LastMaterialStructureBufferUp = game.MaterialTable.size();
+
+			//MaterialStructuredBufferSRV를 재할당하지 않는다. (같은 자리를 차지한다.)
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.NumElements = gd.ShaderVisibleDescPool.MaterialCBVCap;
+			srvDesc.Buffer.StructureByteStride = sizeof(MaterialST_Data);
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			gd.pDevice->CreateShaderResourceView(MaterialStructuredBuffer.resource, &srvDesc, MaterialStructuredBufferSRV.hCreation.hcpu);
+		}
+		else {
+			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
+			for (int i = LastMaterialStructureBufferUp; i < game.MaterialTable.size(); ++i) {
+				MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
+			}
+			MaterialStructuredBuffer.resource->Unmap(0, NULL);
+			LastMaterialStructureBufferUp = game.MaterialTable.size();
 
 			//MaterialStructuredBufferSRV를 재할당하지 않는다. (같은 자리를 차지한다.)
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -5146,6 +5168,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 			MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
 		}
 		MaterialStructuredBuffer.resource->Unmap(0, NULL);
+		LastMaterialStructureBufferUp = game.MaterialTable.size();
 
 		gd.ShaderVisibleDescPool.ImmortalAlloc(&MaterialStructuredBufferSRV, 1);
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -7849,8 +7872,22 @@ void RayTracingShader::Init()
 	MySkinMeshModifyShader->InitShader();
 }
 
+void RayTracingShader::ReInit() {
+	CreateGlobalRootSignature();
+	//CreateLocalRootSignatures();
+	CreatePipelineState();
+	InitAccelationStructure();
+	InitShaderTable();
+}
+
 void RayTracingShader::CreateGlobalRootSignature()
 {
+	//gd.ShaderVisibleDescPool.TextureSRVCap 에 따라 다른 SRV Range를 가지도록 만들어야 함.
+	if (pGlobalRootSignature) {
+		pGlobalRootSignature->Release();
+		pGlobalRootSignature = nullptr;
+	}
+
 	//GRS
 	CD3DX12_DESCRIPTOR_RANGE UAVDescriptor;
 	UAVDescriptor.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
@@ -7866,10 +7903,18 @@ void RayTracingShader::CreateGlobalRootSignature()
 	CD3DX12_DESCRIPTOR_RANGE ranges1[1] = { srvSkyBox };
 
 	CD3DX12_DESCRIPTOR_RANGE srvSkinMeshVB;
-	srvSkinMeshVB.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4); // t3
+	srvSkinMeshVB.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4); // t4
 	CD3DX12_DESCRIPTOR_RANGE ranges2[1] = { srvSkinMeshVB };
 
-	constexpr int ParamCount = 6;
+	CD3DX12_DESCRIPTOR_RANGE srvStructuredBuffer_Material;
+	srvStructuredBuffer_Material.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5); // t5
+	CD3DX12_DESCRIPTOR_RANGE ranges3[1] = { srvStructuredBuffer_Material };
+
+	CD3DX12_DESCRIPTOR_RANGE srvTextureArr;
+	srvTextureArr.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, gd.ShaderVisibleDescPool.TextureSRVCap, 6); // t5
+	CD3DX12_DESCRIPTOR_RANGE ranges4[1] = { srvTextureArr };
+
+	constexpr int ParamCount = 8;
 	CD3DX12_ROOT_PARAMETER rootParameters[ParamCount];
 	rootParameters[0].InitAsDescriptorTable(1, &UAVDescriptor); // OutputView u0
 	rootParameters[1].InitAsShaderResourceView(0); // AS t0
@@ -7877,6 +7922,8 @@ void RayTracingShader::CreateGlobalRootSignature()
 	rootParameters[3].InitAsDescriptorTable(2, ranges); // Vertex / IndexBuffers t1 t2
 	rootParameters[4].InitAsDescriptorTable(1, ranges1); // SkyBoxCubeMap
 	rootParameters[5].InitAsDescriptorTable(1, ranges2); // SkinMeshVertex
+	rootParameters[6].InitAsDescriptorTable(1, ranges3); // srvStructuredBuffer_Material
+	rootParameters[7].InitAsDescriptorTable(1, ranges4); // srvTextureArr
 
 	/// default sampler
 	D3D12_STATIC_SAMPLER_DESC sampler = {};
@@ -7918,13 +7965,23 @@ void RayTracingShader::CreateLocalRootSignatures()
 
 void RayTracingShader::CreatePipelineState()
 {
+	if (RTPSO) {
+		RTPSO->Release();
+		RTPSO = nullptr;
+	}
+
 	hitGroupShaderIdentifier = new void* [128];
 	HRESULT hr;
 	CD3DX12_STATE_OBJECT_DESC raytracingPipeline{ D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE };
 
 	// 1. DXIL library
 	// 1-1. Load RayTracing Shader
-	SHADER_HANDLE* shaderHandle = gd.raytracing.CreateShaderDXC(L"Resources\\Shaders\\RayTracing", L"Raytracing.hlsl", L"", L"lib_6_3", 0);
+	vector<LPWSTR> macros;
+	wchar_t MacroStr[512];
+	wsprintfW(MacroStr, L"MAX_TEXTURES=%d", gd.ShaderVisibleDescPool.TextureSRVCap);
+	macros.push_back(MacroStr);
+
+	SHADER_HANDLE* shaderHandle = gd.raytracing.CreateShaderDXC(L"Resources\\Shaders\\RayTracing", L"Raytracing.hlsl", L"", L"lib_6_3", 0, &macros);
 	// 1-2. Set DXIL Lib
 	CD3DX12_DXIL_LIBRARY_SUBOBJECT* lib = raytracingPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
 	D3D12_SHADER_BYTECODE libdxil = CD3DX12_SHADER_BYTECODE((void*)shaderHandle->pCodeBuffer, shaderHandle->dwCodeSize);
@@ -8143,7 +8200,7 @@ void RayTracingShader::InitShaderTable()
 
 	// Hit group shader table
 	{
-		LocalRootSigData lrsData{ 0, 0 };
+		LocalRootSigData lrsData{ 0, 0, 0 };
 
 		UINT numShaderRecords = HitGroupShaderTableCapavity;
 		UINT shaderRecordSize = shaderIdentifierSize + sizeof(LocalRootSigData);

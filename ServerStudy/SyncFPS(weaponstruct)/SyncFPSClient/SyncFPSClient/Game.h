@@ -106,6 +106,8 @@ public:
 	GPUResource DefaultNoramlTex;
 	// 텍스쳐가 없을때 대체하기 위한 기본 앰비언트 텍스쳐
 	GPUResource DefaultAmbientTex;
+	// 첫번째 머터리얼
+	Material DefaultMaterial;
 
 	// 아마 곧 쓰이지 않게될 라이트 데이터 CB 리소스 (쉐도우가 포함된 버전이 존재함.)
 	GPUResource LightCBResource;
@@ -150,6 +152,8 @@ public:
 	vector<Mesh*> MeshTable;
 	// 현재 씬에서 쓰일 모든 휴머노이드 애니메이션이 담겨져 있는 배열
 	vector<HumanoidAnimation> HumanoidAnimationTable;
+
+	
 
 	void AddMesh(Mesh* mesh);
 

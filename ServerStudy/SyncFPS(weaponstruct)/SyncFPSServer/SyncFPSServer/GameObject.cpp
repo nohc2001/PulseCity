@@ -2693,6 +2693,7 @@ void World::Update() {
 
 	gameworld.TourID += 1;
 	for (auto& ch : chunck) {
+		ChunkIndex ci = ch.first;
 		GameChunk* c = ch.second;
 		if (c->Dynamic_gameobjects.size + c->SkinMesh_gameobjects.size <= 0) continue;
 
@@ -2709,8 +2710,10 @@ void World::Update() {
 		}
 		c->Dynamic_gameobjects.GetTourPairs(c->IR_Dynamic.data(), &c->dynamicIRSiz);
 		c->SkinMesh_gameobjects.GetTourPairs(c->IR_SkinMesh.data(), &c->SkinMeshIRSiz);
+		//cout << "SkinMeshAlloter : " << c->SkinMesh_gameobjects.Alloter.AllocFlag[0] << " : start : " << c->IR_SkinMesh[0].start << " : end : " << c->IR_SkinMesh[0].end << endl;
 	}
 	
+	// 이게 안먹히는 문제를 찾았다. Move하면 Free가 생기고, Free하면 기존에 Free 했던 놈을 만지게 됨.
 	for (int ri = 0;ri < outlen;++ri) {
 		for (int i = ir[ri].start;i <= ir[ri].end;++i) {
 			DynamicGameObject* gbj1 = Dynamic_gameObjects[i];
@@ -2740,47 +2743,41 @@ void World::Update() {
 				auto ch = chunck.find(ci);
 				if (ch != chunck.end()) {
 					GameChunk* c = ch->second;
-					for (int k = 0; k < c->dynamicIRSiz; ++k) {
-						for (int u = c->IR_Dynamic[k].start; u <= c->IR_Dynamic[k].end; ++u) {
-							DynamicGameObject* gbj2 = c->Dynamic_gameobjects[u];
-							if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
-							if (gbj2 == gbj1) continue;
+					for (int u = 0;u < c->Dynamic_gameobjects.size;++u) {
+						if (c->Dynamic_gameobjects.isnull(u)) continue;
+						DynamicGameObject* gbj2 = c->Dynamic_gameobjects[u];
+						if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
+						if (gbj2 == gbj1) continue;
 
-							//ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
-							//if (obbptr2 == 0) continue;
-							//vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);
+						//ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
+						//if (obbptr2 == 0) continue;
+						//vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);
 
-							BoundingOrientedBox obb2 = gbj2->GetOBB();
-							float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
-							vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
-							if (fsl1 + fsl2 > dist.fast_square_of_len3) {
-								DynamicGameObject::CollisionMove(gbj1, gbj2);
+						BoundingOrientedBox obb2 = gbj2->GetOBB();
+						float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
+						vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+						if (fsl1 + fsl2 > dist.fast_square_of_len3) {
+							DynamicGameObject::CollisionMove(gbj1, gbj2);
 
-								if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-									// 다음 오브젝트의 움직임으로 넘어간다.
-								}
+							if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+								// 다음 오브젝트의 움직임으로 넘어간다.
+								goto GOTO_NEXTOBJ;
 							}
 						}
 					}
-					for (int k = 0; k < c->SkinMeshIRSiz; ++k) {
-						for (int u = c->IR_SkinMesh[k].start; u <= c->IR_SkinMesh[k].end; ++u) {
-							SkinMeshGameObject* gbj2 = c->SkinMesh_gameobjects[u];
-							if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
-							if (gbj2 == gbj1) continue;
+					for (int u = 0;u < c->SkinMesh_gameobjects.size;++u) {
+						if (c->SkinMesh_gameobjects.isnull(u)) continue;
+						SkinMeshGameObject* gbj2 = c->SkinMesh_gameobjects[u];
+						if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
+						if (gbj2 == gbj1) continue;
+						BoundingOrientedBox obb2 = gbj2->GetOBB();
+						float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
+						vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+						if (fsl1 + fsl2 > dist.fast_square_of_len3) {
+							DynamicGameObject::CollisionMove(gbj1, gbj2);
 
-							/*ui64 obbptr2 = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj2->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
-							if (obbptr2 == 0) continue;
-							vec4* obb2 = reinterpret_cast<vec4*>(obbptr2);*/
-
-							BoundingOrientedBox obb2 = gbj2->GetOBB();
-							float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
-							vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
-							if (fsl1 + fsl2 > dist.fast_square_of_len3) {
-								DynamicGameObject::CollisionMove(gbj1, gbj2);
-
-								if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-
-								}
+							if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+								goto GOTO_NEXTOBJ;
 							}
 						}
 					}
@@ -2797,14 +2794,18 @@ void World::Update() {
 							DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
 
 							if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-
+								goto GOTO_NEXTOBJ;
 							}
 						}
 					}
 				}
 			}
 
-			if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) continue;
+			if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+				GOTO_NEXTOBJ:
+				gbj1->tickLVelocity = XMVectorZero();
+				continue;
+			}
 
 			// 아마 충돌처리하면서 tickVelocity가 줄어들었을 수도 있음.
 			// 때문에 after정보가 달라진것.

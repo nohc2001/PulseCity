@@ -628,8 +628,12 @@ void Game::Render() {
 	}
 
 	//3. Shader Visible Desc Heap Dynamic Reset
+	if (Material::LastMaterialStructureBufferUp < game.MaterialTable.size()) {
+		Material::InitMaterialStructuredBuffer();
+	}
 	gd.ShaderVisibleDescPool.BakeImmortalDesc();
 	gd.ShaderVisibleDescPool.DynamicReset();
+	
 
 	//4. 필요해진 텍스트 텍스쳐 로딩
 	//SDF text texture loading
@@ -1066,6 +1070,9 @@ void Game::Render() {
 
 void Game::Render_RayTracing()
 {
+	if (Material::LastMaterialStructureBufferUp < game.MaterialTable.size()) {
+		Material::InitMaterialStructuredBuffer();
+	}
 	gd.ShaderVisibleDescPool.BakeImmortalDesc();
 	gd.ShaderVisibleDescPool.DynamicReset();
 
@@ -1095,6 +1102,10 @@ void Game::Render_RayTracing()
 	commandList->SetComputeRootDescriptorTable(3, RayTracingMesh::VBIB_DescIndex.hRender.hgpu); // Vertex, IndexBuffer SRV
 	commandList->SetComputeRootDescriptorTable(4, MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu); // SkyBox SRV
 	commandList->SetComputeRootDescriptorTable(5, RayTracingMesh::UAV_VBIB_DescIndex.hRender.hgpu); // SkinMesh SRV
+
+	commandList->SetComputeRootDescriptorTable(6, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
+	DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
+	commandList->SetComputeRootDescriptorTable(7, texarrSRV.hRender.hgpu); // Texture Arr
 
 	commandList->SetPipelineState1(MyRayTracingShader->RTPSO);
 

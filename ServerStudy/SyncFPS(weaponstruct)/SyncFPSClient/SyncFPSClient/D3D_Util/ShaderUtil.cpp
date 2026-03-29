@@ -4,6 +4,8 @@
 #include <dxcapi.h>
 #include <Windows.h>
 #include <stdio.h>
+#include <vector>
+using namespace std;
 
 enum DEBUG_OUTPUT_TYPE
 {
@@ -136,7 +138,7 @@ void DeleteShaderCode(BYTE* pCodeBuffer)
 	delete[] pCodeBuffer;
 }
 
-HRESULT CompileShaderFromFileWithDXC(IDxcLibrary* pLibrary, IDxcCompiler* pCompiler, IDxcIncludeHandler* pIncludeHandler, const WCHAR* wchFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, IDxcBlob** ppOutCodeBlob, BOOL bDisableOptimize, SYSTEMTIME* pOutLastWriteTime, DWORD dwFlags)
+HRESULT CompileShaderFromFileWithDXC(IDxcLibrary* pLibrary, IDxcCompiler* pCompiler, IDxcIncludeHandler* pIncludeHandler, const WCHAR* wchFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, IDxcBlob** ppOutCodeBlob, BOOL bDisableOptimize, SYSTEMTIME* pOutLastWriteTime, DWORD dwFlags, vector<LPWSTR>* MACRODEFs)
 {
 	HRESULT hr = E_FAIL;
 
@@ -173,7 +175,7 @@ HRESULT CompileShaderFromFileWithDXC(IDxcLibrary* pLibrary, IDxcCompiler* pCompi
 	};
 	*/
 
-	LPCWSTR pArg[16] = {};
+	LPCWSTR pArg[128] = {};
 	DWORD dwArgCount = 0;
 	if (bDisableOptimize)
 	{
@@ -190,6 +192,16 @@ HRESULT CompileShaderFromFileWithDXC(IDxcLibrary* pLibrary, IDxcCompiler* pCompi
 		dwArgCount++;
 	}
 
+	// 매크로 정의
+	if (MACRODEFs != nullptr) {
+		vector<LPWSTR>& vec = *MACRODEFs;
+		for (int i = 0;i < vec.size(); ++i) {
+			pArg[dwArgCount] = L"-D";
+			dwArgCount++;
+			pArg[dwArgCount] = vec[i];
+			dwArgCount++;
+		}
+	}
 
 	IDxcBlobEncoding*	pCodeTextBlob = nullptr;
 	hr = pLibrary->CreateBlobWithEncodingFromPinned(pCodeBuffer, (UINT32)dwCodeSize, CP_ACP, &pCodeTextBlob);

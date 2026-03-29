@@ -720,6 +720,7 @@ struct STC_SyncGameState_Header {
 	SendingType st = SendingType::SyncGameState;
 	int DynamicGameObjectCapacity;
 	int StaticGameObjectCapacity;
+	//int mapOBBCount;
 };
 
 union CTS_Protocol {

@@ -861,7 +861,7 @@ struct RayTracingDevice {
 
 	bool InitDXC();
 
-	SHADER_HANDLE* CreateShaderDXC(const wchar_t* shaderPath, const WCHAR* wchShaderFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, DWORD dwFlags);
+	SHADER_HANDLE* CreateShaderDXC(const wchar_t* shaderPath, const WCHAR* wchShaderFileName, const WCHAR* wchEntryPoint, const WCHAR* wchShaderModel, DWORD dwFlags, vector<LPWSTR>* macros = nullptr);
 
 	void CreateSubRenderTarget();
 
@@ -876,11 +876,12 @@ struct RayTracingDevice {
 struct LocalRootSigData {
 	unsigned int VBOffset;
 	unsigned int IBOffset;
-	char padding[24];
+	unsigned int MaterialStart;
+	char padding[20];
 
 	LocalRootSigData() {}
-	LocalRootSigData(unsigned int VBOff, unsigned int IBOff) :
-		VBOffset{ VBOff }, IBOffset{ IBOff }
+	LocalRootSigData(unsigned int VBOff, unsigned int IBOff, unsigned int MaterialSt) :
+		VBOffset{ VBOff }, IBOffset{ IBOff }, MaterialStart{ MaterialSt }
 	{
 	}
 	LocalRootSigData(const LocalRootSigData& ref) {
@@ -1120,8 +1121,8 @@ struct RayTracingShader {
 	SkinMeshModifyShader* MySkinMeshModifyShader;
 	vector<void*> RebuildBLASBuffer;
 
-
 	void Init();
+	void ReInit();
 	void CreateGlobalRootSignature();
 	void CreateLocalRootSignatures();
 	void CreatePipelineState();
@@ -2655,6 +2656,7 @@ struct Material {
 	inline static GPUResource MaterialStructuredBuffer;
 	inline static MaterialST_Data* MappedMaterialStructuredBuffer = nullptr;
 	inline static DescIndex MaterialStructuredBufferSRV;
+	inline static int LastMaterialStructureBufferUp = 0;
 
 	Material()
 	{

@@ -178,7 +178,7 @@ void GameObject::SetShape(Shape _shape)
 					/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 						tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 					}*/
-					tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
+					tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), model->Nodes[i].materialIndex[0]);
 
 					float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 					/*RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
@@ -192,16 +192,19 @@ void GameObject::SetShape(Shape _shape)
 		}
 	}
 	if (mesh != nullptr) {
-		material = new int[mesh->subMeshNum];
-		for (int i = 0; i < mesh->subMeshNum; ++i) {
-			material[i] = 0;
+		if (material == nullptr) {
+			material = new int[mesh->subMeshNum];
+			for (int i = 0; i < mesh->subMeshNum; ++i) {
+				material[i] = 0;
+			}
 		}
+		
 		if (gd.isSupportRaytracing) {
 			BumpMesh* bmesh = (BumpMesh*)mesh;
 			/*for (int i = 0; i < bmesh->subMeshNum; ++i) {
 				tempLRSSaver[i] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[i] / sizeof(unsigned int));
 			}*/
-			tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
+			tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), material[0]);
 
 			float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 			/*RaytracingWorldMatInput = new float* [bmesh->subMeshNum];
@@ -1499,7 +1502,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 							/*for (int k = 0; k < bsmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 							}*/
-							tempLRSSaver[0] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
+							tempLRSSaver[0] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), model->Nodes[i].materialIndex[0]);
 							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&modifyMeshes[skinmeshIndex], worldMat, tempLRSSaver, 1);
 
 							//RaytracingWorldMatInput_Model[i] = new float* [bsmesh->subMeshNum];
@@ -1514,7 +1517,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 							/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 							}*/
-							tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
+							tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), model->Nodes[i].materialIndex[0]);
 
 							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 
@@ -1532,7 +1535,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 						/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 							tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 						}*/
-						tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int));
+						tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), model->Nodes[i].materialIndex[0]);
 
 						float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 
@@ -2809,7 +2812,6 @@ void GameMap::LoadMap(const char* MapName)
 				ifs.read((char*)&materialNum, sizeof(int));
 			}
 			else {
-				go->SetShape(map->meshes[meshid]);
 				ifs.read((char*)&materialNum, sizeof(int));
 				go->material = new int[materialNum];
 				for (int k = 0; k < materialNum; ++k) {
@@ -2819,6 +2821,7 @@ void GameMap::LoadMap(const char* MapName)
 						go->material[k] = MaterialTableStart + materialId;
 					}
 				}
+				go->SetShape(map->meshes[meshid]);
 			}
 
 			int ColliderCount = 0;
