@@ -360,6 +360,7 @@ union GameObjectType {
 		_SkinMeshGameObject = 3, 
 		_Player = 4,
 		_Monster = 5,
+		_Portal = 6,
 	};
 
 	GameObjectType() {}

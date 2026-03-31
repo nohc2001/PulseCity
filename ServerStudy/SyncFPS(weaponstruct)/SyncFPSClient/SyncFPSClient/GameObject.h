@@ -996,3 +996,45 @@ public:
 	static void STATICINIT(int typeindex = GameObjectType::_Player);
 #undef STC_CurrentStruct
 };
+
+struct Portal : public StaticGameObject {
+	float spawnX = 0;
+	float spawnY = 0;
+	float spawnZ = 0;
+	float radius = 1.0f;
+	int zoneId = 0;
+	int dstzoneId = 0;
+
+	STC_STATICINIT_innerStruct;
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		float spawnX;
+		float spawnY;
+		float spawnZ;
+		float radius;
+		int zoneId;
+		int dstzoneId;
+	};
+#pragma pack(pop)
+
+	Portal() {
+		tag[GameObjectTag::Tag_Enable] = false;
+	}
+
+	virtual void RecvSTC_SyncObj(char* data) override;
+	virtual void Render(matrix parent) override {
+		//// shape가 유효할 때만 렌더
+		//Mesh* mesh = nullptr;
+		//Model* model = nullptr;
+		//shape.GetRealShape(mesh, model);
+		//if (mesh == nullptr && model == nullptr) return;
+		//GameObject::Render(parent);
+	}
+};

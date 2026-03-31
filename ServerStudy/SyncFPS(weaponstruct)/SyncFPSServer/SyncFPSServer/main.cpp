@@ -24,7 +24,7 @@ int main() {
 	gameworld.PrintOffset();
 	cout << "PrintOffset" << endl;
 
-	gameworld.CommonSDS.Init(4096);
+	//gameworld.CommonSDS.Init(4096);
 
 	server.Init("127.0.0.1", 9000);
 
@@ -48,45 +48,45 @@ int main() {
 			DeltaTime = (float)DeltaFlow;
 			gameworld.Update();
 			
-			indexRange ir[2048] = {};
-			int irlen = 0;
-			gameworld.clients.GetTourPairs(ir, &irlen);
-			WSABUF sendbuf[2];
-			sendbuf[1].buf = gameworld.CommonSDS.buffer;
-			sendbuf[1].len = gameworld.CommonSDS.size;
-			for (int i = 0;i < irlen;++i) {
-				for (int k = ir[i].start;k <= ir[i].end;++k) {
-					sendbuf[0].buf = gameworld.clients[k].PersonalSDS.buffer;
-					sendbuf[0].len = gameworld.clients[k].PersonalSDS.size;
-					DWORD retval = 0;
+			//indexRange ir[2048] = {};
+			//int irlen = 0;
+			//gameworld.clients.GetTourPairs(ir, &irlen);
+			//WSABUF sendbuf[2];
+			////sendbuf[1].buf = gameworld.CommonSDS.buffer;
+			////sendbuf[1].len = gameworld.CommonSDS.size;
+			//for (int i = 0;i < irlen;++i) {
+			//	for (int k = ir[i].start;k <= ir[i].end;++k) {
+			//		sendbuf[0].buf = gameworld.clients[k].PersonalSDS.buffer;
+			//		sendbuf[0].len = gameworld.clients[k].PersonalSDS.size;
+			//		DWORD retval = 0;
 
-					bool sendSuccess = true;
-					STARTSEND:
-					int err = WSASend(gameworld.clients[k].socket, sendbuf, 2, &retval, 0, NULL, NULL);
-					if (err == SOCKET_ERROR) {
-						int error = WSAGetLastError();
-						ClientData::DisconnectToServer(k);
-						continue;
-					}
-					if (retval != sendbuf[0].len + sendbuf[1].len) {
-						int sav = sendbuf[0].len;
-						sendbuf[0].len -= retval;
-						sendbuf[0].buf += retval;
-						if (sendbuf[0].len < 0) sendbuf[0].len = 0;
-						retval -= sav;
-						sendbuf[1].len -= retval;
-						sendbuf[1].buf += retval;
-						if (sendbuf[1].len < 0) sendbuf[0].len = 0;
-						sendSuccess = false;
-					}
-					if (sendSuccess == false) goto STARTSEND;
+			//		bool sendSuccess = true;
+			//		STARTSEND:
+			//		int err = WSASend(gameworld.clients[k].socket, sendbuf, 1, &retval, 0, NULL, NULL);
+			//		if (err == SOCKET_ERROR) {
+			//			int error = WSAGetLastError();
+			//			ClientData::DisconnectToServer(k);
+			//			continue;
+			//		}
+			//		if (retval != sendbuf[0].len + sendbuf[1].len) {
+			//			int sav = sendbuf[0].len;
+			//			sendbuf[0].len -= retval;
+			//			sendbuf[0].buf += retval;
+			//			if (sendbuf[0].len < 0) sendbuf[0].len = 0;
+			//			retval -= sav;
+			//			sendbuf[1].len -= retval;
+			//			sendbuf[1].buf += retval;
+			//			if (sendbuf[1].len < 0) sendbuf[0].len = 0;
+			//			sendSuccess = false;
+			//		}
+			//		if (sendSuccess == false) goto STARTSEND;
 
-					sendbuf[1].buf = gameworld.CommonSDS.buffer;
-					sendbuf[1].len = gameworld.CommonSDS.size;
-					gameworld.clients[k].PersonalSDS.Clear();
-				}
-			}
-			gameworld.CommonSDS.Clear();
+			//		//sendbuf[1].buf = gameworld.CommonSDS.buffer;
+			//		//sendbuf[1].len = gameworld.CommonSDS.size;
+			//		gameworld.clients[k].PersonalSDS.Clear();
+			//	}
+			//}
+			////gameworld.CommonSDS.Clear();
 
 			DeltaFlow = 0;
 		}
@@ -135,7 +135,9 @@ int main() {
 						gameworld.clients[newindex].PersonalSDS.Init(4096);
 						
 						gameworld.Sending_SyncGameState(gameworld.clients[newindex].PersonalSDS);
-						gameworld.SendingAllObjectForNewClient(gameworld.clients[newindex].PersonalSDS);
+						//gameworld.SendingAllObjectForNewClient(gameworld.clients[newindex].PersonalSDS);
+
+						int StartzoneId = 0;
 
 						Player* p = new Player();
 						p->clientIndex = clientindex;
@@ -148,16 +150,21 @@ int main() {
 							p->Inventory[i].ItemCount = 0;
 						}
 
-						int objindex = gameworld.NewPlayer(gameworld.CommonSDS, p, clientindex);
-						gameworld.Sending_NewGameObject(gameworld.clients[newindex].PersonalSDS, objindex, p);
 						gameworld.clients[clientindex].pObjData = p;
-						gameworld.PushGameObject(p);
+						gameworld.clients[clientindex].zoneId = StartzoneId;
+
+						vec4 spawnPos(0.0f, 10.0f, 0.0f, 1.0f);
+						int objindex = gameworld.zones[StartzoneId].AddPlayer(clientindex, p, spawnPos);
+						gameworld.clients[clientindex].objindex = objindex;
+
+						//gameworld.Sending_NewGameObject(gameworld.clients[newindex].PersonalSDS, objindex, p);
+						//gameworld.zones[StartzoneId].PushGameObject(p);
 
 						//int datacap = gameworld.Sending_AllocPlayerIndex(newindex, objindex);
 
-						gameworld.Sending_AllocPlayerIndex(gameworld.clients[newindex].PersonalSDS, clientindex, objindex);
+						//gameworld.Sending_AllocPlayerIndex(gameworld.clients[newindex].PersonalSDS, clientindex, objindex);
 						//gameworld.clients[clientindex].socket.Send((char*)gameworld.tempbuffer.data, dcap);
-						gameworld.clients[clientindex].objindex = objindex;
+						//gameworld.clients[clientindex].objindex = objindex;
 
 						//print log
 						cout << "Socket from " << a << " is accepted.\n";
@@ -214,18 +221,18 @@ int main() {
 	return 0;
 }
 
-void World::Sending_AllocPlayerIndex(SendDataSaver& sds, int clientindex, int objindex)
-{
-	sds.postpush_start();
-	constexpr int reqsiz = sizeof(STC_AllocPlayerIndexes_Header);
-	sds.postpush_reserve(reqsiz);
-	STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)sds.ofbuff;
-	header.size = reqsiz;
-	header.st = SendingType::AllocPlayerIndexes;
-	header.clientindex = clientindex;
-	header.server_obj_index = objindex;
-	sds.postpush_end();
-}
+//void World::Sending_AllocPlayerIndex(SendDataSaver& sds, int clientindex, int objindex)
+//{
+//	sds.postpush_start();
+//	constexpr int reqsiz = sizeof(STC_AllocPlayerIndexes_Header);
+//	sds.postpush_reserve(reqsiz);
+//	STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)sds.ofbuff;
+//	header.size = reqsiz;
+//	header.st = SendingType::AllocPlayerIndexes;
+//	header.clientindex = clientindex;
+//	header.server_obj_index = objindex;
+//	sds.postpush_end();
+//}
 
 void World::Sending_SyncGameState(SendDataSaver& sds) {
 	sds.postpush_start();
@@ -234,13 +241,15 @@ void World::Sending_SyncGameState(SendDataSaver& sds) {
 	STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)sds.ofbuff;
 	header.size = reqsiz;
 	header.st = SendingType::SyncGameState;
-	header.DynamicGameObjectCapacity = Dynamic_gameObjects.Capacity;
-	header.StaticGameObjectCapacity = Static_gameObjects.Capacity;
+	//나중에 클라이언트 존 받는걸로 바꿔야함
+	header.DynamicGameObjectCapacity = zones[0].Dynamic_gameObjects.Capacity;
+	header.StaticGameObjectCapacity = zones[0].Static_gameObjects.Capacity;
 
 	sds.postpush_end();
 }
 
 int World::Receiving(int clientIndex, char* rBuffer, int totallen) {
+	Zone* zone = GetClientZone(clientIndex);
 	ClientData& client = clients[clientIndex];
 	Player* p = (Player*)client.pObjData;
 
@@ -304,7 +313,7 @@ READ_START:
 
 					p->weapon = Weapon(targetType);
 
-					Sending_ChangeGameObjectMember<int>(gameworld.CommonSDS, client.objindex, p, GameObjectType::_Player, &p->m_currentWeaponType);
+					zone->Sending_ChangeGameObjectMember<int>(zone->CommonSDS, client.objindex, p, GameObjectType::_Player, &p->m_currentWeaponType);
 
 					std::cout << "[Weapon Change] Key: " << key
 						<< " -> Type: " << (int)targetType

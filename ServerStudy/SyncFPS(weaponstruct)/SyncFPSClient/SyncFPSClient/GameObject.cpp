@@ -1,4 +1,4 @@
-#include "stdafx.h"
+ï»¿#include "stdafx.h"
 #include "Render.h"
 #include "Game.h"
 #include "GameObject.h"
@@ -564,13 +564,13 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q)
 		}
 	}
 
-	// À§Ä¡ ÀÌµ¿ / È¸Àü
+	// ìœ„ì¹˜ ì´ë™ / íšŒì „
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
 	worldMat.pos.w = 1;
 
-	// Æ÷ÇÔ Ã»Å© Å½»ö
+	// í¬í•¨ ì²­í¬ íƒìƒ‰
 	IncludeChunks = game.GetChunks_Include_OBB(GetOBB());
 
 	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
@@ -613,13 +613,13 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afte
 		}
 	}
 
-	// À§Ä¡ ÀÌµ¿ / È¸Àü
+	// ìœ„ì¹˜ ì´ë™ / íšŒì „
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
 	worldMat.pos.w = 1;
 
-	// Æ÷ÇÔ Ã»Å© Å½»ö
+	// í¬í•¨ ì²­í¬ íƒìƒ‰
 	IncludeChunks = afterChunkInc;
 	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
 	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
@@ -1039,10 +1039,10 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 	bool initialState = gd.gpucmd.isClose;
 
 	if (BoneToWorldMatrixCB_Default.size() > 0) {
-		// »ç½Ç ÀÌ ÄÚµå´Â ½ÇÇàÀÌ µÇ¸é ¾ÈµÇÁö ¾Ê³ª? Èì..
-		// >> ÇÏÁö¸¸ ¼­¹ö¿¡¼­ ÀÚ½ÅÀÇ ÇÃ·¹ÀÌ¾î ¿ÀºêÁ§Æ® µ¥ÀÌÅÍ¸¦ ÅëÂ¥·Î µÎ¹ø º¸³»±â ¶§¹®¿¡..
-		// >> °á±¹ µÎ¹ø µÇ´Â°Ç ¾îÂ¿ ¼ö ¾ø´Â °ÍÀ¸·Î º¸ÀÎ´Ù. Àß ¸±¸®Áî¸¦ ÇØº¸ÀÚ.
-		// >> °ÔÀÓ »óÈ²¿¡¼­ shape°¡ ¹Ù²ğ ¼öµµ ÀÖÀİÀ½? ¤·¤·..
+		// ì‚¬ì‹¤ ì´ ì½”ë“œëŠ” ì‹¤í–‰ì´ ë˜ë©´ ì•ˆë˜ì§€ ì•Šë‚˜? í ..
+		// >> í•˜ì§€ë§Œ ì„œë²„ì—ì„œ ìì‹ ì˜ í”Œë ˆì´ì–´ ì˜¤ë¸Œì íŠ¸ ë°ì´í„°ë¥¼ í†µì§œë¡œ ë‘ë²ˆ ë³´ë‚´ê¸° ë•Œë¬¸ì—..
+		// >> ê²°êµ­ ë‘ë²ˆ ë˜ëŠ”ê±´ ì–´ì©” ìˆ˜ ì—†ëŠ” ê²ƒìœ¼ë¡œ ë³´ì¸ë‹¤. ì˜ ë¦´ë¦¬ì¦ˆë¥¼ í•´ë³´ì.
+		// >> ê²Œì„ ìƒí™©ì—ì„œ shapeê°€ ë°”ë€” ìˆ˜ë„ ìˆì–ìŒ? ã…‡ã…‡..
 
 		for (int i = 0;i < BoneToWorldMatrixCB_Default.size();++i) {
 			BoneToWorldMatrixCB_Default[i].Release();
@@ -1073,14 +1073,14 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			NodeToBone_SRVDescIndex.clear();
 			NodeToBone.clear();
 		}
-		// ¸®¼Ò½º °³¸¹¾Æ
+		// ë¦¬ì†ŒìŠ¤ ê°œë§ì•„
 	}
 
 	Model* pModel = shape.GetModel();
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		dbgc[5] += 1;
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ÀÇ ¹è¼ö
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ì˜ ë°°ìˆ˜
 		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
@@ -1116,7 +1116,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		{
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(int) * nodeCount;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ì˜ ë°°ìˆ˜
 			Node_ToParentRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource Node_ToParentRes_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 
@@ -1164,7 +1164,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		//HumanoidToNodeIndexRes
 		{
 			datasize = sizeof(int) * 64;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ì˜ ë°°ìˆ˜
 			HumanoidToNodeIndexRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource HumanoidToNodeIndexRes_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 
@@ -1209,7 +1209,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		{
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(matrix) * nodeCount;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ì˜ ë°°ìˆ˜
 			NodeLocalMatrixs = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 			GPUResource NodeLocalMatrixs_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			matrix* tempMapped = nullptr;
@@ -1265,7 +1265,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		for (int i = 0;i < model->mNumSkinMesh;++i) {
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(int) * 128;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ì˜ ë°°ìˆ˜
 			DescIndex resdescindex;
 			GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
@@ -1313,7 +1313,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		{
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(matrix) * nodeCount;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ì˜ ë°°ìˆ˜
 			NodeTposMatrixs = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource NodeTposMatrixs_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			matrix* tempMapped = nullptr;
@@ -1357,7 +1357,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		///AnimationBlendConstantUploadBuffer
 		{
 			datasize = sizeof(AnimationBlendingCBStruct);
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ì˜ ë°°ìˆ˜
 			AnimationBlendConstantUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			AnimationBlendConstantUploadBuffer.resource->Map(0, nullptr, (void**)&AnimBlendingCB_Mapped);
 			//CBV
@@ -1393,10 +1393,10 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 
 void SkinMeshGameObject::SetRootMatrixs()
 {
-	// ¾Ë°í¸®Áò ¶§¹®¿¡ º´¸ñÀÌ »ı°å¾úÀ½. ±×·¡¼­ °íÃÆ´Ù.
-	// ´Ù¸¸ 20¸íÀÇ ½ºÅ²¸Ş½¬ ¾Ö´Ï¸ŞÀÌ¼Ç °¢ Ãâ·ÂÇÏ´Âµ¥ 
-	// ÇÑ ÇÁ·¹ÀÓÀÇ 0.029124 À» Àâ¾Æ¸Ô´Â°Ç Á» ½ÉÇÏ´Ù. ±×·³ 50¸í¸¸ ÀÖ¾îµµ ÇÁ·¹ÀÓÀº °³ ³·¾ÆÁú°Å ¾Æ´Ñ°¡?
-	// ¶§¹®¿¡ GPU ÃÖÀûÈ­ µµ ÃæºĞÈ÷ °í·ÁÇØ¾ß ÇÒ °Í °°´Ù.
+	// ì•Œê³ ë¦¬ì¦˜ ë•Œë¬¸ì— ë³‘ëª©ì´ ìƒê²¼ì—ˆìŒ. ê·¸ë˜ì„œ ê³ ì³¤ë‹¤.
+	// ë‹¤ë§Œ 20ëª…ì˜ ìŠ¤í‚¨ë©”ì‰¬ ì• ë‹ˆë©”ì´ì…˜ ê° ì¶œë ¥í•˜ëŠ”ë° 
+	// í•œ í”„ë ˆì„ì˜ 0.029124 ì„ ì¡ì•„ë¨¹ëŠ”ê±´ ì¢€ ì‹¬í•˜ë‹¤. ê·¸ëŸ¼ 50ëª…ë§Œ ìˆì–´ë„ í”„ë ˆì„ì€ ê°œ ë‚®ì•„ì§ˆê±° ì•„ë‹Œê°€?
+	// ë•Œë¬¸ì— GPU ìµœì í™” ë„ ì¶©ë¶„íˆ ê³ ë ¤í•´ì•¼ í•  ê²ƒ ê°™ë‹¤.
 
 	static matrix TempMatBuffer[128] = {};
 	Model* pModel = shape.GetModel();
@@ -1470,7 +1470,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 			modifyMeshes = new RayTracingMesh[model->mNumSkinMesh];
 			OutVertexUAV = new DescIndex[model->mNumSkinMesh];
 			for (int i = 0; i < model->mNumSkinMesh; ++i) {
-				// ¼öÁ¤ÇÒ ¹öÅÃ½º¸¸ ¸¸µé¾î rmesh¿¡ ÀúÀå. Ãâ·Â½Ã LRS¿¡¼­ ¹öÅÃ½º´Â ¿©±â¿¡¼­, ÀÎµ¦½º´Â ¿øº»¸Ş½¬¿¡¼­ °¡Á®¿Â´Ù.
+				// ìˆ˜ì •í•  ë²„íƒìŠ¤ë§Œ ë§Œë“¤ì–´ rmeshì— ì €ì¥. ì¶œë ¥ì‹œ LRSì—ì„œ ë²„íƒìŠ¤ëŠ” ì—¬ê¸°ì—ì„œ, ì¸ë±ìŠ¤ëŠ” ì›ë³¸ë©”ì‰¬ì—ì„œ ê°€ì ¸ì˜¨ë‹¤.
 				modifyMeshes[i].AllocateRaytracingUAVMesh(model->mBumpSkinMeshs[i]->vertexData, model->mBumpSkinMeshs[i]->rmesh.IBStartOffset, model->mBumpSkinMeshs[i]->subMeshNum, model->mBumpSkinMeshs[i]->SubMeshIndexStart);
 				modifyMeshes[i].IBStartOffset = new UINT64[/*model->mBumpSkinMeshs[i]->subMeshNum */1+ 1];
 				modifyMeshes[i].subMeshCount = model->mBumpSkinMeshs[i]->subMeshNum;
@@ -1478,7 +1478,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 					modifyMeshes[i].IBStartOffset[k] = model->mBumpSkinMeshs[i]->rmesh.IBStartOffset[k];
 				}
 
-				//Compute Geometry º¯ÇüÀ» À§ÇÑ UAV »ı¼º
+				//Compute Geometry ë³€í˜•ì„ ìœ„í•œ UAV ìƒì„±
 				int index = gd.TextureDescriptorAllotter.Alloc();
 				OutVertexUAV[i] = DescIndex(false, index);
 				D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -1512,7 +1512,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 							RaytracingWorldMatInput_Model[i] = WorldMatInputs[0];
 						}
 						else {
-							// BumpMesh Ã³¸®.
+							// BumpMesh ì²˜ë¦¬.
 							BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
 							/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
@@ -1575,6 +1575,10 @@ void SkinMeshGameObject::Update(float delatTime)
 
 void SkinMeshGameObject::Render(matrix parent) {
 	
+	if (BoneToWorldMatrixCB.size() == 0) {
+		return;
+	}
+
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	BoundingOrientedBox obb_local, obb;
@@ -1598,7 +1602,7 @@ void SkinMeshGameObject::PushRenderBatch(matrix parent)
 
 void SkinMeshGameObject::ModifyVertexs(matrix parent)
 {
-	// ComputeShader°¡ ÀÌ¹Ì Set µÇ¾ú´Ù´Â °¡Á¤ÇÏ¿¡ ÇÔ¼ö°¡ ½ÇÇàµÈ´Ù.
+	// ComputeShaderê°€ ì´ë¯¸ Set ë˜ì—ˆë‹¤ëŠ” ê°€ì •í•˜ì— í•¨ìˆ˜ê°€ ì‹¤í–‰ëœë‹¤.
 	Model* model = shape.GetModel();
 	for (int i = 0; i < model->mNumSkinMesh; ++i) {
 		BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[i];
@@ -1606,7 +1610,7 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 		using SMMSRPI = SkinMeshModifyShader::RootParamId;
 
 		int boneNum = model->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ÀÇ ¹è¼ö
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ì˜ ë°°ìˆ˜
 		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 		//gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_COPY_SOURCE);
 		//gd.CScmd->CopyBufferRegion(BoneToWorldMatrixCB_Default[i].resource, 0, BoneToWorldMatrixCB[i].resource, 0, ncbElementBytes);
@@ -1635,11 +1639,12 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 		int disPatchW = (VertexSiz / 768) + 1;
 		gd.CScmd->Dispatch(disPatchW, 1, 1);
 	}
-	// BLAS¸¦ ¼öÇàÇÒ ¿ÀºêÁ§Æ®¸¦ ¼öÁıÇÑ´Ù.
+	// BLASë¥¼ ìˆ˜í–‰í•  ì˜¤ë¸Œì íŠ¸ë¥¼ ìˆ˜ì§‘í•œë‹¤.
 	game.MyRayTracingShader->RebuildBLASBuffer.push_back(this);
 }
 
 void SkinMeshGameObject::BlendingAnimation() {
+	if (BoneToWorldMatrixCB_Default.size() == 0) return;
 	using ABSRPI = AnimationBlendingShader::RootParamId;
 	//gd.CScmd.SetShader(game.MyAnimationBlendingShader);
 	//gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
@@ -1670,7 +1675,9 @@ void SkinMeshGameObject::BlendingAnimation() {
 }
 
 void SkinMeshGameObject::ModifyLocalToWorld() {
+	if (BoneToWorldMatrixCB_Default.size() == 0) return;
 	Model* model = shape.GetModel();
+	if (model == nullptr) return;
 	matrix rootworld = worldMat;
 	rootworld.transpose();
 	for (int i = 0;i < model->mNumSkinMesh;++i) {
@@ -1786,7 +1793,7 @@ void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
 		}
 	}
 	else {
-		// ¼öÇà½Ã°£ Æò±Õ 0.0000031ÃÊ
+		// ìˆ˜í–‰ì‹œê°„ í‰ê·  0.0000031ì´ˆ
 		constexpr float frameSpeed = 1;
 		Model* pModel = shape.GetModel();
 		if (AnimationFlowTime[0] > game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration) AnimationFlowTime[0] = 0;
@@ -1862,7 +1869,19 @@ void Monster::Update(float deltaTime)
 
 void Monster::Render(matrix parent)
 {
+	static int rc4 = 0;
+	if (rc4 < 3) {
+		char dbg[256];
+		sprintf_s(dbg, "[Monster] pos=(%f,%f,%f) destPos=(%f,%f,%f)\n",
+			worldMat.pos.x, worldMat.pos.y, worldMat.pos.z,
+			DestPos.x, DestPos.y, DestPos.z);
+		OutputDebugStringA(dbg);
+		rc4++;
+	}
 	if (isDead) {
+		return;
+	}
+	if (BoneToWorldMatrixCB.size() == 0) {
 		return;
 	}
 	SkinMeshGameObject::Render();
@@ -2016,7 +2035,7 @@ void Player::ClientUpdate(float deltaTime)
 	{
 	case WeaponType::Pistol:
 	{
-		// --- ±ÇÃÑ ·ÎÁ÷ ---
+		// --- ê¶Œì´ ë¡œì§ ---
 		float recoilT = weapon.GetRecoilAlpha();
 
 		float zOffset = 0.3f - (0.0f * powf(recoilT, 3.0f));
@@ -2037,14 +2056,14 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::MachineGun:
 	{
-		// --- ¸Ó½Å°Ç ·ÎÁ÷ ---
+		// --- ë¨¸ì‹ ê±´ ë¡œì§ ---
 		float shootrate = powf(weapon.m_shootFlow / weapon.m_info.shootDelay, 3);
 		if (shootrate > 1.0f) shootrate = 1.0f;
 
 		float recoilAmount = 1.0f - shootrate;
 		gunMatrix_firstPersonView.pos.z = 0.3f + 0.02f * recoilAmount;
 
-		// È¸Àü ·ÎÁ÷
+		// íšŒì „ ë¡œì§
 		gunBarrelSpeed = 150.0f;
 		if (shootrate < 1.0f) {
 			float spinRate = powf(1.0f - shootrate, 2);
@@ -2057,7 +2076,7 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::Sniper:
 	{
-		// --- ½º³ªÀÌÆÛ ·ÎÁ÷ ---
+		// --- ìŠ¤ë‚˜ì´í¼ ë¡œì§ ---
 		float recoilT = weapon.GetRecoilAlpha();
 		float zOffset = 0.3f;
 		float pitchAngle = 0.0f;
@@ -2154,12 +2173,16 @@ void Player::ClientUpdate(float deltaTime)
 
 void Player::Render()
 {
+	if (BoneToWorldMatrixCB.size() == 0) {
+		return;
+	}
+
 	if (game.player == this) {
 		if (game.bFirstPersonVision == false) {
 			SkinMeshGameObject::Render();
 
-			//// À½ ÀÌ°Ç ¿ÀºêÁ§Æ® Å¸ÀÔµµ ´Ù¸£°í ±×¸®´Â ¹æ¹ıµµ ´Ù¸£±â ¶§¹®¿¡
-			//// µû·Î ¹«±â¸¦ ·»´õÇÏ´Â ÇÔ¼ö¸¦ »©¾ßÇÑ´Ù.
+			//// ìŒ ì´ê±´ ì˜¤ë¸Œì íŠ¸ íƒ€ì…ë„ ë‹¤ë¥´ê³  ê·¸ë¦¬ëŠ” ë°©ë²•ë„ ë‹¤ë¥´ê¸° ë•Œë¬¸ì—
+			//// ë”°ë¡œ ë¬´ê¸°ë¥¼ ë Œë”í•˜ëŠ” í•¨ìˆ˜ë¥¼ ë¹¼ì•¼í•œë‹¤.
 			//matrix gunmat = gunMatrix_thirdPersonView;
 
 			//const float PI = 3.141592f;
@@ -2343,7 +2366,7 @@ void Player::RecvSTC_SyncObj(char* data) {
 	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
 	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
 	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
-	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
+	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld); 
 	LVelocity = stcsod.LVelocity;
 	AnimationFlowTime[0] = stcsod.AnimationFlowTime;
 	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
@@ -2391,6 +2414,19 @@ void Player::RecvSTC_SyncObj(char* data) {
 	}
 
 	SetShape(shape);
+}
+
+void Portal::RecvSTC_SyncObj(char* data) {
+	Portal::STC_SyncObjData& d = *(Portal::STC_SyncObjData*)data;
+	shape = Shape::ShapeTable[d.shapeindex];
+	worldMat = d.DestWorld;
+	spawnX = d.spawnX;
+	spawnY = d.spawnY;
+	spawnZ = d.spawnZ;
+	radius = d.radius;
+	zoneId = d.zoneId;
+	dstzoneId = d.dstzoneId;
+	// mesh/model íŒŒì‹± ì—†ìŒ â€” í´ë¼ì´ì–¸íŠ¸ê°€ ìì²´ Portal ë©”ì‰¬ ì‚¬ìš©
 }
 
 BulletRay::BulletRay()
@@ -2512,7 +2548,7 @@ void GameMap::LoadMap(const char* MapName)
 		string& name = map->name[nameid];
 
 		string filename = MeshDirPath;
-		// .map (È®ÀåÀÚ)Á¦°Å
+		// .map (í™•ì¥ì)ì œê±°
 		filename += name;
 		filename += ".mesh";
 
@@ -2599,7 +2635,7 @@ void GameMap::LoadMap(const char* MapName)
 		}
 		else {
 			string filename = TextureDirPath;
-			// .map (È®ÀåÀÚ)Á¦°Å
+			// .map (í™•ì¥ì)ì œê±°
 			filename += textureName;
 			filename += ".tex";
 
@@ -2764,7 +2800,7 @@ void GameMap::LoadMap(const char* MapName)
 
 		string modelName = TempBuff;
 		string filename = ModelDirPath;
-		// .map (È®ÀåÀÚ)Á¦°Å
+		// .map (í™•ì¥ì)ì œê±°
 		filename += modelName;
 		filename += ".model";
 
