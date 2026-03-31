@@ -494,9 +494,29 @@ void Game::Init()
 	ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &DefaultTex, L"[녹색 탄알집]"));
 	ItemTable.push_back(Item(3, vec4(0, 0, 1, 1), ItemMesh, &DefaultTex, L"[하얀 탄알집]")); // test items. red, green, blue bullet mags.
 
-	HumanoidAnimation hanim;
-	hanim.LoadHumanoidAnimation("Resources/Animation/BreakDance1990.Humanoid_animation");
-	HumanoidAnimationTable.push_back(hanim);
+	//HumanoidAnimation hanim;
+		//hanim.LoadHumanoidAnimation("Resources/Animation/BreakDance1990.Humanoid_animation");
+		//HumanoidAnimationTable.push_back(hanim);
+
+	HumanoidAnimation animIdle;
+	animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
+	HumanoidAnimationTable.push_back(animIdle); // Idle
+
+	HumanoidAnimation animWalk;
+	animWalk.LoadHumanoidAnimation("Resources/Animation/Walk.Humanoid_animation");
+	HumanoidAnimationTable.push_back(animWalk); // Walk
+
+	HumanoidAnimation animRun;
+	animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
+	HumanoidAnimationTable.push_back(animRun);  // Run
+
+	HumanoidAnimation animAim;
+	animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
+	HumanoidAnimationTable.push_back(animAim);  // 3: Aim
+
+	HumanoidAnimation animShoot;
+	animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
+	HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
 
 	Model* PlayerModel = new Model();
 	PlayerModel->LoadModelFile2("Resources/Model/Remy.model");

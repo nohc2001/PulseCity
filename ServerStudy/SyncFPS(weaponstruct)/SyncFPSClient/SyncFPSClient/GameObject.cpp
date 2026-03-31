@@ -1644,6 +1644,37 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 }
 
 void SkinMeshGameObject::BlendingAnimation() {
+	AnimationBlendingCBStruct* cbData = (AnimationBlendingCBStruct*)AnimBlendingCB_Mapped;
+
+	if (cbData != nullptr) {
+		int anim0 = PlayingAnimationIndex[0];
+		cbData->animTime[0] = AnimationFlowTime[0];
+		cbData->MAXTime[0] = game.HumanoidAnimationTable[anim0].Duration;
+		cbData->animWeight[0] = 1.0f;
+
+		int anim1 = PlayingAnimationIndex[1];
+		if (anim1 != -1) {
+			cbData->animTime[1] = AnimationFlowTime[1];
+			cbData->MAXTime[1] = game.HumanoidAnimationTable[anim1].Duration;
+			cbData->animWeight[1] = (PlayingAnimationIndex[1] != -1) ? 1.0f : 0.0f;
+		}
+		else {
+			cbData->animTime[1] = 0.0f;
+			cbData->MAXTime[1] = 1.0f;
+			cbData->animWeight[1] = 0.0f;
+		}
+		cbData->animTime[2] = 0.0f; cbData->animTime[3] = 0.0f;
+		cbData->MAXTime[2] = 1.0f; cbData->MAXTime[3] = 1.0f;
+		cbData->animWeight[2] = 0.0f; cbData->animWeight[3] = 0.0f;
+
+		cbData->animMask[0] = m_animMask[0];
+		cbData->animMask[1] = m_animMask[1];
+		cbData->animMask[2] = m_animMask[2];
+		cbData->animMask[3] = m_animMask[3];
+
+		cbData->frameRate = game.HumanoidAnimationTable[anim0].frameRate;
+	}
+
 	if (BoneToWorldMatrixCB_Default.size() == 0) return;
 	using ABSRPI = AnimationBlendingShader::RootParamId;
 	//gd.CScmd.SetShader(game.MyAnimationBlendingShader);
@@ -1659,8 +1690,15 @@ void SkinMeshGameObject::BlendingAnimation() {
 
 	gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_CBVTable_CBStruct.hcpu, AnimBlendingCBVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	for (int i = 0;i < 4;++i) {
+		int safeAnimIndex = PlayingAnimationIndex[i];
+
+		if (safeAnimIndex < 0 || safeAnimIndex >= game.HumanoidAnimationTable.size()) {
+			safeAnimIndex = 0;
+		}
+
 		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_Animation1to4[i].hcpu, game.HumanoidAnimationTable[PlayingAnimationIndex[i]].AnimationDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
+
 	gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_HumanoidToNodeindex.hcpu, HumanoidToNodeIndexSRVIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_UAVTable_Out_LocalMatrix.hcpu, NodeLocalMatrixs_UAVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	
@@ -1845,19 +1883,70 @@ void Monster::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
 
-	if (this->HPBarIndex < 0) return;
+	if (isDead)
+	{
+		//ChangeState(State::DEATH);
+	}
+	else
+	{
+		float velSpeed = sqrt(LVelocity.x * LVelocity.x + LVelocity.z * LVelocity.z);
+		float dx = DestPos.x - worldMat.pos.x;
+		float dz = DestPos.z - worldMat.pos.z;
+		float distSpeed = sqrt(dx * dx + dz * dz);
+		float currentSpeed = max(velSpeed, distSpeed);
 
-	matrix viewMatrix = XMLoadFloat4x4((XMFLOAT4X4*)&gd.viewportArr[0].ViewMatrix);
-	matrix invViewMatrix = viewMatrix.RTInverse;
-	matrix cameraWorldMat = invViewMatrix;
+		if (m_currentState != State::ATTACK)
+		{
+			if (currentSpeed > 3.0f) ChangeState(State::RUN);
+			else if (currentSpeed > 0.05f) ChangeState(State::WALK);
+			else ChangeState(State::IDLE);
+		}
+	}
 
-	matrix hpBarWorldMat;
-	hpBarWorldMat.Id();
-	hpBarWorldMat.LookAt(cameraWorldMat.right);
-	hpBarWorldMat.pos = this->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0);
-	hpBarWorldMat.look *= 2 * HP / MaxHP;
+	if (PlayingAnimationIndex[0] != -1)
+	{
+		//dbgc[10] += 1;
+		//dbgbreak(dbgc[10] == 353);
 
-	game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
+		AnimationFlowTime[0] += deltaTime;
+		double currentDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration;
+
+		if (AnimationFlowTime[0] > currentDuration)
+		{
+			if (m_currentState == State::DEATH) {
+				AnimationFlowTime[0] = currentDuration - 0.001;
+			}
+			else if (m_currentState == State::ATTACK) {
+				AnimationFlowTime[0] = fmod(AnimationFlowTime[0], currentDuration);
+				ChangeState(State::IDLE);
+			}
+			else {
+				AnimationFlowTime[0] = fmod(AnimationFlowTime[0], currentDuration);
+			}
+		}
+	}
+
+	m_animMask[0] = 0xFFFFFFFFFFFFFFFFULL;
+	m_animMask[1] = 0ULL;
+	m_animMask[2] = 0ULL;
+	m_animMask[3] = 0ULL;
+
+	if (this->HPBarIndex >= 0)
+	{
+		matrix viewMatrix = XMLoadFloat4x4((XMFLOAT4X4*)&gd.viewportArr[0].ViewMatrix);
+		matrix invViewMatrix = viewMatrix.RTInverse;
+		matrix cameraWorldMat = invViewMatrix;
+
+		matrix hpBarWorldMat;
+		hpBarWorldMat.Id();
+		hpBarWorldMat.LookAt(cameraWorldMat.right);
+		hpBarWorldMat.pos = this->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0);
+
+		float currentHP = max(HP, 0.0f);
+		hpBarWorldMat.look *= 2 * currentHP / MaxHP;
+
+		game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
+	}
 
 	gd.AverageSecPer60Start(Update_Monster_Animation);
 	AnimationUpdate(deltaTime);
@@ -1865,6 +1954,7 @@ void Monster::Update(float deltaTime)
 	//	AnimationUpdate(deltaTime);
 	//}
 	gd.AverageSecPer60End(Update_Monster_Animation);
+
 }
 
 void Monster::Render(matrix parent)
@@ -1943,6 +2033,31 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	SetShape(shape);
 }
 
+void Monster::ChangeState(State newState)
+{
+	if (m_currentState == newState) return;
+
+	m_currentState = newState;
+	AnimationFlowTime[0] = 0.0f;
+
+	switch (m_currentState) {
+	case State::IDLE:
+		PlayingAnimationIndex[0] = 0;
+		break;
+	case State::WALK:
+		PlayingAnimationIndex[0] = 1;
+		break;
+	case State::RUN:
+		PlayingAnimationIndex[0] = 2;
+		break;
+		// 나중에 공격, 피격, 사망 추가 예정
+	case State::DEATH:
+		PlayingAnimationIndex[0] = 6;
+		break;
+	}
+}
+
+
 Player::Player() : HP{ 100 } {
 	weapon = Weapon(WeaponType::Sniper);
 	HP = 100;
@@ -1992,7 +2107,89 @@ void Player::STATICINIT(int typeindex) {
 void Player::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
-	PlayingAnimationIndex[0] = 0;
+	//PlayingAnimationIndex[0] = 0;
+
+	float velSpeed = sqrt(LVelocity.x * LVelocity.x + LVelocity.z * LVelocity.z);
+	float dx = DestPos.x - worldMat.pos.x;
+	float dz = DestPos.z - worldMat.pos.z;
+	float distSpeed = sqrt(dx * dx + dz * dz);
+	float currentSpeed = max(velSpeed, distSpeed);
+
+	switch (m_currentState)
+	{
+	case State::IDLE:
+		if (currentSpeed > 3.0f) ChangeState(State::RUN);
+		else if (currentSpeed > 0.05f) ChangeState(State::WALK);
+		break;
+
+	case State::WALK:
+		if (currentSpeed <= 0.05f) ChangeState(State::IDLE);
+		else if (currentSpeed > 3.0f) ChangeState(State::RUN);
+		break;
+
+	case State::RUN:
+		if (currentSpeed <= 0.05f) ChangeState(State::IDLE);
+		else if (currentSpeed <= 3.0f) ChangeState(State::WALK);
+		break;
+	}
+
+	AnimationFlowTime[0] += deltaTime;
+
+	double currentDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration;
+
+	if (AnimationFlowTime[0] > currentDuration) {
+		AnimationFlowTime[0] = fmod(AnimationFlowTime[0], currentDuration);
+	}
+
+	if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+		ChangeUpperState(UpperState::SHOOT);
+	}
+	else if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
+		double upperDuration = (PlayingAnimationIndex[1] != -1) ? game.HumanoidAnimationTable[PlayingAnimationIndex[1]].Duration : 0.0;
+		if (m_currentUpperState != UpperState::SHOOT ||
+			(PlayingAnimationIndex[1] != -1 && AnimationFlowTime[1] >= upperDuration - 0.002))
+		{
+			ChangeUpperState(UpperState::AIM);
+		}
+	}
+	else {
+		if (m_currentUpperState == UpperState::SHOOT) {
+			double upperDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[1]].Duration;
+			if (PlayingAnimationIndex[1] != -1 && AnimationFlowTime[1] >= upperDuration - 0.002) {
+				ChangeUpperState(UpperState::NONE);
+			}
+		}
+		else {
+			ChangeUpperState(UpperState::NONE);
+		}
+	}
+
+	if (m_currentUpperState != UpperState::NONE && PlayingAnimationIndex[1] != -1)
+	{
+		AnimationFlowTime[1] += deltaTime;
+		double upperDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[1]].Duration;
+
+		if (AnimationFlowTime[1] > upperDuration) {
+			if (m_currentUpperState == UpperState::AIM) {
+				AnimationFlowTime[1] = fmod(AnimationFlowTime[1], upperDuration);
+			}
+			else if (m_currentUpperState == UpperState::SHOOT) {
+				AnimationFlowTime[1] = upperDuration - 0.001;
+			}
+		}
+	}
+
+	if (m_currentUpperState != UpperState::NONE)
+	{
+		m_animMask[0] = 0x7FULL;  // 0~6번 뼈 (하체)
+		m_animMask[1] = ~0x7FULL; // 7번 뼈 이상 (상체)
+	}
+	else
+	{
+		m_animMask[0] = 0xFFFFFFFFFFFFFFFFULL;
+		m_animMask[1] = 0ULL;
+	}
+
 	AnimationUpdate(deltaTime);
 }
 
@@ -2368,8 +2565,8 @@ void Player::RecvSTC_SyncObj(char* data) {
 	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
 	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld); 
 	LVelocity = stcsod.LVelocity;
-	AnimationFlowTime[0] = stcsod.AnimationFlowTime;
-	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
+	//AnimationFlowTime[0] = stcsod.AnimationFlowTime;
+	//PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
 	HP = stcsod.HP;
 	MaxHP = stcsod.MaxHP;
 	bullets = stcsod.bullets;
@@ -2415,6 +2612,47 @@ void Player::RecvSTC_SyncObj(char* data) {
 
 	SetShape(shape);
 }
+
+void Player::ChangeState(State newState)
+{
+	if (m_currentState == newState) return;
+
+	m_currentState = newState;
+	AnimationFlowTime[0] = 0.0f;
+
+	switch (m_currentState) {
+	case State::IDLE:
+		PlayingAnimationIndex[0] = 0;
+		break;
+	case State::WALK:
+		PlayingAnimationIndex[0] = 1;
+		break;
+	case State::RUN:
+		PlayingAnimationIndex[0] = 2;
+		break;
+	}
+}
+
+void Player::ChangeUpperState(UpperState newState)
+{
+	if (m_currentUpperState == newState) return;
+
+	m_currentUpperState = newState;
+	AnimationFlowTime[1] = 0.0f;
+
+	switch (m_currentUpperState) {
+	case UpperState::NONE:
+		PlayingAnimationIndex[1] = -1;
+		break;
+	case UpperState::AIM:
+		PlayingAnimationIndex[1] = 3;
+		break;
+	case UpperState::SHOOT:
+		PlayingAnimationIndex[1] = 4;
+		break;
+	}
+}
+
 
 void Portal::RecvSTC_SyncObj(char* data) {
 	Portal::STC_SyncObjData& d = *(Portal::STC_SyncObjData*)data;

@@ -1917,7 +1917,7 @@ void Player::OnStaticCollision(BoundingOrientedBox obb)
 
 BoundingOrientedBox Player::GetOBB()
 {
-	BoundingOrientedBox obb_local = BoundingOrientedBox({ 0, 0, 0 }, {0.3f, 1, 0.3f}, vec4(0, 0, 0, 1));
+	BoundingOrientedBox obb_local = BoundingOrientedBox({ 0, 1.0f, 0 }, { 0.3f, 1.0f, 0.3f }, vec4(0, 0, 0, 1));
 	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
 	matrix id = XMMatrixIdentity();
@@ -2260,7 +2260,7 @@ void Monster::Respawn()
 
 BoundingOrientedBox Monster::GetOBB()
 {
-	BoundingOrientedBox obb_local = BoundingOrientedBox({ 0, 0, 0 }, { 0.3f, 1, 0.3f }, vec4(0, 0, 0, 1));
+	BoundingOrientedBox obb_local = BoundingOrientedBox({ 0, 1.0f, 0 }, { 0.3f, 1.0f, 0.3f }, vec4(0, 0, 0, 1));
 	obb_local.Extents.x = obb_local.Extents.z;
 	BoundingOrientedBox obb_world;
 	matrix id = XMMatrixIdentity();

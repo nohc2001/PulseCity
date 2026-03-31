@@ -421,6 +421,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	STCDefArr(float, DestAnimationFlowTime, 4);
 	STCDefArr(int, PlayingAnimationIndex, 4);
 
+	ui64 m_animMask[4] = { 0xFFFFFFFFFFFFFFFFULL, 0ULL, 0ULL, 0ULL };
+
 	void InitRootBoneMatrixs();
 	void SetRootMatrixs();
 
@@ -795,6 +797,18 @@ class Monster : public SkinMeshGameObject {
 #define STC_CurrentStruct Monster
 	STC_STATICINIT_innerStruct;
 public:
+	enum class State {
+		IDLE,
+		WALK,
+		RUN,
+		ATTACK,
+		DEATH,
+	};
+
+	State m_currentState = State::IDLE;
+
+	void ChangeState(State newState);
+
 	// 몬스터 HP
 	STCDef(float, HP);// = 30;
 	// 몬스터 최대 채력
@@ -859,6 +873,28 @@ public:
 */
 class Player : public SkinMeshGameObject {
 public:
+	enum class State {
+		IDLE,
+		WALK,
+		RUN,
+		JUMP,
+		SHOOT,
+		RELOAD,
+	};
+
+	State m_currentState = State::IDLE;
+
+	void ChangeState(State newState);
+
+	enum class UpperState {
+		NONE,
+		AIM,
+		SHOOT,
+	};
+
+	UpperState m_currentUpperState = UpperState::NONE;
+	void ChangeUpperState(UpperState newState);
+
 #define STC_CurrentStruct Player
 	STC_STATICINIT_innerStruct
 
