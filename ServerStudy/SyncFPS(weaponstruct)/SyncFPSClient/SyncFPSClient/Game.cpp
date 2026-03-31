@@ -524,7 +524,7 @@ void Game::Init()
 	int playerMesh_index = Shape::AddModel("Player", PlayerModel);
 
 	Model* MonsterModel = new Model();
-	MonsterModel->LoadModelFile2("Resources/Model/Remy.model");
+	MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
 	MonsterModel->Retargeting_Humanoid();
 	int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
 
