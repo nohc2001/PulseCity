@@ -2069,7 +2069,7 @@ Player::Player() : HP{ 100 } {
 	MaxHeatGauge = 200;
 	HealSkillCooldown = 10.0f;
 	HealSkillCooldownFlow = 0;
-	m_currentWeaponType = 0;
+	m_currentWeaponType = (int)WeaponType::Sniper;
 	ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
 
 	DeltaMousePos = 0;
@@ -2088,6 +2088,19 @@ Player::Player() : HP{ 100 } {
 	m_targetFov = 60.0f;
 	m_yaw = 0.0f;
 	m_pitch = 0.0f;
+}
+
+static Model* GetWeaponRenderModel(WeaponType weaponType)
+{
+	switch (weaponType)
+	{
+	case WeaponType::Sniper: return game.SniperModel;
+	case WeaponType::MachineGun: return game.MachineGunModel;
+	case WeaponType::Shotgun: return game.ShotGunModel;
+	case WeaponType::Rifle: return game.RifleModel;
+	case WeaponType::Pistol: return game.PistolModel;
+	default: return nullptr;
+	}
 }
 
 Player::~Player() {
@@ -2368,50 +2381,40 @@ void Player::ClientUpdate(float deltaTime)
 	}
 }
 
-void Player::Render()
+void Player::Render(matrix parent)
 {
 	if (BoneToWorldMatrixCB.size() == 0) {
 		return;
 	}
 
-	if (game.player == this) {
-		if (game.bFirstPersonVision == false) {
-			SkinMeshGameObject::Render();
-
-			//// 음 이건 오브젝트 타입도 다르고 그리는 방법도 다르기 때문에
-			//// 따로 무기를 렌더하는 함수를 빼야한다.
-			//matrix gunmat = gunMatrix_thirdPersonView;
-
-			//const float PI = 3.141592f;
-			//gunmat *= XMMatrixRotationY(PI);
-
-			//gunmat.pos.y -= 0.40f;
-			//gunmat.pos.x += 0.55f;
-			//gunmat.pos.z += 0.80f;
-
-			//gunmat *= worldMat;
-			////gunmat.LookAt(worldMat.look);
-			////gunmat.transpose();
-
-			////gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &gunmat, 0);
-			////Gun->Render(gd.gpucmd, 1);
-			//if (Game::renderViewPort == &game.MyDirLight.viewport) {
-			//	//shadowMapping
-			//	if (GunModel) {
-
-			//		GunModel->Render(gd.gpucmd, gunmat, nullptr);
-			//	}
-			//}
-			//else {
-			//	if (GunModel) {
-			//		GunModel->Render(gd.gpucmd, gunmat, nullptr);
-			//	}
-			//}
-		}
+	const bool shouldRenderBody = (game.player != this) || (game.bFirstPersonVision == false);
+	if (shouldRenderBody) {
+		SkinMeshGameObject::Render(parent);
 	}
-	else {
-		SkinMeshGameObject::Render();
+}
+
+void Player::Render_ThirdPersonWeapon()
+{
+	if (game.player != this || game.bFirstPersonVision) {
+		return;
 	}
+
+	Model* pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
+	if (!pTargetModel) {
+		pTargetModel = GunModel;
+	}
+	if (!pTargetModel) {
+		return;
+	}
+
+	matrix gunmat = gunMatrix_thirdPersonView;
+	gunmat *= XMMatrixRotationY(XM_PI);
+	gunmat.pos.y -= 0.40f;
+	gunmat.pos.x += 0.55f;
+	gunmat.pos.z += 0.80f;
+	gunmat *= worldMat;
+
+	pTargetModel->Render(gd.gpucmd, gunmat, nullptr);
 }
 
 void Player::Render_AfterDepthClear()
@@ -2422,13 +2425,9 @@ void Player::Render_AfterDepthClear()
 
 	if (game.bFirstPersonVision)
 	{
-		switch ((WeaponType)m_currentWeaponType)
-		{
-		case WeaponType::Sniper:     pTargetModel = game.SniperModel; break;
-		case WeaponType::MachineGun: pTargetModel = game.MachineGunModel; break;
-		case WeaponType::Shotgun:     pTargetModel = game.ShotGunModel; break;
-		case WeaponType::Rifle:     pTargetModel = game.RifleModel; break;
-		case WeaponType::Pistol:     pTargetModel = game.PistolModel; break;
+		pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
+		if (!pTargetModel) {
+			pTargetModel = GunModel;
 		}
 
 		if (pTargetModel) {

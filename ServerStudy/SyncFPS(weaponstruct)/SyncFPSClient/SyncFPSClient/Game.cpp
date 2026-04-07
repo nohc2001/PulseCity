@@ -518,6 +518,81 @@ void Game::Init()
 	animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
 	HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
 
+	constexpr bool kLoadSniperModel = true;
+	constexpr bool kLoadRifleModel = true;
+	constexpr bool kLoadPistolModel = true;
+	constexpr bool kLoadShotGunModel = true;
+	constexpr bool kLoadMachineGunModel = true;
+
+	// 스나이퍼 모델 로드
+	game.SniperModel = nullptr;
+	if (kLoadSniperModel) {
+		game.SniperModel = new Model;
+		game.SniperModel->LoadModelFile2("Resources/Model/sniper.model");
+	}
+
+	// 라이플 모델 로드
+	game.RifleModel = nullptr;
+	if (kLoadRifleModel) {
+		game.RifleModel = new Model;
+		game.RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
+	}
+
+	// 권총 모델 로드
+	game.PistolModel = nullptr;
+	if (kLoadPistolModel) {
+		game.PistolModel = new Model;
+		game.PistolModel->LoadModelFile2("Resources/Model/pistol.model");
+	}
+
+	/*game.Pistol_SlideIndices.clear();
+	{
+		int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
+		if (upperIdx >= 0) {
+			game.Pistol_SlideIndices.push_back(upperIdx);
+			game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
+		}
+	}*/
+
+	// 샷건 모델 로드
+	game.ShotGunModel = nullptr;
+	if (kLoadShotGunModel) {
+		game.ShotGunModel = new Model;
+		game.ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
+	}
+	//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
+
+	/*game.SG_PumpIndices.clear();
+	{
+		int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
+		if (pumpIdx >= 0) {
+			game.SG_PumpIndices.push_back(pumpIdx);
+			game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
+		}
+	}*/
+
+	//// 머신건(미니건) 모델 로드
+	game.MachineGunModel = nullptr;
+	if (kLoadMachineGunModel) {
+		game.MachineGunModel = new Model;
+		game.MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
+	}
+
+	/*game.MG_BarrelIndices.clear();
+	{
+		auto addBarrel = [&](const char* name) {
+			int idx = game.MachineGunModel->FindNodeIndexByName(name);
+			if (idx >= 0) game.MG_BarrelIndices.push_back(idx);
+			};
+
+		addBarrel("Cylinder.107");
+		addBarrel("Cylinder.108");
+		addBarrel("Cylinder.109");
+		addBarrel("Cylinder.110");
+	}*/
+
+	game.GunModel = game.SniperModel;
+
 	Model* PlayerModel = new Model();
 	PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
 	PlayerModel->Retargeting_Humanoid(); // 휴머노이드 리타겟팅
@@ -559,56 +634,7 @@ void Game::Init()
 	//game.GunModel = new Model;
 	//game.GunModel->LoadModelFile("Resources/Model/sniper.model");
 	//game.GunModel->DebugPrintHierarchy(game.GunModel->RootNode);
-	
-	// 스나이퍼 모델 로드
-	/*game.SniperModel = new Model;
-	game.SniperModel->LoadModelFile2("Resources/Model/sniper.model");*/
 
-	// 라이플 모델 로드
-	/*game.RifleModel = new Model;
-	game.RifleModel->LoadModelFile2("Resources/Model/Rifle.model");*/
-
-	// 권총 모델 로드
-	/*game.PistolModel = new Model;
-	game.PistolModel->LoadModelFile2("Resources/Model/pistol.model");
-	game.PistolModel->DebugPrintHierarchy(game.PistolModel->RootNode);*/
-
-	/*game.Pistol_SlideIndices.clear();
-	int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
-	if (upperIdx >= 0) {
-		game.Pistol_SlideIndices.push_back(upperIdx);
-		game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
-	}*/
-
-	// 샷건 모델 로드
-	/*game.ShotGunModel = new Model;
-	game.ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");*/
-	//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
-
-	//game.SG_PumpIndices.clear();
-	//int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
-	//if (pumpIdx >= 0) {
-	//	game.SG_PumpIndices.push_back(pumpIdx);
-	//	game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
-	//}
-
-	//// 머신건(미니건) 모델 로드
-	//game.MachineGunModel = new Model;
-	//game.MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
-
-	/*game.MG_BarrelIndices.clear();
-	auto addBarrel = [&](const char* name) {
-		int idx = game.MachineGunModel->FindNodeIndexByName(name);
-		if (idx >= 0) game.MG_BarrelIndices.push_back(idx);
-	};
-
-	addBarrel("Cylinder.107");
-	addBarrel("Cylinder.108");
-	addBarrel("Cylinder.109");
-	addBarrel("Cylinder.110");*/
-
-	//game.GunModel = game.SniperModel;
-	game.GunModel = nullptr;
 
 	game.HPBarMesh = new Mesh();
 	game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
@@ -757,6 +783,23 @@ void Game::Render() {
 	view *= gd.viewportArr[0].ProjectMatrix;
 	view.transpose();
 
+	auto BindStaticPBRRenderState = [&]() {
+		matrix pbrView = gd.viewportArr[0].ViewMatrix;
+		pbrView *= gd.viewportArr[0].ProjectMatrix;
+		pbrView.transpose();
+
+		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
+		game.PresentShaderType = ShaderType::RenderWithShadow;
+		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		{
+			using PRID = PBRShader1::RootParamId;
+			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &pbrView, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight.descindex.hRender.hgpu);
+		}
+	};
+
 	// 16 ~ 17. 터레인 테셀레이션 생략
 
 	// 18. 모든 게임오브젝트들을 출력한다.
@@ -820,6 +863,11 @@ void Game::Render() {
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight.descindex.hRender.hgpu);
 		}
 		RenderTour<true>();
+
+		if (game.player != nullptr && game.bFirstPersonVision == false) {
+			BindStaticPBRRenderState();
+			game.player->Render_ThirdPersonWeapon();
+		}
 	}
 
 	//Render Items
@@ -903,6 +951,7 @@ void Game::Render() {
 	int bulletCount = 0;
 	float HealSkillCooldownFlow = 0;
 	if (game.player != nullptr) {
+		BindStaticPBRRenderState();
 		game.player->Render_AfterDepthClear();
 		hhpp = game.player->HP;
 		HeatGauge = game.player->HeatGauge;
@@ -1489,15 +1538,17 @@ void Game::Update()
 		vec4 pat = player->worldMat.pos;
 
 		if (bFirstPersonVision) {
-			peye += 1.0f * player->worldMat.up;
-			pat += 1.0f * player->worldMat.up;
+			peye += 1.55f * player->worldMat.up;
+			pat += 1.55f * player->worldMat.up;
 			pat += 10.0f * clook;
 		}
 		else {
-			peye -= 3.0f * clook;
+			peye += 1.35f * player->worldMat.up;
+			peye -= 4.0f * clook;
+			peye += 1.10f * player->worldMat.right;
+			pat += 1.20f * player->worldMat.up;
 			pat += 10.0f * clook;
-			peye += 0.5f * player->worldMat.up;
-			peye += 0.5f * player->worldMat.right;
+			pat += 0.35f * player->worldMat.right;
 		}
 
 		XMFLOAT3 Up = { 0, 1, 0 };

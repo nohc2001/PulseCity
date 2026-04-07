@@ -977,13 +977,14 @@ public:
 	* <모델일 경우>
 	* //fix <처리 안함>
 	*/
-	virtual void Render();
+	virtual void Render(matrix parent = XMMatrixIdentity()) override;
 
 	/*
 	* 설명 : DepthClear 되고 렌더링되는 요소들을 렌더링
 	* 보통 DepthClear가 되면 이후 UI, 항상 앞에 보여야만 하는 것들을 렌더링 한다.
 	*/
 	void Render_AfterDepthClear();
+	void Render_ThirdPersonWeapon();
 
 	// idk
 	void UpdateGunBarrelNodes();

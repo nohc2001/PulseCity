@@ -260,7 +260,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		case '5':
 		{
 			if (!(lParam & (1 << 30))) {
-				char input[3] = { (char)wParam, 'D', 0 }; 
+				if (game.player) {
+					switch (wParam) {
+					case '1': game.player->m_currentWeaponType = (int)WeaponType::MachineGun; break;
+					case '2': game.player->m_currentWeaponType = (int)WeaponType::Sniper; break;
+					case '3': game.player->m_currentWeaponType = (int)WeaponType::Shotgun; break;
+					case '4': game.player->m_currentWeaponType = (int)WeaponType::Rifle; break;
+					case '5': game.player->m_currentWeaponType = (int)WeaponType::Pistol; break;
+					}
+				}
+
 				CTS_KeyInput_Header header;
 				header.size = sizeof(CTS_KeyInput_Header);
 				header.st = CTS_Protocol::KeyInput;
