@@ -150,6 +150,17 @@ struct Server {
 
 extern int dbgc[128];
 void dbgbreak(bool condition);
+
+#if defined(_DEBUG)
+#define dbgWarn(C, Out) \
+    if(C) { \
+	Out \
+	}
+#else
+#define dbgWarn(C, Out) \
+	/##/
+#endif
+
 /*
 * 설명 : 출력창에 로드를 찍기 위한 매크로 함수
 */

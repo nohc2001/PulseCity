@@ -1590,9 +1590,6 @@ struct ClientData {
 	static void DisconnectToServer(int index);
 };
 
-
-
-
 struct collisionchecksphere {
 	vec4 center;
 	float radius;

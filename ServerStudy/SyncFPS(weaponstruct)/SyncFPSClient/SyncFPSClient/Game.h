@@ -288,7 +288,7 @@ public:
 					if constexpr (isSkinMesh == false) {
 						for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
 							if (gc->Static_gameobjects.isnull(i)) continue;
-							if (gc->Dynamic_gameobjects[i] == nullptr) continue;
+							if (gc->Static_gameobjects[i] == nullptr) continue;
 							if (gc->Static_gameobjects[i]->TourID != TourID) {
 								(gc->Static_gameobjects[i]->*StaticGameObject::CurrentRenderFunc)(idmat);
 								gc->Static_gameobjects[i]->TourID = TourID;

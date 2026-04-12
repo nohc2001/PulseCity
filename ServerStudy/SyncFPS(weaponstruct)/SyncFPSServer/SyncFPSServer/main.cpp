@@ -33,9 +33,6 @@ int main() {
 
 	cout << "Server Start" << endl;
 
-	ui64 ft, st;
-	ui64 TimeStack = 0;
-	st = GetTicks();
 	vector<WSAPOLLFD> readFds;
 	//??
 	server.Listen();
@@ -43,6 +40,10 @@ int main() {
 	constexpr double InvHZ = 1.0 / (double)QUERYPERFORMANCE_HZ;
 
 	gameworld.Init();
+
+	ui64 ft, st;
+	ui64 TimeStack = 0;
+	st = GetTicks();
 
 	while (true) {
 		ft = GetTicks();

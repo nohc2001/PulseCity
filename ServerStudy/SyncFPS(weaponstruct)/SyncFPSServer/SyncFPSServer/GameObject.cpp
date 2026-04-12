@@ -2290,7 +2290,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
 {
-	worldMat = (initialWorldMatrix);
+	SetWorld(initialWorldMatrix);
 	m_homePos = worldMat.pos;
 }
 

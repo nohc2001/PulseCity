@@ -134,6 +134,9 @@ void Zone::Update(float deltaTime) {
                 DynamicGameObject* gbj1 = Dynamic_gameObjects[i];
                 if (gbj1->tag[GameObjectTag::Tag_Enable] == false) continue;
                 if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) continue;
+                dbgWarn(gbj1->chunkAllocIndexs == nullptr,
+                    cout << "Zone" << zoneId << " WARN - DynamicObject_" << i << " 가 포함되는 청크에 대한 데이터가 없습니다.\n";
+                    continue;)
 
                 //Shape로부터 OBB정보를 받는다.
                 ui64 obbptr = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj1->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
@@ -242,12 +245,15 @@ void Zone::Update(float deltaTime) {
                     gbj1->worldMat.pos += gbj1->tickLVelocity;
                 }
                 else {
-                    vec4 pos = gbj1->worldMat.pos;
+                    vec4 pos = gbj1->worldMat.pos + gbj1->tickLVelocity;
                     vec4 minpos = _mm_min_ps(pos, map.AABB[0]);
                     vec4 maxpos = _mm_max_ps(pos, map.AABB[1]);
                     if (map.AABB[0] == minpos &&
                         map.AABB[1] == maxpos) {
                         gbj1->MoveChunck(gbj1->tickLVelocity, vec4(0, 0, 0, 1), goic_before, goic_after);
+                    }
+                    else {
+                        gbj1->tickLVelocity = 0;
                     }
                 }
                 //gbj1->worldMat.pos += gbj1->tickLVelocity;
@@ -273,20 +279,20 @@ void Zone::Update(float deltaTime) {
         }
     }
 
-    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-        if (Dynamic_gameObjects.isnull(i)) continue;
-        DynamicGameObject* gbj1 = Dynamic_gameObjects[i];
-        if (!(gbj1->tag[Tag_Enable])) continue;
+    //for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+    //    if (Dynamic_gameObjects.isnull(i)) continue;
+    //    DynamicGameObject* gbj1 = Dynamic_gameObjects[i];
+    //    if (!(gbj1->tag[Tag_Enable])) continue;
 
-        if (gbj1->tickLVelocity.fast_square_of_len3 > 0.001f) {
-            gbj1->worldMat.pos += gbj1->tickLVelocity;
-            gbj1->tickLVelocity = XMVectorZero();
+    //    if (gbj1->tickLVelocity.fast_square_of_len3 > 0.001f) {
+    //        gbj1->worldMat.pos += gbj1->tickLVelocity;
+    //        gbj1->tickLVelocity = XMVectorZero();
 
-            // 클라이언트에 위치 전송
-            Sending_ChangeGameObjectMember<matrix>(CommonSDS, i, gbj1,
-                GameObjectType::VptrToTypeTable[*(void**)gbj1], &gbj1->worldMat);
-        }
-    }
+    //        // 클라이언트에 위치 전송
+    //        Sending_ChangeGameObjectMember<matrix>(CommonSDS, i, gbj1,
+    //            GameObjectType::VptrToTypeTable[*(void**)gbj1], &gbj1->worldMat);
+    //    }
+    //}
 
     // 포탈 검사 - 이 Zone에 속한 클라이언트들만
     for (int i = 0; i < gameworld.clients.size; ++i) {
@@ -576,21 +582,21 @@ void Zone::SpawnObjects() {
     // TODO: 실제 Shape 이름이 바뀐 구조에 맞는지 확인 필요
 
     // 몬스터 스폰 (zoneId == 1 이면 스킵)
-
     if (zoneId == 1) return;
 
+    static constexpr int range = 100;
     for (int i = 0; i < 20; ++i) {
         Monster* mon = new Monster();
         mon->zone = this;
         mon->SetShape(Shape::StrToShapeIndex["Monster001"]);
         // 스폰 범위를 줄이고 높이를 올림
-        mon->Init(XMMatrixTranslation((float)(rand() % 20 - 10), 100.0f, (float)(rand() % 20 - 10)));
-
+        mon->Init(XMMatrixTranslation((float)(rand() % range - (range/2)), 10.0f, (float)(rand() % range - (range / 2))));
         while (map.isStaticCollision(mon->GetOBB())) {
-            mon->Init(XMMatrixTranslation((float)(rand() % 20 - 10), 100.0f, (float)(rand() % 20 - 10)));
+            mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), 10.0f, (float)((rand() % range - (range / 2)))));
         }
 
         NewObject(mon, GameObjectType::_Monster);
+        PushGameObject(mon);
     }
 }
 
@@ -601,24 +607,44 @@ void Zone::GridCollisionCheck() {
     for (AstarNode* node : allnodes) {
         vec4 nodePos(node->worldx, groundY, node->worldz);
         collisionchecksphere sphere = { nodePos, radius };
+        BoundingOrientedBox obb = BoundingOrientedBox(nodePos.f3, { radius , radius , radius }, vec4(0, 0, 0, 1));
         bool blocked = false;
 
-        // Static 오브젝트와 충돌 검사
-        for (int i = 0; i < Static_gameObjects.size; ++i) {
-            if (Static_gameObjects.isnull(i)) continue;
-            StaticGameObject* obj = Static_gameObjects[i];
-
-            int wallShapeIdx = Shape::StrToShapeIndex["Wall001"];
-            if (obj->shapeindex == wallShapeIdx) {
-                vec4 wallCenter = obj->worldMat.pos;
-                vec4 wallHalfSize(2.5f, 1.0f, 0.5f);
-
-                if (CheckAABBSphereCollision(wallCenter, wallHalfSize, sphere)) {
-                    blocked = true;
-                    break;
+        GameObjectIncludeChunks goic = GetChunks_Include_OBB(obb);
+        ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
+        int chunckLen = goic.GetChunckSize();
+        for (; ci.extra < chunckLen; goic.Inc(ci)) {
+            auto f = chunck.find(ci);
+            if (f != chunck.end()) {
+                GameChunk* gc = f->second;
+                for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
+                    StaticGameObject* obj = Static_gameObjects[i];
+                    BoundingOrientedBox sobb = obj->GetOBB();
+                    if (sobb.Intersects(obb)) {
+                        blocked = true;
+                        goto COLLISION_CHECK_END;
+                    }
                 }
             }
         }
+        COLLISION_CHECK_END:
+
+        //// Static 오브젝트와 충돌 검사
+        //for (int i = 0; i < Static_gameObjects.size; ++i) {
+        //    if (Static_gameObjects.isnull(i)) continue;
+        //    StaticGameObject* obj = Static_gameObjects[i];
+
+        //    int wallShapeIdx = Shape::StrToShapeIndex["Wall001"];
+        //    if (obj->shapeindex == wallShapeIdx) {
+        //        vec4 wallCenter = obj->worldMat.pos;
+        //        vec4 wallHalfSize(2.5f, 1.0f, 0.5f);
+
+        //        if (CheckAABBSphereCollision(wallCenter, wallHalfSize, sphere)) {
+        //            blocked = true;
+        //            break;
+        //        }
+        //    }
+        //}
         node->cango = !blocked;
     }
 }
