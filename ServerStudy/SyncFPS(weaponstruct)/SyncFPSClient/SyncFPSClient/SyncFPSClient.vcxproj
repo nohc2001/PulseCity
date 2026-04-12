@@ -43,13 +43,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -163,6 +163,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\SyncFPSServer\SyncFPSServer\Protocol.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="D3D_Util\D3DUtil.h" />
     <ClInclude Include="D3D_Util\DirectXRaytracingHelper.h" />
@@ -174,17 +175,6 @@
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="NetworkDefs.h" />
-    <ClInclude Include="NWLib\CustomNWLib.h" />
-    <ClInclude Include="NWLib\Endpoint.h" />
-    <ClInclude Include="NWLib\Epoll.h" />
-    <ClInclude Include="NWLib\Exception.h" />
-    <ClInclude Include="NWLib\Iocp.h" />
-    <ClInclude Include="NWLib\Poll.h" />
-    <ClInclude Include="NWLib\Semaphore.h" />
-    <ClInclude Include="NWLib\Socket.h" />
-    <ClInclude Include="NWLib\SocketInit.h" />
-    <ClInclude Include="NWLib\stdafx.h" />
-    <ClInclude Include="NWLib\targetver.h" />
     <ClInclude Include="Render.h" />
     <ClInclude Include="SpaceMath.h" />
     <ClInclude Include="stb_image.h" />
@@ -251,14 +241,23 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <FxCompile Include="Resources\Shaders\SDF\SDFTextShader.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="Resources\Shaders\Skybox.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\TestComputeShader.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Credit.txt" />
     <Text Include="memo.txt" />
+    <Text Include="Resources\SDF\commonTextMeta.txt" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

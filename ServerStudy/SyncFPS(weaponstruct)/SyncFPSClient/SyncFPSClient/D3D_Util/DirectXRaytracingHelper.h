@@ -70,6 +70,17 @@ public:
     };
     PointerWithSize shaderIdentifier;
     PointerWithSize localRootArguments;
+
+    void CopyTo_NotConst(void* dest)
+    {
+        uint8_t* byteDest = static_cast<uint8_t*>(dest);
+        memcpy(byteDest, shaderIdentifier.ptr, shaderIdentifier.size);
+        if (localRootArguments.ptr)
+        {
+            memcpy(byteDest + shaderIdentifier.size, localRootArguments.ptr, localRootArguments.size);
+        }
+        localRootArguments.ptr = reinterpret_cast<void*>(byteDest + shaderIdentifier.size);
+    }
 };
 
 // Shader table = {{ ShaderRecord 1}, {ShaderRecord 2}, ...}
@@ -94,11 +105,11 @@ public:
         m_mappedShaderRecords = MapCpuWriteOnly();
     }
     
-    void push_back(const ShaderRecord& shaderRecord)
+    void push_back(ShaderRecord shaderRecord)
     {
         ThrowIfFalse(m_shaderRecords.size() < m_shaderRecords.capacity());
         m_shaderRecords.push_back(shaderRecord);
-        shaderRecord.CopyTo(m_mappedShaderRecords);
+        m_shaderRecords[m_shaderRecords.size()-1].CopyTo_NotConst(m_mappedShaderRecords);
         m_mappedShaderRecords += m_shaderRecordSize;
     }
 

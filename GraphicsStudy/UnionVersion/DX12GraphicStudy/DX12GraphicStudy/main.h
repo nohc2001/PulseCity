@@ -1273,6 +1273,36 @@ struct RootParam1 {
 };
 #pragma endregion
 
+struct SDFTextSection {
+	wchar_t c;
+	ui16 pageindex;
+	ui16 sx;
+	ui16 sy;
+	ui16 width;
+	ui16 height;
+};
+
+struct SDFTextPageTextureBuffer {
+	static constexpr int MaxWidth = 4096;
+	static constexpr int MaxHeight = 4096;
+	inline static unordered_map<wchar_t, SDFTextSection*> SDFSectionMap;
+
+	ui8 data[MaxHeight][MaxWidth] = { {} };
+	int present_StartX = 0;
+	int present_StartY = 0;
+	int present_height = 0;
+	int pageindex = 0;
+	vector<SDFTextSection> sections;
+
+	SDFTextPageTextureBuffer(int page) :
+		present_StartX{ 0 }, present_StartY{ 0 }, present_height(0), pageindex{page}
+	{
+
+	}
+
+	bool PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer);
+};
+
 // name completly later. ??
 struct GlobalDevice {
 	ui32 DSVSize;
@@ -1305,6 +1335,7 @@ struct GlobalDevice {
 
 	static constexpr unsigned int SwapChainBufferCount = 2;
 	ui32 CurrentSwapChainBufferIndex;
+	
 
 	// maybe seperate later.. ?? i don't know future..
 	
@@ -1364,6 +1395,11 @@ struct GlobalDevice {
 	unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_sdftexture_map[FontCount];
 	//vector<wchar_t> addTextureStack;
 	vector<wchar_t> addSDFTextureStack;
+
+	static constexpr bool isTextBake = true;
+	static constexpr bool isTextBake_OnlyMeta = false;
+	vector<SDFTextPageTextureBuffer*> SDFTextureArr;
+	bool PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer);
 
 	// OS에서 전체화면을 지원하는 해상도 리스트
 	vector<ResolutionStruct> EnableFullScreenMode_Resolusions;

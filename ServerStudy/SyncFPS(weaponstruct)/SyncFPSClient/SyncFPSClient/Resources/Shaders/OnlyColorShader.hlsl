@@ -32,6 +32,7 @@ VS_OUTPUT VSMain(VS_INPUT input)
     VS_OUTPUT output;
     //output.position = mul(mul(mul(float4(input.position, 1.0f), gWorld), gView), gProjection);
     output.position = mul(mul(float4(input.position, 1.0f), gWorld), gView);
+    //output.position.z = 0.001;
     output.color = input.color;
     return (output);
 }

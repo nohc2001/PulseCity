@@ -99,6 +99,7 @@ struct stMaterial
 // global
 RaytracingAccelerationStructure Scene : register(t0, space0);
 RWTexture2D<float4> RenderTarget : register(u0);
+RWTexture2D<float4> DepthStecil : register(u1);
 StructuredBuffer<Vertex> Vertices : register(t1, space0);
 StructuredBuffer<uint> Indices : register(t2, space0);
 TextureCube SkyBoxCubeMap : register(t3, space0);
@@ -134,6 +135,9 @@ struct RayPayload
     float isCollide_Light;
     float3 ReflectRaydir;
     float RelectRate;
+    float depth;
+    float stencil;
+    float2 extra;
 };
 
 // Retrieve hit world position.
@@ -199,18 +203,19 @@ void MyRaygenShader()
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
     
-    RayPayload payload = { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 };
+    RayPayload payload = { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 , 0, 0, 0, 0};
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
     float reflectRate = payload.RelectRate;
 
     ray.Origin = payload.ReflectRayStart;
     ray.Direction = payload.ReflectRaydir;
-    RayPayload rpayload = { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 };
+    RayPayload rpayload = { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 , 0, 0, 0,0};
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, rpayload);
     float4 reflectColor = rpayload.color;
     
     // Write the raytraced color to the output texture.
     RenderTarget[DispatchRaysIndex().xy] = (1 - reflectRate) * payload.color + (reflectRate) * reflectColor;
+    DepthStecil[DispatchRaysIndex().xy].r = payload.depth;
 }
 
 //PBR Functions
@@ -272,6 +277,18 @@ float3 BRDF_lambert(float3 color)
     return color / 3.141592f;
 }
 
+// 일단 함수를 만들어 놓긴 했는데 텍스쳐가 벽목도 아니며,
+// 또한 밉맵을 한다고 자글거림이 효과적으로 제거되는것도 아닌것 같음.
+int GetSampleLevel(float Distance, float3 Normal)
+{
+    const float far = 1000.0f;
+    const float near = 0;
+    const int maxMipLevel = 9;
+    //float anglefactor = min(1.0f - dot(normalize(-ViewDir), Normal), 0);
+    //float dist = min(pow(Distance / far, 1), 0);
+    int SampleLevel = Distance / 10;
+    return SampleLevel;
+}
 
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
@@ -321,53 +338,45 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         hitUV = float2(vert[0].u, vert[0].v) * b0 + float2(vert[1].u, vert[1].v) * attr.barycentrics.x + float2(vert[2].u, vert[2].v) * attr.barycentrics.y;
     }
     
-    //Get Material & Tiling
+    //Get TBN (in World) 
+    float3 Tangent;
+    float3 Bitangent;
+    float3 Normal;
+    float3x3 WorldMat3x3 = WorldToObject3x4();
+    {
+        Normal = (b0 * vert[0].normal + b1 * vert[1].normal + b2 * vert[2].normal);
+        Tangent = (b0 * vert[0].tangent + b1 * vert[1].tangent + b2 * vert[2].tangent);
+        Normal = normalize(mul(Normal, WorldMat3x3));
+        Tangent = normalize(mul(Tangent, WorldMat3x3));
+        Bitangent = cross(Normal, Tangent);
+    }
+    
+    //Get Sample Level
+    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
+    float Distance = length(ViewDir);
+    float depth = min(Distance / 1000.0f, 1.0f);
+    int SampleLevel = GetSampleLevel(Distance, Normal);
+    
+     //Get Material & Tiling
     stMaterial material;
     material = Materials[max(localCB.MaterialStart, 0) + vert[0].extra];
     hitUV.x = material.TilingX * (hitUV.x + material.TilingOffsetX);
     hitUV.y = material.TilingY * (hitUV.y + material.TilingOffsetY);
     hitUV -= floor(hitUV);
-    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, 0) * material.baseColor;
-    float3 TBNnormal;
-    if (material.normalTexId < 0)
-    {
-        TBNnormal = float3(0, 0, 1);
-    }
-    else
-    {
-        TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, 0);
-        TBNnormal = TBNnormal.xyz;
-        TBNnormal = 2.0 * (TBNnormal - 0.5);
-    }
-
-    float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, 0).r;
-    float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, 0).r;
-    float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, 0).r, 1.0);
+    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) * material.baseColor;
+    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel);
+    TBNnormal = TBNnormal.xyz;
+    TBNnormal = 2.0 * (TBNnormal - 0.5);
+    float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
+    float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
+    float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
     
-    //Get TBN (in World) and Real Normal (with NormalMap)
-    float3 Tangent;
-    float3 Bitangent;
-    float3 Normal;
-    float3x3 WorldMat3x3 = WorldToObject3x4();
+    //Real Normal (with NormalMap)
     float3x3 invTBN = 0;
     float3 realNormal = 0;
     {
-        // Compute the triangle's normal.
-        // This is redundant and done for illustration purposes 
-        // as all the per-vertex normals are the same and match triangle's normal in this sample. 
-        //float3 triangleNormal = HitAttribute(vertexNormals, attr);
-        Normal = (b0 * vert[0].normal + b1 * vert[1].normal + b2 * vert[2].normal);
-        Tangent = (b0 * vert[0].tangent + b1 * vert[1].tangent + b2 * vert[2].tangent);
-        Normal = normalize(mul(Normal, WorldMat3x3));
-        if (dot(Normal, Tangent) > 0.5)
-        {
-            Tangent = Tangent - Normal;
-        }
-        Tangent = normalize(mul(Tangent, WorldMat3x3));
-        Bitangent = cross(Normal, Tangent);
-        Tangent = cross(Bitangent, Normal);
         invTBN = /*transpose*/(float3x3(Tangent, Bitangent, Normal));
-        realNormal = normalize(mul(TBNnormal, invTBN));
+        realNormal = normalize(mul(invTBN, TBNnormal));
     }
     
     //PBR Lighting Caculation Prepare
@@ -379,7 +388,6 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float dW = 1.0 / CalculationCount;
     float3 Lo = float3(0.0, 0, 0);
     float3 diffuseColor = 0;
-    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
     //Lighting Calculation
     //direction Light Calculation
     {
@@ -407,6 +415,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         // add to outgoing radiance Lo
         Lo += ShadowRate * dW * (BRDF_lambert(Color.xyz) + BRDF_cookToorrance(hitPosition, wi, ViewDir, realNormal, Roughness, F)) * radiance * NdotL;
     }
+    
     // PBR Post Process
     float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;
     float3 color = ambient + Lo;
@@ -418,10 +427,12 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     //reflect
     payload.ReflectRayStart = hitPosition;
     float3 raydir = WorldRayDirection();
-    payload.ReflectRaydir = normalize(reflect(raydir, realNormal));
-    payload.RelectRate = 0.5f * material.smoothness;
-    
-    payload.color = float4(color, 1);
+    float3 reflectNormal = ((1.0f - depth) * realNormal + depth * Normal);
+    payload.ReflectRaydir = normalize(reflect(raydir, reflectNormal));
+    payload.RelectRate = 0.5f * material.smoothness * (1.0f - depth);
+    payload.color = /*float4(SampleLevel * 0.1f, SampleLevel * 0.1f, SampleLevel * 0.1f, 1.0f);*/ float4(color, 1);
+    payload.depth = depth;
+    payload.stencil = 0.0f;
 }
 
 [shader("closesthit")]
@@ -472,37 +483,43 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         hitUV = float2(vert[0].u, vert[0].v) * b0 + float2(vert[1].u, vert[1].v) * attr.barycentrics.x + float2(vert[2].u, vert[2].v) * attr.barycentrics.y;
     }
     
-    //Get Material & Tiling
-    stMaterial material;
-    material = Materials[max(localCB.MaterialStart, 0) + vert[0].extra];
-    hitUV.x = material.TilingX * (hitUV.x + material.TilingOffsetX);
-    hitUV.y = material.TilingY * (hitUV.y + material.TilingOffsetY);
-    hitUV -= floor(hitUV);
-    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, 0) * material.baseColor;
-    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, 0);
-    TBNnormal = TBNnormal.xyz;
-    TBNnormal = 2.0 * (TBNnormal - 0.5);
-    float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, 0).r;
-    float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, 0).r;
-    float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, 0).r, 1.0);
-    
-    //Get TBN (in World) and Real Normal (with NormalMap)
+    //Get TBN (in World) 
     float3 Tangent;
     float3 Bitangent;
     float3 Normal;
     float3x3 WorldMat3x3 = WorldToObject3x4();
-    float3x3 invTBN = 0;
-    float3 realNormal = 0;
     {
-        // Compute the triangle's normal.
-        // This is redundant and done for illustration purposes 
-        // as all the per-vertex normals are the same and match triangle's normal in this sample. 
-        //float3 triangleNormal = HitAttribute(vertexNormals, attr);
         Normal = (b0 * vert[0].normal + b1 * vert[1].normal + b2 * vert[2].normal);
         Tangent = (b0 * vert[0].tangent + b1 * vert[1].tangent + b2 * vert[2].tangent);
         Normal = normalize(mul(Normal, WorldMat3x3));
         Tangent = normalize(mul(Tangent, WorldMat3x3));
         Bitangent = cross(Normal, Tangent);
+    }
+    
+    //Get Sample Level
+    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
+    float Distance = length(ViewDir);
+    float depth = max(Distance / 1000.0f, 1.0f);
+    int SampleLevel = GetSampleLevel(Distance, Normal);
+    
+     //Get Material & Tiling
+    stMaterial material;
+    material = Materials[max(localCB.MaterialStart, 0) + vert[0].extra];
+    hitUV.x = material.TilingX * (hitUV.x + material.TilingOffsetX);
+    hitUV.y = material.TilingY * (hitUV.y + material.TilingOffsetY);
+    hitUV -= floor(hitUV);
+    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) * material.baseColor;
+    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel);
+    TBNnormal = TBNnormal.xyz;
+    TBNnormal = 2.0 * (TBNnormal - 0.5);
+    float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
+    float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
+    float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
+    
+    //Real Normal (with NormalMap)
+    float3x3 invTBN = 0;
+    float3 realNormal = 0;
+    {
         invTBN = /*transpose*/(float3x3(Tangent, Bitangent, Normal));
         realNormal = normalize(mul(invTBN, TBNnormal));
     }
@@ -516,7 +533,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float dW = 1.0 / CalculationCount;
     float3 Lo = float3(0.0, 0, 0);
     float3 diffuseColor = 0;
-    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
+    
     //Lighting Calculation
     //direction Light Calculation
     {
@@ -556,9 +573,10 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     payload.ReflectRayStart = hitPosition;
     float3 raydir = WorldRayDirection();
     payload.ReflectRaydir = normalize(reflect(raydir, realNormal));
-    payload.RelectRate = 0.5f * material.smoothness;
-    
+    payload.RelectRate = 0.5f * material.smoothness * (1-depth);
     payload.color = float4(color, 1);
+    payload.depth = depth;
+    payload.stencil = 0.0f;
 }
 
 [shader("miss")]
@@ -569,4 +587,6 @@ void MyMissShader(inout RayPayload payload)
     payload.color.w = 1;
     payload.ReflectRaydir = raydir;
     payload.isCollide_Light = 1.0f;
+    payload.depth = 1.0f;
+    payload.stencil = 0.0f;
 }

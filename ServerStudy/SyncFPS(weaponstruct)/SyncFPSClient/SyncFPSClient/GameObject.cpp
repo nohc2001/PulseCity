@@ -164,9 +164,11 @@ void GameObject::SetShape(Shape _shape)
 	Model* model = nullptr;
 	shape.GetRealShape(mesh, model);
 	if (model != nullptr) {
-		transforms_innerModel = new matrix[model->nodeCount];
-		for (int i = 0; i < model->nodeCount; ++i) {
-			transforms_innerModel[i] = model->Nodes[i].transform;
+		if (transforms_innerModel == nullptr) {
+			transforms_innerModel = new matrix[model->nodeCount];
+			for (int i = 0; i < model->nodeCount; ++i) {
+				transforms_innerModel[i] = model->Nodes[i].transform;
+			}
 		}
 
 		if (gd.isSupportRaytracing) {
@@ -335,7 +337,7 @@ StaticGameObject::StaticGameObject()
 
 StaticGameObject::~StaticGameObject()
 {
-	aabbArr.clear();
+	obbArr.clear();
 }
 
 matrix StaticGameObject::GetWorld() {
@@ -451,6 +453,17 @@ BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
 	return obb_world;
 }
 
+void StaticGameObject::SetShape(Shape _shape) {
+	GameObject::SetShape(_shape);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (model) {
+		obbArr.clear();
+		model->RootNode->PushOBBs(model, worldMat, &obbArr, this);
+	}
+}
+
 void StaticGameObject::Release() {
 	GameObject::Release();
 }
@@ -497,14 +510,16 @@ void StaticGameObject::RecvSTC_SyncObj(char* data) {
 
 	int& aabbCount = *(int*)(data + offset);
 	offset += sizeof(int);
-	aabbArr.reserve(aabbCount);
-	aabbArr.resize(aabbCount);
+	obbArr.reserve(aabbCount);
+	obbArr.resize(aabbCount);
 	for (int i = 0;i < aabbCount;++i) {
 		XMFLOAT3& Center = *(XMFLOAT3*)(data + offset);
 		offset += sizeof(XMFLOAT3);
 		XMFLOAT3& Extents = *(XMFLOAT3*)(data + offset);
 		offset += sizeof(XMFLOAT3);
-		aabbArr[i] = BoundingBox(Center, Extents);
+		XMFLOAT4& Orientation = *(XMFLOAT4*)(data + offset);
+		offset += sizeof(XMFLOAT4);
+		obbArr[i] = BoundingOrientedBox(Center, Extents, Orientation);
 	}
 }
 
@@ -1470,6 +1485,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 			modifyMeshes = new RayTracingMesh[model->mNumSkinMesh];
 			OutVertexUAV = new DescIndex[model->mNumSkinMesh];
 			for (int i = 0; i < model->mNumSkinMesh; ++i) {
+				dbgbreak(game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[0].AccelerationStructure == 0);
 				// 수정할 버택스만 만들어 rmesh에 저장. 출력시 LRS에서 버택스는 여기에서, 인덱스는 원본메쉬에서 가져온다.
 				modifyMeshes[i].AllocateRaytracingUAVMesh(model->mBumpSkinMeshs[i]->vertexData, model->mBumpSkinMeshs[i]->rmesh.IBStartOffset, model->mBumpSkinMeshs[i]->subMeshNum, model->mBumpSkinMeshs[i]->SubMeshIndexStart);
 				modifyMeshes[i].IBStartOffset = new UINT64[/*model->mBumpSkinMeshs[i]->subMeshNum */1+ 1];
@@ -2826,11 +2842,16 @@ void GameMap::LoadMap(const char* MapName)
 
 			int ColliderCount = 0;
 			ifs.read((char*)&ColliderCount, sizeof(int));
-			go->aabbArr.reserve(ColliderCount);
-			go->aabbArr.resize(ColliderCount);
+			go->obbArr.reserve(ColliderCount);
+			go->obbArr.resize(ColliderCount);
 			for (int k = 0; k < ColliderCount; ++k) {
-				ifs.read((char*)&go->aabbArr[k].Center, sizeof(XMFLOAT3));
-				ifs.read((char*)&go->aabbArr[k].Extents, sizeof(XMFLOAT3));
+				XMFLOAT3 Center, Extents;
+				ifs.read((char*)&Center, sizeof(XMFLOAT3));
+				ifs.read((char*)&Extents, sizeof(XMFLOAT3));
+				BoundingOrientedBox obb = BoundingOrientedBox(Center, Extents, vec4(0, 0, 0, 1));
+				BoundingOrientedBox obb_world;
+				obb.Transform(obb_world, go->worldMat);
+				go->obbArr[k] = obb_world;
 			}
 		}
 		else if (Mod == 'm') {
@@ -2841,14 +2862,8 @@ void GameMap::LoadMap(const char* MapName)
 
 			int ModelID;
 			ifs.read((char*)&ModelID, sizeof(int));
-			if (ModelID < 0) {
-				go->SetShape((Model*)nullptr);
-			}
-			else {
-				go->SetShape(map->models[ModelID]);
-			}
-
-			int nodeCount = go->shape.GetModel()->nodeCount;
+			int nodeCount = map->models[ModelID]->nodeCount;
+			go->transforms_innerModel = new matrix[nodeCount];
 			for (int k = 0; k < nodeCount; ++k) {
 				vec4 pos;
 				ifs.read((char*)&pos, sizeof(float) * 3);
@@ -2868,6 +2883,13 @@ void GameMap::LoadMap(const char* MapName)
 					go->transforms_innerModel[k] = world;
 				else
 					go->transforms_innerModel[k].Id();
+			}
+
+			if (ModelID < 0) {
+				go->SetShape((Model*)nullptr);
+			}
+			else {
+				go->SetShape(map->models[ModelID]);
 			}
 		}
 		else if (Mod == 'l') {

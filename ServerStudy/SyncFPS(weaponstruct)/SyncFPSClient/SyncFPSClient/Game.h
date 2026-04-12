@@ -63,6 +63,8 @@ public:
 
 	Model* PistolModel = nullptr;
 
+	Mesh* OBBDebugMesh = nullptr;
+
 	std::vector<int> MG_BarrelIndices;
 	std::vector<int> SG_PumpIndices;
 	std::vector<int> Pistol_SlideIndices;
@@ -143,6 +145,9 @@ public:
 
 	// 플레이어 인벤토리 창이 열렸는지 여부
 	bool isInventoryOpen = false;
+
+	// 충돌체들의 상태를 보여주는지
+	static constexpr bool DebugCollisions = true;
 
 	// 현재 씬에서 쓰일 모든 텍스쳐들이 담겨있는 배열
 	vector<GPUResource*> TextureTable;
@@ -409,6 +414,8 @@ public:
 	* float depth : 어떤 깊이값에서 텍스트가 렌더링 되는지 결정.
 	*/
 	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
+
+	void RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth);
 };
 
 extern Game game;

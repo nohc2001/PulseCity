@@ -8,6 +8,7 @@ World gameworld;
 float DeltaTime = 0;
 Server server;
 vector<Item> ItemTable;
+int dbgc[128] = {};
 
 void dbgbreak(bool condition) {
 	if (condition) __debugbreak();
@@ -140,7 +141,7 @@ int main() {
 						Player* p = new Player();
 						p->clientIndex = clientindex;
 						p->worldMat.Id();
-						p->worldMat.pos.f3.y = 100;
+						p->worldMat.pos.f3.y = gameworld.map.AABB[1].y - 1;
 						p->SetShape(Shape::StrToShapeIndex["Player"]);
 						//p->mesh = Mesh::StrToShapeMap["Player"];
 						for (int i = 0; i < 36; ++i) {
@@ -221,7 +222,7 @@ void World::Sending_AllocPlayerIndex(SendDataSaver& sds, int clientindex, int ob
 	sds.postpush_reserve(reqsiz);
 	STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::AllocPlayerIndexes;
+	header.st = STC_Protocol::AllocPlayerIndexes;
 	header.clientindex = clientindex;
 	header.server_obj_index = objindex;
 	sds.postpush_end();
@@ -233,7 +234,7 @@ void World::Sending_SyncGameState(SendDataSaver& sds) {
 	sds.postpush_reserve(reqsiz);
 	STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::SyncGameState;
+	header.st = STC_Protocol::SyncGameState;
 	header.DynamicGameObjectCapacity = Dynamic_gameObjects.Capacity;
 	header.StaticGameObjectCapacity = Static_gameObjects.Capacity;
 

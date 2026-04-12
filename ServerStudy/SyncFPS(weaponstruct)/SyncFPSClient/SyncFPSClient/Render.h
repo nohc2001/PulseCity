@@ -77,6 +77,7 @@ union ShaderType {
 		TessTerrain = 8, // Tess Terrain
 		SkinMeshRender = 9,
 		InstancingWithShadow = 10,
+		Debug_OBB = 11,
 	};
 	int id;
 
@@ -841,6 +842,10 @@ struct RayTracingDevice {
 	ID3D12Resource* RayTracingOutput = nullptr;
 	DescIndex RTO_UAV_index;
 
+	GPUResource DepthBuffer;
+	DescIndex MainDepth_UAV;
+	DescIndex MainDepth_SRV;
+
 	ID3D12Resource* CameraCB = nullptr;
 	CameraConstantBuffer* MappedCB = nullptr;
 
@@ -916,9 +921,9 @@ struct RayTracingMesh {
 	inline static ID3D12Resource* UAV_vertexBuffer = nullptr; // UAV, SRV
 
 	// VB, IB의 최대크기
-	static constexpr int VertexBufferCapacity = 52428800; // 50MB
-	static constexpr int IndexBufferCapacity = 52428800; // 10MB
-	static constexpr int UAV_VertexBufferCapacity = 52428800; // 50MB
+	static constexpr int VertexBufferCapacity = 524288000; // 500MB
+	static constexpr int IndexBufferCapacity = 524288000; // 100MB
+	static constexpr int UAV_VertexBufferCapacity = 524288000; // 500MB
 
 	// 업로드할 메쉬의 VB, IB 가 들어갈 데이터
 	inline static ID3D12Resource* Upload_vertexBuffer = nullptr;
@@ -926,9 +931,9 @@ struct RayTracingMesh {
 	inline static ID3D12Resource* UAV_Upload_vertexBuffer = nullptr;
 
 	// 업로드 VB, IB의 최대크기
-	static constexpr int Upload_VertexBufferCapacity = 20971520; // 20MB
-	static constexpr int Upload_IndexBufferCapacity = 20971520; // 10MB
-	static constexpr int UAV_Upload_VertexBufferCapacity = 20971520; // 20MB
+	static constexpr int Upload_VertexBufferCapacity = 20971520 * 10; // 10 * 20MB
+	static constexpr int Upload_IndexBufferCapacity = 20971520 * 2; // 2 * 10MB
+	static constexpr int UAV_Upload_VertexBufferCapacity = 20971520 * 2; // 2 * 20MB
 
 	// 업로드 VB, IB가 매핑된 CPURAM 데이터의 주소
 	inline static char* pVBMappedStart = nullptr;
@@ -1082,7 +1087,7 @@ struct RayTracingShader {
 	ID3D12StateObject* RTPSO = nullptr;
 	vector<RayTracingRenderInstance> RenderCommandList;
 
-	ID3D12Resource* TLAS;
+	ID3D12Resource* TLAS = nullptr;
 	ID3D12Resource* TLAS_InstanceDescs_Res; // UploadBuffer
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC TLASBuildDesc = {};
 
@@ -1104,12 +1109,13 @@ struct RayTracingShader {
 	ComPtr<ID3D12Resource> RayGenShaderTable = nullptr;
 	ComPtr<ID3D12Resource> MissShaderTable = nullptr;
 
-	void** hitGroupShaderIdentifier;
+	void** hitGroupShaderIdentifier = nullptr;
 	//같은 종류의 렌더메쉬의 개수
 	static constexpr int HitGroupShaderTableCapavity = 1048576;
 	int HitGroupShaderTableSize = 0;
 	int HitGroupShaderTableImmortalSize = 0;
 	ShaderTable hitGroupShaderTable;
+	bool shaderTableInit = false;
 	ComPtr<ID3D12Resource> HitGroupShaderTable = nullptr;
 
 	// 셰이더 테이블의 Map.
@@ -1132,6 +1138,51 @@ struct RayTracingShader {
 	void BuildShaderTable();
 	void SkinMeshModify();
 	void PrepareRender();
+};
+
+struct SDFTextSection {
+	wchar_t c;
+	ui16 pageindex;
+	ui16 sx;
+	ui16 sy;
+	ui16 width;
+	ui16 height;
+};
+
+struct SDFTextPageTextureBuffer {
+	static constexpr int MaxWidth = 4096;
+	static constexpr int MaxHeight = 4096;
+	inline static unordered_map<wchar_t, SDFTextSection*> SDFSectionMap;
+
+	ui8 data[MaxHeight][MaxWidth] = { {} };
+	int present_StartX = 0;
+	int present_StartY = 0;
+	int present_height = 0;
+	int pageindex = 0;
+	//vector<SDFTextSection> sections;
+	int sectionCount = 0;
+
+	/*
+	* false : 미리 구운 완성된 텍스쳐
+	* true : 새로운 문자열이 나올때마다 업데이트 될 수 있는 텍스쳐
+	*/
+	bool isDynamicTexture = false;
+	int uploadedSectionCount = 0;
+	GPUResource UploadTextureBuffer;
+	GPUResource DefaultTextureBuffer;
+	char* mappedBuffer = nullptr;
+	DescIndex SDFTextureSRV;
+
+	SDFTextPageTextureBuffer(int page) :
+		present_StartX{ 0 }, present_StartY{ 0 }, present_height(0), pageindex{ page }
+	{
+		UploadTextureBuffer.resource = nullptr;
+		DefaultTextureBuffer.resource = nullptr;
+	}
+
+	bool PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer);
+
+	void BakeSDF();
 };
 
 /*
@@ -1194,8 +1245,11 @@ struct GlobalDevice {
 	ID3D12DescriptorHeap* pDsvDescriptorHeap;
 	// DSV DESC 증가 사이즈
 	ui32 DsvDescriptorIncrementSize;
+	// DS SRV
+	DescIndex MainDS_SRV;
 
 	GPUCmd gpucmd;
+
 	GPUCmd CScmd;
 	ID3D12CommandQueue* pComputeCommandQueue;
 	ID3D12CommandAllocator* pComputeCommandAllocator;
@@ -1426,6 +1480,31 @@ struct GlobalDevice {
 	*	이런 기능은 여러 obb를 포함시키는 하나의 최소 AABB를 구하는데 쓰인다.
 	*/
 	void GetAABBFromOBB(vec4* out, BoundingOrientedBox obb, bool first = false) {
+		XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];
+		obb.GetCorners(corners);
+
+		//dbglog3_noline(L"AABB start : (%g, %g, %g) - ", out[0].x, out[0].y, out[0].z);
+		//dbglog3_noline(L"(%g, %g, %g)\n", out[1].x, out[1].y, out[1].z);
+
+		vec4 c[8];
+		c[0].f3 = corners[0];
+		//dbglog4_noline(L"OBB[%d] : (%g, %g, %g)\n", 0, c[0].x, c[0].y, c[0].z);
+		vec4 minpos = (first) ? c[0] : vec4(_mm_min_ps(out[0], c[0]));
+		vec4 maxpos = (first) ? c[0] : vec4(_mm_max_ps(out[1], c[0]));
+		for (int i = 1; i < 8; ++i) {
+			c[i].f3 = corners[i];
+			//dbglog4_noline(L"OBB[%d] : (%g, %g, %g)\n", i, c[i].x, c[i].y, c[i].z);
+			minpos = _mm_min_ps(c[i], minpos);
+			maxpos = _mm_max_ps(c[i], maxpos);
+		}
+		out[0] = minpos;
+		out[1] = maxpos;
+
+		//dbglog3_noline(L"AABB result : (%g, %g, %g) - ", out[0].x, out[0].y, out[0].z);
+		//dbglog3_noline(L"(%g, %g, %g)\n", out[1].x, out[1].y, out[1].z);
+
+		return;
+
 		matrix mat;
 		OBB_vertexVector ovv;
 		mat.trQ(obb.Orientation);
@@ -1700,7 +1779,8 @@ struct GlobalDevice {
 	struct TextureWithUAV
 	{
 		ID3D12Resource* texture;
-		DescIndex handle;
+		DescIndex handle; // UAV
+		DescIndex SRVIndex;
 	};
 
 	// width, height 크기의 텍스처와 UAV를 생성하는 함수
@@ -1746,6 +1826,9 @@ struct GlobalDevice {
 
 		ShaderVisibleDescPool.ImmortalAlloc(&result.handle, 1);
 		device->CreateUnorderedAccessView(result.texture, nullptr, &uavDesc, result.handle.hCreation.hcpu);
+
+
+
 		return result;
 	}
 	TextureWithUAV BlurTexture;
@@ -1854,6 +1937,12 @@ struct GlobalDevice {
 	}
 
 	static constexpr bool PlayAnimationByGPU = true;
+
+	int SDFTextureArr_immortalSize = 0;
+	vector<SDFTextPageTextureBuffer*> SDFTextureArr;
+	int registerd_SDFTextSRVCount = 0;
+	bool PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer);
+	void GetBakedSDFs();
 
 #pragma region TimeMeasureCode
 	static constexpr int TimeMeasureSamepleCount = 32;
@@ -2903,6 +2992,10 @@ struct ModelNode {
 	* const matrix& parentMat : 부모의 기본 trasform으로 부터 변환된 행렬
 	*/
 	void BakeAABB(void* origin, const matrix& parentMat);
+
+	void RenderMeshOBBs(void* origin, const matrix& parentMat, void* gameobj = nullptr);
+
+	void PushOBBs(void* origin, const matrix& parentMat, vector<BoundingOrientedBox>* obbArr, void* gameobj);
 };
 
 /*
@@ -3030,8 +3123,6 @@ struct Model {
 	* 반환 : 노드의 인덱스 (찾지 못하면 -1.)
 	*/
 	int FindNodeIndexByName(const std::string& name);
-
-
 };
 
 /*
@@ -3093,6 +3184,7 @@ public:
 class OnlyColorShader : public Shader {
 public:
 	ID3D12PipelineState* pUiPipelineState;
+	ID3D12PipelineState* pPipelineState_OBBWireFrames;
 
 	OnlyColorShader();
 	virtual ~OnlyColorShader();
@@ -3100,6 +3192,34 @@ public:
 	virtual void InitShader();
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
+	virtual void CreatePipelineState_OBBWireFrames();
+
+	/*
+	* 설명 : 셰이더를 선택해 커맨드리스트에 관련 커맨드를 등록한다.
+	* 이 함수는 맴버함수이기 때문에, this가 선택하는 셰이더가 되고,
+	* reg를 통해 셰이더의 렌더링 종류를 결정할 수 있다.
+	* 매개변수 :
+	* ID3D12GraphicsCommandList* commandList : 현재 렌더링에 쓰이는 commandList
+	* ShaderType reg : 어떤 종류의 렌더링을 선택할 것인지.
+	*/
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+
+	enum RootParamId {
+		Const_Camera = 0, // projview mat
+		Const_Transform = 1, // world mat
+		Normal_RootParamCapacity = 2,
+	};
+};
+
+struct SDFInstance
+{
+	vec4 rect;
+	vec4 uvrange;
+	vec4 Color;
+	float depth;
+	float MinD;
+	float MaxD;
+	unsigned int pageId;
 };
 
 /*
@@ -3107,15 +3227,45 @@ public:
 */
 class ScreenCharactorShader : public Shader {
 public:
+	ID3D12PipelineState* pPipelineState_SDF = nullptr;
+	ID3D12RootSignature* pRootSignature_SDF = nullptr;
+
 	ScreenCharactorShader();
 	virtual ~ScreenCharactorShader();
 
 	virtual void InitShader();
 	virtual void CreateRootSignature();
 	virtual void CreatePipelineState();
+	virtual void CreateRootSignature_SDF();
+	virtual void CreatePipelineState_SDF();
 	virtual void Release();
 
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+
 	void SetTextureCommand(GPUResource* texture);
+
+	static constexpr int MaxInstance = 16384;
+	inline static GPUResource SDFInstance_StructuredBuffer;
+	SDFInstance* MappedSDFInstance;
+	static inline int SDFInstanceCount = 0;
+	static inline DescIndex SDFInstance_SRV;
+	__forceinline void PushSDFInstance(SDFInstance& ins) {
+		if (SDFInstanceCount + 1 < MaxInstance) {
+			MappedSDFInstance[SDFInstanceCount] = ins;
+			SDFInstanceCount += 1;
+		}
+	}
+	__forceinline void ClearSDFInstance() {
+		SDFInstanceCount = 0;
+	}
+	void RenderAllSDFTexts();
+
+	enum RootParamId {
+		Const_BasicInfo = 0,
+		SRVTable_SDFInstance = 1,
+		SRVTable_Texture = 2,
+		Normal_RootParamCapacity = 3,
+	};
 };
 
 /*

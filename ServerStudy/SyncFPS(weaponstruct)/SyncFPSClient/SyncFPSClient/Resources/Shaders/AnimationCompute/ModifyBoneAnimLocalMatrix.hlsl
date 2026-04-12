@@ -92,7 +92,6 @@ RWStructuredBuffer<matrix> OutNodeMatrixs : register(u0);
 // 이건 엔비디아 GPU의 캐시라인이 128바이트인 탓이다. 
 // 구조적으로 한 캐시라인에 둘이 쓰면 false shareing이 일어날 수 밖에 없기 때문에
 // 한 스레드가 128바이트 쓰기를 당담해야 하고, 서로의 캐시라인을 침범하지 말아야한다.
-// 마지막 본은 계산상 생략한다.
 [numthreads(32, 1, 1)]
 void CSMain(int3 n3DispatchThreadID : SV_DispatchThreadID)
 {

@@ -16,9 +16,6 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{ea744ea0-c195-436e-b3fe-d6c56e9e9bb4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\NWLib">
-      <UniqueIdentifier>{329ec6eb-9179-4023-bd74-12d08d1326fa}</UniqueIdentifier>
-    </Filter>
     <Filter Include="소스 파일\Utill">
       <UniqueIdentifier>{5875ccac-7b75-436b-94fa-82bda67d6f50}</UniqueIdentifier>
     </Filter>
@@ -36,6 +33,9 @@
     </Filter>
     <Filter Include="Shaders\AnimationCompute">
       <UniqueIdentifier>{577eca99-8539-4b13-aeed-c7e4019d3d00}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\SDF">
+      <UniqueIdentifier>{d2c5ba3f-ce89-4c73-9126-d4e7fa55c856}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -70,39 +70,6 @@
   <ItemGroup>
     <ClInclude Include="main.h">
       <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\CustomNWLib.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Endpoint.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Epoll.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Exception.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Iocp.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Poll.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Semaphore.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\Socket.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\SocketInit.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\stdafx.h">
-      <Filter>헤더 파일\NWLib</Filter>
-    </ClInclude>
-    <ClInclude Include="NWLib\targetver.h">
-      <Filter>헤더 파일\NWLib</Filter>
     </ClInclude>
     <ClInclude Include="Render.h">
       <Filter>헤더 파일</Filter>
@@ -155,6 +122,9 @@
     <ClInclude Include="vecset.h">
       <Filter>헤더 파일\UtillHeader</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\SyncFPSServer\SyncFPSServer\Protocol.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Resources\Shaders\DefaultShader.hlsl">
@@ -202,10 +172,19 @@
     <FxCompile Include="Resources\Shaders\AnimationCompute\ModifyLocalToWorldMatrix.hlsl">
       <Filter>Shaders\AnimationCompute</Filter>
     </FxCompile>
+    <FxCompile Include="Resources\Shaders\SDF\SDFTextShader.hlsl">
+      <Filter>Shaders\SDF</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\Shaders\TestComputeShader.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="memo.txt" />
     <Text Include="Credit.txt" />
+    <Text Include="Resources\SDF\commonTextMeta.txt">
+      <Filter>리소스 파일</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

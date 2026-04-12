@@ -244,7 +244,7 @@ struct GameObject {
 struct StaticGameObject : public GameObject {
 	StaticGameObject();
 	virtual ~StaticGameObject();
-	vector<BoundingBox> aabbArr;
+	vector<BoundingOrientedBox> obbArr;
 
 	virtual matrix GetWorld();
 	virtual void SetWorld(matrix localWorldMat);
@@ -261,6 +261,8 @@ struct StaticGameObject : public GameObject {
 	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
 	BoundingOrientedBox GetOBBw(matrix worldMat);
+
+	virtual void SetShape(Shape _shape);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {

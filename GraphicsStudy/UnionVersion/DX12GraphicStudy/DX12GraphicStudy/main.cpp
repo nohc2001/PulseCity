@@ -253,6 +253,67 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
+bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer) {
+	SDFTextSection sdftextSec;
+	auto f = SDFSectionMap.find(c);
+	if (f == SDFSectionMap.end()) {
+		int postSX = 0;
+		int postSY = 0;
+		int postHight = 0;
+		if (present_StartX + width >= MaxWidth) {
+			if (present_StartY + height >= MaxHeight) {
+				return false;
+			}
+			postSX = 0;
+			postSY = present_StartY + present_height;
+			present_height = 0;
+			postHight = max(height, present_height);
+
+			sdftextSec.c = c;
+			sdftextSec.sx = 0;
+			sdftextSec.sy = postSY;
+			sdftextSec.width = width;
+			sdftextSec.height = height;
+
+			present_StartX = postSX + width;
+			present_StartY = postSY;
+			present_height = postHight;
+		}
+		else {
+			postSX = present_StartX + width;
+			postSY = present_StartY;
+			postHight = max(height, present_height);
+
+			sdftextSec.c = c;
+			sdftextSec.sx = present_StartX;
+			sdftextSec.sy = present_StartY;
+			sdftextSec.width = width;
+			sdftextSec.height = height;
+
+			present_StartX = postSX;
+			present_StartY = postSY;
+			present_height = postHight;
+		}
+
+		if (present_StartY + height >= MaxHeight) {
+			return false;
+		}
+
+		sdftextSec.pageindex = pageindex;
+			for (int iy = sdftextSec.sy; iy < sdftextSec.sy + sdftextSec.height;++iy) {
+				for (int ix = sdftextSec.sx; ix < sdftextSec.sx + sdftextSec.width;++ix) {
+					int iix = ix - sdftextSec.sx;
+					int iiy = iy - sdftextSec.sy;
+					data[iy][ix] = copybuffer[width * iiy + iix];
+				}
+			}
+		sections.push_back(sdftextSec);
+		SDFSectionMap.insert(pair<wchar_t, SDFTextSection*>(c, &sections[sections.size() - 1]));
+		return true;
+	}
+	return true; // 이미 텍스쳐 영역이 있을 경우
+}
+
 #pragma region GlobalDeviceCode
 void GPUCmd::SetShader(Shader* shader, ShaderType reg) {
 	shader->Add_RegisterShaderCommand(*this, reg);
@@ -1094,6 +1155,20 @@ void GlobalDevice::ReportLiveObjects()
 #endif
 }
 
+bool GlobalDevice::PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer) {
+	if (SDFTextureArr.size() == 0) {
+		SDFTextureArr.push_back(new SDFTextPageTextureBuffer(SDFTextureArr.size()));
+	}
+	SDFTextPageTextureBuffer& texBuffer = *SDFTextureArr.at(SDFTextureArr.size() - 1);
+	bool b = texBuffer.PushSDFText(c, width, height, copybuffer);
+	if (b == false) {
+		SDFTextureArr.push_back(new SDFTextPageTextureBuffer(SDFTextureArr.size()));
+		SDFTextPageTextureBuffer& texBuffer2 = *SDFTextureArr.at(SDFTextureArr.size() - 1);
+		bool b = texBuffer2.PushSDFText(c, width, height, copybuffer);
+	}
+	return b;
+}
+
 void GlobalDevice::AddTextSDFTexture(wchar_t key)
 {
 	char Zero = 0;
@@ -1262,6 +1337,7 @@ void GlobalDevice::AddTextSDFTexture(wchar_t key)
 				*(char*)&mipTex[(startY+yi) * (realW) +startX+xi] = *(char*)&textureData[yi * textureMipLevel * width + xi * textureMipLevel];
 			}
 		}
+
 		delete[] textureData;
 
 		imgform::PixelImageObject pio;
@@ -1271,11 +1347,18 @@ void GlobalDevice::AddTextSDFTexture(wchar_t key)
 		pio.data = (imgform::RGBA_pixel*)sdfbuffer.data();
 		//pio.rawDataToBMP("SDFTestImage.bmp", DXGI_FORMAT_R8_SNORM);
 
-		GPUResource texture;
-		ZeroMemory(&texture, sizeof(GPUResource));
-		texture.CreateTexture_fromImageBuffer(realW, realH, sdfbuffer.data(), DXGI_FORMAT_R8_SNORM);
-		font_sdftexture_map[i].insert(pair<wchar_t, GPUResource>(key, texture));
-		delete[] mipTex;
+		if (gd.isTextBake == false) {
+			GPUResource texture;
+			ZeroMemory(&texture, sizeof(GPUResource));
+			texture.CreateTexture_fromImageBuffer(realW, realH, sdfbuffer.data(), DXGI_FORMAT_R8_SNORM);
+			font_sdftexture_map[i].insert(pair<wchar_t, GPUResource>(key, texture));
+			delete[] mipTex;
+		}
+		else {
+			GPUResource texture;
+			font_sdftexture_map[i].insert(pair<wchar_t, GPUResource>(key, texture));
+			PushSDFText(key, realW, realH, (char*)sdfbuffer.data());
+		}
 	}
 }
 
@@ -2551,6 +2634,58 @@ void Game::Init()
 		gd.pBundles[0]->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4Projection, 0);
 		gd.pBundles[0]->Close();
 	}
+
+	if constexpr (gd.isTextBake) {
+		ifstream ifs{ "Resources/commonASCIIText.txt" };
+		wchar_t temp;
+		int cnt_arr = 0;
+		while (ifs.eof() == false) {
+			int c = 0;
+			temp = ifs.get();
+			if (ifs.eof()) break;
+			gd.AddTextSDFTexture(temp);
+			dbglog2(L"Bake SDF Text %d : %c \n", cnt_arr, temp);
+			cnt_arr += 1;
+		}
+		ifs.close();
+
+		wifstream ifs2{ L"Resources/commonHanGulText.txt" };
+		ifs2.imbue(std::locale(""));
+		while (ifs2.eof() == false) {
+			temp = ifs2.get();
+			if (ifs2.eof()) break;
+			gd.AddTextSDFTexture(temp);
+			dbglog2(L"Bake SDF Text %d : %c \n", cnt_arr, temp);
+			cnt_arr += 1;
+		}
+		ifs2.close();
+
+		if constexpr (gd.isTextBake_OnlyMeta == false) {
+			for (int i = 0;i < gd.SDFTextureArr.size();++i) {
+				SDFTextPageTextureBuffer* buff = gd.SDFTextureArr[i];
+				imgform::PixelImageObject pio;
+				pio.width = SDFTextPageTextureBuffer::MaxWidth;
+				pio.height = SDFTextPageTextureBuffer::MaxHeight;
+				pio.data = (imgform::RGBA_pixel*)buff->data;
+				char filename[256];
+				sprintf_s(filename, "SDFTextPage%d.bmp", i);
+				pio.rawDataToBMP(filename, DXGI_FORMAT_R8_SNORM);
+				game.bmpTodds(0, "BC4_UNORM", filename);
+			}
+		}
+		
+		wofstream ofs{ L"Resources/commonHanGulTextMeta.txt" };
+		ofs.imbue(std::locale(""));
+		for (int i = 0;i < gd.SDFTextureArr.size();++i) {
+			SDFTextPageTextureBuffer* buff = gd.SDFTextureArr[i];
+			for (int k = 0;k < buff->sections.size();++k) {
+				SDFTextSection& sec = buff->sections[k];
+				ofs << sec.c << " " << sec.pageindex << " " << sec.sx << " " << sec.sy << " " << sec.width << " " << sec.height << endl;
+			}
+		}
+		ofs.close();
+	}
+	dbgbreak(true);
 }
 
 void Game::Render() {

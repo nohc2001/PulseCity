@@ -357,6 +357,8 @@ void Game::Init()
 {
 	InitDirLightGPURes();
 
+	gd.GetBakedSDFs(); // later
+
 	GameObjectType::STATICINIT();
 
 	DropedItems.reserve(4096);
@@ -364,7 +366,7 @@ void Game::Init()
 	bulletRays.Init(32);
 
 	gd.gpucmd.Reset();
-	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
 	MyShader = new Shader();
 	MyShader->InitShader();
@@ -401,13 +403,19 @@ void Game::Init()
 	GunTexture.CreateTexture_fromFile(L"Resources/m1911pistol_diffuse0.png", game.basicTexFormat, game.basicTexMip);
 
 	// particle texture
-	FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", DXGI_FORMAT_UNKNOWN, 1, true);
+	FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", game.basicTexFormat, game.basicTexMip /*DXGI_FORMAT_UNKNOWN, 1*/, true);
 
 	Map = new GameMap();
 	Map->LoadMap("The_Port");
+	//Map->LoadMap("OfficeDungeon_1floor");
+	game.StaticGameObjects.reserve(Map->MapObjects.size());
 	for (int i = 0; i < Map->MapObjects.size(); ++i) {
 		PushGameObject(Map->MapObjects[i]);
+		game.StaticGameObjects.push_back(Map->MapObjects[i]);
 	}
+
+	SniperModel = new Model();
+	SniperModel->LoadModelFile2("Resources/test/sniper.model");
 
 	/*ofstream ofs{ "ClientStaticGameObjectOBBData.txt" };
 	for (int i = 0;i < Map->MapObjects.size();++i) {
@@ -581,6 +589,9 @@ void Game::Init()
 
 	ParticleDraw->FireTexture = &FireTextureRes;
 
+	OBBDebugMesh = new Mesh();
+	OBBDebugMesh->CreateWallMesh(1.0f, 1.0f, 1.0f, vec4(1, 1, 1, 1));
+
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
 	gd.WaitGPUComplete();
@@ -602,6 +613,16 @@ void Game::Render() {
 	// 1. DRED 활성화
 	D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr);
 
+	for (int i = 0;i < gd.addSDFTextureStack.size();++i) {
+		gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
+	}
+	gd.addSDFTextureStack.clear();
+	for (int i = gd.SDFTextureArr_immortalSize; i < gd.SDFTextureArr.size(); ++i) {
+		SDFTextPageTextureBuffer* page = gd.SDFTextureArr[i];
+		page->BakeSDF();
+	}
+	game.MyScreenCharactorShader->ClearSDFInstance();
+	game.MyScreenCharactorShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenCharactorShader->MappedSDFInstance);
 	//2. 프러스텀 업데이트
 	gd.viewportArr[0].UpdateFrustum();
 
@@ -633,15 +654,7 @@ void Game::Render() {
 	}
 	gd.ShaderVisibleDescPool.BakeImmortalDesc();
 	gd.ShaderVisibleDescPool.DynamicReset();
-	
 
-	//4. 필요해진 텍스트 텍스쳐 로딩
-	//SDF text texture loading
-	if (gd.addSDFTextureStack.size() > 0) {
-		for (int i = 0; i < gd.addSDFTextureStack.size(); ++i) {
-			gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
-		}
-	}
 	if (gd.gpucmd.isClose == false) {
 		gd.gpucmd.Close();
 		gd.gpucmd.Execute(true);
@@ -661,7 +674,7 @@ void Game::Render() {
 	gd.gpucmd.ResBarrierTr(&game.MyDirLight.ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	//8. 서브렌더타겟의 STATE를 PRESENT에서 RENDER TARGET으로 변환 (서브렌더타겟에 그려야 되서)
-	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 	//9. 뷰포트/시저렉트 설정
 	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
@@ -741,7 +754,14 @@ void Game::Render() {
 		}
 
 		RenderTour<false>();
-
+		
+		//temp code
+		{
+			matrix idmat = XMMatrixScaling(2, 2, 2);
+			idmat.pos.y = 10;
+			SniperModel->Render<false>(gd.gpucmd, idmat, nullptr);
+		}
+		
 		// 18-2. 스킨 메쉬들을 출력하기 위해 Shader를 Set.
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
 		game.PresentShaderType = ShaderType::SkinMeshRender;
@@ -802,7 +822,7 @@ void Game::Render() {
 		//gc->RenderChunkDbg();
 	}
 
-	//23. NPC 들의 HP 바를 빌보드 출력
+	//23. NPC 들의 HP 바를 빌보드 출력 (빌보드는 블러링 전임. / DepthTest 하니까.)
 	for (int i = 0; i < game.NpcHPBars.size; ++i)
 	{
 		if (game.NpcHPBars.isAlloc(i))
@@ -813,6 +833,104 @@ void Game::Render() {
 			game.HPBarMesh->Render(gd.gpucmd, 1);
 		}
 	}
+
+	if (game.DebugCollisions) {
+		using OCSRP = OnlyColorShader::RootParamId;
+		gd.gpucmd.SetShader(MyOnlyColorShader, ShaderType::Debug_OBB);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Camera, 16, &view, 0);
+		int cnt = 0;
+		for (int i = 0;i < game.StaticGameObjects.size();++i) {
+			StaticGameObject* sto = game.StaticGameObjects[i];
+
+			if (true) {
+				if (sto->obbArr.size() == 0) {
+					BoundingOrientedBox obb = sto->GetOBB();
+					if (obb.Extents.x <= 0) continue;
+					matrix worldMat = XMMatrixScaling(obb.Extents.x, obb.Extents.y, obb.Extents.z);
+					worldMat.trQ(obb.Orientation);
+					worldMat.pos.f3 = obb.Center;
+					worldMat.pos.w = 1;
+					worldMat.transpose();
+					gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Transform, 16, &worldMat, 0);
+					game.OBBDebugMesh->Render(gd.gpucmd, 1, 0);
+				}
+				else {
+					for (int k = 0; k < sto->obbArr.size(); ++k) {
+						BoundingOrientedBox obb = sto->obbArr[k];
+						if (obb.Extents.x <= 0) continue;
+						matrix worldMat = XMMatrixScaling(obb.Extents.x, obb.Extents.y, obb.Extents.z);
+						worldMat.trQ(obb.Orientation);
+						worldMat.pos.f3 = obb.Center;
+						worldMat.pos.w = 1;
+						worldMat.transpose();
+						gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Transform, 16, &worldMat, 0);
+						game.OBBDebugMesh->Render(gd.gpucmd, 1, 0);
+					}
+				}
+			}
+		}
+	}
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+	//Command execution
+	// 24-1. 뎁스에 영향 받는 물체들을 모션블러 + Depth에 따른 컨볼루션 수행
+	// 24-2. GPU로 애니메이션 움직임 계산
+	hResult = gd.gpucmd.Close();
+	gd.gpucmd.Execute();
+	gd.gpucmd.WaitGPUComplete();
+
+	//Bluring + DepthConvolution(멀리있는 물체를 흐리게 만든다.) (Compute Shader)
+	hResult = gd.CScmd.Reset();
+	gd.CScmd.SetShader(MyComputeTestShader);
+	gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	float WHarr[2] = { gd.ClientFrameWidth , gd.ClientFrameHeight };
+	gd.CScmd->SetComputeRoot32BitConstants(0, 2, WHarr, 0); // screen width height
+	
+	//gd.SubRenderTarget.srvHandle.hRender.hgpu
+	gd.CScmd->SetComputeRootDescriptorTable(1, gd.raytracing.RTO_UAV_index.hRender.hgpu); // UAV sub RenderTarget
+	gd.CScmd->SetComputeRootDescriptorTable(2, gd.MainDS_SRV.hRender.hgpu); // SRV DS
+	gd.CScmd->SetComputeRootDescriptorTable(3, gd.BlurTexture.handle.hRender.hgpu); // UAV output
+	int disPatchW = (gd.ClientFrameWidth / 8) + 1;
+	int disPatchH = (gd.ClientFrameHeight / 8) + 1;
+	gd.CScmd->Dispatch(disPatchW, disPatchH, 1);
+
+	if constexpr (gd.PlayAnimationByGPU) {
+		//Adding Animation Compute Shaders Execute Command
+		SkinMeshGameObject::collection.clear();
+		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::CollectSkinMeshObject;
+		RenderTour<true>();
+		gd.CScmd.SetShader(game.MyAnimationBlendingShader);
+		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+			SkinMeshGameObject::collection[i]->BlendingAnimation();
+		}
+		gd.CScmd.SetShader(game.MyHBoneLocalToWorldShader);
+		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
+			SkinMeshGameObject::collection[i]->ModifyLocalToWorld();
+		}
+	}
+
+	hResult = gd.CScmd.Close();
+	gd.CScmd.Execute();
+	gd.CScmd.WaitGPUComplete();
+
+	gd.gpucmd.Reset();
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	//9. 뷰포트/시저렉트 설정
+	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
+	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
+	game.renderViewPort = &gd.viewportArr[0];
+
+	//10. 뎁스 스텐실 버퍼를 가리키는 핸들을 가져온다.
+	d3dDsvCPUDescriptorHandle =
+		gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+
+	//11. 서브렌더타겟으로 렌더타겟을 설정
+	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE,
+		&d3dDsvCPUDescriptorHandle);
 
 	// 24. UI 출력을 위해 DepthStencil을 Clear한다. (모든 UI는 이전에 그렸던 모든 것 위에 그려져야 하기 때문)
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
@@ -826,7 +944,7 @@ void Game::Render() {
 	int bulletCount = 0;
 	float HealSkillCooldownFlow = 0;
 	if (game.player != nullptr) {
-		game.player->Render_AfterDepthClear();
+		//game.player->Render_AfterDepthClear();
 		hhpp = game.player->HP;
 		HeatGauge = game.player->HeatGauge;
 		kill = game.player->KillCount;
@@ -840,7 +958,11 @@ void Game::Render() {
 	//maybe..1706x960
 	float Rate = gd.ClientFrameHeight / 960.0f;
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
-	((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.gpucmd);
+	game.RenderSDFText(L"Hello! this is SDF Text! 꽶꽶꽶", 28, rt, 30, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
+
+	// 27. 쌓아논 Text 들을 출력하기
+	MyScreenCharactorShader->RenderAllSDFTexts();
+
 	//std::wstring ui_hp = L"HP: " + std::to_wstring(hhpp);
 	//RenderText(ui_hp.c_str(), ui_hp.length(), rt, 30);
 	////Heat Gauge
@@ -981,76 +1103,18 @@ void Game::Render() {
 		}
 	}
 
-	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-
-	//gd.DeviceRemoveResonDebug();
-
-	//Command execution
-	hResult = gd.gpucmd.Close();
-	gd.gpucmd.Execute();
-	gd.gpucmd.WaitGPUComplete();
-
-	//gd.DeviceRemoveResonDebug();
-
-	//Bluring (Compute Shader)
-	hResult = gd.CScmd.Reset();
-	gd.CScmd.SetShader(MyComputeTestShader);
-	gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-	float WHarr[2] = { gd.ClientFrameWidth , gd.ClientFrameHeight };
-	gd.CScmd->SetComputeRoot32BitConstants(0, 2, WHarr, 0); // screen width height
-	gd.CScmd->SetComputeRootDescriptorTable(1, gd.SubRenderTarget.srvHandle.hRender.hgpu); // SRV for current
-	gd.CScmd->SetComputeRootDescriptorTable(2, gd.BlurTexture.handle.hRender.hgpu); // UAV output
-	int disPatchW = (gd.ClientFrameWidth / 8) + 1;
-	int disPatchH = (gd.ClientFrameHeight / 8) + 1;
-	gd.CScmd->Dispatch(disPatchW, disPatchH, 1);
-
-	if constexpr (gd.PlayAnimationByGPU) {
-		//Adding Animation Compute Shaders Execute Command
-		SkinMeshGameObject::collection.clear();
-		SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::CollectSkinMeshObject;
-		RenderTour<true>();
-		gd.CScmd.SetShader(game.MyAnimationBlendingShader);
-		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
-			SkinMeshGameObject::collection[i]->BlendingAnimation();
-		}
-		gd.CScmd.SetShader(game.MyHBoneLocalToWorldShader);
-		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
-			SkinMeshGameObject::collection[i]->ModifyLocalToWorld();
-		}
-	}
-	
-	hResult = gd.CScmd.Close();
-	gd.CScmd.Execute();
-	gd.CScmd.WaitGPUComplete();
-
-	//gd.DeviceRemoveResonDebug();
-
-	// retuen to graphic command list. to copy resource to render back buffer;
-	hResult = gd.gpucmd.Reset();
-
-	gd.gpucmd.ResBarrierTr(gd.BlurTexture.texture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
 
-	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.BlurTexture.texture);
+	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
 
-	gd.gpucmd.ResBarrierTr(gd.BlurTexture.texture, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-	//render end ----------------------------------------------------------------
-	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-
-	//RenderTarget State Changing Command [RenderTarget -> Present] + wait untill finish rendering
-	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_PRESENT);
-
-	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
 
 	//Command execution
 	hResult = gd.gpucmd.Close();
 	gd.gpucmd.Execute();
 	gd.gpucmd.WaitGPUComplete();
-
-	//gd.DeviceRemoveResonDebug();
 
 	// Present to Swapchain BackBuffer & RenderTargetIndex Update
 	DXGI_PRESENT_PARAMETERS dxgiPresentParameters;
@@ -1059,8 +1123,6 @@ void Game::Render() {
 	dxgiPresentParameters.pScrollRect = NULL;
 	dxgiPresentParameters.pScrollOffset = NULL;
 	gd.pSwapChain->Present1(1, 0, &dxgiPresentParameters);
-
-	//gd.DeviceRemoveResonDebug();
 
 	//Get Present RenderTarget Index
 	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
@@ -1097,15 +1159,17 @@ void Game::Render_RayTracing()
 	D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
 	commandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	commandList->SetComputeRootDescriptorTable(0, gd.raytracing.RTO_UAV_index.hRender.hgpu); // sub render target, raytracing output
-	commandList->SetComputeRootShaderResourceView(1, MyRayTracingShader->TLAS->GetGPUVirtualAddress()); // AS SRV
-	commandList->SetComputeRootConstantBufferView(2, gd.raytracing.CameraCB->GetGPUVirtualAddress()); // Camera CB CBV
-	commandList->SetComputeRootDescriptorTable(3, RayTracingMesh::VBIB_DescIndex.hRender.hgpu); // Vertex, IndexBuffer SRV
-	commandList->SetComputeRootDescriptorTable(4, MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu); // SkyBox SRV
-	commandList->SetComputeRootDescriptorTable(5, RayTracingMesh::UAV_VBIB_DescIndex.hRender.hgpu); // SkinMesh SRV
+	commandList->SetComputeRootDescriptorTable(1, gd.raytracing.MainDepth_UAV.hRender.hgpu); // DSV
 
-	commandList->SetComputeRootDescriptorTable(6, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
+	commandList->SetComputeRootShaderResourceView(2, MyRayTracingShader->TLAS->GetGPUVirtualAddress()); // AS SRV
+	commandList->SetComputeRootConstantBufferView(3, gd.raytracing.CameraCB->GetGPUVirtualAddress()); // Camera CB CBV
+	commandList->SetComputeRootDescriptorTable(4, RayTracingMesh::VBIB_DescIndex.hRender.hgpu); // Vertex, IndexBuffer SRV
+	commandList->SetComputeRootDescriptorTable(5, MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu); // SkyBox SRV
+	commandList->SetComputeRootDescriptorTable(6, RayTracingMesh::UAV_VBIB_DescIndex.hRender.hgpu); // SkinMesh SRV
+
+	commandList->SetComputeRootDescriptorTable(7, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
 	DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
-	commandList->SetComputeRootDescriptorTable(7, texarrSRV.hRender.hgpu); // Texture Arr
+	commandList->SetComputeRootDescriptorTable(8, texarrSRV.hRender.hgpu); // Texture Arr
 
 	commandList->SetPipelineState1(MyRayTracingShader->RTPSO);
 
@@ -1130,18 +1194,44 @@ void Game::Render_RayTracing()
 	dispatchDesc.Depth = 1;
 	commandList->DispatchRays(&dispatchDesc);
 
-	// copy to rendertarget
-	D3D12_RESOURCE_BARRIER preCopyBarriers[2];
-	preCopyBarriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
-	preCopyBarriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(gd.raytracing.RayTracingOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-	commandList->ResourceBarrier(ARRAYSIZE(preCopyBarriers), preCopyBarriers);
+	gd.gpucmd.Close(true);
+	gd.gpucmd.Execute(true);
+	gd.gpucmd.WaitGPUComplete();
 
-	commandList->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.raytracing.RayTracingOutput);
+	HRESULT hResult;
+	//Blur
+	{
+		//Bluring (Compute Shader)
+		hResult = gd.CScmd.Reset();
+		gd.CScmd.SetShader(MyComputeTestShader);
+		gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		float WHarr[2] = { gd.ClientFrameWidth , gd.ClientFrameHeight };
+		gd.CScmd->SetComputeRoot32BitConstants(0, 2, WHarr, 0); // screen width height
+		//gd.SubRenderTarget.srvHandle.hRender.hgpu
+		gd.CScmd->SetComputeRootDescriptorTable(1, gd.raytracing.RTO_UAV_index.hRender.hgpu); // UAV SubRenderTarget
+		gd.CScmd->SetComputeRootDescriptorTable(2, gd.raytracing.MainDepth_SRV.hRender.hgpu); // SRV DS
+		gd.CScmd->SetComputeRootDescriptorTable(3, gd.BlurTexture.handle.hRender.hgpu); // UAV output
+		int disPatchW = (gd.ClientFrameWidth / 8) + 1;
+		int disPatchH = (gd.ClientFrameHeight / 8) + 1;
+		gd.CScmd->Dispatch(disPatchW, disPatchH, 1);
 
-	D3D12_RESOURCE_BARRIER postCopyBarriers[2];
-	postCopyBarriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
-	postCopyBarriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(gd.raytracing.RayTracingOutput, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	commandList->ResourceBarrier(ARRAYSIZE(postCopyBarriers), postCopyBarriers);
+		hResult = gd.CScmd.Close();
+		gd.CScmd.Execute();
+		gd.CScmd.WaitGPUComplete();
+
+		//gd.DeviceRemoveResonDebug();
+	}
+
+	// retuen to graphic command list. to copy resource to render back buffer;
+	hResult = gd.gpucmd.Reset(true);
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
+
+	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
 
 	//Execute
 	gd.gpucmd.Close(true);
@@ -1225,6 +1315,7 @@ void Game::Render_ShadowPass()
 
 	// 2-6. 현재 플레이어가 위치한 청크 주변의 청크들만 쉐도우 렌더에 참여.
 	GameChunk* center = game.GetChunkFromPos(obj);
+	game.TourID += 1;
 	if (center != nullptr) {
 		int chunck_extents = 2;
 		for (int ix = center->cindex.x - chunck_extents; ix <= center->cindex.x + chunck_extents; ++ix) {
@@ -1236,16 +1327,25 @@ void Game::Render_ShadowPass()
 					for (int i = 0;i < chck->Static_gameobjects.size; ++i) {
 						if (chck->Static_gameobjects.isnull(i)) continue;
 						StaticGameObject* sgo = chck->Static_gameobjects[i];
-						if (sgo == nullptr || sgo->tag[GameObjectTag::Tag_Enable] == false) continue;
+						if (sgo == nullptr || sgo->TourID == game.TourID) continue;
 						sgo->Render();
+						sgo->TourID = game.TourID;
 					}
 
 					for (int i = 0;i < chck->Dynamic_gameobjects.size; ++i) {
 						if (chck->Dynamic_gameobjects.isnull(i)) continue;
 						DynamicGameObject* dgo = chck->Dynamic_gameobjects[i];
+						if ((dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) || dgo->TourID == game.TourID) continue;
+						dgo->Render();
+						dgo->TourID = game.TourID;
+					}
+
+					/*for (int i = 0;i < chck->SkinMesh_gameobjects.size; ++i) {
+						if (chck->SkinMesh_gameobjects.isnull(i)) continue;
+						SkinMeshGameObject* dgo = chck->SkinMesh_gameobjects[i];
 						if (dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) continue;
 						dgo->Render();
-					}
+					}*/
 				}
 			}
 		}
@@ -1451,15 +1551,15 @@ int Game::Receiving(char* ptr, int totallen)
 	char* currentPivot = ptr;
 	int offset = 0;
 	unsigned int size;
-	STCProtocol type = STCProtocol::SyncGameObject;
+	STC_Protocol type = STC_Protocol::SyncGameObject;
 READ_START:
 	size = *(unsigned int*)currentPivot;
 	if (offset + size >= totallen) {
 		return offset;
 	}
-	type = *(STCProtocol*)(currentPivot + sizeof(int));
+	type = *(STC_Protocol*)(currentPivot + sizeof(int));
 	switch (type) {
-	case STCProtocol::SyncGameObject:
+	case STC_Protocol::SyncGameObject:
 	{
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)currentPivot;
 		char* datapivot = currentPivot + sizeof(STC_SyncGameObject_Header);
@@ -1549,7 +1649,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::ChangeMemberOfGameObject:
+	case STC_Protocol::ChangeMemberOfGameObject:
 	{
 		STC_ChangeMemberOfGameObject_Header& header = *(STC_ChangeMemberOfGameObject_Header*)currentPivot;
 		char* datapivot = currentPivot + sizeof(STC_ChangeMemberOfGameObject_Header);
@@ -1571,7 +1671,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::NewRay:
+	case STC_Protocol::NewRay:
 	{
 		STC_NewRay_Header& header = *(STC_NewRay_Header*)currentPivot;
 		int BulletIndex = bulletRays.Alloc();
@@ -1584,7 +1684,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::AllocPlayerIndexes:
+	case STC_Protocol::AllocPlayerIndexes:
 	{
 		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)currentPivot;
 
@@ -1642,7 +1742,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::DeleteGameObject:
+	case STC_Protocol::DeleteGameObject:
 	{
 		STC_DeleteGameObject_Header& header = *(STC_DeleteGameObject_Header*)currentPivot;
 		if (game.DynmaicGameObjects.size() <= header.obj_index || header.obj_index < 0) {
@@ -1655,7 +1755,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::ItemDrop:
+	case STC_Protocol::ItemDrop:
 	{
 		STC_ItemDrop_Header& header = *(STC_ItemDrop_Header*)currentPivot;
 		if (header.dropindex >= game.DropedItems.size()) {
@@ -1675,7 +1775,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::ItemDropRemove:
+	case STC_Protocol::ItemDropRemove:
 	{
 		STC_ItemDropRemove_Header& header = *(STC_ItemDropRemove_Header*)currentPivot;
 		game.DropedItems[header.dropindex].itemDrop.id = 0;
@@ -1685,7 +1785,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::InventoryItemSync:
+	case STC_Protocol::InventoryItemSync:
 	{
 		STC_InventoryItemSync_Header& header = *(STC_InventoryItemSync_Header*)currentPivot;
 		game.player->Inventory[header.inventoryIndex].id = header.Iteminfo.id;
@@ -1694,7 +1794,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::PlayerFire:
+	case STC_Protocol::PlayerFire:
 	{
 		STC_PlayerFire_Header& header = *(STC_PlayerFire_Header*)currentPivot;
 		if (header.objindex >= 0 && header.objindex < DynmaicGameObjects.size() && DynmaicGameObjects[header.objindex] != nullptr) {
@@ -1714,7 +1814,7 @@ READ_START:
 		offset += header.size;
 	}
 	break;
-	case STCProtocol::SyncGameState:
+	case STC_Protocol::SyncGameState:
 	{
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)currentPivot;
 		game.DynmaicGameObjects.reserve(header.DynamicGameObjectCapacity);
@@ -1807,6 +1907,94 @@ void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz,
 			pos.x = Rect.x;
 			pos.y -= lineheight;
 			if (pos.y > Rect.w) {
+				return;
+			}
+		}
+	}
+}
+
+//this function must call after ScreenCharactorShader register in pipeline.
+void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth)
+{
+	//fontsize = 100 -> 0.1x | 10 -> 0.01x
+	vec4 pos = vec4(Rect.x, Rect.y, 0, 0);
+	constexpr float Default_LineHeight = 750;
+	float mul = fontsiz / Default_LineHeight;
+
+	float basic_minD = -1;
+	float basic_maxD = 0;
+	bool isbasicDistance = false;
+	if (minD == nullptr || maxD == nullptr) {
+		isbasicDistance = true;
+	}
+
+	constexpr float lineheight_mul = 2.5f;
+	float lineheight = lineheight_mul * fontsiz;
+	for (int i = 0; i < length; ++i) {
+		wchar_t wc = wstr[i];
+		if (wc == L'\n') {
+			pos.x = Rect.x;
+			pos.y -= lineheight;
+			continue;
+		}
+		else if (wc == L' ') {
+			pos.x += fontsiz;
+			continue;
+		}
+		bool textureExist = false;
+		GPUResource* texture = nullptr;
+		SDFTextSection* section = nullptr;
+		Glyph g;
+		for (int k = 0; k < gd.FontCount; ++k) {
+			auto f = SDFTextPageTextureBuffer::SDFSectionMap.find(wc);
+			auto f2 = gd.font_data[k].glyphs.find(wc);
+			if (f != SDFTextPageTextureBuffer::SDFSectionMap.end() && 
+				f2 != gd.font_data[k].glyphs.end()) {
+				textureExist = true;
+				section = f->second;
+				g = f2->second;
+				break;
+			}
+		}
+
+		if (textureExist == false) {
+			bool isexist = false;
+			for (int i = 0;i < gd.addSDFTextureStack.size();++i) {
+				if (gd.addSDFTextureStack[i] == wc) {
+					isexist = true;
+					break;
+				}
+			}
+			if (isexist == false) {
+				gd.addSDFTextureStack.push_back(wc);
+			}
+			
+			continue;
+		}
+
+		//set root variables
+		vec4 textRt = vec4(pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul);
+		//float tConst[14] = { textRt.x, textRt.y, textRt.z, textRt.w, gd.ClientFrameWidth , gd.ClientFrameHeight, depth, 0, color.x, color.y, color.z, color.w, minD[i], maxD[i] };
+
+		SDFInstance sdfins;
+		sdfins.Color = color;
+		sdfins.depth = depth;
+		sdfins.MinD = (isbasicDistance) ? basic_minD : minD[i];
+		sdfins.MaxD = (isbasicDistance) ? basic_maxD : maxD[i];
+		sdfins.pageId = section->pageindex;
+		sdfins.rect = textRt;
+		sdfins.uvrange.x = (float)section->sx / (float)SDFTextPageTextureBuffer::MaxWidth;
+		sdfins.uvrange.y = (float)section->sy / (float)SDFTextPageTextureBuffer::MaxWidth;
+		sdfins.uvrange.z = (float)(section->sx + section->width) / (float)SDFTextPageTextureBuffer::MaxWidth;
+		sdfins.uvrange.w = (float)(section->sy + section->height) / (float)SDFTextPageTextureBuffer::MaxHeight;
+		game.MyScreenCharactorShader->PushSDFInstance(sdfins);
+
+		//calculate next location of text
+		pos.x += g.advance_width * mul;
+		if (pos.x > Rect.z) {
+			pos.x = Rect.x;
+			pos.y -= lineheight;
+			if (pos.y < Rect.w) {
 				return;
 			}
 		}

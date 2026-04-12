@@ -101,6 +101,8 @@ struct ModelNode {
 	* const matrix& parentMat : 부모의 기본 trasform으로 부터 변환된 행렬
 	*/
 	void BakeAABB(void* origin, const matrix& parentMat);
+
+	void PushOBBs(void* origin, const matrix& parentMat, vector<BoundingOrientedBox>* obbArr, void* gameobj);
 };
 
 /*
@@ -382,7 +384,7 @@ struct GameObject {
 		//static pushv
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::SyncGameObject;
+		header.st = STC_Protocol::SyncGameObject;
 		header.objindex = objindex;
 		header.type = GameObjectType::_GameObject;
 		offset += sizeof(STC_SyncGameObject_Header);
@@ -431,7 +433,7 @@ struct GameObject {
 struct StaticGameObject : public GameObject {
 	StaticGameObject();
 	virtual ~StaticGameObject();
-	vector<BoundingOrientedBox> aabbArr;
+	vector<BoundingOrientedBox> obbArr;
 
 	virtual matrix GetWorld();
 	virtual void SetWorld(matrix localWorldMat);
@@ -465,7 +467,7 @@ struct StaticGameObject : public GameObject {
 		s.GetRealShape(mesh, model);
 		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-		reqsiz += sizeof(int) + aabbArr.size() * sizeof(XMFLOAT3) * 2;
+		reqsiz += sizeof(int) + obbArr.size() * (sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT4));
 
 		sds.postpush_reserve(reqsiz);
 		int offset = 0;
@@ -473,7 +475,7 @@ struct StaticGameObject : public GameObject {
 		//static pushv
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::SyncGameObject;
+		header.st = STC_Protocol::SyncGameObject;
 		header.objindex = objindex;
 		header.type = GameObjectType::_StaticGameObject;
 		offset += sizeof(STC_SyncGameObject_Header);
@@ -508,14 +510,18 @@ struct StaticGameObject : public GameObject {
 		}
 
 		int& aabbCount = *(int*)(sds.ofbuff + offset);
-		aabbCount = aabbArr.size();
-		for (int i = 0;i < aabbArr.size();++i) {
+		aabbCount = obbArr.size();
+		for (int i = 0;i < obbArr.size();++i) {
 			XMFLOAT3& Center = *(XMFLOAT3*)(sds.ofbuff + offset);
-			Center = aabbArr[i].Center;
+			Center = obbArr[i].Center;
 			offset += sizeof(XMFLOAT3);
 
 			XMFLOAT3& Extents = *(XMFLOAT3*)(sds.ofbuff + offset);
-			Extents = aabbArr[i].Extents;
+			Extents = obbArr[i].Extents;
+			offset += sizeof(XMFLOAT3);
+
+			XMFLOAT4& Orientation = *(XMFLOAT4*)(sds.ofbuff + offset);
+			Orientation = obbArr[i].Orientation;
 			offset += sizeof(XMFLOAT3);
 		}
 		sds.postpush_end();
@@ -780,7 +786,7 @@ struct DynamicGameObject : public GameObject {
 		//static pushv
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::SyncGameObject;
+		header.st = STC_Protocol::SyncGameObject;
 		header.objindex = objindex;
 		header.type = GameObjectType::_DynamicGameObject;
 		offset += sizeof(STC_SyncGameObject_Header);
@@ -873,7 +879,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 		//static pushv
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::SyncGameObject;
+		header.st = STC_Protocol::SyncGameObject;
 		header.objindex = objindex;
 		header.type = GameObjectType::_DynamicGameObject;
 		offset += sizeof(STC_SyncGameObject_Header);
@@ -1145,7 +1151,7 @@ struct Player : public SkinMeshGameObject {
 		//static pushv
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::SyncGameObject;
+		header.st = STC_Protocol::SyncGameObject;
 		header.objindex = objindex;
 		header.type = GameObjectType::_Player;
 		offset += sizeof(STC_SyncGameObject_Header);
@@ -1329,7 +1335,7 @@ struct Monster : public SkinMeshGameObject {
 		//static pushv
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::SyncGameObject;
+		header.st = STC_Protocol::SyncGameObject;
 		header.objindex = objindex;
 		header.type = GameObjectType::_Monster;
 		offset += sizeof(STC_SyncGameObject_Header);
@@ -1749,7 +1755,7 @@ struct World {
 		sds.postpush_reserve(reqsiz);
 		STC_ChangeMemberOfGameObject_Header& header = *(STC_ChangeMemberOfGameObject_Header*)sds.ofbuff;
 		header.size = reqsiz;
-		header.st = SendingType::ChangeMemberOfGameObject;
+		header.st = STC_Protocol::ChangeMemberOfGameObject;
 		header.type = gotype;
 		header.objindex = objindex;
 		header.serveroffset = ((char*)memberAddr) - (char*)ptrobj;

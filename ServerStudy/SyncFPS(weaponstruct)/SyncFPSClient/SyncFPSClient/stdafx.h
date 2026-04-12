@@ -248,8 +248,6 @@ static inline ui64 GetTicks()
 	return ticks.QuadPart;
 }
 
-
-
 struct GameObject;
 struct SyncWay {
 	int clientOffset;

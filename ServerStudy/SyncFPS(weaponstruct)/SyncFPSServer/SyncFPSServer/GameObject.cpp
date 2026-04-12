@@ -200,7 +200,7 @@ StaticGameObject::StaticGameObject()
 
 StaticGameObject::~StaticGameObject()
 {
-	aabbArr.clear();
+	obbArr.clear();
 }
 
 matrix StaticGameObject::GetWorld() {
@@ -1107,6 +1107,7 @@ void GameMap::LoadMap(const char* MapName)
 		gameworld.Static_gameObjects[index] = go;
 	}
 	for (int i = 0; i < gameObjectCount; ++i) {
+		//dbgbreak(i == 308);
 		StaticGameObject* go = map->MapObjects[i];
 		int nameId = 0;
 		ifs.read((char*)&nameId, sizeof(int));
@@ -1153,12 +1154,17 @@ void GameMap::LoadMap(const char* MapName)
 
 			int ColliderCount = 0;
 			ifs.read((char*)&ColliderCount, sizeof(int));
-			go->aabbArr.reserve(ColliderCount);
-			go->aabbArr.resize(ColliderCount);
+			go->obbArr.reserve(ColliderCount);
+			go->obbArr.resize(ColliderCount);
 			for (int k = 0; k < ColliderCount; ++k) {
-				ifs.read((char*)&go->aabbArr[k].Center, sizeof(XMFLOAT3));
-				ifs.read((char*)&go->aabbArr[k].Extents, sizeof(XMFLOAT3));
-				go->aabbArr[k].Orientation = vec4(0, 0, 0, 1);
+				XMFLOAT3 Center;
+				XMFLOAT3 Extents;
+				ifs.read((char*)&Center, sizeof(XMFLOAT3));
+				ifs.read((char*)&Extents, sizeof(XMFLOAT3));
+				BoundingOrientedBox obb = BoundingOrientedBox(Center, Extents, vec4(0, 0, 0, 1));
+				BoundingOrientedBox obb_world;
+				obb.Transform(obb_world, go->worldMat);
+				go->obbArr[k] = obb_world;
 			}
 		}
 		else if (Mod == 'm'){
@@ -1229,25 +1235,22 @@ void GameMap::LoadMap(const char* MapName)
 			go->childs = -1;
 		}
 
-		if (Mod == 'n') {
-			for (int k = 0; k < go->aabbArr.size(); ++k) {
-				go->aabbArr[k].Transform(go->aabbArr[k], world);
-			}
-		}
-		else if (Mod == 'm') {
+		if (Mod == 'm') {
+			go->obbArr.clear();
 			Model* model = Shape::ShapeTable[go->shapeindex].GetModel();
-			for (int k = 0;k < model->nodeCount;++k) {
-				ModelNode* node = &model->Nodes[k];
-				// fix. 유니티 자식 오브젝트들의 AABB는 어떻게 구성됨? 계층구조의 영향을 받는지 확인이 필요.
-				for (int u = 0;u < node->aabbArr.size();++u) {
-					BoundingOrientedBox obb;
-					obb.Center = node->aabbArr[u].Center;
-					obb.Extents = node->aabbArr[u].Extents;
-					obb.Orientation = vec4(0, 0, 0, 1);
-					obb.Transform(obb, world);
-					go->aabbArr.push_back(obb);
-				}
-			}
+			model->RootNode->PushOBBs(model, go->worldMat, &go->obbArr, go);
+			//for (int k = 0;k < model->nodeCount;++k) {
+			//	ModelNode* node = &model->Nodes[k];
+			//	// fix. 유니티 자식 오브젝트들의 AABB는 어떻게 구성됨? 계층구조의 영향을 받는지 확인이 필요.
+			//	for (int u = 0;u < node->aabbArr.size();++u) {
+			//		BoundingOrientedBox obb;
+			//		obb.Center = node->aabbArr[u].Center;
+			//		obb.Extents = node->aabbArr[u].Extents;
+			//		obb.Orientation = vec4(0, 0, 0, 1);
+			//		obb.Transform(obb, world);
+			//		go->obbArr.push_back(obb);
+			//	}
+			//}
 		}
 		map->MapObjects[i] = go;
 	}
@@ -1415,6 +1418,7 @@ void Model::LoadModelFile2(string filename)
 			mat.pos.f3 = pos.f3;
 			mat.pos.w = 1;*/
 
+			WorldMat.transpose();
 			Nodes[i].transform = WorldMat;
 		}
 
@@ -1514,6 +1518,8 @@ void Model::LoadModelFile2(string filename)
 
 void Model::BakeAABB()
 {
+	AABB[0] = 0;
+	AABB[1] = 0;
 	RootNode->BakeAABB(this, XMMatrixIdentity());
 	OBB_Tr = 0.5f * (AABB[0] + AABB[1]);
 	OBB_Ext = AABB[1] - OBB_Tr;
@@ -1524,6 +1530,31 @@ BoundingOrientedBox Model::GetOBB() {
 }
 
 void Mesh::GetAABBFromOBB(vec4* out, BoundingOrientedBox obb, bool first) {
+	XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];
+	obb.GetCorners(corners);
+
+	//dbglog3_noline(L"AABB start : (%g, %g, %g) - ", out[0].x, out[0].y, out[0].z);
+	//dbglog3_noline(L"(%g, %g, %g)\n", out[1].x, out[1].y, out[1].z);
+
+	vec4 c[8];
+	c[0].f3 = corners[0];
+	//dbglog4_noline(L"OBB[%d] : (%g, %g, %g)\n", 0, c[0].x, c[0].y, c[0].z);
+	vec4 minpos = (first) ? c[0] : vec4(_mm_min_ps(out[0], c[0]));
+	vec4 maxpos = (first) ? c[0] : vec4(_mm_max_ps(out[1], c[0]));
+	for (int i = 1; i < 8; ++i) {
+		c[i].f3 = corners[i];
+		//dbglog4_noline(L"OBB[%d] : (%g, %g, %g)\n", i, c[i].x, c[i].y, c[i].z);
+		minpos = _mm_min_ps(c[i], minpos);
+		maxpos = _mm_max_ps(c[i], maxpos);
+	}
+	out[0] = minpos;
+	out[1] = maxpos;
+
+	//dbglog3_noline(L"AABB result : (%g, %g, %g) - ", out[0].x, out[0].y, out[0].z);
+	//dbglog3_noline(L"(%g, %g, %g)\n", out[1].x, out[1].y, out[1].z);
+
+	return;
+
 	matrix mat;
 	OBB_vertexVector ovv;
 	mat.trQ(obb.Orientation);
@@ -1615,31 +1646,50 @@ void ModelNode::BakeAABB(void* origin, const matrix& parentMat)
 		matrix m = sav;
 		vec4 AABB[2];
 
-		BoundingOrientedBox obb = model->mMeshes[0]->GetOBB();
+		BoundingOrientedBox obb = model->mMeshes[Meshes[0]]->GetOBB();
 		BoundingOrientedBox obb_world;
 		obb.Transform(obb_world, sav);
 
-		Mesh::GetAABBFromOBB(AABB, obb_world, true);
+		Mesh::GetAABBFromOBB(model->AABB, obb_world);
 		for (int i = 1; i < numMesh; ++i) {
-			BoundingOrientedBox obb = model->mMeshes[i]->GetOBB();
+			BoundingOrientedBox obb = model->mMeshes[Meshes[i]]->GetOBB();
 			BoundingOrientedBox obb_world;
 			obb.Transform(obb_world, sav);
 
-			Mesh::GetAABBFromOBB(AABB, obb_world);
+			Mesh::GetAABBFromOBB(model->AABB, obb_world);
 		}
-
-		if (model->AABB[0].x > AABB[0].x) model->AABB[0].x = AABB[0].x;
-		if (model->AABB[0].y > AABB[0].y) model->AABB[0].y = AABB[0].y;
-		if (model->AABB[0].z > AABB[0].z) model->AABB[0].z = AABB[0].z;
-
-		if (model->AABB[1].x < AABB[1].x) model->AABB[1].x = AABB[1].x;
-		if (model->AABB[1].y < AABB[1].y) model->AABB[1].y = AABB[1].y;
-		if (model->AABB[1].z < AABB[1].z) model->AABB[1].z = AABB[1].z;
 	}
 
 	for (int i = 0; i < numChildren; ++i) {
 		ModelNode* node = Childrens[i];
 		node->BakeAABB(origin, sav);
+	}
+}
+
+void ModelNode::PushOBBs(void* origin, const matrix& parentMat, vector<BoundingOrientedBox>* obbArr, void* gameobj)
+{
+	if (obbArr == nullptr) return;
+	Model* model = (Model*)origin;
+	GameObject* obj = (GameObject*)gameobj;
+	XMMATRIX sav = XMMatrixMultiply(transform, parentMat);
+	if (gameobj) {
+		int nodeindex = ((char*)this - (char*)model->RootNode) / sizeof(ModelNode);
+		sav = XMMatrixMultiply(obj->transforms_innerModel[nodeindex], parentMat);
+	}
+	if (this->aabbArr.size() > 0) {
+		for (int i = 0; i < aabbArr.size(); ++i) {
+			BoundingBox aabb = aabbArr[i];
+			BoundingOrientedBox obb;
+			obb = BoundingOrientedBox(aabb.Center, aabb.Extents, vec4(0, 0, 0, 1));
+			BoundingOrientedBox obb_world;
+			obb.Transform(obb_world, sav);
+			obbArr->push_back(obb_world);
+		}
+	}
+
+	for (int i = 0; i < numChildren; ++i) {
+		ModelNode* node = Childrens[i];
+		node->PushOBBs(origin, sav, obbArr, gameobj);
 	}
 }
 
@@ -2532,67 +2582,26 @@ void World::Init() {
 
 	GameObjectType::STATICINIT();
 
-#ifdef _DEBUG //server / client
-	AddClientOffset(GameObjectType::_GameObject, 16, 16); // isExist
-	AddClientOffset(GameObjectType::_GameObject, 32, 32); // world Matrix
-	AddClientOffset(GameObjectType::_GameObject, 80, 144); // pos
-
-	AddClientOffset(GameObjectType::_Player, 16, 16); // isExist
-	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
-	AddClientOffset(GameObjectType::_Player, 64, 144); // pos
-
-	AddClientOffset(GameObjectType::_Player, 164, 212); // m_currentWeaponType
-	AddClientOffset(GameObjectType::_Player, 128, 176); // HP
-	AddClientOffset(GameObjectType::_Player, 132, 180); // MaxHP
-
-	AddClientOffset(GameObjectType::_Player, 136, 184); // Bullets
-	AddClientOffset(GameObjectType::_Player, 140, 188); // KillCount
-	AddClientOffset(GameObjectType::_Player, 144, 192); // DeathCount
-	AddClientOffset(GameObjectType::_Player, 148, 196); // HeatGauge
-	AddClientOffset(GameObjectType::_Player, 152, 200); // MaxHeatGauge
-	AddClientOffset(GameObjectType::_Player, 156, 204); // HealSkillCooldown
-	AddClientOffset(GameObjectType::_Player, 160, 208); // HealSkillCooldownFlow
-
-	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
-	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
-	AddClientOffset(GameObjectType::_Monster, 80, 144); // pos
-	AddClientOffset(GameObjectType::_Monster, 210, 176); // isDead
-	AddClientOffset(GameObjectType::_Monster, 184, 180); // HP
-	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
-#else
-	AddClientOffset(GameObjectType::_GameObject, 16, 16); // isExist
-	AddClientOffset(GameObjectType::_GameObject, 32, 32); // world Matrix
-	AddClientOffset(GameObjectType::_GameObject, 80, 144); // pos
-
-	AddClientOffset(GameObjectType::_Player, 16, 16); // isExist
-	AddClientOffset(GameObjectType::_Player, 32, 32); // world Matrix
-	AddClientOffset(GameObjectType::_Player, 64, 144); // pos
-
-	AddClientOffset(GameObjectType::_Player, 164, 212); // m_currentWeaponType
-	AddClientOffset(GameObjectType::_Player, 128, 176); // HP
-	AddClientOffset(GameObjectType::_Player, 132, 180); // MaxHP
-
-	AddClientOffset(GameObjectType::_Player, 136, 184); // Bullets
-	AddClientOffset(GameObjectType::_Player, 140, 188); // KillCount
-	AddClientOffset(GameObjectType::_Player, 144, 192); // DeathCount
-	AddClientOffset(GameObjectType::_Player, 148, 196); // HeatGauge
-	AddClientOffset(GameObjectType::_Player, 152, 200); // MaxHeatGauge
-	AddClientOffset(GameObjectType::_Player, 156, 204); // HealSkillCooldown
-	AddClientOffset(GameObjectType::_Player, 160, 208); // HealSkillCooldownFlow
-
-	AddClientOffset(GameObjectType::_Monster, 16, 16); // isExist
-	AddClientOffset(GameObjectType::_Monster, 32, 32); // world Matrix
-	AddClientOffset(GameObjectType::_Monster, 80, 144); // pos
-	AddClientOffset(GameObjectType::_Monster, 210, 176); // isDead
-	AddClientOffset(GameObjectType::_Monster, 184, 180); // HP
-	AddClientOffset(GameObjectType::_Monster, 188, 184); // MaxHP
-#endif
-
 	map.LoadMap("The_Port");
+	//map.LoadMap("OfficeDungeon_1floor");
+	
+	// 맵 로드 후처리
+	map.AABB[0] = INFINITY;
+	map.AABB[1] = -INFINITY;
 	std::set<StaticGameObject*> goset;
 	for (int i = 0; i < map.MapObjects.size(); ++i) {
 		PushGameObject(map.MapObjects[i]);
+		BoundingOrientedBox obb =  map.MapObjects[i]->GetOBB();
+		XMFLOAT3 corners[8];
+		obb.GetCorners(corners);
+		for (int k = 0; k < 8; ++k) {
+			vec4 c = corners[k];
+			map.AABB[0] = _mm_min_ps(c, map.AABB[0]);
+			map.AABB[1] = _mm_max_ps(c, map.AABB[1]);
+		}
 	}
+	map.AABB[0].w = -INFINITY;
+	map.AABB[1].w = INFINITY;
 
 	/*ofstream ofs{ "ServerStaticGameObjectOBBData.txt" };
 	for (int i = 0;i < map.MapObjects.size();++i) {
@@ -2669,9 +2678,9 @@ void World::Init() {
 
 void World::Update() {
 	static vector<indexRange> ir;
-	if (ir.size() < Dynamic_gameObjects.size / 2) {
-		ir.reserve(Dynamic_gameObjects.size / 2);
-		ir.resize(Dynamic_gameObjects.size / 2);
+	if (ir.size() < Dynamic_gameObjects.size / 2 + 1) {
+		ir.reserve(Dynamic_gameObjects.size / 2 + 1);
+		ir.resize(Dynamic_gameObjects.size / 2 + 1);
 	}
 	int outlen = 0;
 	Dynamic_gameObjects.GetTourPairs(ir.data(), &outlen);
@@ -2787,14 +2796,30 @@ void World::Update() {
 						/*for (int u = 0;u < sgo->aabbArr.size();++u) {
 							BoundingOrientedBox()
 						}*/
-						BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
 
-						if (obb_after.Intersects(staticobb)) {
-							gbj1->OnStaticCollision(staticobb);
-							DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+						if (sgo->obbArr.size() == 0) {
+							BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
 
-							if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-								goto GOTO_NEXTOBJ;
+							if (obb_after.Intersects(staticobb)) {
+								gbj1->OnStaticCollision(staticobb);
+								DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+
+								if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+									goto GOTO_NEXTOBJ;
+								}
+							}
+						}
+						else {
+							for (int u = 0; u < sgo->obbArr.size(); ++u) {
+								BoundingOrientedBox staticobb = sgo->obbArr[u];
+								if (obb_after.Intersects(staticobb)) {
+									gbj1->OnStaticCollision(staticobb);
+									DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+
+									if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+										goto GOTO_NEXTOBJ;
+									}
+								}
 							}
 						}
 					}
@@ -2818,7 +2843,13 @@ void World::Update() {
 				gbj1->worldMat.pos += gbj1->tickLVelocity;
 			}
 			else {
-				gbj1->MoveChunck(gbj1->tickLVelocity, vec4(0, 0, 0, 1), goic_before, goic_after);
+				vec4 pos = gbj1->worldMat.pos;
+				vec4 minpos = _mm_min_ps(pos, gameworld.map.AABB[0]);
+				vec4 maxpos = _mm_max_ps(pos, gameworld.map.AABB[1]);
+				if (gameworld.map.AABB[0] == minpos &&
+					gameworld.map.AABB[1] == maxpos) {
+					gbj1->MoveChunck(gbj1->tickLVelocity, vec4(0, 0, 0, 1), goic_before, goic_after);
+				}
 			}
 			//gbj1->worldMat.pos += gbj1->tickLVelocity;
 			/*if (fabsf(gbj1->m_worldMatrix.pos.x) > 40.0f || fabsf(gbj1->m_worldMatrix.pos.z) > 40.0f) {
@@ -2912,7 +2943,7 @@ void World::Sending_NewRay(SendDataSaver& sds, vec4 rayStart, vec4 rayDirection,
 	sds.postpush_reserve(reqsiz);
 	STC_NewRay_Header& header = *(STC_NewRay_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::NewRay;
+	header.st = STC_Protocol::NewRay;
 	header.raystart = rayStart.f3;
 	header.rayDir = rayDirection.f3;
 	header.distance = rayDistance;
@@ -2926,7 +2957,7 @@ void World::Sending_DeleteGameObject(SendDataSaver& sds, int objindex)
 	sds.postpush_reserve(reqsiz);
 	STC_DeleteGameObject_Header& header = *(STC_DeleteGameObject_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::DeleteGameObject;
+	header.st = STC_Protocol::DeleteGameObject;
 	header.obj_index = objindex;
 	sds.postpush_end();
 }
@@ -2938,7 +2969,7 @@ void World::Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdat
 	sds.postpush_reserve(reqsiz);
 	STC_ItemDrop_Header& header = *(STC_ItemDrop_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::ItemDrop;
+	header.st = STC_Protocol::ItemDrop;
 	header.dropindex = dropindex;
 	header.lootData = lootdata;
 	sds.postpush_end();
@@ -2951,7 +2982,7 @@ void World::Sending_ItemRemove(SendDataSaver& sds, int dropindex)
 	sds.postpush_reserve(reqsiz);
 	STC_ItemDropRemove_Header& header = *(STC_ItemDropRemove_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::ItemDropRemove;
+	header.st = STC_Protocol::ItemDropRemove;
 	header.dropindex = dropindex;
 	sds.postpush_end();
 }
@@ -2963,7 +2994,7 @@ void World::Sending_InventoryItemSync(SendDataSaver& sds, ItemStack lootdata, in
 	sds.postpush_reserve(reqsiz);
 	STC_InventoryItemSync_Header& header = *(STC_InventoryItemSync_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::InventoryItemSync;
+	header.st = STC_Protocol::InventoryItemSync;
 	header.Iteminfo = lootdata;
 	header.inventoryIndex = inventoryIndex;
 	sds.postpush_end();
@@ -2975,7 +3006,7 @@ void World::Sending_PlayerFire(SendDataSaver& sds, int objIndex) {
 	sds.postpush_reserve(reqsiz);
 	STC_PlayerFire_Header& header = *(STC_PlayerFire_Header*)sds.ofbuff;
 	header.size = reqsiz;
-	header.st = SendingType::PlayerFire;
+	header.st = STC_Protocol::PlayerFire;
 	header.objindex = objIndex;
 	sds.postpush_end();
 }
