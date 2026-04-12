@@ -158,7 +158,8 @@ public:
 	// 현재 씬에서 쓰일 모든 휴머노이드 애니메이션이 담겨져 있는 배열
 	vector<HumanoidAnimation> HumanoidAnimationTable;
 
-	
+	// 포탈의 배열
+	vector<Portal*> Portals;
 
 	void AddMesh(Mesh* mesh);
 
@@ -287,6 +288,7 @@ public:
 					if constexpr (isSkinMesh == false) {
 						for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
 							if (gc->Static_gameobjects.isnull(i)) continue;
+							if (gc->Dynamic_gameobjects[i] == nullptr) continue;
 							if (gc->Static_gameobjects[i]->TourID != TourID) {
 								(gc->Static_gameobjects[i]->*StaticGameObject::CurrentRenderFunc)(idmat);
 								gc->Static_gameobjects[i]->TourID = TourID;
@@ -295,6 +297,7 @@ public:
 
 						for (int i = 0; i < gc->Dynamic_gameobjects.size; ++i) {
 							if (gc->Dynamic_gameobjects.isnull(i)) continue;
+							if (gc->Dynamic_gameobjects[i] == nullptr) continue;
 							if (gc->Dynamic_gameobjects[i]->TourID != TourID) {
 								(gc->Dynamic_gameobjects[i]->*DynamicGameObject::CurrentRenderFunc)(idmat);
 								gc->Dynamic_gameobjects[i]->TourID = TourID;
@@ -304,6 +307,7 @@ public:
 					else {
 						for (int i = 0; i < gc->SkinMesh_gameobjects.size; ++i) {
 							if (gc->SkinMesh_gameobjects.isnull(i)) continue;
+							if (gc->SkinMesh_gameobjects[i] == nullptr) continue;
 							if (gc->SkinMesh_gameobjects[i]->TourID != TourID) {
 								(gc->SkinMesh_gameobjects[i]->*SkinMeshGameObject::CurrentRenderFunc)(idmat);
 								gc->SkinMesh_gameobjects[i]->TourID = TourID;
@@ -430,7 +434,12 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 	if (obj == nullptr) sav = XMMatrixMultiply(transform, parentMat);
 	else {
 		int nodeindex = ((byte8*)this - (byte8*)pModel->Nodes) / sizeof(ModelNode);
-		sav = XMMatrixMultiply(obj->transforms_innerModel[nodeindex], parentMat);
+		if (obj->transforms_innerModel == nullptr) {
+			sav = XMMatrixMultiply(transform, parentMat);
+		}
+		else {
+			sav = XMMatrixMultiply(obj->transforms_innerModel[nodeindex], parentMat);
+		}
 	}
 
 	if (numMesh != 0 && Meshes != nullptr) {

@@ -423,6 +423,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	STCDefArr(float, DestAnimationFlowTime, 4);
 	STCDefArr(int, PlayingAnimationIndex, 4);
 
+	ui64 m_animMask[4] = { 0xFFFFFFFFFFFFFFFFULL, 0ULL, 0ULL, 0ULL };
+
 	void InitRootBoneMatrixs();
 	void SetRootMatrixs();
 
@@ -797,6 +799,18 @@ class Monster : public SkinMeshGameObject {
 #define STC_CurrentStruct Monster
 	STC_STATICINIT_innerStruct;
 public:
+	enum class State {
+		IDLE,
+		WALK,
+		RUN,
+		ATTACK,
+		DEATH,
+	};
+
+	State m_currentState = State::IDLE;
+
+	void ChangeState(State newState);
+
 	// 몬스터 HP
 	STCDef(float, HP);// = 30;
 	// 몬스터 최대 채력
@@ -861,6 +875,28 @@ public:
 */
 class Player : public SkinMeshGameObject {
 public:
+	enum class State {
+		IDLE,
+		WALK,
+		RUN,
+		JUMP,
+		SHOOT,
+		RELOAD,
+	};
+
+	State m_currentState = State::IDLE;
+
+	void ChangeState(State newState);
+
+	enum class UpperState {
+		NONE,
+		AIM,
+		SHOOT,
+	};
+
+	UpperState m_currentUpperState = UpperState::NONE;
+	void ChangeUpperState(UpperState newState);
+
 #define STC_CurrentStruct Player
 	STC_STATICINIT_innerStruct
 
@@ -943,13 +979,14 @@ public:
 	* <모델일 경우>
 	* //fix <처리 안함>
 	*/
-	virtual void Render();
+	virtual void Render(matrix parent = XMMatrixIdentity()) override;
 
 	/*
 	* 설명 : DepthClear 되고 렌더링되는 요소들을 렌더링
 	* 보통 DepthClear가 되면 이후 UI, 항상 앞에 보여야만 하는 것들을 렌더링 한다.
 	*/
 	void Render_AfterDepthClear();
+	void Render_ThirdPersonWeapon();
 
 	// idk
 	void UpdateGunBarrelNodes();
@@ -997,4 +1034,46 @@ public:
 	virtual void RecvSTC_SyncObj(char* data);
 	static void STATICINIT(int typeindex = GameObjectType::_Player);
 #undef STC_CurrentStruct
+};
+
+struct Portal : public StaticGameObject {
+	float spawnX = 0;
+	float spawnY = 0;
+	float spawnZ = 0;
+	float radius = 1.0f;
+	int zoneId = 0;
+	int dstzoneId = 0;
+
+	STC_STATICINIT_innerStruct;
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		float spawnX;
+		float spawnY;
+		float spawnZ;
+		float radius;
+		int zoneId;
+		int dstzoneId;
+	};
+#pragma pack(pop)
+
+	Portal() {
+		tag[GameObjectTag::Tag_Enable] = false;
+	}
+
+	virtual void RecvSTC_SyncObj(char* data) override;
+	virtual void Render(matrix parent) override {
+		//// shape가 유효할 때만 렌더
+		//Mesh* mesh = nullptr;
+		//Model* model = nullptr;
+		//shape.GetRealShape(mesh, model);
+		//if (mesh == nullptr && model == nullptr) return;
+		//GameObject::Render(parent);
+	}
 };

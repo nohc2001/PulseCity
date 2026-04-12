@@ -6,8 +6,6 @@
 
 #define ChunckDEBUG
 
-#include "NWLib/targetver.h"
-
 #define _CRT_SECURE_NO_WARNINGS
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 
@@ -360,6 +358,7 @@ union GameObjectType {
 		_SkinMeshGameObject = 3, 
 		_Player = 4,
 		_Monster = 5,
+		_Portal = 6,
 	};
 
 	GameObjectType() {}

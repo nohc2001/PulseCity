@@ -83,3 +83,19 @@ PlayingAnimationIndex 212 4
 HP 224 4
 MaxHP 228 4
 isDead 232 1
+Portal
+14
+tag 20 4
+shapeindex 24 4
+parent 28 4
+childs 32 4
+sibling 36 4
+material 40 8
+transforms_innerModel 40 8
+worldMat 48 64
+spawnX 112 4
+spawnY 116 4
+spawnZ 120 4
+radius 124 4
+zoneId 128 4
+dstzoneId 132 4

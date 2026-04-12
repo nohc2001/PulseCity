@@ -1,5 +1,6 @@
 #pragma once
 #include "stdafx.h"
+struct Zone;
 
 /*
 * 설명 : Mesh의 충돌처리 OBB 정보를 저장.
@@ -371,13 +372,15 @@ struct GameObject {
 
 		//calculate app packet siz.
 		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh = nullptr; 
-		Model* model = nullptr; 
-		s.GetRealShape(mesh, model);
-		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
 
+		Mesh* mesh = nullptr;
+		Model* model = nullptr;
+		if (shapeindex >= 0 && shapeindex < Shape::ShapeTable.size()) {
+			Shape& s = Shape::ShapeTable[shapeindex];
+			s.GetRealShape(mesh, model);
+			if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+			else if (model) reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+		}
 		sds.postpush_reserve(reqsiz);
 		int offset = 0;
 		
@@ -401,20 +404,16 @@ struct GameObject {
 		//dynamic push
 		if (mesh) {
 			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum; 
+			submeshNum = mesh->subMeshNum;
 			offset += sizeof(int);
-
-			int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-			memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+			memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 			offset += sizeof(int) * mesh->subMeshNum;
 		}
-		else {
+		else if (model) {
 			int& nodecount = *(int*)(sds.ofbuff + offset);
 			nodecount = model->nodeCount;
 			offset += sizeof(int);
-
-			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
-			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+			memcpy(sds.ofbuff + offset, transforms_innerModel, sizeof(matrix) * model->nodeCount);
 			offset += sizeof(matrix) * model->nodeCount;
 		}
 
@@ -444,6 +443,8 @@ struct StaticGameObject : public GameObject {
 	bool Collision_Inherit(matrix parent_world, BoundingBox bb);
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
 	BoundingOrientedBox GetOBBw(matrix worldMat);
+
+	Zone* zone = nullptr;
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -567,7 +568,7 @@ struct ChunkIndex {
 		return x != ci.x || y != ci.y || z != ci.z;
 	}
 
-	BoundingBox GetAABB();
+	BoundingBox GetAABB(Zone* zone);
 };
 
 //이 연산이 simd로 최적화 가능하겠다 생각이 든다.
@@ -680,6 +681,7 @@ struct DynamicGameObject : public GameObject {
 	GameObjectIncludeChunks IncludeChunks;
 	int* chunkAllocIndexs = nullptr;
 	int chunkAllocIndexsCapacity = 8;
+	Zone* zone = nullptr;
 
 	//STC
 	STCDef(vec4, LVelocity);
@@ -1271,6 +1273,9 @@ struct Monster : public SkinMeshGameObject {
 	float respawntimer = 0;
 	//ServerOnly ??
 	float pathfindTimer = 0.0f;
+	//몬스터가 속한 zone
+	int zoneId = 0;
+
 
 	Monster();
 	virtual ~Monster() {}
@@ -1414,7 +1419,7 @@ struct GameChunk {
 		Dynamic_gameobjects.Init(32);
 		SkinMesh_gameobjects.Init(32);
 	}
-	void SetChunkIndex(ChunkIndex ci);
+	void SetChunkIndex(ChunkIndex ci, Zone* zone);
 
 	void RenderChunkDbg();
 };
@@ -1465,6 +1470,9 @@ struct GameMap {
 
 	// 맵 전체 영역의 AABB
 	vec4 AABB[2] = { 0, 0 };
+
+	//맵이 속한 존
+	Zone* ownerzone = nullptr;
 
 	unsigned int TextureTableStart = 0;
 	unsigned int MaterialTableStart = 0;
@@ -1535,6 +1543,9 @@ struct ClientData {
 	//pObjData 가 서버 gameworld GameObject 배열에서 몇번째 인덱스에 위치하는지 나타낸다.
 	int objindex = 0;
 
+	//이 클라이언트가 속한 zoneId
+	int zoneId = 0;
+
 	//Send하는 데이터를 쌓아놓는 곳.
 	SendDataSaver PersonalSDS;
 
@@ -1579,176 +1590,145 @@ struct ClientData {
 	static void DisconnectToServer(int index);
 };
 
+
+
+
 struct collisionchecksphere {
 	vec4 center;
 	float radius;
 };
 
-/*
-* 설명 : 게임이 돌아가는 월드 구조체.
-*/
-struct World {
-	// 클라이언트 배열
-	vecset<ClientData> clients;
+// 전방선언
+struct World;
+struct Zone;
+struct Portal;
 
-	// 모든 클라이언트에게 전달될 공통의 데이터
-	SendDataSaver CommonSDS;
-	// 특정 클라이언트는 공통의 데이터를 전달해주지 않으려고 할때 쓰는 비트 마스크.
-	BitAllotter CommonSDS_EnableClients;
+/*
+* 설명 : 게임 월드 내의 독립적인 구역.
+* 각 Zone은 자체적인 오브젝트 배열, 맵, 청크, Astar 그리드를 보유한다.
+* Zone 간 이동은 Portal을 통해 이루어진다.
+*/
+struct Zone {
+	// 소속 World 포인터
+	World* world = nullptr;
+
+	// 존 ID
+	int zoneId = 0;
 
 	// 게임 오브젝트 배열
 	vecset<DynamicGameObject*> Dynamic_gameObjects;
 	vecset<StaticGameObject*> Static_gameObjects;
 
+	// 포탈 배열 (별도 관리)
+	vector<Portal*> portals;
+
 	// 드롭된 아이템들의 배열
 	vecset<ItemLoot> DropedItems;
 
-	// Astar pathfinding?
+	// 모든 클라이언트에게 전달될 이 존의 공통 데이터
+	SendDataSaver CommonSDS;
+
+	// 게임 맵 데이터
+	GameMap map;
+
+	// Astar pathfinding
 	vector<AstarNode*> allnodes;
-	// Astar적용 가능한 최대/최소 영역
 	static constexpr float AstarStartX = -40.0f;
 	static constexpr float AstarStartZ = -40.0f;
 	static constexpr float AstarEndX = 40.0f;
 	static constexpr float AstarEndZ = 40.0f;
 
-	// TODO : <지워야 할 것. PACK을 지워야 함.>
-	// PACK 프로토콜에 쓰이는 변수들이다.
-	twoPage tempbuffer;
-
-	// 현재 실행하고 있는 게임 오브젝트가 gameObjects 배열에서 몇번째 인덱스에 존재하는지를 가리킨다.
+	// 현재 실행중인 오브젝트 인덱스
 	int currentIndex = 0;
 
+	// 빈도 제어
 	static constexpr float lowFrequencyDelay = 0.2f;
 	float lowFrequencyFlow = 0.0f;
-	/*
-	lowFrequencyDelay 시간 간격마다 true가 되는 함수.
-	빈도가 낮은 업데이트 계산을 시작하는데 쓰일 수 있다.
-	*/
 	__forceinline bool lowHit() {
 		return lowFrequencyFlow > lowFrequencyDelay;
 	}
 
 	static constexpr float midFrequencyDelay = 0.05f;
 	float midFrequencyFlow = 0.0f;
-	/*
-	midFrequencyDelay 시간 간격마다 true가 되는 함수.
-	빈도가 낮은 업데이트 계산을 시작하는데 쓰일 수 있다.
-	*/
 	__forceinline bool midHit() {
 		return midFrequencyFlow > midFrequencyDelay;
 	}
 
 	static constexpr float highFrequencyDelay = 0.01f;
 	float highFrequencyFlow = 0.0f;
-	/*
-	highFrequencyDelay 시간 간격마다 true가 되는 함수.
-	빈도가 낮은 업데이트 계산을 시작하는데 쓰일 수 있다.
-	*/
 	__forceinline bool highHit() {
-		return highFrequencyFlow > midFrequencyDelay;
+		return highFrequencyFlow > highFrequencyDelay;
 	}
-
-	// 게임 맵 데이터
-	GameMap map;
-	unsigned int MaterialCount = 0;
-	vector<HumanoidAnimation> HumanoidAnimationTable;
 
 	UINT TourID = 0;
 
+	// 하나의 청크의 정육면체의 한 변의 길이를 결정한다.
+	static constexpr float chunck_divide_Width = 50.0f;
+
+	// 게임내의 Chunck들의 모임.
+	unordered_map<ChunkIndex, GameChunk*> chunck;
+
+	// 생성자
+	Zone() : world(nullptr), zoneId(0) {}
+	Zone(World* w, int id) : world(w), zoneId(id) {}
+
 	/*
-	* 설명 : 게임서버를 초기화한다.
-	* 실질적으로 하는 일은 다음과 같다.
-	* 1. Astar 길찾기를 위한 초기화 진행
-	* 2. 아이템을 ItemTable에 생성
-	* 3. 클라이언트와 서버간의 동기화를 위한 게임오브젝트 맴버변수의 Offset 동기화 설정.
-	* 4. 각 Mesh의 충돌범위 계산
-	* 5. 맵 충돌 정보를 Load
-	* 6. 게임에서 작동시킬 게임 오브젝트들을 만들고 배열에 저장, 모든 클라이언트에게 해당 정보를 Send.
-	* 7. 모든 작업이 끝난 후 "Game Init end" 출력.
+	* 설명 : Zone을 초기화한다.
+	* Astar 그리드, 오브젝트 배열, 맵 로드, 몬스터 스폰, 포탈 스폰 등을 수행.
 	*/
 	void Init();
 
 	/*
-	* 설명 : 게임을 DeltaTime 만큼 업데이트 한다.
-	* 실질적으로 하는 일은 다음과 같다.
-	* 1. lowHit, midHit, highHit 함수 작동을 위한 처리
-	* 2. 모든 활성화된 게임 오브젝트에 대하여 Update 함수를 실행.
-	* 3. 모든 게임 오브젝트에 대하여 tickVelocity 움직임과 충돌 계산.
-	*	-> 충돌시 OnCollision 호출됨.
+	* 설명 : Zone을 DeltaTime만큼 업데이트한다.
+	* 오브젝트 업데이트, 청크 기반 충돌 처리, 포탈 검사를 수행.
 	*/
-	void Update();
+	void Update(float deltaTime);
 
-
-	void gridcollisioncheck();
+	// ===== 오브젝트 관리 =====
 
 	/*
-	* 설명 : clientIndex 번째 클라이언트가 rBuffer 데이터를 서버로 보냈을때, 서버의 처리.
-	* 클라이언트의 키보드 입력과 마우스 움직임을 처리한다.
-	* 매개변수 :
-	** int clientIndex : 입력을 보낸 클라이언트 번호
-	** char* rBuffer : 클라이언트가 실제 보낸 데이터의 주소
-	* 반환 :
-	* 실제로 클라이언트가 보낸 패킷의 크기를 반환한다.
-	* 키보드 입력(2byte), 마우스 움직임 입력(9byte)
-	*/
-	__forceinline int Receiving(int clientIndex, char* rBuffer, int totallen);
-
-	/*
-	* 설명 : 새로운 게임오브젝트를 추가하는 함수
-	* 게임오브젝트 배열 내의 공간을 할당하여 게임오브젝트 포인터를 넣고 활성화 한다.
-	* Sending_NewGameObject 를 호출해 데이터를 구성하고,
-	* SendToAllClient 를 호출해 모든 클라이언트에게 데이터를 전송한다.
-	* 매개변수 :
-	* GameObject* obj : 추가할 오브젝트 포인터
-	* GameObjectType gotype : 추가할 오브젝트의 타입
-	* 반환 :
-	* 반환값은 추가된 오브젝트가 게임오브젝트 배열에 몆번째 위치에 있는지에 대한 인덱스.
+	* 설명 : 새로운 Dynamic 오브젝트를 이 Zone에 추가한다.
 	*/
 	int NewObject(DynamicGameObject* obj, GameObjectType gotype);
 
 	/*
-	* 설명 : 새로운 플레이어를 추가하는 함수
-	* 게임오브젝트 배열 내의 공간을 할당하여 게임오브젝트 포인터를 넣고 활성화 한다.
-	* <PACK> 프로토콜을 사용한다. 수정이 필요해 보인다.
-	* Sending_NewGameObject 를 호출해 데이터를 구성하고,
-	* SendToAllClient_execept 를 호출해 [clientIndex번째 클라이언트]를 제외한 모든 클라이언트에게 데이터를 전송한다.
-	* 나중에 클라이언트가 초기화되면 보내줄 데이터를 pack_factory에 push한다.
-	* 그리고 push한 데이터들을 보내지는 않는다.
-	*
-	* 매개변수 :
-	* Player* obj : 추가할 플레이어 오브젝트 포인터
-	* int clientIndex : 새로 들어온 클라이언트의 번호
-	* 반환 :
-	* 반환값은 추가된 오브젝트가 게임오브젝트 배열에 몆번째 위치에 있는지에 대한 인덱스.
+	* 설명 : 새로운 플레이어를 이 Zone에 추가한다.
 	*/
 	int NewPlayer(SendDataSaver& sds, Player* obj, int clientIndex);
 
 	/*
-	* 설명 : 새로운 오브젝트가 만들어졌단 정보를 클라이언트에게 전달하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int newindex : 새로운 오브젝트의 인덱스
-	* GameObject* newobj : 새로운 오브젝트
-	* GameObjectType gotype : 새로운 오브젝트의 타입
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
+	* 설명 : 플레이어를 이 Zone에서 제거한다. (메모리 해제 X)
 	*/
-	__forceinline void Sending_NewGameObject(SendDataSaver& sds, int newindex, GameObject* newobj);
+	void RemovePlayer(int clientIndex);
 
 	/*
-	* 설명 : 기존 오브젝트의 맴버변수가 수정됨을 클라이언트에게 전달하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int objindex : 변경된 오브젝트의 인덱스
-	* GameObject* ptrobj : 변경된 오브젝트
-	* GameObjectType gotype : 변경된 오브젝트의 타입
-	* void* memberAddr : 변경된 맴버변수의 주소
-	* int memberSize : 변경된 맴버변수의 타입 사이즈
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
+	* 설명 : 다른 Zone에서 온 플레이어를 이 Zone에 추가한다.
 	*/
+	int AddPlayer(int clientIndex, Player* player, vec4 spawnPos);
+
+	// ===== 포탈 관련 =====
+
+	void SpawnPortal();
+	void CheckPortalCollision(Player* p);
+
+	// ===== 전송 관련 =====
+
+	/*
+	* 설명 : 이 Zone의 모든 클라이언트에게 CommonSDS + PersonalSDS를 전송한다.
+	*/
+	void FlushSendToClients();
+
+	/*
+	* 설명 : 새 클라이언트에게 이 Zone의 모든 오브젝트 정보를 전송한다.
+	*/
+	void SendingAllObjectForNewClient(SendDataSaver& sds);
+
+	// ===== Sending 헬퍼 =====
+
+	void Sending_NewGameObject(SendDataSaver& sds, int newindex, GameObject* newobj);
+
 	template <typename memberType>
-	__forceinline void Sending_ChangeGameObjectMember(SendDataSaver& sds, int objindex, GameObject* ptrobj, GameObjectType gotype, void* memberAddr) {
+	void Sending_ChangeGameObjectMember(SendDataSaver& sds, int objindex, GameObject* ptrobj, GameObjectType gotype, void* memberAddr) {
 		sds.postpush_start();
 		constexpr int memberSize = sizeof(memberType);
 		constexpr int reqsiz = sizeof(STC_ChangeMemberOfGameObject_Header) + memberSize;
@@ -1764,193 +1744,203 @@ struct World {
 		sds.postpush_end();
 	}
 
-	/*
-	* 설명 : 총알발사를 나타내는 Ray가 만들어졌다는 것을 클라이언트에게 보내기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* vec4 rayStart : Ray의 시작점
-	* vec4 rayDirection : Ray의 진행방향
-	* float rayDistance : Ray의 길이
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
-	*/
-	__forceinline void Sending_NewRay(SendDataSaver& sds, vec4 rayStart, vec4 rayDirection, float rayDistance);
+	void Sending_NewRay(SendDataSaver& sds, vec4 rayStart, vec4 rayDirection, float rayDistance);
+	void Sending_SetMeshInGameObject(SendDataSaver& sds, int objindex, string str);
+	void Sending_DeleteGameObject(SendDataSaver& sds, int objindex);
+	void Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdata);
+	void Sending_ItemRemove(SendDataSaver& sds, int dropindex);
+	void Sending_InventoryItemSync(SendDataSaver& sds, ItemStack lootdata, int inventoryIndex);
+	void Sending_PlayerFire(SendDataSaver& sds, int objIndex);
+
+
+	// ===== 충돌/레이캐스트 =====
+
+	void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage);
+
+	void GridCollisionCheck();
+
+	// ===== 청크 관련 =====
+
+	GameObjectIncludeChunks GetChunks_Include_OBB(BoundingOrientedBox obb);
+	GameChunk* GetChunkFromPos(vec4 pos);
+	void PushGameObject(GameObject* go);
+
+	// ===== 기타 =====
+
+	void LoadMapForZone(int zoneId);
+	void SpawnObjects();
+	void PrintCangoGrid(const std::vector<AstarNode*>& all, int gridWidth, int gridHeight);
+	bool CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfSize, const collisionchecksphere& sphere);
+};
+
+/*
+* 설명 : 게임이 돌아가는 월드 구조체.
+* Zone들을 관리하고, 클라이언트 접속/입력 처리를 담당한다.
+*/
+struct World {
+	// 클라이언트 배열
+	vecset<ClientData> clients;
+
+	// TODO : <지워야 할 것. PACK을 지워야 함.>
+	twoPage tempbuffer;
+
+	// 머터리얼 카운트
+	unsigned int MaterialCount = 0;
+
+	// 휴머노이드 애니메이션 테이블
+	vector<HumanoidAnimation> HumanoidAnimationTable;
+
+	// ===== Zone 관리 =====
+	vector<Zone> zones;
+	int zoneCount = 2;
 
 	/*
-	* 설명 : 클라이언트 오브젝트의 Mesh 데이터를 수정하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int objindex : 오브젝트의 인덱스
-	* string str : Mesh에 접근할 수 있는 문자열 key.
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
+	* 설명 : 게임서버를 초기화한다.
+	* 1. 아이템 테이블 생성
+	* 2. 클라이언트/서버간 동기화를 위한 Offset 설정
+	* 3. 모델/메쉬 로드 (전역 리소스)
+	* 4. 각 Zone 초기화
 	*/
-	__forceinline void Sending_SetMeshInGameObject(SendDataSaver& sds, int objindex, string str);
+	void Init();
 
 	/*
-	* 설명 : Ray를 발사하여 충돌지점을 찾는다.
-	* 충돌지점은 게임오브젝트 배열을 돌아가면서 검사하며 찾는다.
-	* 충돌시 gameObjects[i]->OnCollisionRayWithBullet(shooter); 를 호출하고,
-	* 충돌판정작업이 끝나면, Sending_NewRay와 SendToAllClient 를 호출해
-	* 모든 클라이언트에게 Ray 정보를 보내준다.
-	* 매개변수 :
-	* GameObject* shooter : 사격을 한 게임오브젝트
-	* vec4 rayStart : Ray의 시작점
-	* vec4 rayDirection : Ray의 진행방향
-	* float rayDistance : Ray의 최대 길이
+	* 설명 : 게임을 DeltaTime 만큼 업데이트 한다.
+	* 각 Zone의 Update를 호출한다.
 	*/
-	__forceinline void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage);
+	void Update();
 
 	/*
-	* 설명 : 새 클라이언트가 접속하여 새 플레이어가 만들어진 상황에서,
-	* 새로운 클라이언트에게 클라이언트가 가진 플레이어의 오브젝트 인덱스를 전달한다.
-	* 이는 새로운 플레이어를 등록하는 역할을 하고, 등록이 되지 않은 클라이언트는 게임 실행을 하지 못한다.
-	* 해당 데이터를 구성하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int clientindex : 클라이언트 번호
-	* int objindex : 클라이언트가 가지는 플레이어의 게임 오브젝트 배열의 인덱스
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
+	* 설명 : clientIndex 번째 클라이언트가 rBuffer 데이터를 서버로 보냈을때 처리.
 	*/
-	__forceinline void Sending_AllocPlayerIndex(SendDataSaver& sds, int clientindex, int objindex);
+	__forceinline int Receiving(int clientIndex, char* rBuffer, int totallen);
 
 	/*
-	* 설명 : 클라이언트 오브젝트를 삭제하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int objindex : 삭제될 오브젝트의 인덱스
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
+	* 설명 : 클라이언트에게 자신의 플레이어 인덱스를 전달한다.
 	*/
-	__forceinline void Sending_DeleteGameObject(SendDataSaver& sds, int objindex);
-
+	__forceinline void Sending_AllocPlayerIndex(SendDataSaver& sds, int clientindex, int objindex) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_AllocPlayerIndexes_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::AllocPlayerIndexes;
+		header.clientindex = clientindex;
+		header.server_obj_index = objindex;
+		sds.postpush_end();
+	}
 	/*
-	* 설명 : 아이템이 드롭되는 것을 클라이언트에게 전달하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int dropindex : 드롭된 아이템이 DropedItems 배열에 어떤 인덱스에 위치하는지
-	* ItemLoot lootdata : 드롭된 아이템 데이터
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
+	* 설명 : 게임 상태를 동기화한다.
 	*/
-	__forceinline void Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdata);
-
-	/*
-	* 설명 : 드롭된 아이템이 삭제되는 것을 클라이언트에게 전달하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* int dropindex : 삭제될 드롭된 아이템이 DropedItems 배열에 어떤 인덱스에 위치하는지
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
-	*/
-	__forceinline void Sending_ItemRemove(SendDataSaver& sds, int dropindex);
-
-	/*
-	* 설명 : 인벤토리의 아이템 데이터를 동기하기 위해
-	* 패킷 데이터를 tempbuffer에 구성한다.
-	* 매개변수 :
-	* ItemStack lootdata : 인벤토리에 들어갈 아이템스택의 정보
-	* int inventoryIndex : 인벤토리 몇번째 칸인지 결정
-	* 반환 :
-	* 구성된 패킷의 사이즈를 반환
-	*/
-	__forceinline void Sending_InventoryItemSync(SendDataSaver& sds, ItemStack lootdata, int inventoryIndex);
-
-	__forceinline void Sending_PlayerFire(SendDataSaver& sds, int objIndex);
-
 	__forceinline void Sending_SyncGameState(SendDataSaver& sds);
 
 	/*
-	* 설명 : tempbuffer에 저장된 패킷 데이터를 datacap 만큼
-	* [execept 번째 클라이언트를 제외한]
-	* 모든 클라이언트에게 전송한다.
-	* 매개변수 :
-	* int datacap : 보낼 데이터의 크기
-	* int execept : 제외할 클라이언트 번호
+	* 설명 : 플레이어를 srcZone에서 dstZone으로 이동시킨다.
 	*/
-	//__forceinline void SendToAllClient_execept(int datacap, int execept) {
-	//	for (int i = 0; i < execept; ++i) {
-	//		if (clients.isnull(i)) continue;
-	//		clients[i].sendSaver.push_senddata(tempbuffer.data, datacap);
-	//	}
-	//	for (int i = execept + 1; i < clients.size; ++i) {
-	//		if (clients.isnull(i)) continue;
-	//		clients[i].sendSaver.push_senddata(tempbuffer.data, datacap);
-	//	}
-	//}
-
-	////temp 2025.9.9 <??> 
-	//void DestroyObject(int index);
+	void MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos);
 
 	/*
-	* 설명 : 새로운 클라이언트를 위해 현재 클라이언트와 공유할 모든 서버의 정보를
-	* 보내기 위한 패킷을 pack_factory에 구성한다.
-	* <PACK 프로토콜 >이 쓰여서 수정할 필요가 있다.
-	* 매개변수 :
-	* int new_client_index : 새로운 클라이언트의 번호
+	* 설명 : 플레이어가 속한 zone을 찾는다.
 	*/
-	void SendingAllObjectForNewClient(SendDataSaver& sds) {
-		// STATIC 은 아직 보낼 필요는 없는듯? 하는게 충돌처리 밖에 없는데 충돌처리도 서버에서 함.
-		// 그리고 클라이언트쪽에서 맵 불러올때 StaticObject들도 같이 불러온다.
-		for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-			if (Dynamic_gameObjects.isnull(i)) continue;
-			void* vptr = *(void**)Dynamic_gameObjects[i];
-			Sending_NewGameObject(sds, i, (GameObject*)Dynamic_gameObjects[i]);
-		}
+	Zone* GetClientZone(int clientIndex);
 
-		for (int i = 0; i < DropedItems.size; ++i) {
-			if (DropedItems.isnull(i)) continue;
-			Sending_ItemDrop(sds, i, DropedItems[i]);
+	/*
+	* 설명 : 현재 있는 존id를 찾는다
+	*/
+	Zone* GetZone(int zoneId) {
+		if (zoneId < 0 || zoneId >= zoneCount) return nullptr;
+		return &zones[zoneId];
+	};
+
+	void PrintOffset();
+};
+
+
+struct Portal : public GameObject {
+#define STC_CurrentStruct Portal
+	STC_STATICINIT_innerStruct;
+
+	STCDef(float, spawnX);
+	STCDef(float, spawnY);
+	STCDef(float, spawnZ);
+	STCDef(float, radius);
+	STCDef(int, zoneId);
+	STCDef(int, dstzoneId);
+
+	Portal() {}
+	virtual ~Portal() {}
+
+	virtual BoundingOrientedBox GetOBB() {
+		BoundingOrientedBox obb_local;
+		Mesh* mesh = nullptr;
+		Model* model = nullptr;
+		if (shapeindex < 0) {
+			obb_local.Extents.x = -1;
+			return obb_local;
 		}
+		Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+		if (mesh != nullptr) obb_local = mesh->GetOBB();
+		if (model != nullptr) obb_local = model->GetOBB();
+		BoundingOrientedBox obb_world;
+		obb_local.Transform(obb_world, worldMat);
+		return obb_world;
+	};
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		float spawnX;
+		float spawnY;
+		float spawnZ;
+		float radius;
+		int zoneId;
+		int dstzoneId;
+	};
+
+#pragma pack(pop)
+	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
+		sds.postpush_start();
+
+		// mesh/model 없이 기본 데이터만 전송
+		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(Portal::STC_SyncObjData);
+		sds.postpush_reserve(reqsiz);
+		int offset = 0;
+
+		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::SyncGameObject;
+		header.objindex = objindex;
+		header.type = GameObjectType::_Portal;
+		offset += sizeof(STC_SyncGameObject_Header);
+
+		Portal::STC_SyncObjData& static_data = *(Portal::STC_SyncObjData*)(sds.ofbuff + offset);
+		static_data.tag = tag;
+		static_data.shapeindex = shapeindex;
+		static_data.parent = parent;
+		static_data.childs = childs;
+		static_data.sibling = sibling;
+		static_data.DestWorld = worldMat;
+		static_data.spawnX = spawnX;
+		static_data.spawnY = spawnY;
+		static_data.spawnZ = spawnZ;
+		static_data.radius = radius;
+		static_data.zoneId = zoneId;
+		static_data.dstzoneId = dstzoneId;
+		offset += sizeof(STC_SyncObjData);
+
+		sds.postpush_end();
 	}
 
-	////temp 2025.09.08 <PACK이 쓰이지 않음에 따라 나중에 쓸 일이 있지 않을까?>
-	/*void SendingAllObjectForNewClient(int new_client_index) {
-		for (int i = 0; i < gameObjects.size; ++i) {
-			if (gameObjects.isnull(i)) continue;
-			void* vptr = *(void**)gameObjects[i];
-			int datacap = Sending_NewGameObject(i, gameObjects[i], GameObjectType::VptrToTypeTable[vptr]);
-			clients[new_client_index].socket.Send((char*)tempbuffer.data, datacap);
-
-			if (gameObjects[i]->MeshIndex >= 0) {
-				datacap = Sending_SetMeshInGameObject(i, Mesh::MeshNameArr[gameObjects[i]->MeshIndex]);
-				clients[new_client_index].socket.Send((char*)tempbuffer.data, datacap);
-			}
+	static void PrintOffset(ofstream& ofs) {
+		GameObject::PrintOffset(ofs);
+		for (int i = 0; i < g_member.size(); ++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
 		}
-	}*/
-
-
-	//하나의 청크의 정육면체의 한 변의 길이를 결정한다.
-	static constexpr float chunck_divide_Width = 50.0f;
-
-	//게임내의 Chunck들의 모임.
-	unordered_map<ChunkIndex, GameChunk*> chunck;
-
-	/*
-	* 설명 : obb가 걸치는 모든 청크영역을 찾아낸다.
-	* 매개변수 :
-	* BoundingOrientedBox obb
-	* 반환 : 찾아낸 청크영역
-	*/
-	GameObjectIncludeChunks GetChunks_Include_OBB(BoundingOrientedBox obb);
-
-	/*
-	* 설명 : 위치로 해당 위치를 포함하는 청크를 찾아낸다.
-	* 매개변수 :
-	* vec4 pos : 위치
-	* 반환 : 찾아낸 청크
-	*/
-	GameChunk* GetChunkFromPos(vec4 pos);
-
-	/*
-	* 설명 : 게임오브젝트를 알맞은 청크에 넣는다.
-	* 매개변수 :
-	* GameObject* go : 넣을 오브젝트
-	*/
-	void PushGameObject(GameObject* go);
-
-	void PrintCangoGrid(const std::vector<AstarNode*>& all, int gridWidth, int gridHeight);
-	void PrintOffset();
-	bool CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfSize, const collisionchecksphere& sphere);
+	}
+#undef STC_CurrentStruct
 };
