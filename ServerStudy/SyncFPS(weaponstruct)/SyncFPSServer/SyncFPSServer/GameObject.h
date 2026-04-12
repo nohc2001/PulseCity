@@ -576,9 +576,9 @@ struct GameObjectIncludeChunks {
 	int xmin;
 	int ymin;
 	int zmin;
-	unsigned char xlen;
-	unsigned char ylen;
-	unsigned char zlen;
+	char xlen;
+	char ylen;
+	char zlen;
 	unsigned char extraByte;
 
 	void operator+=(const GameObjectIncludeChunks& range) {
@@ -612,13 +612,14 @@ struct GameObjectIncludeChunks {
 		xmin = max(xmin, range.xmin);
 		ymin = max(ymin, range.ymin);
 		zmin = max(zmin, range.zmin);
-		xlen = max(xmax - xmin, 0);
-		ylen = max(ymax - ymin, 0);
-		zlen = max(zmax - zmin, 0);
+		xlen = xmax - xmin;
+		ylen = ymax - ymin;
+		zlen = zmax - zmin;
 		extraByte = 0;
 	}
 
 	__forceinline int GetChunckSize() const {
+		if (xlen < 0 || (ylen < 0 || zlen < 0)) return 0;
 		return (int)(xlen + 1) * (int)(ylen + 1) * (int)(zlen + 1);
 	}
 

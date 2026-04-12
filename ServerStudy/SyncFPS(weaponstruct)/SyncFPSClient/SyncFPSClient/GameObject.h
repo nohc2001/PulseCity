@@ -280,14 +280,134 @@ struct StaticGameObject : public GameObject {
 	static void STATICINIT(int typeindex = GameObjectType::_StaticGameObject);
 };
 
+/*
+* 설명 : 청크를 찾아가기 위한 인덱스
+* Sentinal Value :
+* NULL = (x == -2,147,483,648 || y == -2,147,483,648 || z == -2,147,483,648)
+*/
+struct ChunkIndex {
+	int x = 0;
+	int y = 0;
+	int z = 0;
+	int extra = 0;
+
+	ChunkIndex() {}
+	~ChunkIndex() {}
+
+	ChunkIndex(int X, int Y, int Z) {
+		x = X;
+		y = Y;
+		z = Z;
+	}
+	ChunkIndex(const ChunkIndex& ref) {
+		x = ref.x;
+		y = ref.y;
+		z = ref.z;
+	}
+
+	__forceinline bool operator==(const ChunkIndex& ci) const {
+		return (x == ci.x && y == ci.y) && z == ci.z;
+	}
+	__forceinline bool operator!=(const ChunkIndex& ci) const {
+		return x != ci.x || y != ci.y || z != ci.z;
+	}
+
+	BoundingBox GetAABB();
+};
+
+//이 연산이 simd로 최적화 가능하겠다 생각이 든다.
 struct GameObjectIncludeChunks {
 	int xmin;
 	int ymin;
 	int zmin;
-	unsigned char xlen;
-	unsigned char ylen;
-	unsigned char zlen;
+	char xlen;
+	char ylen;
+	char zlen;
 	unsigned char extraByte;
+
+	void operator+=(const GameObjectIncludeChunks& range) {
+		int xmax = xmin + xlen;
+		int ymax = ymin + ylen;
+		int zmax = zmin + zlen;
+		int rxmax = range.xmin + range.xlen;
+		int rymax = range.ymin + range.ylen;
+		int rzmax = range.zmin + range.zlen;
+		xmax = max(xmax, rxmax);
+		ymax = max(ymax, rymax);
+		zmax = max(zmax, rzmax);
+		xmin = min(xmin, range.xmin);
+		ymin = min(ymin, range.ymin);
+		zmin = min(zmin, range.zmin);
+		xlen = max(xmax - xmin, 0);
+		ylen = max(ymax - ymin, 0);
+		zlen = max(zmax - zmin, 0);
+	}
+
+	void operator&=(const GameObjectIncludeChunks& range) {
+		int xmax = xmin + xlen;
+		int ymax = ymin + ylen;
+		int zmax = zmin + zlen;
+		int rxmax = range.xmin + range.xlen;
+		int rymax = range.ymin + range.ylen;
+		int rzmax = range.zmin + range.zlen;
+		xmax = min(xmax, rxmax);
+		ymax = min(ymax, rymax);
+		zmax = min(zmax, rzmax);
+		xmin = max(xmin, range.xmin);
+		ymin = max(ymin, range.ymin);
+		zmin = max(zmin, range.zmin);
+		xlen = xmax - xmin;
+		ylen = ymax - ymin;
+		zlen = zmax - zmin;
+		extraByte = 0;
+	}
+
+	__forceinline int GetChunckSize() const {
+		if (xlen < 0 || (ylen < 0 || zlen < 0)) return 0;
+		return (int)(xlen + 1) * (int)(ylen + 1) * (int)(zlen + 1);
+	}
+
+	__forceinline ChunkIndex& Inc(ChunkIndex& ref) const {
+		if (ref.z + 1 <= zmin + zlen) {
+			ref.z = ref.z + 1;
+			ref.extra += 1;
+			return ref;
+		}
+		else {
+			ref.z = zmin;
+			if (ref.y + 1 <= ymin + ylen) {
+				ref.y = ref.y + 1;
+				ref.extra += 1;
+				return ref;
+			}
+			else {
+				ref.y = ymin;
+				if (ref.x + 1 <= xmin + xlen) {
+					ref.x = ref.x + 1;
+					ref.extra += 1;
+					return ref;
+				}
+			}
+		}
+		ref.extra += 1;
+		return ref;
+	}
+
+	bool operator==(GameObjectIncludeChunks range) {
+		bool b = (xmin == range.xmin);
+		b = b && (ymin == range.ymin);
+		b = b && (zmin == range.zmin);
+		b = b && (xlen == range.xlen);
+		b = b && (ylen == range.ylen);
+		b = b && (zlen == range.zlen);
+		return b;
+	}
+
+	__forceinline bool isInclude(const ChunkIndex& ci) const {
+		return ((xmin <= ci.x && ci.x <= xmin + xlen) &&
+			(ymin <= ci.y && ci.y <= ymin + ylen)) &&
+			(zmin <= ci.z && ci.z <= zmin + zlen);
+	}
 };
 
 struct DynamicGameObject : public GameObject {
@@ -332,6 +452,7 @@ struct DynamicGameObject : public GameObject {
 	virtual void SetShape(Shape _shape);
 
 	void PositionInterpolation(float deltaTime);
+	virtual void MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -454,6 +575,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 
 	void CollectSkinMeshObject(matrix parent);
 	inline static vector<SkinMeshGameObject*> collection;
+
+	virtual void MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -612,37 +735,6 @@ public:
 	* if (모양이 모델인 경우) >>> ModelOBB를 worldMat로 변환한 OBB
 	*/
 	BoundingOrientedBox GetOBBw(matrix worldMat);
-};
-
-/*
-* 설명 : 청크를 찾아가기 위한 인덱스
-* Sentinal Value :
-* NULL = (x == -2,147,483,648 || y == -2,147,483,648 || z == -2,147,483,648)
-*/
-struct ChunkIndex {
-	int x = 0;
-	int y = 0;
-	int z = 0;
-
-	ChunkIndex() {}
-	~ChunkIndex() {}
-
-	ChunkIndex(int X, int Y, int Z) {
-		x = X;
-		y = Y;
-		z = Z;
-	}
-	ChunkIndex(const ChunkIndex& ref) {
-		x = ref.x;
-		y = ref.y;
-		z = ref.z;
-	}
-
-	bool operator==(const ChunkIndex& ci) const {
-		return (x == ci.x && y == ci.y) && z == ci.z;
-	}
-
-	BoundingBox GetAABB();
 };
 
 /*

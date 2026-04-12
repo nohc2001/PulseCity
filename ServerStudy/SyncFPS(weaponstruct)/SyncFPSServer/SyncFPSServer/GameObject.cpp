@@ -755,7 +755,7 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 	ci.extra = 0;
 	
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci) { // 곂치는 부분을 Free 하지 않는다.
+		if (ci == inter_ci && inter_Count > 0) { // 곂치는 부분을 Free 하지 않는다.
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
@@ -801,7 +801,7 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 #endif
 	inter_up = 0;
 	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
-		if (ci == inter_ci) { // 곂치는 부분을 Alloc 하지 않는다.
+		if (ci == inter_ci && inter_Count > 0) { // 곂치는 부분을 Alloc 하지 않는다.
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
@@ -2641,7 +2641,6 @@ void World::Update() {
 //int World::
 
 //should i separate player delete and gameobject delete?
-
 
 //클라이언트 인덱스에 해당하는 존 찾기
 Zone* World::GetClientZone(int clientIndex)

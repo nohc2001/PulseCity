@@ -964,6 +964,8 @@ void DynamicGameObject::Update(float delatTime)
 
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
+	BoundingOrientedBox beforeobb = GetOBB();
+	GameObjectIncludeChunks goic_before = game.GetChunks_Include_OBB(beforeobb);
 	float pow = deltaTime * 10;
 	vec4 flowScale, flowRot, flowPos;
 	XMMatrixDecompose((XMVECTOR*)&flowScale, (XMVECTOR*)&flowRot, (XMVECTOR*)&flowPos, worldMat);
@@ -972,7 +974,81 @@ void DynamicGameObject::PositionInterpolation(float deltaTime)
 	vec4 renderPos = (1.0f - pow) * flowPos + pow * DestPos;
 	matrix mat = XMMatrixScaling(renderScale.x, renderScale.y, renderScale.z) * XMMatrixRotationQuaternion(renderRot);
 	mat.pos = renderPos;
+	matrix temp = worldMat;
 	worldMat = mat;
+	BoundingOrientedBox afterobb = GetOBB();
+	GameObjectIncludeChunks goic_after = game.GetChunks_Include_OBB(afterobb);
+	if (goic_before != goic_after) {
+		worldMat = temp;
+		MoveChunck(mat, goic_before, goic_after);
+	}
+}
+
+void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc)
+{
+	static int temp[512] = {};
+	GameObjectIncludeChunks intersection = beforeChunckInc;
+	intersection &= afterChunkInc;
+
+	int inter_Count = intersection.GetChunckSize();
+	ChunkIndex inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+	int inter_up = 0;
+	int chunckCount = beforeChunckInc.GetChunckSize();
+	ChunkIndex ci = ChunkIndex(beforeChunckInc.xmin, beforeChunckInc.ymin, beforeChunckInc.zmin);
+	ci.extra = 0;
+	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
+		if (ci == inter_ci) { // 곂치는 부분을 Free 하지 않는다.
+			intersection.Inc(inter_ci);
+			temp[inter_up] = chunkAllocIndexs[ci.extra];
+			inter_up += 1;
+			continue;
+		}
+
+		// 안 곂치는 부분은 Free 한다.
+		auto f = game.chunck.find(ci);
+		if (f != game.chunck.end()) {
+#ifdef ChunckDEBUG
+			dbgbreak(f->second->Dynamic_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
+#endif
+			f->second->Dynamic_gameobjects.Free(chunkAllocIndexs[ci.extra]);
+		}
+	}
+
+	// 위치 이동 / 회전
+	worldMat = afterMat;
+
+	inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+
+	chunckCount = afterChunkInc.GetChunckSize();
+	ci = ChunkIndex(afterChunkInc.xmin, afterChunkInc.ymin, afterChunkInc.zmin);
+	ci.extra = 0;
+
+	inter_up = 0;
+	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
+		if (ci == inter_ci) { // 곂치는 부분을 Alloc 하지 않는다.
+			intersection.Inc(inter_ci);
+			chunkAllocIndexs[ci.extra] = temp[inter_up];
+			inter_up += 1;
+			continue;
+		}
+
+		auto c = game.chunck.find(ci);
+		GameChunk* gc;
+		if (c == game.chunck.end()) {
+			// new game chunk
+			gc = new GameChunk();
+			gc->SetChunkIndex(ci);
+			game.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+		}
+		else gc = c->second;
+		int allocN = gc->Dynamic_gameobjects.Alloc();
+		gc->Dynamic_gameobjects[allocN] = this;
+		chunkAllocIndexs[ci.extra] = allocN;
+	}
+
+	IncludeChunks = afterChunkInc;
 }
 
 void DynamicGameObject::RecvSTC_SyncObj(char* data) {
@@ -1586,6 +1662,7 @@ void SkinMeshGameObject::Update(float delatTime)
 		transforms_innerModel[0] = worldMat;
 		SetRootMatrixs();
 	}
+	PositionInterpolation(delatTime);
 }
 
 void SkinMeshGameObject::Render(matrix parent) {
@@ -1875,6 +1952,104 @@ void SkinMeshGameObject::CollectSkinMeshObject(matrix parent) {
 	collection.push_back(this);
 }
 
+void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc) {
+	static int temp[512] = {};
+	GameObjectIncludeChunks intersection = beforeChunckInc;
+	intersection &= afterChunkInc;
+
+#ifdef ChunckDEBUG 
+	cout << "objptr = " << this << " FREE";
+#endif
+
+	int inter_Count = intersection.GetChunckSize();
+	ChunkIndex inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+	int inter_up = 0;
+	int chunckCount = beforeChunckInc.GetChunckSize();
+	ChunkIndex ci = ChunkIndex(beforeChunckInc.xmin, beforeChunckInc.ymin, beforeChunckInc.zmin);
+	ci.extra = 0;
+
+	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
+		if (ci == inter_ci && inter_Count > 0) { // 곂치는 부분을 Free 하지 않는다.
+			intersection.Inc(inter_ci);
+			temp[inter_up] = chunkAllocIndexs[ci.extra];
+			inter_up += 1;
+
+			continue;
+		}
+
+		// 안 곂치는 부분은 Free 한다.
+		auto f = game.chunck.find(ci);
+		if (f != game.chunck.end()) {
+#ifdef ChunckDEBUG 
+			dbgbreak(f->second->SkinMesh_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
+			cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << chunkAllocIndexs[ci.extra] << "\t";
+#endif
+			f->second->SkinMesh_gameobjects.Free(chunkAllocIndexs[ci.extra]);
+		}
+	}
+#ifdef ChunckDEBUG
+	cout << endl;
+#endif
+
+#ifdef ChunckDEBUG 
+	dbgbreak(inter_Count != inter_ci.extra);
+#endif
+
+	// 위치 이동 / 회전
+	worldMat = afterMat;
+
+	inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
+	inter_ci.extra = 0;
+
+	chunckCount = afterChunkInc.GetChunckSize();
+	ci = ChunkIndex(afterChunkInc.xmin, afterChunkInc.ymin, afterChunkInc.zmin);
+	ci.extra = 0;
+
+	ChunkIndex pastCI = ChunkIndex(-99999, -99999, -99999);
+
+#ifdef ChunckDEBUG 
+	cout << "objptr = " << this << " ALLOC";
+#endif
+	inter_up = 0;
+	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
+		if (ci == inter_ci && inter_Count > 0) { // 곂치는 부분을 Alloc 하지 않는다.
+			intersection.Inc(inter_ci);
+			chunkAllocIndexs[ci.extra] = temp[inter_up];
+			inter_up += 1;
+#ifdef ChunckDEBUG 
+			cout << "ci_move(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << temp[inter_up - 1] << "\t";
+			dbgbreak(pastCI == ci);
+			dbgbreak(afterChunkInc.isInclude(ci) == false);
+			pastCI = ci;
+#endif
+			continue;
+		}
+
+		auto c = game.chunck.find(ci);
+		GameChunk* gc;
+		if (c == game.chunck.end()) {
+			// new game chunk
+			gc = new GameChunk();
+			gc->SetChunkIndex(ci);
+			game.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+		}
+		else gc = c->second;
+		int allocN = gc->SkinMesh_gameobjects.Alloc();
+		gc->SkinMesh_gameobjects[allocN] = this;
+		chunkAllocIndexs[ci.extra] = allocN;
+
+#ifdef ChunckDEBUG
+		cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << allocN << "\t";
+#endif
+	}
+#ifdef ChunckDEBUG
+	cout << endl;
+#endif
+
+	IncludeChunks = afterChunkInc;
+}
+
 Monster::Monster() {
 	HP = 30;
 	MaxHP = 30;
@@ -2071,7 +2246,6 @@ void Monster::ChangeState(State newState)
 		break;
 	}
 }
-
 
 Player::Player() : HP{ 100 } {
 	weapon = Weapon(WeaponType::Sniper);

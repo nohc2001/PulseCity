@@ -220,11 +220,11 @@ GameChunk* Game::GetChunkFromPos(vec4 pos) {
 void Game::PushGameObject(GameObject* go)
 {
 	vec4 pos = go->worldMat.pos;
-	if (pos.y < -100.0f || pos.y > 500.0f ||
+	/*if (pos.y < -100.0f || pos.y > 500.0f ||
 		pos.x < -1000.0f || pos.x > 1000.0f ||
 		pos.z < -1000.0f || pos.z > 1000.0f) {
 		return;
-	}
+	}*/
 
 	if (GameObject::IsType<Portal>(go)) {
 		StaticGameObject* sgo = (StaticGameObject*)go;
@@ -250,7 +250,6 @@ void Game::PushGameObject(GameObject* go)
 		}
 		return;
 	}
-
 
 	if (GameObject::IsType<StaticGameObject>(go)) {
 		// static game object
@@ -282,7 +281,6 @@ void Game::PushGameObject(GameObject* go)
 	}
 	else {
 		if (go->tag[GameObjectTag::Tag_SkinMeshObject]) {
-			// dynamic game object
 			SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
 			smgo->InitialChunkSetting();
 			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
@@ -304,9 +302,8 @@ void Game::PushGameObject(GameObject* go)
 						else gc = c->second;
 						int allocN = gc->SkinMesh_gameobjects.Alloc();
 						gc->SkinMesh_gameobjects[allocN] = smgo;
-						if (up < smgo->chunkAllocIndexsCapacity) {
-							smgo->chunkAllocIndexs[up] = allocN;
-						}
+						dbgbreak(up >= smgo->chunkAllocIndexsCapacity);
+						smgo->chunkAllocIndexs[up] = allocN;
 						up += 1;
 					}
 				}
@@ -335,9 +332,8 @@ void Game::PushGameObject(GameObject* go)
 						else gc = c->second;
 						int allocN = gc->Dynamic_gameobjects.Alloc();
 						gc->Dynamic_gameobjects[allocN] = dgo;
-						if (up < dgo->chunkAllocIndexsCapacity) {
-							dgo->chunkAllocIndexs[up] = allocN;
-						}
+						dbgbreak(up >= dgo->chunkAllocIndexsCapacity);
+						dgo->chunkAllocIndexs[up] = allocN;
 						up += 1;
 					}
 				}
