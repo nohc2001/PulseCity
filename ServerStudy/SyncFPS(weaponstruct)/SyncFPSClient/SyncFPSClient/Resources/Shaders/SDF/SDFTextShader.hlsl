@@ -86,7 +86,7 @@ VS_OUTPUT VSMain(VS_INPUT input, uint nInstanceID : SV_InstanceID)
 //픽셀 셰이더를 정의한다.
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {
-    float distance = SDFTextTextureArr[input.pageId].Sample(StaticSampler, input.uv).r;
+    float distance = SDFTextTextureArr[input.pageId].SampleLevel(StaticSampler, input.uv, 0).r;
     //return float4(distance, distance, distance, 1);
     //if (distance < 0)
     //    distance = -1.0 - distance;

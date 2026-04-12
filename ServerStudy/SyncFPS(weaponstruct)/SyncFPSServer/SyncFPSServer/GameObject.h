@@ -1227,6 +1227,17 @@ struct AstarNode {
 	AstarNode* parent;
 };
 
+struct AstarNode2 {
+	BoundingOrientedBox obb;
+	float distance = 0;
+	float cost = 0;
+	AstarNode2* parent = nullptr;
+
+	bool operator<(const AstarNode2& other) const {
+		return distance + cost < other.distance + other.cost;
+	}
+};
+
 AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
 
 /*

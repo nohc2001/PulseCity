@@ -1085,7 +1085,7 @@ void Game::Render() {
 	//maybe..1706x960
 	float Rate = gd.ClientFrameHeight / 960.0f;
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
-	game.RenderSDFText(L"Hello! this is SDF Text! ������", 28, rt, 30, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
+	game.RenderSDFText(L"이어가그요다", 6, rt, 30, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
 
 	// 27. �׾Ƴ� Text ���� ����ϱ�
 	MyScreenCharactorShader->RenderAllSDFTexts();
