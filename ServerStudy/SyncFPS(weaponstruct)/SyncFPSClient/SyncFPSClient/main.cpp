@@ -5,6 +5,7 @@
 #include "Render.h"
 #include "Game.h"
 #include "GameObject.h"
+#include "Utill_Wave.h"
 
 extern GlobalDevice gd;
 extern Game game;
@@ -26,9 +27,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	WSADATA wsa;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 		return 1;
-
+	
 	GameObject::StaticInit();
 	PrintOffset();
+
+	//Audio Init
+	wave_master_channel.Init(23);
+	WaveDataStruct wd = CreateWaveFromFile(L"Resources/Sound/Soundtrack002.wav");
+	WaveChannel* channel0 = NewChannel();
+	channel0->pushWave(wd);
 
 	gd.Factory_Adaptor_Output_Init();
 	

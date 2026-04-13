@@ -1169,3 +1169,173 @@ struct Portal : public StaticGameObject {
 		//GameObject::Render(parent);
 	}
 };
+
+#pragma region UIDef
+// 애니메이션 하는 유틸 클래스
+class AnimOperUtil {
+public:
+	AnimOperUtil() {
+
+	}
+
+	virtual ~AnimOperUtil() {
+
+	}
+
+	//slow->fast
+	static __forceinline float EaseIn(const float& trate, const float& power) {
+		float f = powf(trate, power);
+		return f;
+	}
+
+	//fast->slow
+	static __forceinline float EaseOut(const float& trate, const float& power) {
+		return (1 - powf(1 - trate, power));
+	}
+
+	//slow->fast->slow
+	static __forceinline float EaseIO(const float& trate, const float& power) {
+		if (trate < 0.5) {
+			return 0.5f * EaseIn(trate * 2, power);
+		}
+		else {
+			return 0.5f + 0.5f * EaseOut(2 * (trate - 0.5f), power);
+		}
+	}
+};
+
+// DXEvent는 어짜피 전역으로 돌릴거임.
+/*
+* 그리고 여기에 현재 마우스 위치, 현재 마우스 상태, 
+* 현재 키 입력 상태등을 모두 나열할 수 있어야 함. (전역이라..)
+*/
+struct DXEvent {
+	HWND hWnd;
+	UINT uMsg;
+	WPARAM wParam;
+	LPARAM lParam;
+
+	DXEvent(){}
+	~DXEvent(){}
+};
+
+enum DXUI_TYPE {
+	DXUI_NULL = 0,
+	DXUI_Btn = 1,
+	DXUI_Edit = 2,
+	DXUI_Text = 3,
+	DXUI_Slider = 4,
+	DXUI_Window = 5,
+};
+
+struct DXUI {
+	DXUI_TYPE type = DXUI_TYPE::DXUI_NULL;
+	int ParameterData_Capacity = 0;
+	vec4 location = 0;
+	void* pParamterData = nullptr;
+	bool isFocus = false;
+	bool enable = false;
+
+	void(*RenderFunc)(DXUI*) = nullptr;
+	void(*UpdateFunc)(DXUI*, float) = nullptr;
+	void(*EventFunc)(DXUI*, DXEvent) = nullptr;
+};
+
+struct DXBtnParam {
+	// 눌렀을때의 반응을 위한 변수
+	float flow;
+	float maxtime;
+
+	// 버튼에 쓰여져 있는 텍스트
+	wchar_t text[64] = {};
+
+	// 추가 변수
+	float addtionalParams[16];
+};
+
+struct DXEditParam {
+	// 눌렀을때의 반응을 위한 변수
+	float flow;
+	float maxtime;
+
+	// 아무것도 쓰여져 있지 않을때 보여줄 텍스트
+	wchar_t text[64] = {};
+
+	// 쓸 텍스트
+	wstring wstr;
+
+	// 무엇을 리턴받을지 결정하는 변수 / 0 - 문자 / 1 - 정수 / 2 - 실수
+	int ReturnMode;
+
+	// 추가 변수
+	float addtionalParams[16];
+};
+
+struct DXSliderParam {
+	// 슬라이더 변수
+	float max = 1;
+	float setter = 0;
+
+	// 실시간으로 값이 변경될 주소
+	void* obj = 0;
+
+	// 무엇을 리턴받을지 결정하는 변수 / n : int / f : float /
+	char mod = 'n';
+
+	// 슬라이더가 가로방향인지의 여부
+	bool horizontal = true;
+
+	// 추가 변수
+	float addtionalParams[16];
+};
+
+struct DXPage {
+	vector<DXUI> uiArr;
+
+	void Render() {
+		for (int i = 0; i < uiArr.size(); ++i) {
+			DXUI& ui = uiArr[i];
+			if (ui.RenderFunc) ui.RenderFunc(&ui);
+		}
+	}
+
+	void Update(float deltaTime) {
+		for (int i = 0; i < uiArr.size(); ++i) {
+			DXUI& ui = uiArr[i];
+			if (ui.UpdateFunc) ui.UpdateFunc(&ui, deltaTime);
+		}
+	}
+
+	void Event(DXEvent evt) {
+		for (int i = 0; i < uiArr.size(); ++i) {
+			DXUI& ui = uiArr[i];
+			if (ui.EventFunc) ui.EventFunc(&ui, evt);
+		}
+	}
+};
+
+struct DXWindowParam {
+	vector<DXPage*> page_stack;
+
+	void Render() {
+		for (int i = 0; i < page_stack.size(); ++i) {
+			DXPage* page = page_stack[i];
+			page->Render();
+		}
+	}
+
+	void Update(float deltaTime) {
+		for (int i = 0; i < page_stack.size(); ++i) {
+			DXPage* page = page_stack[i];
+			page->Update(deltaTime);
+		}
+	}
+
+	void Event(DXEvent evt) {
+		// 마지막 페이지만을 대상으로 UI의 Event 를 처리한다.
+		DXPage* page = page_stack[page_stack.size()-1];
+		page->Event(evt);
+	}
+};
+
+#pragma endregion

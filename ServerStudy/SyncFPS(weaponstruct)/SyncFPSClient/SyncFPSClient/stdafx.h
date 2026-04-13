@@ -52,7 +52,9 @@
 
 typedef unsigned char byte8;
 typedef unsigned short ui16;
+typedef short si16;
 typedef unsigned int ui32;
+typedef int si32;
 
 using namespace DirectX;
 using namespace DirectX::PackedVector;

@@ -181,6 +181,7 @@
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="ttfParser.h" />
     <ClInclude Include="Utill_ImageFormating.h" />
+    <ClInclude Include="Utill_Wave.h" />
     <ClInclude Include="vecset.h" />
   </ItemGroup>
   <ItemGroup>
