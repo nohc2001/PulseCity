@@ -17,6 +17,7 @@ void dbgbreak(bool condition) {
 }
 
 int main() {
+
 	// 오류등이 한글로 표시되도록 한다.
 	wcout.imbue(locale("korean"));
 	//WSA 초기화

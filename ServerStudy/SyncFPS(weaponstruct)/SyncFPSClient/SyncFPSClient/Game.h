@@ -15,6 +15,13 @@ class Player;
 */
 class Game {
 public:
+
+	static constexpr int ZoneCount = 4;
+	const char* ZoneIDToMapName[ZoneCount]{
+		"The_Port",
+		"OfficeDungeon_1floor",
+	};
+
 	//마우스 움직임의 X 부분 변화량을 쌓는다.
 	int m_stackMouseX = 0;
 	//마우스 움직임의 Y 부분 변화량을 쌓는다.
@@ -54,15 +61,10 @@ public:
 	Model* GunModel;
 
 	Model* SniperModel = nullptr;
-
 	Model* MachineGunModel = nullptr;
-
 	Model* ShotGunModel = nullptr;
-
 	Model* RifleModel = nullptr;
-
 	Model* PistolModel = nullptr;
-
 	Mesh* OBBDebugMesh = nullptr;
 
 	std::vector<int> MG_BarrelIndices;
@@ -138,10 +140,12 @@ public:
 	// sus <이 세개는 왜 이렇게 되어 있는지 원인 규명 필요>
 	// 클라이언트 실행이 준비되었다는 것을 알리는 신호
 	bool isPrepared = false;
-	// 클라이언트 실행이 완료되었음을 알리는 신호를 켜야 한다는 신호
-	bool isPreparedGo = false;
-	// 준비 타이머
-	float preparedFlow = 0;
+	// 클라이언트 인덱스를 받아내었다는 신호
+	bool isPreparedClientIndex = false;
+	// 맵이 설정 완료되었는지 알리는 신호
+	bool isMapInit = false;
+	// 공용 에셋이 설정 완료되었는지 알리는 신호
+	bool isGlobalAssetInit = false;
 
 	// 플레이어 인벤토리 창이 열렸는지 여부
 	bool isInventoryOpen = false;
@@ -149,22 +153,49 @@ public:
 	// 충돌체들의 상태를 보여주는지
 	static constexpr bool DebugCollisions = true;
 
-	// 현재 씬에서 쓰일 모든 텍스쳐들이 담겨있는 배열
+	bool isAssetAddingInGlobal = true;
+	// 모든 텍스쳐들이 담겨있는 배열
 	vector<GPUResource*> TextureTable;
-	// 현재 씬에서 쓰일 모든 머터리얼들이 담겨져 있는 배열
-	vector<Material> MaterialTable;
-	// 현재 씬에서 쓰일 모든 단일메쉬들이 담겨져 있는 배열
-	vector<Mesh*> MeshTable;
-	// 현재 씬에서 쓰일 모든 휴머노이드 애니메이션이 담겨져 있는 배열
-	vector<HumanoidAnimation> HumanoidAnimationTable;
+	// 게임 전체에서 공용으로 쓰일 모든 텍스쳐들의 개수. 
+	// 해당 인덱스 이후로는 현재 존에서만 쓰일 모든 텍스쳐들이 담겨있는 배열 영역이 있다.
+	int GlobalTextureCount = 0;
 
-	// 포탈의 배열
+	// 모든 머터리얼들이 담겨져 있는 배열
+	vector<Material*> MaterialTable;
+	// 게임 전체에서 공용으로 쓰일 모든 머터리얼들의 개수. 
+	// 해당 인덱스 이후로는 현재 존에서만 쓰일 모든 머터리얼들이 담겨있는 배열 영역이 있다.
+	int GlobalMaterialCount = 0;
+
+	// 모든 단일메쉬들이 담겨져 있는 배열
+	vector<Mesh*> MeshTable;
+	// 게임 전체에서 공용으로 쓰일 모든 단일메쉬들의 개수. 
+	// 해당 인덱스 이후로는 현재 존에서만 쓰일 모든 단일메쉬들이 담겨있는 배열 영역이 있다.
+	int GlobalMeshCount = 0;
+
+	// 모든 휴머노이드 애니메이션들이 담겨져 있는 배열
+	vector<HumanoidAnimation> HumanoidAnimationTable;
+	// 게임 전체에서 공용으로 쓰일 모든 휴머노이드 애니메이션들의 개수. 
+	// 해당 인덱스 이후로는 현재 존에서만 쓰일 모든 휴머노이드 애니메이션들이 담겨있는 배열 영역이 있다.
+	int GlobalHumanoidAnimationCount = 0;
+
+	// 렌더에서 쓰일 모든 Immortal 텍스쳐들이 ShaderVisibleDescHeap의 순서대로 담겨있는 배열
+	vector<GPUResource*> RenderTextureTable;
+	// 렌더에서 쓰일 모든 Immortal 머터리얼들이 ShaderVisibleDescHeap의 순서대로 담겨있는 배열
+	vector<Material*> RenderMaterialTable;
+	// 렌더에서 쓰일 모든 Immortal 단일메쉬인스턴싱 에셋들이 ShaderVisibleDescHeap의 순서대로 담겨있는 배열
+	vector<Mesh::InstancingStruct*> RenderInstancingTable;
+	//// 렌더에서 쓰일 모든 Immortal 휴머노이드 애니메이션들이 ShaderVisibleDescHeap의 순서대로 담겨있는 배열
+	//vector<HumanoidAnimation*> RenderHumanoidAnimationTable;
+
+	int GetRenderMaterialIndexFromGlobalMaterialIndex(int globalMatIndex);
+
+	// 현재 존에서의 포탈의 배열
 	vector<Portal*> Portals;
 
 	void AddMesh(Mesh* mesh);
 
 	// 게임의 맵 정보
-	GameMap* Map;
+	GameMap* Map = nullptr;
 
 	//하나의 청크의 정육면체의 한 변의 길이를 결정한다.
 	static constexpr float chunck_divide_Width = 50.0f;
@@ -226,6 +257,10 @@ public:
 	* 3-9. 커맨드리스트를 닫고 GPU에 실행시킨다.
 	*/
 	void Init();
+
+	// 기존 맵을 모두 해제한 후, 새로운 맵을 로드하는것.
+	void MoveZone(int zoneid);
+
 	/*
 	* 설명 : 게임을 렌더링 한다.
 	*/
@@ -417,6 +452,9 @@ public:
 	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
 
 	void RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth);
+
+	// Zone Asset Table
+
 };
 
 extern Game game;
@@ -447,13 +485,13 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 
 			cmd->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
 			for (int i = 0; i < numMesh; ++i) {
-				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::BumpMesh) {
+				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::_BumpMesh) {
 					BumpMesh* Bmesh = (BumpMesh*)((BumpMesh*)pModel->mMeshes[Meshes[i]]);
 					for (int k = 0; k < Bmesh->subMeshNum; ++k) {
 						using PBRRPI = PBRShader1::RootParamId;
-						Material& mat = game.MaterialTable[materialIndex[k]];
-						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat.TextureSRVTableIndex.hRender.hgpu);
-						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat.CB_Resource.descindex.hRender.hgpu);
+						Material* mat = game.MaterialTable[materialIndex[k]];
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
 						pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
 					}
 				}
@@ -463,7 +501,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 			//skin mesh
 			SkinMeshGameObject* smgo = (SkinMeshGameObject*)pGameobject;
 			for (int i = 0; i < numMesh; ++i) {
-				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::SkinedBumpMesh) {
+				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::_SkinedBumpMesh) {
 					using PBRRPI = PBRShader1::RootParamId;
 					BumpSkinMesh* bmesh = (BumpSkinMesh*)((BumpSkinMesh*)pModel->mMeshes[Meshes[i]]);
 
@@ -515,9 +553,9 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
 
 							for (int k = 0; k < bmesh->subMeshNum; ++k) {
-								Material& mat = game.MaterialTable[materialIndex[k]];
-								cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat.TextureSRVTableIndex.hRender.hgpu);
-								cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat.CB_Resource.descindex.hRender.hgpu);
+								Material* mat = game.MaterialTable[materialIndex[k]];
+								cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
+								cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat->CB_Resource.descindex.hRender.hgpu);
 
 								pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
 							}

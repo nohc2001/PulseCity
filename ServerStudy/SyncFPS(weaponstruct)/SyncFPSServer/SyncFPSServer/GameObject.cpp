@@ -121,6 +121,38 @@ int Shape::AddModel(string name, Model* ptr)
 	return index;
 }
 
+int Shape::AddMeshInZone(string name, Mesh* ptr, int zoneid)
+{
+	Zone* zone = &gameworld.zones[zoneid];
+	auto it = StrToShapeIndex.find(name);
+	if (it != StrToShapeIndex.end()) {
+		return it->second;
+	}
+	Shape s;
+	s.SetMesh(ptr);
+	int index = zone->ZoneShapeTable.size();
+	zone->ZoneShapeTable.push_back(s);
+	zone->ZoneShapeStrTable.push_back(name);
+	zone->ZoneStrToShapeIndex.insert(pair<string, int>(name, index));
+	return index;
+}
+
+int Shape::AddModelInZone(string name, Model* ptr, int zoneid)
+{
+	Zone* zone = &gameworld.zones[zoneid];
+	auto it = StrToShapeIndex.find(name);
+	if (it != StrToShapeIndex.end()) {
+		return it->second;
+	}
+	Shape s;
+	s.SetModel(ptr);
+	int index = zone->ZoneShapeTable.size();
+	zone->ZoneShapeTable.push_back(s);
+	zone->ZoneShapeStrTable.push_back(name);
+	zone->ZoneStrToShapeIndex.insert(pair<string, int>(name, index));
+	return index;
+}
+
 GameObject::GameObject()
 {
 	tag = 0;
@@ -166,7 +198,8 @@ BoundingOrientedBox GameObject::GetOBB()
 		obb_local.Extents.x = -1;
 		return obb_local;
 	}
-	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+	Zone* zone = &gameworld.zones[zoneId];
+	zone->GetShape(shapeindex).GetRealShape(mesh, model);
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	if (model != nullptr) obb_local = model->GetOBB();
 	BoundingOrientedBox obb_world;
@@ -177,7 +210,8 @@ BoundingOrientedBox GameObject::GetOBB()
 void GameObject::SetShape(int _shapeindex)
 {
 	shapeindex = _shapeindex;
-	Shape& s = Shape::ShapeTable[shapeindex];
+	Zone* zone = &gameworld.zones[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	s.GetRealShape(mesh, model);
@@ -201,6 +235,60 @@ void GameObject::OnRayHit(GameObject* rayFrom) {
 
 }
 
+void GameObject::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	Zone* zone = &gameworld.zones[zoneId];
+	if (shapeindex >= 0 && shapeindex < Shape::ShapeTable.size() + zone->ZoneShapeTable.size()) {
+		Shape& s = zone->GetShape(shapeindex);
+		s.GetRealShape(mesh, model);
+		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+		else if (model) reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+	}
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_GameObject;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.worldMatrix = worldMat;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else if (model) {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+		memcpy(sds.ofbuff + offset, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+
+	sds.postpush_end();
+}
+
 StaticGameObject::StaticGameObject()
 {
 	tag = 0;
@@ -219,6 +307,7 @@ matrix StaticGameObject::GetWorld() {
 
 void StaticGameObject::SetWorld(matrix localWorldMat)
 {
+	Zone* zone = &gameworld.zones[zoneId];
 	matrix sav = localWorldMat;
 	int temp = parent;
 	StaticGameObject* obj = nullptr;
@@ -278,7 +367,8 @@ BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
 	BoundingOrientedBox obb_local;
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
-	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+	Zone* zone = &gameworld.zones[zoneId];
+	zone->GetShape(shapeindex).GetRealShape(mesh, model);
 	if (model != nullptr) {
 		obb_local = model->GetOBB();
 	}
@@ -292,6 +382,78 @@ BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
 	BoundingOrientedBox obb_world;
 	obb_local.Transform(obb_world, worldMat);
 	return obb_world;
+}
+
+void StaticGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+	Zone zone = gameworld.zones[zoneId];
+	Shape& s = zone.GetShape(shapeindex);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+	reqsiz += sizeof(int) + obbArr.size() * (sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT4));
+
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_StaticGameObject;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.worldMatrix = worldMat;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+
+		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
+		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+
+		matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+		memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+
+	int& aabbCount = *(int*)(sds.ofbuff + offset);
+	aabbCount = obbArr.size();
+	for (int i = 0; i < obbArr.size(); ++i) {
+		XMFLOAT3& Center = *(XMFLOAT3*)(sds.ofbuff + offset);
+		Center = obbArr[i].Center;
+		offset += sizeof(XMFLOAT3);
+
+		XMFLOAT3& Extents = *(XMFLOAT3*)(sds.ofbuff + offset);
+		Extents = obbArr[i].Extents;
+		offset += sizeof(XMFLOAT3);
+
+		XMFLOAT4& Orientation = *(XMFLOAT4*)(sds.ofbuff + offset);
+		Orientation = obbArr[i].Orientation;
+		offset += sizeof(XMFLOAT3);
+	}
+	sds.postpush_end();
 }
 
 void StaticGameObject::Release() {
@@ -328,6 +490,7 @@ DynamicGameObject::~DynamicGameObject()
 void DynamicGameObject::InitialChunkSetting()
 {
 	if (chunkAllocIndexs == nullptr) {
+		Zone* zone = &gameworld.zones[zoneId];
 		BoundingOrientedBox obb = GetOBB();
 		vec4 ext = obb.Extents;
 		float len = ext.len3 / zone->chunck_divide_Width;
@@ -337,6 +500,7 @@ void DynamicGameObject::InitialChunkSetting()
 }
 
 matrix DynamicGameObject::GetWorld() {
+	Zone* zone = &gameworld.zones[zoneId];
 	matrix sav = worldMat;
 	GameObject* obj = zone->Dynamic_gameObjects[parent];
 	while (obj != nullptr) {
@@ -347,13 +511,50 @@ matrix DynamicGameObject::GetWorld() {
 	return sav;
 }
 
-void DynamicGameObject::SetWorld(matrix localWorldMat)
+void DynamicGameObject::SetWorld(matrix local)
 {
-	worldMat = localWorldMat;
+	Zone& zone = gameworld.zones[zoneId];
+
+	//기존 청크에서 정보 지우기
+	if (chunkAllocIndexs) {
+		ChunkIndex ci = ChunkIndex(IncludeChunks.xmin, IncludeChunks.ymin, IncludeChunks.zmin);
+		int len = IncludeChunks.GetChunckSize();
+		for (; ci.extra < len; IncludeChunks.Inc(ci)) {
+			auto f = zone.chunck.find(ci);
+			if (f != zone.chunck.end()) {
+				GameChunk* gc = f->second;
+				gc->Dynamic_gameobjects.Free(chunkAllocIndexs[ci.extra]);
+			}
+		}
+	}
+	worldMat = local;
+
+	if (chunkAllocIndexs) {
+		// 새 위치에서 청크에 넣기
+		GameObjectIncludeChunks chunkIds = zone.GetChunks_Include_OBB(GetOBB());
+		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
+		ci.extra = 0;
+		int chunckCount = chunkIds.GetChunckSize();
+		for (; ci.extra < chunckCount; chunkIds.Inc(ci)) {
+			auto c = zone.chunck.find(ci);
+			GameChunk* gc;
+			if (c == zone.chunck.end()) {
+				// new game chunk
+				gc = new GameChunk();
+				gc->SetChunkIndex(ci, &zone);
+				zone.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+			}
+			else gc = c->second;
+			int allocN = gc->Dynamic_gameobjects.Alloc();
+			gc->Dynamic_gameobjects[allocN] = this;
+			this->chunkAllocIndexs[ci.extra] = allocN;
+		}
+	}
 }
 
 void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc)
 {
+	Zone* zone = &gameworld.zones[zoneId];
 	static int temp[512] = {};
 	GameObjectIncludeChunks intersection = beforeChunckInc;
 	intersection &= afterChunkInc;
@@ -376,7 +577,7 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
 		// 안 곂치는 부분은 Free 한다.
 		auto f = zone->chunck.find(ci);
 		if (f != zone->chunck.end()) {
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
 			dbgbreak(f->second->Dynamic_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
 #endif
 			f->second->Dynamic_gameobjects.Free(chunkAllocIndexs[ci.extra]);
@@ -427,6 +628,7 @@ void DynamicGameObject::Update(float delatTime) {
 }
 
 void DynamicGameObject::Release() {
+	Zone* zone = &gameworld.zones[zoneId];
 	GameObject::Release();
 	if (chunkAllocIndexs) {
 		int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
@@ -449,7 +651,8 @@ BoundingOrientedBox DynamicGameObject::GetOBB() {
 	BoundingOrientedBox obb_local;
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
-	Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
+	Zone* zone = &gameworld.zones[zoneId];
+	zone->GetShape(shapeindex).GetRealShape(mesh, model);
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	if (model != nullptr) obb_local = model->GetOBB();
 
@@ -715,6 +918,62 @@ void DynamicGameObject::OnCollisionRayWithBullet(GameObject* shooter, float dama
 {
 }
 
+void DynamicGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+	Zone zone = gameworld.zones[zoneId];
+	Shape& s = zone.GetShape(shapeindex);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_DynamicGameObject;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.DestWorld = worldMat;
+	static_data.LVelocity = LVelocity;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+
+		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
+		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+
+		matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+		memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+	sds.postpush_end();
+}
+
 void DynamicGameObject::OnRayHit(GameObject* rayFrom)
 {
 }
@@ -738,11 +997,12 @@ void SkinMeshGameObject::Update(float delatTime) {
 }
 
 void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc) {
+	Zone* zone = &gameworld.zones[zoneId];
 	static int temp[512] = {};
 	GameObjectIncludeChunks intersection = beforeChunckInc;
 	intersection &= afterChunkInc;
 
-#ifdef ChunckDEBUG 
+#ifdef DEVELOPMODE_ChunckDEBUG 
 	cout << "objptr = " << this << " FREE";
 #endif
 
@@ -766,18 +1026,18 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 		// 안 곂치는 부분은 Free 한다.
 		auto f = zone->chunck.find(ci);
 		if (f != zone->chunck.end()) {
-#ifdef ChunckDEBUG 
+#ifdef DEVELOPMODE_ChunckDEBUG 
 			dbgbreak(f->second->SkinMesh_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
 			cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << chunkAllocIndexs[ci.extra] << "\t";
 #endif
 			f->second->SkinMesh_gameobjects.Free(chunkAllocIndexs[ci.extra]);
 		}
 	}
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
 	cout << endl;
 #endif
 
-#ifdef ChunckDEBUG 
+#ifdef DEVELOPMODE_ChunckDEBUG 
 	dbgbreak(inter_Count != inter_ci.extra);
 #endif
 
@@ -796,7 +1056,7 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 
 	ChunkIndex pastCI = ChunkIndex(-99999, -99999, -99999);
 
-#ifdef ChunckDEBUG 
+#ifdef DEVELOPMODE_ChunckDEBUG 
 	cout << "objptr = " << this << " ALLOC";
 #endif
 	inter_up = 0;
@@ -805,7 +1065,7 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
-#ifdef ChunckDEBUG 
+#ifdef DEVELOPMODE_ChunckDEBUG 
 			cout << "ci_move(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << temp[inter_up-1] << "\t";
 			dbgbreak(pastCI == ci);
 			dbgbreak(afterChunkInc.isInclude(ci) == false);
@@ -827,15 +1087,116 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 		gc->SkinMesh_gameobjects[allocN] = this;
 		chunkAllocIndexs[ci.extra] = allocN;
 
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
 		cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << allocN << "\t";
 #endif
 	}
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
 	cout << endl;
 #endif
 
 	IncludeChunks = afterChunkInc;
+}
+
+void SkinMeshGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+	Zone zone = gameworld.zones[zoneId];
+	Shape& s = zone.GetShape(shapeindex);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_DynamicGameObject;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.DestWorld = worldMat;
+	static_data.LVelocity = LVelocity;
+	static_data.AnimationFlowTime = AnimationFlowTime;
+	static_data.PlayingAnimationIndex = PlayingAnimationIndex;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+
+	//shape
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+
+		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
+		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+
+		matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+		memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+
+	sds.postpush_end();
+}
+
+void SkinMeshGameObject::SetWorld(matrix local) {
+	Zone& zone = gameworld.zones[zoneId];
+
+	//기존 청크에서 정보 지우기
+	if (chunkAllocIndexs) {
+		ChunkIndex ci = ChunkIndex(IncludeChunks.xmin, IncludeChunks.ymin, IncludeChunks.zmin);
+		int len = IncludeChunks.GetChunckSize();
+		for (; ci.extra < len; IncludeChunks.Inc(ci)) {
+			auto f = zone.chunck.find(ci);
+			if (f != zone.chunck.end()) {
+				GameChunk* gc = f->second;
+				gc->SkinMesh_gameobjects.Free(chunkAllocIndexs[ci.extra]);
+			}
+		}
+	}
+	worldMat = local;
+
+	if (chunkAllocIndexs) {
+		// 새 위치에서 청크에 넣기
+		GameObjectIncludeChunks chunkIds = zone.GetChunks_Include_OBB(GetOBB());
+		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
+		ci.extra = 0;
+		int chunckCount = chunkIds.GetChunckSize();
+		for (; ci.extra < chunckCount; chunkIds.Inc(ci)) {
+			auto c = zone.chunck.find(ci);
+			GameChunk* gc;
+			if (c == zone.chunck.end()) {
+				// new game chunk
+				gc = new GameChunk();
+				gc->SetChunkIndex(ci, &zone);
+				zone.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+			}
+			else gc = c->second;
+			int allocN = gc->SkinMesh_gameobjects.Alloc();
+			gc->SkinMesh_gameobjects[allocN] = this;
+			this->chunkAllocIndexs[ci.extra] = allocN;
+		}
+	}
 }
 
 void GameMap::ExtendMapAABB(BoundingOrientedBox obb)
@@ -976,8 +1337,8 @@ void GameMap::LoadMap(const char* MapName)
 		map->name[i] = name;
 	}
 
-	TextureTableStart = 0; // fix : 현재 MaterialTexture 개수
-	MaterialTableStart = gameworld.MaterialCount; // fix : 현재 Material 개수
+	TextureTableStart = gameworld.GlobalTextureCount; // fix : 현재 MaterialTexture 개수
+	MaterialTableStart = gameworld.GlobalMaterialCount; // fix : 현재 Material 개수
 
 	constexpr char MeshDir[] = "Mesh/";
 	constexpr char TextureDir[] = "Texture/";
@@ -1044,7 +1405,7 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&mesh.Center, sizeof(float) * 3);
 		ifs.read((char*)&mesh.MAXpos, sizeof(float) * 3);
 		map->meshes[i] = mesh;
-		mesh_shapeindexes[i] = Shape::AddMesh(map->name[nameid], &map->meshes[i]);
+		mesh_shapeindexes[i] = Shape::ShapeTable.size() + Shape::AddMeshInZone(map->name[nameid], &map->meshes[i], ownerzone->zoneId);
 	}
 
 	for (int i = 0; i < TextureCount; ++i) {
@@ -1061,6 +1422,7 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&width, sizeof(int));
 		ifs.read((char*)&height, sizeof(int));
 		ifs.read((char*)&format, sizeof(int));
+		ownerzone->ZoneTextureCount += 1;
 	}
 
 	for (int i = 0; i < MaterialCount; ++i) {
@@ -1088,7 +1450,8 @@ void GameMap::LoadMap(const char* MapName)
 		ifs.read((char*)&tempRead, sizeof(int));
 		ifs.read((char*)&tempRead, sizeof(int));
 		ifs.read((char*)&tempRead, sizeof(int));
-		gameworld.MaterialCount += 1;
+		//gameworld.MaterialCount += 1;
+		ownerzone->ZoneMaterialCount += 1;
 	}
 
 	for (int i = 0; i < ModelCount; ++i) {
@@ -1107,13 +1470,13 @@ void GameMap::LoadMap(const char* MapName)
 		Model* pModel = new Model();
 		pModel->LoadModelFile2(filename);
 		map->models[i] = pModel;
-		model_shapeindexes[i] = Shape::AddModel(modelName, pModel);
+		model_shapeindexes[i] = Shape::ShapeTable.size() + Shape::AddModelInZone(modelName, pModel, ownerzone->zoneId);
 	}
 
 	ownerzone->Static_gameObjects.Init(gameObjectCount);
 	for (int i = 0; i < gameObjectCount; ++i) {
 		StaticGameObject* go = new StaticGameObject();
-		go->zone = ownerzone;
+		go->zoneId = ownerzone->zoneId;
 		map->MapObjects[i] = go;
 		go->parent = -1;
 		go->childs = -1;
@@ -1193,7 +1556,8 @@ void GameMap::LoadMap(const char* MapName)
 				go->SetShape(map->model_shapeindexes[ModelID]);
 			}
 
-			int nodeCount = Shape::ShapeTable[go->shapeindex].GetModel()->nodeCount;
+			Zone* zone = &gameworld.zones[ownerzone->zoneId];
+			int nodeCount = zone->GetShape(go->shapeindex).GetModel()->nodeCount;
 			go->transforms_innerModel = new matrix[nodeCount];
 			for (int k = 0; k < nodeCount; ++k) {
 				vec4 pos;
@@ -1252,7 +1616,8 @@ void GameMap::LoadMap(const char* MapName)
 
 		if (Mod == 'm') {
 			go->obbArr.clear();
-			Model* model = Shape::ShapeTable[go->shapeindex].GetModel();
+			Zone* zone = &gameworld.zones[ownerzone->zoneId];
+			Model* model = zone->GetShape(go->shapeindex).GetModel();
 			model->RootNode->PushOBBs(model, go->worldMat, &go->obbArr, go);
 			//for (int k = 0;k < model->nodeCount;++k) {
 			//	ModelNode* node = &model->Nodes[k];
@@ -1273,7 +1638,7 @@ void GameMap::LoadMap(const char* MapName)
 	//BakeStaticCollision();
 }
 
-void Model::LoadModelFile2(string filename)
+void Model::LoadModelFile2(string filename, Zone* zone)
 {
 	ifstream ifs{ filename, ios_base::binary };
 	ifs.read((char*)&mNumMeshes, sizeof(unsigned int));
@@ -1282,7 +1647,10 @@ void Model::LoadModelFile2(string filename)
 	ifs.read((char*)&nodeCount, sizeof(unsigned int));
 	Nodes = new ModelNode[nodeCount];
 
-	int MaterialTableStart = gameworld.MaterialCount;
+	int MaterialTableStart = gameworld.GlobalMaterialCount;
+	if (zone) {
+		MaterialTableStart + zone->ZoneMaterialCount;
+	}
 
 	//new0
 	unsigned int mNumTextures;
@@ -1523,7 +1891,13 @@ void Model::LoadModelFile2(string filename)
 		int diffuse2, normal2 = 0;
 		ifs.read((char*)&diffuse2, sizeof(int));
 		ifs.read((char*)&normal2, sizeof(int));
-		gameworld.MaterialCount += 1;
+		
+		if (zone) {
+			zone->ZoneMaterialCount += 1;
+		}
+		else {
+			gameworld.GlobalMaterialCount += 1;
+		}
 	}
 
 	RootNode = &Nodes[0];
@@ -1730,7 +2104,7 @@ Player::Player() {
 	HealSkillCooldownFlow = 0.0f;
 	ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
 
-	JumpVelocity = 20;
+	JumpVelocity = 5;
 	isGround = false;
 	collideCount = 0;
 	clientIndex = 0;
@@ -1999,15 +2373,91 @@ void Player::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	TakeDamage(damage);
 }
 
+void Player::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+	Zone zone = gameworld.zones[zoneId];
+	Shape& s = zone.GetShape(shapeindex);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_Player;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.DestWorld = worldMat;
+	static_data.LVelocity = LVelocity;
+	static_data.AnimationFlowTime = AnimationFlowTime;
+	static_data.PlayingAnimationIndex = PlayingAnimationIndex;
+
+	static_data.HP = HP;
+	static_data.MaxHP = MaxHP;
+	static_data.bullets = bullets;
+	static_data.KillCount = KillCount;
+	static_data.DeathCount = DeathCount;
+	static_data.HeatGauge = HeatGauge;
+	static_data.MaxHeatGauge = MaxHeatGauge;
+	static_data.HealSkillCooldown = HealSkillCooldown;
+	static_data.HealSkillCooldownFlow = HealSkillCooldownFlow;
+	static_data.m_currentWeaponType = m_currentWeaponType;
+	memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);
+	static_data.weapon = weapon;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+
+	//shape
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+
+		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
+		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+
+		matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+		memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+
+	sds.postpush_end();
+}
+
 void Player::Respawn() {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
 	HP = 100;
 	tag[GameObjectTag::Tag_Enable] = true;
 
-	worldMat.Id();
-	worldMat.pos.y = 2;
-	//player position send
+	matrix mat;
+	mat.Id();
+	mat.pos.y = 2;
+	SetWorld(mat);
 
+	//player position send
 	bool isExist = true;
 	zones->Sending_ChangeGameObjectMember<Tag>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &tag);
 	zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
@@ -2485,7 +2935,6 @@ deltaTime : speed*deltaTime로 이동량을 계산한다.
 4) 아니면 dir을 정규화하고, tickLVelocity = dir * m_speed * deltaTime로 이번 프레임 이동량을 만든다.
 5) 바라보는 방향(look)을 dir로 맞춘다.
 */
-
 //AI involved Code Start : <chatgpt>
 void Monster::MoveByAstar(float deltaTime)
 {
@@ -2527,6 +2976,70 @@ void Monster::MoveByAstar(float deltaTime)
 }
 //AI involved Code End : <chatgpt>
 
+void Monster::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+	Zone zone = gameworld.zones[zoneId];
+	Shape& s = zone.GetShape(shapeindex);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_Monster;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.DestWorld = worldMat;
+	static_data.LVelocity = LVelocity;
+	static_data.AnimationFlowTime = AnimationFlowTime;
+	static_data.PlayingAnimationIndex = PlayingAnimationIndex;
+	static_data.HP = HP;
+	static_data.MaxHP = MaxHP;
+	static_data.isDead = isDead;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+
+	//shape
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+
+		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
+		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+
+		matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+		memcpy_s(InnerModelTransformArr, sizeof(matrix) * model->nodeCount, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+
+	sds.postpush_end();
+}
+
 /*<설명>
 - 월드 좌표(wx, wz)에 가장 가까운 "이동 가능 노드(cango==true)"를 찾아 반환한다.
 - 월드 좌표는 그리드 정중앙이 아닐 수 있으므로, A*의 start/goal 노드를 잡기 위한 함수.
@@ -2558,6 +3071,58 @@ AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarN
 	return best;
 }
 
+BoundingOrientedBox Portal::GetOBB() {
+	BoundingOrientedBox obb_local;
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	if (shapeindex < 0) {
+		obb_local.Extents.x = -1;
+		return obb_local;
+	}
+	Zone zone = gameworld.zones[zoneId];
+	Shape& s = zone.GetShape(shapeindex);
+	s.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	if (model != nullptr) obb_local = model->GetOBB();
+	BoundingOrientedBox obb_world;
+	obb_local.Transform(obb_world, worldMat);
+	return obb_world;
+};
+
+void Portal::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	// mesh/model 없이 기본 데이터만 전송
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(Portal::STC_SyncObjData);
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_Portal;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	Portal::STC_SyncObjData& static_data = *(Portal::STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.DestWorld = worldMat;
+	static_data.spawnX = spawnX;
+	static_data.spawnY = spawnY;
+	static_data.spawnZ = spawnZ;
+	static_data.radius = radius;
+	static_data.zoneId = zoneId;
+	static_data.dstzoneId = dstzoneId;
+	offset += sizeof(STC_SyncObjData);
+
+	sds.postpush_end();
+}
+
+
 BoundingBox ChunkIndex::GetAABB(Zone* zone) {
 	BoundingBox AABB;
 	float halfW = zone->chunck_divide_Width * 0.5f;
@@ -2572,51 +3137,129 @@ void GameChunk::SetChunkIndex(ChunkIndex ci, Zone* zone) {
 }
 
 void World::Init() {
-	// 전역 리소스 초기화
-	ItemTable.push_back(Item(0));
-	ItemTable.push_back(Item(1));
-	ItemTable.push_back(Item(2));
-	ItemTable.push_back(Item(3));
+#ifdef DEVELOPMODE_SYNC_GLOBAL_ASSET
+	ifstream GlobalAssetCounter{ "../../GlobalAssetCounter.txt" };
+	if (GlobalAssetCounter.is_open()) {
+		GlobalAssetCounter >> GlobalTextureCount;
+		GlobalAssetCounter >> GlobalMaterialSiz;
+		GlobalAssetCounter >> GlobalMeshCount;
+		GlobalAssetCounter >> GlobalHumanoidAnimaionCount;
+		GlobalAssetCounter >> GlobalShapeTableSyncSiz;
+	}
+	GlobalAssetCounter.close();
+#endif
 
 	clients.Init(32);
 	GameObjectType::STATICINIT();
 
-	zones.resize(zoneCount);
+	// 전역 모델 로드
+	{
+		ItemTable.push_back(Item(0));
+		ItemTable.push_back(Item(1));
+		ItemTable.push_back(Item(2));
+		ItemTable.push_back(Item(3));
 
+		HumanoidAnimation animIdle;
+		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animIdle); // Idle
+
+		HumanoidAnimation animWalk;
+		animWalk.LoadHumanoidAnimation("Resources/Animation/Walk.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animWalk); // Walk
+
+		HumanoidAnimation animRun;
+		animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animRun);  // Run
+
+		HumanoidAnimation animAim;
+		animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animAim);  // 3: Aim
+
+		HumanoidAnimation animShoot;
+		animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
+
+		constexpr bool kLoadSniperModel = true;
+		constexpr bool kLoadRifleModel = true;
+		constexpr bool kLoadPistolModel = true;
+		constexpr bool kLoadShotGunModel = true;
+		constexpr bool kLoadMachineGunModel = true;
+
+		// 스나이퍼 모델 로드
+		Model* SniperModel = nullptr;
+		if (kLoadSniperModel) {
+			SniperModel = new Model;
+			SniperModel->LoadModelFile2("Resources/Model/sniper.model");
+		}
+
+		// 라이플 모델 로드
+		Model* RifleModel = nullptr;
+		if (kLoadRifleModel) {
+			RifleModel = new Model;
+			RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
+		}
+
+		// 권총 모델 로드
+		Model* PistolModel = nullptr;
+		if (kLoadPistolModel) {
+			PistolModel = new Model;
+			PistolModel->LoadModelFile2("Resources/Model/pistol.model");
+		}
+
+		// 샷건 모델 로드
+		Model* ShotGunModel = nullptr;
+		if (kLoadShotGunModel) {
+			ShotGunModel = new Model;
+			ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
+		}
+
+		//// 머신건(미니건) 모델 로드
+		Model* MachineGunModel = nullptr;
+		if (kLoadMachineGunModel) {
+			MachineGunModel = new Model;
+			MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
+		}
+
+		Model* PlayerModel = new Model();
+		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
+		int playerMesh_index = Shape::AddModel("Player", PlayerModel);
+
+		Model* MonsterModel = new Model();
+		MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
+		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
+
+		Mesh* portalMesh = new Mesh();
+		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
+		Shape::AddMesh("Portal", portalMesh);
+	}
+
+	cout << "Game Init end" << endl;
+	cout << "=== Shape Index Check ===" << endl;
+	for (int i = 0; i < Shape::ShapeTable.size(); ++i) {
+		const string& str = Shape::ShapeStrTable[i];
+		cout << str << " = " << Shape::StrToShapeIndex[str] << endl;
+	}
+	cout << "Total shapes = " << Shape::ShapeTable.size() << endl;
+
+#ifdef DEVELOPMODE_SYNC_GLOBAL_ASSET
+	dbgWarn(GlobalMaterialCount != GlobalMaterialSiz,
+		cout << "WARN : 서버와 클라이언트 간에 로드된 에셋 배열의 항목중 일치하지 않는 것이 있습니다" << endl;);
+	dbgWarn(Shape::ShapeTable.size() != GlobalShapeTableSyncSiz,
+		cout << "WARN : 서버와 클라이언트 간에 로드된 Shape 개수가 일치하지 않습니다." << endl;);
+	GlobalMaterialCount = GlobalMaterialSiz;
+#endif
+
+	zones.resize(zoneCount);
 	// Zone 초기화
 	for (int i = 0; i < zoneCount; ++i) {
 		zones[i].world = this;
 		zones[i].zoneId = i;
 		zones[i].Init();
 	}
-
-	// 전역 모델 로드
-	HumanoidAnimation hanim;
-	hanim.LoadHumanoidAnimation("Resources/Animation/BreakDance1990.Humanoid_animation");
-	HumanoidAnimationTable.push_back(hanim);
-
-	Model* PlayerModel = new Model();
-	PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
-	Shape::AddModel("Player", PlayerModel);
-
-	Model* MonsterModel = new Model();
-	MonsterModel->LoadModelFile2("Resources/Model/Remy.model");
-	Shape::AddModel("Monster001", MonsterModel);
-	
-	Mesh* portalMesh = new Mesh();
-	portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);  // 가로2, 세로3, 두께0.2 박스
-	Shape::AddMesh("Portal", portalMesh);
-
 	for (int i = 0; i < zoneCount; ++i) {
 		zones[i].SpawnObjects();
 		zones[i].SpawnPortal();
 	}
-
-	cout << "Game Init end" << endl;
-	cout << "=== Shape Index Check ===" << endl;
-	cout << "Player = " << Shape::StrToShapeIndex["Player"] << endl;
-	cout << "Monster001 = " << Shape::StrToShapeIndex["Monster001"] << endl;
-	cout << "Total shapes = " << Shape::ShapeTable.size() << endl;
 }
 
 void World::Update() {	
@@ -2692,23 +3335,8 @@ void ClientData::DisconnectToServer(int index) {
 	int objindex = gameworld.clients[index].objindex;
 	Player* go = gameworld.clients[index].pObjData;
 	
-	int n = 0;
-	ChunkIndex ci = ChunkIndex(go->IncludeChunks.xmin, go->IncludeChunks.ymin, go->IncludeChunks.zmin);
-	ci.extra = 0;
-	int chunckCount = go->IncludeChunks.GetChunckSize();
-	for (;ci.extra < chunckCount; go->IncludeChunks.Inc(ci)) {
-		auto f = zone->chunck.find(ci);
-		if (f != zone->chunck.end()) {
-			GameChunk* c = f->second;
-			c->SkinMesh_gameobjects[go->chunkAllocIndexs[ci.extra]] = nullptr;
-			dbgbreak(c->SkinMesh_gameobjects.isAlloc(go->chunkAllocIndexs[ci.extra]) == false);
-			c->SkinMesh_gameobjects.Free(go->chunkAllocIndexs[ci.extra]);
-			cout << "[Free] ci : (" << ci.x << ", " << ci.y << ", " << ci.z << ") extra : " << ci.extra << ", AllocIndex : " << go->chunkAllocIndexs[ci.extra] << endl;
-		}
-	}
+	zone->RemovePlayer(index);
 
-	zone->Dynamic_gameObjects[objindex] = nullptr;
-	zone->Dynamic_gameObjects.Free(objindex);
 	gameworld.clients[index].pObjData = nullptr;
 	gameworld.clients.Free(index);
 	delete go;

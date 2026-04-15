@@ -3,6 +3,17 @@
 //#include "Zone.h"
 #include "main.h"
 
+Shape& Zone::GetShape(int shapeindex)
+{
+    if (Shape::ShapeTable.size() > shapeindex) {
+        return Shape::ShapeTable[shapeindex];
+    }
+    else {
+        int zshapeindex = shapeindex - Shape::ShapeTable.size();
+        return ZoneShapeTable[zshapeindex];
+    }
+}
+
 void Zone::Init() {
     /*if (zoneId != 0) {
         Dynamic_gameObjects.Init(128);
@@ -139,10 +150,8 @@ void Zone::Update(float deltaTime) {
                     continue;)
 
                 //Shape로부터 OBB정보를 받는다.
-                ui64 obbptr = *reinterpret_cast<ui64*>(&Shape::ShapeTable[gbj1->shapeindex]) & 0x7FFFFFFFFFFFFFFF;
-                if (obbptr == 0) continue;
-                vec4* obb = reinterpret_cast<vec4*>(obbptr);
-                float fsl1 = obb[1].fast_square_of_len3;
+                BoundingOrientedBox obb = gbj1->GetOBB();
+                float fsl1 = vec4(obb.Extents).fast_square_of_len3;
 
                 BoundingOrientedBox obb_before = gbj1->GetOBB();
                 vec4 lastpos1 = gbj1->worldMat.pos + gbj1->tickLVelocity;
@@ -341,14 +350,32 @@ int Zone::NewPlayer(SendDataSaver& sds, Player* obj, int clientIndex) {
 }
 
 void Zone::RemovePlayer(int clientIndex) {
-    int objIdx = gameworld.clients[clientIndex].objindex;
+    Zone* zone = gameworld.GetClientZone(clientIndex);
+    int objindex = gameworld.clients[clientIndex].objindex;
+    Player* go = gameworld.clients[clientIndex].pObjData;
+
+    // 현재 Zone의 청크에서 이 플레이어를 삭제.
+    int n = 0;
+    ChunkIndex ci = ChunkIndex(go->IncludeChunks.xmin, go->IncludeChunks.ymin, go->IncludeChunks.zmin);
+    ci.extra = 0;
+    int chunckCount = go->IncludeChunks.GetChunckSize();
+    for (; ci.extra < chunckCount; go->IncludeChunks.Inc(ci)) {
+        auto f = zone->chunck.find(ci);
+        if (f != zone->chunck.end()) {
+            GameChunk* c = f->second;
+            c->SkinMesh_gameobjects[go->chunkAllocIndexs[ci.extra]] = nullptr;
+            dbgbreak(c->SkinMesh_gameobjects.isAlloc(go->chunkAllocIndexs[ci.extra]) == false);
+            c->SkinMesh_gameobjects.Free(go->chunkAllocIndexs[ci.extra]);
+            cout << "[Free] ci : (" << ci.x << ", " << ci.y << ", " << ci.z << ") extra : " << ci.extra << ", AllocIndex : " << go->chunkAllocIndexs[ci.extra] << endl;
+        }
+    }
 
     // 이 존의 클라이언트들에게 삭제 알림
-    Sending_DeleteGameObject(CommonSDS, objIdx);
+    Sending_DeleteGameObject(CommonSDS, objindex);
 
     // 오브젝트 배열에서 제거 (메모리 해제 X)
-    Dynamic_gameObjects[objIdx] = nullptr;
-    Dynamic_gameObjects.Free(objIdx);
+    Dynamic_gameObjects[objindex] = nullptr;
+    Dynamic_gameObjects.Free(objindex);
 }
 
 int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos) {
@@ -374,6 +401,11 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos) {
 
     // 새 클라이언트에게 이 존의 모든 데이터 전송 (PersonalSDS)
     SendDataSaver& personalSDS = gameworld.clients[clientIndex].PersonalSDS;
+
+    // 클라이언트가 Zone 이동을 알 수 있도록 패킷을 전송한다. (클라이언트 맵 로딩을 위해)
+    gameworld.Sending_PlayerMoveZone(personalSDS, clientIndex, zoneId);
+    
+    // 새 클라이언트에게 Zone에 있는 모든 오브젝트의 정보를 전송.
     SendingAllObjectForNewClient(personalSDS);
 
     // AllocPlayerIndex 전송
@@ -400,8 +432,8 @@ void Zone::SpawnPortal() {
         // Zone 0 → Zone 1
         portal->worldMat = XMMatrixTranslation(5.0f, 5.0f, 0.0f);
         portal->dstzoneId = 1;
-        portal->spawnX = -25.0f;
-        portal->spawnY = 10.0f;
+        portal->spawnX = -5.0f;
+        portal->spawnY = 2.0f;
         portal->spawnZ = 0.0f;
         portal->radius = 3.0f;
     }
@@ -563,16 +595,11 @@ void Zone::Sending_ItemRemove(SendDataSaver& sds, int dropindex) {
 
 //맵/스폰
 void Zone::LoadMapForZone(int zid) {
-    switch (zid) {
-    case 0:
-        map.LoadMap("The_Port");
-        break;
-    case 1:
-        map.LoadMap("The_port");
-        break;
-    default:
-        map.LoadMap("The_Port");
-        break;
+    if (zid < gameworld.zoneCount) {
+        map.LoadMap(gameworld.ZoneMapName[zid]);
+    }
+    else {
+        map.LoadMap(gameworld.ZoneMapName[0]);
     }
 }
 
@@ -769,6 +796,7 @@ GameChunk* Zone::GetChunkFromPos(vec4 pos) {
 }
 
 void Zone::PushGameObject(GameObject* go) {
+    go->zoneId = zoneId;
     if (go->tag[GameObjectTag::Tag_Dynamic] == false) {
         // static game object
         StaticGameObject* sgo = (StaticGameObject*)go;
@@ -809,7 +837,7 @@ void Zone::PushGameObject(GameObject* go) {
             ci.extra = 0;
             int chunckCount = chunkIds.GetChunckSize();
 
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
             cout << "objptr = " << smgo << ", ";
 #endif
             for (; ci.extra < chunckCount; chunkIds.Inc(ci)) {
@@ -825,11 +853,11 @@ void Zone::PushGameObject(GameObject* go) {
                 int allocN = gc->SkinMesh_gameobjects.Alloc();
                 gc->SkinMesh_gameobjects[allocN] = smgo;
                 smgo->chunkAllocIndexs[ci.extra] = allocN;
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
                 cout << smgo->chunkAllocIndexs[ci.extra] << ", ";
 #endif
             }
-#ifdef ChunckDEBUG
+#ifdef DEVELOPMODE_ChunckDEBUG
             cout << endl;
 #endif
         }

@@ -469,11 +469,10 @@ void GPUResource::UpdateTextureForWrite(ID3D12Resource* pSrcTexResource)
 void GPUResource::Release()
 {
 	if (resource) {
+#ifdef DEVELOPMODE_DBG_GPURESOURCES
 		dbgc[0] += 1;
-		if (dbgc[0] == 385) {
-			__debugbreak();
-		}
 		dbglog2(L"GPUResource %llx released. dbgc0 = %d \n", resource->GetGPUVirtualAddress(), dbgc[0]);
+#endif
 		resource->Release();
 	}
 	CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_COMMON;
@@ -718,20 +717,17 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	ui32 beforeMatCBVStart = TextureSRVStart + TextureSRVCap;
 	ui32 afterMatCBVStart = newInitDescArrCap + newTextureSRVCap;
 	ui32 MatCBVdelta = afterMatCBVStart - beforeMatCBVStart;
-	for (int i = 0; i < game.MaterialTable.size(); ++i) {
-		Material& mat = game.MaterialTable[i];
-		mat.TextureSRVTableIndex.index += TexturesSRVdelta;
-		mat.CB_Resource.descindex.index += MatCBVdelta;
+	for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
+		Material* mat = game.RenderMaterialTable[i];
+		mat->TextureSRVTableIndex.index += TexturesSRVdelta;
+		mat->CB_Resource.descindex.index += MatCBVdelta;
 	}
 
 	ui32 beforeInstancingSRVStart = TextureSRVStart + TextureSRVCap + MaterialCBVCap;
 	ui32 afterInstancingSRVStart = newInitDescArrCap + newTextureSRVCap + newMaterialCBVCap;
 	ui32 InstancingSRVdelta = afterInstancingSRVStart - beforeInstancingSRVStart;
-	for (int i = 0; i < game.MeshTable.size(); ++i) {
-		Mesh* mesh = game.MeshTable[i];
-		for (int k = 0; k < mesh->subMeshNum; ++k) {
-			mesh->InstanceData[k].InstancingSRVIndex.index += InstancingSRVdelta;
-		}
+	for (int i = 0; i < game.RenderInstancingTable.size(); ++i) {
+		game.RenderInstancingTable[i]->InstancingSRVIndex.index += InstancingSRVdelta;
 	}
 
 	InitDescArrCap = newInitDescArrCap;
@@ -748,25 +744,25 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	gd.pDevice->CopyDescriptors(1, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
 
 	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + TextureSRVSiz);
-	if (game.TextureTable.size() > 0) {
+	if (game.RenderTextureTable.size() > 0) {
 		for (int i = 0; i < TextureSRVCap - TextureSRVSiz; ++i) {
-			gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hRender.hcpu, game.TextureTable[0]->descindex.hCreation.hcpu, descheaptype);
+			gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hRender.hcpu, game.RenderTextureTable[0]->descindex.hCreation.hcpu, descheaptype);
 			dummyTexSRV.index += 1;
 		}
 	}
 
 	DescIndex dummyMatCBV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVSiz);
-	if (game.MaterialTable.size() > 0) {
+	if (game.RenderMaterialTable.size() > 0) {
 		for (int i = 0; i < MaterialCBVCap - MaterialCBVSiz; ++i) {
-			gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hRender.hcpu, game.MaterialTable[0].CB_Resource.descindex.hCreation.hcpu, descheaptype);
+			gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hRender.hcpu, game.RenderMaterialTable[0]->CB_Resource.descindex.hCreation.hcpu, descheaptype);
 			dummyMatCBV.index += 1;
 		}
 	}
 
 	DescIndex dummyInstancingSRV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVCap + InstancingSRVSiz);
-	if (game.MeshTable.size() > 0) {
+	if (game.RenderInstancingTable.size() > 0) {
 		for (int i = 0; i < InstancingSRVCap - InstancingSRVSiz; ++i) {
-			gd.pDevice->CopyDescriptorsSimple(1, dummyInstancingSRV.hRender.hcpu, game.MeshTable[0]->InstanceData[0].InstancingSRVIndex.hCreation.hcpu, descheaptype);
+			gd.pDevice->CopyDescriptorsSimple(1, dummyInstancingSRV.hRender.hcpu, game.RenderInstancingTable[0]->InstancingSRVIndex.hCreation.hcpu, descheaptype);
 			dummyInstancingSRV.index += 1;
 		}
 	}
@@ -814,6 +810,15 @@ void SVDescPool2::DynamicReset()
 	DynamicSize = 0;
 }
 
+void SVDescPool2::ImmortalReset_ExcludeInit() {
+	TextureSRVSiz = 0;
+	TextureSRVCap = 64;
+	MaterialCBVSiz = 0;
+	MaterialCBVCap = 64;
+	InstancingSRVSiz = 0;
+	InstancingSRVCap = 64;
+}
+
 #pragma endregion
 
 #pragma region GlobalDeviceCode
@@ -823,7 +828,7 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	HRESULT hr;
 	IDXGIInfoQueue* DebugInterface;
 	debugDXGI = false;
-#ifdef PIX_DEBUGING
+#ifdef DEVELOPMODE_PIX_DEBUGING
 	LoadLibrary(L"C:/Program Files/Microsoft PIX/2602.25/WinPixGpuCapturer.dll");
 #endif
 
@@ -1620,9 +1625,10 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 		GPUResource gr;
 		gr.resource = pBuffer2;
 
+#ifdef DEVELOPMODE_DBG_GPURESOURCES
 		dbgc[0] += 1;
-		//dbgbreak(dbgc[0] == 14);
 		dbglog2(L"GPUResource %llx Created. dbgc0 = %d \n", gr.resource->GetGPUVirtualAddress(), dbgc[0]);
+#endif
 
 		gr.CurrentState_InCommandWriteLine = d3dResourceInitialStates;
 		gr.extraData = 0;
@@ -3082,6 +3088,27 @@ void RayTracingMesh::UAV_BLAS_Refit()
 	commandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
 }
 
+void RayTracingMesh::Release() {
+	pVBMapped = nullptr;
+	pIBMapped = nullptr;
+	pUAV_VBMapped = nullptr;
+	VBStartOffset = 0;
+	if (IBStartOffset) {
+		delete[] IBStartOffset;
+		IBStartOffset = nullptr;
+	}
+	UAV_VBStartOffset = 0;
+	subMeshCount = 0;
+	if (BLAS) {
+		BLAS->Release();
+		BLAS = nullptr;
+	}
+	if (GeometryDescs) {
+		delete GeometryDescs;
+		GeometryDescs = nullptr;
+	}
+}
+
 #pragma endregion
 
 #pragma region BasicMeshCode
@@ -3384,7 +3411,16 @@ void Mesh::InstancingStruct::Init(unsigned int capacity, Mesh* _mesh)
 	InstanceDataArr = nullptr;
 	StructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, sizeof(RenderInstanceData) * Capacity, 1);
 	StructuredBuffer.resource->Map(0, NULL, (void**)&InstanceDataArr);
-	gd.ShaderVisibleDescPool.ImmortalAlloc_InstancingSRV(&InstancingSRVIndex, 1);
+	
+	if (game.isAssetAddingInGlobal) {
+		int index = gd.TextureDescriptorAllotter.Alloc();
+		InstancingSRVIndex.Set(false, index);
+		//game.RenderInstancingTable.push_back(this);
+	}
+	else {
+		gd.ShaderVisibleDescPool.ImmortalAlloc_InstancingSRV(&InstancingSRVIndex, 1);
+		game.RenderInstancingTable.push_back(this);
+	}
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -3477,12 +3513,29 @@ void Mesh::InstancingStruct::ClearInstancing()
 	InstanceSize = 0;
 }
 
+void Mesh::InstancingStruct::Release() {
+	if (InstanceDataArr) {
+		StructuredBuffer.resource->Unmap(0, nullptr);
+		StructuredBuffer.Release();
+		InstanceDataArr = nullptr;
+	}
+	mesh = nullptr; // 참조만 할 뿐이다.
+	Capacity = 0;
+	InstanceSize = 0;
+	InstancingSRVIndex.Set(false, 0, 0);
+}
+
 void Mesh::Release()
 {
 	VertexBuffer.Release();
 	VertexUploadBuffer.Release();
 	IndexBuffer.Release();
 	IndexUploadBuffer.Release();
+	for (int i = 0; i < subMeshNum; ++i) {
+		InstanceData[i].Release();
+	}
+	delete[] InstanceData;
+	delete[] SubMeshIndexStart;
 }
 
 // 구 메쉬 생성
@@ -3752,6 +3805,7 @@ void UVMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum)
 
 void UVMesh::Release()
 {
+	Mesh::Release();
 }
 
 void UVMesh::CreateWallMesh(float width, float height, float depth, vec4 color)
@@ -4367,6 +4421,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 
 void BumpMesh::Release()
 {
+	rmesh.Release();
 	Mesh::Release();
 }
 
@@ -4384,7 +4439,7 @@ void BumpMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList) {
 			for (int i = 0; i < subMeshNum; ++i) {
 				//material
 				int materialIndex = InstanceData[i].InstanceDataArr[k].MaterialIndex;
-				Material* mat = &game.MaterialTable[materialIndex];
+				Material* mat = game.MaterialTable[materialIndex];
 				using PBRRPI = PBRShader1::RootParamId;
 				gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
 				gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
@@ -4575,6 +4630,29 @@ void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instance
 
 void BumpSkinMesh::Release()
 {
+	if (OffsetMatrixs) {
+		delete[] OffsetMatrixs;
+		OffsetMatrixs = nullptr;
+	}
+	ToOffsetMatrixsCB.Release();
+	if (toNodeIndex) {
+		delete[] toNodeIndex;
+		toNodeIndex = nullptr;
+	}
+	BoneMatrixs.clear();
+	BoneWeightBuffer.Release();
+	BoneWeightUploadBuffer.Release();
+	if (VertexSRV.type == 'n') {
+		gd.TextureDescriptorAllotter.Free(VertexSRV.index);
+		VertexSRV.Set(false, 0, 0);
+	}
+	if (BoneSRV.type == 'n') {
+		gd.TextureDescriptorAllotter.Free(BoneSRV.index);
+		BoneSRV.Set(false, 0, 0);
+	}
+	rmesh.Release();
+	vertexData.clear();
+	Mesh::Release();
 }
 
 void BumpSkinMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList)
@@ -4726,6 +4804,31 @@ void ModelNode::PushOBBs(void* origin, const matrix& parentMat, vector<BoundingO
 	}
 }
 
+void ModelNode::Release() {
+	name.clear();
+	parent = nullptr;
+	if (Childrens) {
+		delete[] Childrens;
+		Childrens = nullptr;
+	}
+	if (Meshes) {
+		delete[] Meshes;
+		Meshes = nullptr;
+	}
+
+	if (Mesh_SkinMeshindex) {
+		delete[] Mesh_SkinMeshindex;
+		Mesh_SkinMeshindex = nullptr;
+	}
+
+	aabbArr.clear();
+
+	if (materialIndex) {
+		delete[] materialIndex;
+		materialIndex = nullptr;
+	}
+}
+
 void Model::LoadModelFile2(string filename)
 {
 	ifstream ifs{ filename, ios_base::binary };
@@ -4773,7 +4876,7 @@ void Model::LoadModelFile2(string filename)
 			vector<BumpSkinMesh::BoneData>& skinboneWeights = skinboneWeights_Arr[skinboneWeights_Arr.size() - 1];
 			BSMCount += 1;
 			BumpSkinMesh* mesh = new BumpSkinMesh();
-			mesh->type = Mesh::MeshType::SkinedBumpMesh;
+			mesh->type = Mesh::MeshType::_SkinedBumpMesh;
 			mesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
 
 			skinvertices.reserve(vertSiz); skinvertices.resize(vertSiz);
@@ -4856,7 +4959,7 @@ void Model::LoadModelFile2(string filename)
 		}
 		else {
 			BumpMesh* mesh = new BumpMesh();
-			mesh->type = Mesh::MeshType::BumpMesh;
+			mesh->type = Mesh::MeshType::_BumpMesh;
 			
 			vertices.reserve(vertSiz); vertices.resize(vertSiz);
 			for (int k = 0; k < vertSiz; ++k) {
@@ -4921,7 +5024,7 @@ void Model::LoadModelFile2(string filename)
 	int cnt = 0;
 	for (int i = 0; i < mNumMeshes; ++i) {
 		Mesh* mesh = mMeshes[i];
-		if (mesh->type == Mesh::SkinedBumpMesh) {
+		if (mesh->type == Mesh::_SkinedBumpMesh) {
 			mBumpSkinMeshs[cnt] = (BumpSkinMesh*)mesh;
 			cnt += 1;
 		}
@@ -4985,7 +5088,7 @@ void Model::LoadModelFile2(string filename)
 		for (int k = 0; k < Nodes[i].numMesh; ++k) {
 			ifs.read((char*)&Nodes[i].Meshes[k], sizeof(int));
 
-			if (mMeshes[Nodes[i].Meshes[k]]->type == Mesh::MeshType::SkinedBumpMesh) {
+			if (mMeshes[Nodes[i].Meshes[k]]->type == Mesh::MeshType::_SkinedBumpMesh) {
 				tempMeshIndexArr[skincap] = k;
 				skincap += 1;
 			}
@@ -5108,7 +5211,7 @@ void Model::LoadModelFile2(string filename)
 
 	//mMaterials = new Material * [mNumMaterials];
 	for (int i = 0; i < mNumMaterials; ++i) {
-		Material mat;
+		Material* mat = new Material();
 		//ifs.read((char*)mat, sizeof(Material));
 
 		int namelen = 0;
@@ -5116,18 +5219,18 @@ void Model::LoadModelFile2(string filename)
 		char name[512] = {};
 		ifs.read((char*)name, namelen * sizeof(char));
 		name[namelen] = 0;
-		memcpy_s(mat.name, 40, name, 40);
-		mat.name[39] = 0;
+		memcpy_s(mat->name, 40, name, 40);
+		mat->name[39] = 0;
 
-		ifs.read((char*)&mat.clr.diffuse, sizeof(float) * 4);
+		ifs.read((char*)&mat->clr.diffuse, sizeof(float) * 4);
 
-		ifs.read((char*)&mat.metallicFactor, sizeof(float));
+		ifs.read((char*)&mat->metallicFactor, sizeof(float));
 
 		float smoothness = 0;
 		ifs.read((char*)&smoothness, sizeof(float));
-		mat.roughnessFactor = 1.0f - smoothness;
+		mat->roughnessFactor = 1.0f - smoothness;
 
-		ifs.read((char*)&mat.clr.bumpscaling, sizeof(float));
+		ifs.read((char*)&mat->clr.bumpscaling, sizeof(float));
 
 		vec4 tiling, offset = 0;
 		vec4 tiling2, offset2 = 0;
@@ -5135,42 +5238,45 @@ void Model::LoadModelFile2(string filename)
 		ifs.read((char*)&offset, sizeof(float) * 2);
 		ifs.read((char*)&tiling2, sizeof(float) * 2);
 		ifs.read((char*)&offset2, sizeof(float) * 2);
-		mat.TilingX = tiling.x;
-		mat.TilingY = tiling.y;
-		mat.TilingOffsetX = offset.x;
-		mat.TilingOffsetY = offset.y;
+		mat->TilingX = tiling.x;
+		mat->TilingY = tiling.y;
+		mat->TilingOffsetX = offset.x;
+		mat->TilingOffsetY = offset.y;
 
 		bool isTransparent = false;
 		ifs.read((char*)&isTransparent, sizeof(bool));
 		if (isTransparent) {
-			mat.gltf_alphaMode = mat.Blend;
+			mat->gltf_alphaMode = mat->Blend;
 		}
-		else mat.gltf_alphaMode = mat.Opaque;
+		else mat->gltf_alphaMode = mat->Opaque;
 
 		bool emissive = 0;
 		ifs.read((char*)&emissive, sizeof(bool));
 		if (emissive) {
-			mat.clr.emissive = vec4(1, 1, 1, 1);
+			mat->clr.emissive = vec4(1, 1, 1, 1);
 		}
 		else {
-			mat.clr.emissive = vec4(0, 0, 0, 0);
+			mat->clr.emissive = vec4(0, 0, 0, 0);
 		}
 
-		ifs.read((char*)&mat.ti.BaseColor, sizeof(int));
-		ifs.read((char*)&mat.ti.Normal, sizeof(int));
-		ifs.read((char*)&mat.ti.Metalic, sizeof(int));
-		ifs.read((char*)&mat.ti.AmbientOcculsion, sizeof(int));
-		ifs.read((char*)&mat.ti.Roughness, sizeof(int));
-		ifs.read((char*)&mat.ti.Emissive, sizeof(int));
+		ifs.read((char*)&mat->ti.BaseColor, sizeof(int));
+		ifs.read((char*)&mat->ti.Normal, sizeof(int));
+		ifs.read((char*)&mat->ti.Metalic, sizeof(int));
+		ifs.read((char*)&mat->ti.AmbientOcculsion, sizeof(int));
+		ifs.read((char*)&mat->ti.Roughness, sizeof(int));
+		ifs.read((char*)&mat->ti.Emissive, sizeof(int));
 
 		int diffuse2, normal2 = 0;
 		ifs.read((char*)&diffuse2, sizeof(int));
 		ifs.read((char*)&normal2, sizeof(int));
 
-		mat.ShiftTextureIndexs(TextureTableStart);
-		mat.SetDescTable();
+		mat->ShiftTextureIndexs(TextureTableStart);
+		mat->SetDescTable();
 		//mMaterials[i] = mat;
 		game.MaterialTable.push_back(mat);
+		if (game.isAssetAddingInGlobal == false) {
+			game.RenderMaterialTable.push_back(mat);
+		}
 	}
 
 	RootNode = &Nodes[0];
@@ -5299,6 +5405,69 @@ int Model::FindNodeIndexByName(const std::string& name)
 	return -1;
 }
 
+void Model::Release() {
+	mName.clear();
+	RootNode = nullptr;
+	NodeArr.clear();
+	nodeindexmap.clear();
+	if (Nodes) {
+		for (int i = 0; i < nodeCount; ++i) {
+			Nodes[i].Release();
+		}
+		delete[] Nodes;
+		Nodes = nullptr;
+		nodeCount = 0;
+	}
+
+	if (mMeshes) {
+		for (int i = 0; i < mNumMeshes; ++i) {
+			mMeshes[i]->Release();
+			delete mMeshes[i];
+		}
+		delete[] mMeshes;
+		mMeshes = nullptr;
+		mNumMeshes = 0;
+	}
+
+	if (mBumpSkinMeshs) {
+		delete[] mBumpSkinMeshs;
+		mBumpSkinMeshs = nullptr;
+		mNumSkinMesh = 0;
+	}
+
+	if (DefaultNodelocalTr) {
+		delete[] DefaultNodelocalTr;
+		DefaultNodelocalTr = nullptr;
+	}
+
+	if (NodeOffsetMatrixArr) {
+		delete[] NodeOffsetMatrixArr;
+		NodeOffsetMatrixArr = nullptr;
+	}
+
+	for (int i = TextureTableStart; i < mNumTextures + TextureTableStart; ++i) {
+		game.TextureTable[i]->Release();
+		delete game.TextureTable[i];
+		game.TextureTable[i] = nullptr;
+	}
+
+	for (int i = MaterialTableStart; i < mNumMaterials + MaterialTableStart; ++i) {
+		game.MaterialTable[i]->Release();
+		delete game.MaterialTable[i];
+	}
+
+	AABB[0] = 0;
+	AABB[1] = 0;
+	OBB_Tr = 0;
+	OBB_Ext = 0;
+	BindPose.clear();
+	
+	if (Humanoid_retargeting) {
+		delete[] Humanoid_retargeting;
+		Humanoid_retargeting = nullptr;
+	}
+}
+
 #pragma endregion
 
 int Shape::GetShapeIndex(string meshName)
@@ -5361,8 +5530,8 @@ void Material::SetDescTable()
 
 	// 텍스쳐 5개가 같은 머터리얼이 있는지 확인한다. (SRV Desc Heap 자리 재활용을 위해..)
 	int findSame = -1;
-	for (int i = 0; i < game.MaterialTable.size(); ++i) {
-		Material& mat = game.MaterialTable[i];
+	for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
+		Material& mat = *game.RenderMaterialTable[i];
 		bool b = mat.ti.Diffuse == ti.Diffuse;
 		b = b && (mat.ti.Normal == ti.Normal);
 		b = b && (mat.ti.AmbientOcculsion == ti.AmbientOcculsion);
@@ -5375,48 +5544,61 @@ void Material::SetDescTable()
 	}
 
 	if (findSame >= 0) {
-		TextureSRVTableIndex = game.MaterialTable[findSame].TextureSRVTableIndex;
+		TextureSRVTableIndex = game.RenderMaterialTable[findSame]->TextureSRVTableIndex;
 	}
 	else {
-		gd.ShaderVisibleDescPool.ImmortalAlloc_TextureSRV(&TextureSRVTableIndex, 5);
+		if (game.isAssetAddingInGlobal == false) {
+			gd.ShaderVisibleDescPool.ImmortalAlloc_TextureSRV(&TextureSRVTableIndex, 5);
 
-		hDesc = TextureSRVTableIndex;
-		hOriginDesc = hDesc;
+			hDesc = TextureSRVTableIndex;
+			hOriginDesc = hDesc;
 
-		GPUResource* diffuseTex = &game.DefaultTex;
-		if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
-		GPUResource* normalTex = &game.DefaultNoramlTex;
-		if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
-		GPUResource* ambientTex = &game.DefaultTex;
-		if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
-		GPUResource* MetalicTex = &game.DefaultAmbientTex;
-		if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
-		GPUResource* roughnessTex = &game.DefaultAmbientTex;
-		if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
+			GPUResource* diffuseTex = &game.DefaultTex;
+			if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
+			GPUResource* normalTex = &game.DefaultNoramlTex;
+			if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
+			GPUResource* ambientTex = &game.DefaultTex;
+			if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
+			GPUResource* MetalicTex = &game.DefaultAmbientTex;
+			if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
+			GPUResource* roughnessTex = &game.DefaultAmbientTex;
+			if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
 
-		const int inc = gd.CBVSRVUAVSize;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, normalTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, ambientTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, MetalicTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		hDesc.index += 1;
-		gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, roughnessTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			const int inc = gd.CBVSRVUAVSize;
+			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			hDesc.index += 1;
+			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, normalTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			hDesc.index += 1;
+			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, ambientTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			hDesc.index += 1;
+			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, MetalicTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			hDesc.index += 1;
+			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, roughnessTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+			game.RenderTextureTable.push_back(diffuseTex);
+			game.RenderTextureTable.push_back(normalTex);
+			game.RenderTextureTable.push_back(ambientTex);
+			game.RenderTextureTable.push_back(MetalicTex);
+			game.RenderTextureTable.push_back(roughnessTex);
+		}
 	}
 
 	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256의 배수
-	CB_Resource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-	CB_Resource.resource->Map(0, NULL, (void**)&CBData);
-	*CBData = GetMatCB();
-	CB_Resource.resource->Unmap(0, NULL);
-	gd.ShaderVisibleDescPool.ImmortalAlloc_MaterialCBV(&CB_Resource.descindex, 1);
+	if (CBData == nullptr) {
+		CB_Resource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		CB_Resource.resource->Map(0, NULL, (void**)&CBData);
+		*CBData = GetMatCB();
+		CB_Resource.resource->Unmap(0, NULL);
+	}
 
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc;
-	cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
-	cbv_desc.SizeInBytes = ncbElementBytes;
-	gd.pDevice->CreateConstantBufferView(&cbv_desc, CB_Resource.descindex.hCreation.hcpu);
+	if (game.isAssetAddingInGlobal == false) {
+		gd.ShaderVisibleDescPool.ImmortalAlloc_MaterialCBV(&CB_Resource.descindex, 1);
+
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc;
+		cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
+		cbv_desc.SizeInBytes = ncbElementBytes;
+		gd.pDevice->CreateConstantBufferView(&cbv_desc, CB_Resource.descindex.hCreation.hcpu);
+	}//else 는 신경 안써도 된다. - 당장 ShaderVisible에 들어갈 수 없기 때문에.
 }
 
 MaterialCB_Data Material::GetMatCB()
@@ -5458,6 +5640,20 @@ MaterialST_Data Material::GetMatST()
 	return STData;
 }
 
+void Material::Release() {
+	CBData = nullptr;
+	CB_Resource.Release();
+	TextureSRVTableIndex.Set(false, 0, 0);
+	
+	ZeroMemory(this, sizeof(Material));
+	memset(&ti, 0xFF, sizeof(TextureIndex));
+	clr.base = vec4(1, 1, 1, 1);
+	TilingX = 1;
+	TilingY = 1;
+	TilingOffsetX = 1;
+	TilingOffsetY = 1;
+}
+
 void Material::InitMaterialStructuredBuffer(bool reset)
 {
 	if (MaterialStructuredBuffer.resource != nullptr) {
@@ -5467,11 +5663,11 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256의 배수
 			MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
-			for (int i = 0; i < game.MaterialTable.size(); ++i) {
-				MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
+			for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
+				MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
 			}
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
-			LastMaterialStructureBufferUp = game.MaterialTable.size();
+			LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
 
 			//MaterialStructuredBufferSRV를 재할당하지 않는다. (같은 자리를 차지한다.)
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -5486,11 +5682,11 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		}
 		else {
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
-			for (int i = LastMaterialStructureBufferUp; i < game.MaterialTable.size(); ++i) {
-				MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
+			for (int i = LastMaterialStructureBufferUp; i < game.RenderMaterialTable.size(); ++i) {
+				MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
 			}
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
-			LastMaterialStructureBufferUp = game.MaterialTable.size();
+			LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
 
 			//MaterialStructuredBufferSRV를 재할당하지 않는다. (같은 자리를 차지한다.)
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -5508,11 +5704,11 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256의 배수
 		MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
-		for (int i = 0; i < game.MaterialTable.size(); ++i) {
-			MappedMaterialStructuredBuffer[i] = game.MaterialTable[i].GetMatST();
+		for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
+			MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
 		}
 		MaterialStructuredBuffer.resource->Unmap(0, NULL);
-		LastMaterialStructureBufferUp = game.MaterialTable.size();
+		LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
 
 		gd.ShaderVisibleDescPool.ImmortalAlloc(&MaterialStructuredBufferSRV, 1);
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -5728,7 +5924,7 @@ D3D12_SHADER_BYTECODE Shader::GetShaderByteCode(const WCHAR* pszFileName, LPCSTR
 	nCompileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #endif
 
-#ifdef PIX_DEBUGING
+#ifdef DEVELOPMODE_PIX_DEBUGING
 	nCompileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #endif // !PIX_DEBUGING
 

@@ -1,7 +1,6 @@
 #pragma once
 
-//#define PIX_DEBUGING
-//#define RELEASE_GPUDEBUG
+#define DEVELOPMODE_PIX_DEBUGING
 
 #include <SDKDDKVer.h>
 
@@ -46,7 +45,7 @@
 #include "D3D_Util/ShaderUtil.h"
 #include "D3D_Util/DirectXRaytracingHelper.h"
 
-#ifdef PIX_DEBUGING
+#ifdef DEVELOPMODE_PIX_DEBUGING
 #include "C:/Users/nohc2/OneDrive/Desktop/WorkRoom/PixEvents/include/pix3.h" // PIX 관련 헤더 (예시)
 #endif
 

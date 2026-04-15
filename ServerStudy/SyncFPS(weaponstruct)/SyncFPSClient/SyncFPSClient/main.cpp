@@ -99,6 +99,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	double DeltaFlow = 0;
 	ui64 ft = GetTicks();
 	while (1) {
+		game.isPrepared = game.isPreparedClientIndex && game.isMapInit && game.isGlobalAssetInit;
+
 		ui64 et = GetTicks();
 		double f = (double)(et - ft) * InvHZ;
 		FPSflow += f;
@@ -113,18 +115,20 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		{
 			if (DeltaFlow >= 0.016) { // limiting fps.
 				game.DeltaTime = (float)DeltaFlow;
-				//gd.AverageSecPer60Start(0);
-				if (gd.isRaytracingRender) {
-					game.Render_RayTracing();
+				if (game.isPrepared) {
+					//gd.AverageSecPer60Start(0);
+					if (gd.isRaytracingRender) {
+						game.Render_RayTracing();
+					}
+					else {
+						game.Render();
+					}
+					//gd.AverageSecPer60End(0);
 				}
-				else {
-					game.Render();
-				}
-				//gd.AverageSecPer60End(0);
-
 				//gd.AverageSecPer60Start(1);
 				game.Update();
 				//gd.AverageSecPer60End(1);
+				
 				DeltaFlow = 0;
 			}
 		}

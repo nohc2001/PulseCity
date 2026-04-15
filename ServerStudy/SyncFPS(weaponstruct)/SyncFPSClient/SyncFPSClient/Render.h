@@ -316,6 +316,7 @@ struct SVDescPool2
 
 	bool IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu);
 	void DynamicReset();
+	void ImmortalReset_ExcludeInit();
 };
 
 struct GPUResource {
@@ -961,7 +962,7 @@ struct RayTracingMesh {
 	// Ray가 발사되고 BLAS를 통과해 물체와 만났을때, Mesh의 VB, IB를 접근할 수 있도록
 	// LocalRootSignature에 해당 메쉬의 VB, IB가 시작되는 바이트오프셋을 넣어 주어야 한다.
 	UINT64 VBStartOffset;
-	UINT64* IBStartOffset;
+	UINT64* IBStartOffset = nullptr;
 	UINT64 UAV_VBStartOffset;
 
 	int subMeshCount = 1;
@@ -1034,6 +1035,8 @@ struct RayTracingMesh {
 	void AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
 
 	void UAV_BLAS_Refit();
+
+	void Release();
 };
 
 struct RayTracingRenderInstance {
@@ -1827,8 +1830,6 @@ struct GlobalDevice {
 		ShaderVisibleDescPool.ImmortalAlloc(&result.handle, 1);
 		device->CreateUnorderedAccessView(result.texture, nullptr, &uavDesc, result.handle.hCreation.hcpu);
 
-
-
 		return result;
 	}
 	TextureWithUAV BlurTexture;
@@ -2092,9 +2093,9 @@ public:
 
 	enum MeshType {
 		_Mesh = 0,
-		UVMesh = 1,
-		BumpMesh = 2,
-		SkinedBumpMesh = 3
+		_UVMesh = 1,
+		_BumpMesh = 2,
+		_SkinedBumpMesh = 3
 	};
 	MeshType type;
 
@@ -2130,6 +2131,8 @@ public:
 
 		//매 프레임마다 인스턴싱 항목을 업데이트할 경우 이것을 사용한다.
 		void ClearInstancing();
+		
+		void Release();
 	};
 	static constexpr int MinInstancingStartSize = 0;
 	InstancingStruct* InstanceData = nullptr; // 서브메쉬의 개수만큼 존재.
@@ -2252,16 +2255,12 @@ public:
 */
 class BumpMesh : public Mesh {
 public:
-	// 해당 메쉬에 적용될 수 있는 머터리얼의 인덱스
-	// fix <이건 게임 오브젝트에 있어야 한다. 수정이 필요함.>
-	int material_index;
-
 	RayTracingMesh rmesh;
 
 	typedef RayTracingMesh::Vertex Vertex;
 
 	BumpMesh() {
-		type = Mesh::MeshType::BumpMesh;
+		type = Mesh::MeshType::_BumpMesh;
 	}
 	virtual ~BumpMesh();
 	/*
@@ -2306,7 +2305,6 @@ public:
 
 class BumpSkinMesh : public Mesh {
 public:
-	int material_index;
 	matrix* OffsetMatrixs;
 	int MatrixCount;
 	GPUResource ToOffsetMatrixsCB;
@@ -2434,7 +2432,7 @@ public:
 	};
 
 	BumpSkinMesh() {
-		type = Mesh::MeshType::SkinedBumpMesh;
+		type = Mesh::MeshType::_SkinedBumpMesh;
 	}
 	virtual ~BumpSkinMesh();
 	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<BoneData>& bonedata, vector<TriangleIndex>& inds, int SubMeshNum = 1, int* SubMeshIndexArr = nullptr, matrix* NodeLocalMatrixs = nullptr, int matrixCount = 0);
@@ -2780,6 +2778,8 @@ struct Material {
 	MaterialST_Data GetMatST();
 
 	static void InitMaterialStructuredBuffer(bool reset = false);
+
+	void Release();
 };
 
 struct animKey {
@@ -2940,24 +2940,20 @@ struct ModelNode {
 	// 모델 노드의 원본 transform
 	XMMATRIX transform;
 	// 부모 노드
-	ModelNode* parent;
+	ModelNode* parent = nullptr;
 	// 자식노드 개수
-	unsigned int numChildren;
+	unsigned int numChildren = 0;
 	// 자식노드들
-	ModelNode** Childrens;
+	ModelNode** Childrens = nullptr;
 	// 메쉬의 개수
 	unsigned int numMesh = 0;
 	// 메쉬의 인덱스 배열
 	unsigned int* Meshes; // array of int
-	// 메쉬가 가진 머터리얼 번호 배열
-	unsigned int* Mesh_Materials;
-
 	// 해당 메쉬가 몇번째 스킨메쉬인지에 대한 배열 Model이 스킨메쉬를 가지고, Node도 스킨메쉬를 가지면 할당됨.
 	int* Mesh_SkinMeshindex = nullptr;
-
 	vector<BoundingBox> aabbArr;
-
-	int* materialIndex;
+	// 메쉬가 가진 머터리얼 번호 배열 (글로벌 머터리얼 테이블 기준.)
+	int* materialIndex = nullptr;
 
 	//metadata
 	//???
@@ -2968,7 +2964,6 @@ struct ModelNode {
 		Childrens = nullptr;
 		numMesh = 0;
 		Meshes = nullptr;
-		Mesh_Materials = nullptr;
 	}
 
 	/*
@@ -2996,6 +2991,8 @@ struct ModelNode {
 	void RenderMeshOBBs(void* origin, const matrix& parentMat, void* gameobj = nullptr);
 
 	void PushOBBs(void* origin, const matrix& parentMat, vector<BoundingOrientedBox>* obbArr, void* gameobj);
+
+	void Release();
 };
 
 /*
@@ -3026,23 +3023,11 @@ struct Model {
 	unsigned int mNumSkinMesh;
 	BumpSkinMesh** mBumpSkinMeshs;
 
-	vector<BumpMesh::Vertex>* vertice = nullptr;
-	vector<TriangleIndex>* indice = nullptr;
-
 	matrix* DefaultNodelocalTr = nullptr;
 	matrix* NodeOffsetMatrixArr = nullptr;
 
-	//When GPU Animation
-	GPUResource DefaultlocalTr_Humanoid;
-	DescIndex DefaultlocalTr_Humanoid_SRV;
-	GPUResource Offset_Humanoid;
-	DescIndex Offset_Humanoid_CBV;
-
 	unsigned int mNumTextures;
-	//GPUResource** mTextures;
-
 	unsigned int mNumMaterials;
-	//Material** mMaterials;
 
 	unsigned int TextureTableStart = 0;
 	unsigned int MaterialTableStart = 0;
@@ -3123,6 +3108,8 @@ struct Model {
 	* 반환 : 노드의 인덱스 (찾지 못하면 -1.)
 	*/
 	int FindNodeIndexByName(const std::string& name);
+
+	void Release();
 };
 
 /*

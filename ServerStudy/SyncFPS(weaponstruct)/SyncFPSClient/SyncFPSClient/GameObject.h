@@ -578,6 +578,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 
 	virtual void MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
 
+	virtual void Release();
+
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
 		Tag tag;
@@ -761,6 +763,7 @@ struct GameChunk {
 		SkinMesh_gameobjects.Init(32);
 	}
 	void SetChunkIndex(ChunkIndex ci);
+	void Release();
 };
 
 /*
@@ -791,6 +794,18 @@ struct GameMap {
 	vec4 AABB[2] = { 0, 0 };
 	void ExtendMapAABB(BoundingOrientedBox obb);
 
+	int StartShapeIndex = 0;
+	int StartDesc_Init = 0;
+	int StartDesc_Texture = 0;
+	int StartDesc_Material = 0;
+	int StartDesc_Instancing = 0;
+	int LastDesc_Init = 0;
+	int LastDesc_Texture = 0;
+	int LastDesc_Material = 0;
+	int LastDesc_Instancing = 0;
+	void GetStartDescIndexs();
+	void GetLastDescIndexs();
+
 	/*ui64 pdep_src2[48] = {};
 	int pdepcnt = 0;
 	ui64 GetSpaceHash(int x, int y, int z);*/
@@ -811,6 +826,8 @@ struct GameMap {
 	unsigned int MaterialTableStart = 0;
 
 	void LoadMap(const char* MapName);
+
+	void Release();
 };
 
 struct SphereLODObject : public DynamicGameObject {
@@ -929,6 +946,8 @@ public:
 	* 설명 : 게임오브젝트를 렌더링한다.
 	*/
 	virtual void Render(matrix parent = XMMatrixIdentity());
+
+	virtual void Release();
 
 	/*
 	* 몬스터를 초기화 한다.
@@ -1079,6 +1098,8 @@ public:
 	*/
 	void Render_AfterDepthClear();
 	void Render_ThirdPersonWeapon();
+
+	virtual void Release();
 
 	// idk
 	void UpdateGunBarrelNodes();

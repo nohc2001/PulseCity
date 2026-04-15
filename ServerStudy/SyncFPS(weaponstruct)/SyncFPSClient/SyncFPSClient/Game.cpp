@@ -173,6 +173,16 @@ void Game::SetLight()
 	gd.pDevice->CreateConstantBufferView(&cbvdesc, LightCB_withShadowResource.descindex.hCreation.hcpu);
 }
 
+int Game::GetRenderMaterialIndexFromGlobalMaterialIndex(int globalMatIndex)
+{
+	if (MaterialTable.size() > globalMatIndex) {
+		Material* pmat = MaterialTable[globalMatIndex];
+		int n = pmat->CB_Resource.descindex.index - gd.ShaderVisibleDescPool.InitDescArrCap - gd.ShaderVisibleDescPool.TextureSRVCap;
+		return n;
+	}
+	else return 0;
+}
+
 void Game::AddMesh(Mesh* mesh)
 {
 	MeshTable.push_back(mesh);
@@ -390,296 +400,444 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 
 void Game::Init()
 {
-	InitDirLightGPURes();
-
-	gd.GetBakedSDFs(); // later
-
 	GameObjectType::STATICINIT();
 
-	DropedItems.reserve(4096);
-	NpcHPBars.Init(32);
-	bulletRays.Init(32);
+	// 2. DirLight를 초기화한다.
+	InitDirLightGPURes();
 
+	// 미리 베이크된 텍스트의 SDF 텍스쳐들을 가져온다.
+	gd.GetBakedSDFs(); // later
+
+	// 아이템, NPCHP바, Ray의 1차 용량을 설정한다.
+	DropedItems.reserve(4096);
+	NpcHPBars.Init(1024);
+	bulletRays.Init(1024);
+
+	// 여러 리소스들을 초기화하기 위해 커맨드리스트를 Reset해 명령을 넣을 준비를 한다.
 	gd.gpucmd.Reset();
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-	MyShader = new Shader();
-	MyShader->InitShader();
+	// 셰이더를 초기화한다.
+	{
+		MyShader = new Shader();
+		MyShader->InitShader();
 
-	MyOnlyColorShader = new OnlyColorShader();
-	MyOnlyColorShader->InitShader();
+		MyOnlyColorShader = new OnlyColorShader();
+		MyOnlyColorShader->InitShader();
 
-	MyScreenCharactorShader = new ScreenCharactorShader();
-	MyScreenCharactorShader->InitShader();
+		MyScreenCharactorShader = new ScreenCharactorShader();
+		MyScreenCharactorShader->InitShader();
 
-	MyPBRShader1 = new PBRShader1();
-	MyPBRShader1->InitShader();
+		MyPBRShader1 = new PBRShader1();
+		MyPBRShader1->InitShader();
 
-	MySkyBoxShader = new SkyBoxShader();
-	MySkyBoxShader->InitShader();
-	MySkyBoxShader->LoadSkyBox(L"Resources/GlobalTexture/SkyBox_0.dds");
+		MySkyBoxShader = new SkyBoxShader();
+		MySkyBoxShader->InitShader();
+		MySkyBoxShader->LoadSkyBox(L"Resources/GlobalTexture/SkyBox_0.dds");
 
-	MyRayTracingShader = new RayTracingShader();
-	MyRayTracingShader->Init();
+		MyRayTracingShader = new RayTracingShader();
+		MyRayTracingShader->Init();
 
-	MyComputeTestShader = new ComputeTestShader();
-	MyComputeTestShader->InitShader();
+		MyComputeTestShader = new ComputeTestShader();
+		MyComputeTestShader->InitShader();
 
-	MyAnimationBlendingShader = new AnimationBlendingShader();
-	MyAnimationBlendingShader->InitShader();
+		MyAnimationBlendingShader = new AnimationBlendingShader();
+		MyAnimationBlendingShader->InitShader();
 
-	MyHBoneLocalToWorldShader = new HBoneLocalToWorldShader();
-	MyHBoneLocalToWorldShader->InitShader();
+		MyHBoneLocalToWorldShader = new HBoneLocalToWorldShader();
+		MyHBoneLocalToWorldShader->InitShader();
+	}
+	
+	// 클라이언트에만 사용되는 아주 기본적인 에셋들을 가져온다.
+	{
+		DefaultTex.CreateTexture_fromFile(L"Resources/DefaultTexture.png", game.basicTexFormat, game.basicTexMip);
+		DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
+		DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
+		// particle texture
+		FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", game.basicTexFormat, game.basicTexMip /*DXGI_FORMAT_UNKNOWN, 1*/, true);
 
-	DefaultTex.CreateTexture_fromFile(L"Resources/DefaultTexture.png", game.basicTexFormat, game.basicTexMip);
-	DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
-	DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
+		//텍스트 출력에 사용할 메쉬를 가져온다.
+		TextMesh = new UVMesh();
+		TextMesh->CreateTextRectMesh();
 
-	GunTexture.CreateTexture_fromFile(L"Resources/m1911pistol_diffuse0.png", game.basicTexFormat, game.basicTexMip);
+		BulletRay::mesh = (Mesh*)new Mesh();
+		BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
 
-	// particle texture
-	FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", game.basicTexFormat, game.basicTexMip /*DXGI_FORMAT_UNKNOWN, 1*/, true);
+		game.HPBarMesh = new Mesh();
+		game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
 
-	Map = new GameMap();
-	Map->LoadMap("The_Port");
-	//Map->LoadMap("OfficeDungeon_1floor");
+		game.HeatBarMesh = new Mesh();
+		game.HeatBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 0, 0, 1 }, false);
+
+		game.ShootPointMesh = new Mesh();
+		game.ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
+
+		MyDirLight.ShadowMap = gd.CreateShadowMap(4096, 4096, gd.GetDirLightCascadingShadowDSVIndex(0), MyDirLight);
+		MyDirLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
+
+		// particle init
+		InitParticlePool(FirePool, FIRE_COUNT);
+		InitParticlePool(FirePillarPool, FIRE_PILLAR_COUNT);
+		InitParticlePool(FireRingPool, FIRE_RING_COUNT);
+
+		FireCS = new ParticleCompute();
+		FireCS->Init(L"Particle.hlsl", "FireCS");
+
+		FirePillarCS = new ParticleCompute();
+		FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS");
+
+		FireRingCS = new ParticleCompute();
+		FireRingCS->Init(L"Particle.hlsl", "FireRingCS");
+
+		ParticleDraw = new ParticleShader();
+		ParticleDraw->InitShader();
+
+		ParticleDraw->FireTexture = &FireTextureRes;
+
+		OBBDebugMesh = new Mesh();
+		OBBDebugMesh->CreateWallMesh(1.0f, 1.0f, 1.0f, vec4(1, 1, 1, 1));
+
+		SetLight();
+
+		gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
+	}
+	
+	// 어떤 존에서나 공동으로 사용가능한 글로벌 에셋들을 가져온다.
+	
+	// isAssetAddingInGlobal = true 면 이제 에셋이 공용으로 추가되기 시작한다. 그 신호를 준다.
+	isAssetAddingInGlobal = true;
+	{
+		BumpMesh* ItemMesh = new BumpMesh();
+		ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
+		ItemTable.push_back(Item(0, vec4(0, 0, 0, 0), nullptr, nullptr, L"")); // blank space in inventory.
+		ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &DefaultTex, L"[빨간 탄알집]"));
+		ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &DefaultTex, L"[녹색 탄알집]"));
+		ItemTable.push_back(Item(3, vec4(0, 0, 1, 1), ItemMesh, &DefaultTex, L"[하얀 탄알집]")); // test items. red, green, blue bullet mags.
+
+		HumanoidAnimation animIdle;
+		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animIdle); // Idle
+
+		HumanoidAnimation animWalk;
+		animWalk.LoadHumanoidAnimation("Resources/Animation/Walk.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animWalk); // Walk
+
+		HumanoidAnimation animRun;
+		animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animRun);  // Run
+
+		HumanoidAnimation animAim;
+		animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animAim);  // 3: Aim
+
+		HumanoidAnimation animShoot;
+		animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
+
+		constexpr bool kLoadSniperModel = true;
+		constexpr bool kLoadRifleModel = true;
+		constexpr bool kLoadPistolModel = true;
+		constexpr bool kLoadShotGunModel = true;
+		constexpr bool kLoadMachineGunModel = true;
+
+		// 스나이퍼 모델 로드
+		game.SniperModel = nullptr;
+		if (kLoadSniperModel) {
+			game.SniperModel = new Model;
+			game.SniperModel->LoadModelFile2("Resources/Model/sniper.model");
+		}
+
+		// 라이플 모델 로드
+		game.RifleModel = nullptr;
+		if (kLoadRifleModel) {
+			game.RifleModel = new Model;
+			game.RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
+		}
+
+		// 권총 모델 로드
+		game.PistolModel = nullptr;
+		if (kLoadPistolModel) {
+			game.PistolModel = new Model;
+			game.PistolModel->LoadModelFile2("Resources/Model/pistol.model");
+		}
+
+		/*game.Pistol_SlideIndices.clear();
+		{
+			int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
+			if (upperIdx >= 0) {
+				game.Pistol_SlideIndices.push_back(upperIdx);
+				game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
+			}
+		}*/
+
+		// 샷건 모델 로드
+		game.ShotGunModel = nullptr;
+		if (kLoadShotGunModel) {
+			game.ShotGunModel = new Model;
+			game.ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
+		}
+		//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
+
+		/*game.SG_PumpIndices.clear();
+		{
+			int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
+			if (pumpIdx >= 0) {
+				game.SG_PumpIndices.push_back(pumpIdx);
+				game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
+			}
+		}*/
+
+		//// 머신건(미니건) 모델 로드
+		game.MachineGunModel = nullptr;
+		if (kLoadMachineGunModel) {
+			game.MachineGunModel = new Model;
+			game.MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
+		}
+
+		/*game.MG_BarrelIndices.clear();
+		{
+			auto addBarrel = [&](const char* name) {
+				int idx = game.MachineGunModel->FindNodeIndexByName(name);
+				if (idx >= 0) game.MG_BarrelIndices.push_back(idx);
+				};
+
+			addBarrel("Cylinder.107");
+			addBarrel("Cylinder.108");
+			addBarrel("Cylinder.109");
+			addBarrel("Cylinder.110");
+		}*/
+
+		game.GunModel = game.SniperModel;
+
+		Model* PlayerModel = new Model();
+		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
+		PlayerModel->Retargeting_Humanoid(); // 휴머노이드 리타겟팅
+		int playerMesh_index = Shape::AddModel("Player", PlayerModel);
+
+		Model* MonsterModel = new Model();
+		MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
+		MonsterModel->Retargeting_Humanoid();
+		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
+
+		Mesh* portalMesh = new Mesh();
+		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
+		Shape::AddMesh("Portal", portalMesh);
+	}
+
+	// 글로벌 에셋들의 개수를 서버와 동기화하기 위해 파일로 저장한다.
+	GlobalTextureCount = TextureTable.size();
+	GlobalMaterialCount = MaterialTable.size();
+	GlobalMeshCount = MeshTable.size();
+	GlobalHumanoidAnimationCount = HumanoidAnimationTable.size();
+
+#ifdef DEVELOPMODE_SYNC_GLOBAL_ASSET
+	ofstream GlobalAssetCountFile{ "../../GlobalAssetCounter.txt" };
+	if (GlobalAssetCountFile.is_open()) {
+		GlobalAssetCountFile << GlobalTextureCount << " ";
+		GlobalAssetCountFile << GlobalMaterialCount << " ";
+		GlobalAssetCountFile << GlobalMeshCount << " ";
+		GlobalAssetCountFile << GlobalHumanoidAnimationCount << " ";
+		GlobalAssetCountFile << Shape::ShapeTable.size();
+	}
+	GlobalAssetCountFile.close();
+#endif
+
+	// 기존 LoadMap 코드. 이제 안쓰일듯?
+	if(false)
+	{
+		// 근데 이건 서버에서 Zone 을 움직이면 그때 가져와야 되는 거 아님?
+	// 이제 존 마다 따로 가지고 있는 에셋들을 가져온다.
+
+	// isAssetAddingInGlobal = false 면 이제 에셋이 존(맵)에 추가되기 시작한다. 그 신호를 준다.
+		isAssetAddingInGlobal = false;
+		Map = new GameMap();
+		Map->LoadMap("The_Port");
+		//Map->LoadMap("OfficeDungeon_1floor");
+		game.StaticGameObjects.reserve(Map->MapObjects.size());
+		for (int i = 0; i < Map->MapObjects.size(); ++i) {
+			PushGameObject(Map->MapObjects[i]);
+			game.StaticGameObjects.push_back(Map->MapObjects[i]);
+		}
+		/*ofstream ofs{ "ClientStaticGameObjectOBBData.txt" };
+		for (int i = 0;i < Map->MapObjects.size();++i) {
+			ofs << i << " obj : \n";
+			for (int k = 0;k < 4;++k) {
+				for (int j = 0;j < 4;++j) {
+					ofs << Map->MapObjects[i]->worldMat.f16.m[k][j] << ", ";
+				}
+				ofs << endl;
+			}
+
+			BoundingOrientedBox obb = Map->MapObjects[i]->GetOBB();
+			if (obb.Extents.x <= 0) {
+				ofs << "invalid obb" << endl;
+			}
+			else {
+				ofs << obb.Center.x << ", ";
+				ofs << obb.Center.y << ", ";
+				ofs << obb.Center.z << endl;
+				ofs << obb.Extents.x << ", ";
+				ofs << obb.Extents.y << ", ";
+				ofs << obb.Extents.z << endl;
+				ofs << obb.Orientation.x << ", ";
+				ofs << obb.Orientation.y << ", ";
+				ofs << obb.Orientation.z << ", ";
+				ofs << obb.Orientation.w << endl;
+			}
+		}
+		ofs.close();*/
+
+		// 앞으로 쓰일 모든 글로벌 Asset들을 SVDescHeap에 올려놓는 작업을 한다.
+		// 만약 이 크기가 너무 커지게 된다면 클라이언트에서 어떻게 조절을 할지도 생각해야 한다.
+		for (int i = 0; i < GlobalMaterialCount; ++i) {
+			Material* mat = MaterialTable[i];
+			if (isAssetAddingInGlobal == false) {
+				mat->SetDescTable();
+				RenderMaterialTable.push_back(mat);
+				// MaterialTable to DescIndex > CBResource.resource.descindex.index에 있음.
+				// CBResource.resource.descindex > MaterialTable ?? 이거 필요한가? 
+				// >> 필요한 상황이 떠오르지 않는데? 그냥 이대로 해도 괜찮지 않나?
+			}
+		}
+	}
+
+	gd.gpucmd.Close();
+	gd.gpucmd.Execute();
+	gd.WaitGPUComplete();
+
+	isGlobalAssetInit = true;
+}
+
+void Game::MoveZone(int zoneid) {
+	//Release Prev Zone Shapes
+	bool CmdInitStateIsClose = gd.gpucmd.isClose;
+	if (CmdInitStateIsClose) {
+		gd.gpucmd.Reset();
+	}
+	gd.ShaderVisibleDescPool.DynamicReset();
+
+	// 모든 DynamicGameObject와 StaticGameObject, GameChunck 들을 삭제한다.
+	for (int i = 0; i < StaticGameObjects.size(); ++i) {
+		if (StaticGameObjects[i]) {
+			StaticGameObjects[i]->Release();
+			delete StaticGameObjects[i];
+			StaticGameObjects[i] = nullptr;
+		}
+	}
+	StaticGameObjects.clear();
+	for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
+		if (DynmaicGameObjects[i]) {
+			DynmaicGameObjects[i]->Release();
+			delete DynmaicGameObjects[i];
+			DynmaicGameObjects[i] = nullptr;
+		}
+	}
+	DynmaicGameObjects.clear();
+
+	GameChunk** gcarr = new GameChunk * [chunck.size()];
+	int index = 0;
+	for (auto c : chunck) {
+		GameChunk* gc = c.second;
+		gcarr[index] = gc;
+		index += 1;
+	}
+	chunck.clear();
+
+	for (int i = 0; i < index; ++i) {
+		GameChunk* gc = gcarr[i];
+		gc->Release();
+		delete gc;
+		gc = nullptr;
+	}
+	
+	int last = 0;
+	//Zone에 존재하는 Shape 들을 모두 삭제한다.
+	if (Map) {
+		int i = Map->StartShapeIndex;
+		for (; i < Shape::ShapeTable.size(); ++i) {
+			Mesh* mesh = nullptr;
+			Model* model = nullptr;
+			Shape::ShapeTable[i].GetRealShape(mesh, model);
+			if (mesh) {
+				mesh->Release();
+				delete mesh;
+			}
+			else if (model) {
+				model->Release();
+				delete model;
+			}
+		}
+		last = Shape::ShapeTable.size() - 1;
+		for (; last >= Map->StartShapeIndex; --last) {
+			Shape::ShapeTable.erase(Shape::ShapeTable.begin() + last);
+		}
+	}
+
+	//Release Prev Zone Assets
+	last = TextureTable.size() - 1;
+	for (; last >= GlobalTextureCount; --last) {
+		TextureTable.erase(TextureTable.begin() + last);
+	}
+	last = MaterialTable.size() - 1;
+	for (; last >= GlobalMaterialCount; --last) {
+		MaterialTable.erase(MaterialTable.begin() + last);
+	}
+	last = MeshTable.size() - 1;
+	for (; last >= GlobalMeshCount; --last) {
+		MeshTable.erase(MeshTable.begin() + last);
+	}
+	last = HumanoidAnimationTable.size() - 1;
+	for (; last >= GlobalHumanoidAnimationCount; --last) {
+		HumanoidAnimationTable.erase(HumanoidAnimationTable.begin() + last);
+	}
+	// Clear Render Asset Table And Clear SVDescHeap
+	RenderTextureTable.clear();
+	RenderMaterialTable.clear();
+	RenderInstancingTable.clear();
+	gd.ShaderVisibleDescPool.ImmortalReset_ExcludeInit();
+
+	//ReLoadMap
+	if (Map) {
+		Map->Release();
+	}
+	else {
+		Map = new GameMap();
+	}
+
+	// isAssetAddingInGlobal = false 면 이제 에셋이 존(맵)에 추가되기 시작한다. 그 신호를 준다.
+	isAssetAddingInGlobal = false;
+
+	Map->LoadMap(ZoneIDToMapName[zoneid]);
 	game.StaticGameObjects.reserve(Map->MapObjects.size());
 	for (int i = 0; i < Map->MapObjects.size(); ++i) {
 		PushGameObject(Map->MapObjects[i]);
 		game.StaticGameObjects.push_back(Map->MapObjects[i]);
 	}
 
-	SniperModel = new Model();
-	SniperModel->LoadModelFile2("Resources/test/sniper.model");
-
-	/*ofstream ofs{ "ClientStaticGameObjectOBBData.txt" };
-	for (int i = 0;i < Map->MapObjects.size();++i) {
-		ofs << i << " obj : \n";
-		for (int k = 0;k < 4;++k) {
-			for (int j = 0;j < 4;++j) {
-				ofs << Map->MapObjects[i]->worldMat.f16.m[k][j] << ", ";
-			}
-			ofs << endl;
-		}
-
-		BoundingOrientedBox obb = Map->MapObjects[i]->GetOBB();
-		if (obb.Extents.x <= 0) {
-			ofs << "invalid obb" << endl;
-		}
-		else {
-			ofs << obb.Center.x << ", ";
-			ofs << obb.Center.y << ", ";
-			ofs << obb.Center.z << endl;
-			ofs << obb.Extents.x << ", ";
-			ofs << obb.Extents.y << ", ";
-			ofs << obb.Extents.z << endl;
-			ofs << obb.Orientation.x << ", ";
-			ofs << obb.Orientation.y << ", ";
-			ofs << obb.Orientation.z << ", ";
-			ofs << obb.Orientation.w << endl;
+	// 앞으로 쓰일 모든 글로벌 Asset들을 SVDescHeap에 올려놓는 작업을 한다.
+	// 만약 이 크기가 너무 커지게 된다면 클라이언트에서 어떻게 조절을 할지도 생각해야 한다.
+	for (int i = 0; i < GlobalMaterialCount; ++i) {
+		Material* mat = MaterialTable[i];
+		if (isAssetAddingInGlobal == false) {
+			mat->SetDescTable();
+			RenderMaterialTable.push_back(mat);
+			// MaterialTable to DescIndex > CBResource.resource.descindex.index에 있음.
+			// CBResource.resource.descindex > MaterialTable ?? 이거 필요한가? 
+			// >> 필요한 상황이 떠오르지 않는데? 그냥 이대로 해도 괜찮지 않나?
 		}
 	}
-	ofs.close();*/
-
-	SetLight();
-
-	gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
-
-	//gd.gpucmd->Reset(gd.pCommandAllocator, NULL);
-
-	//
-	TextMesh = new UVMesh();
-	TextMesh->CreateTextRectMesh();
-
-	BumpMesh* ItemMesh = new BumpMesh();
-	ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
-	ItemTable.push_back(Item(0, vec4(0, 0, 0, 0), nullptr, nullptr, L"")); // blank space in inventory.
-	ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &DefaultTex, L"[빨간 탄알집]"));
-	ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &DefaultTex, L"[녹색 탄알집]"));
-	ItemTable.push_back(Item(3, vec4(0, 0, 1, 1), ItemMesh, &DefaultTex, L"[하얀 탄알집]")); // test items. red, green, blue bullet mags.
-
-	//HumanoidAnimation hanim;
-		//hanim.LoadHumanoidAnimation("Resources/Animation/BreakDance1990.Humanoid_animation");
-		//HumanoidAnimationTable.push_back(hanim);
-
-	HumanoidAnimation animIdle;
-	animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
-	HumanoidAnimationTable.push_back(animIdle); // Idle
-
-	HumanoidAnimation animWalk;
-	animWalk.LoadHumanoidAnimation("Resources/Animation/Walk.Humanoid_animation");
-	HumanoidAnimationTable.push_back(animWalk); // Walk
-
-	HumanoidAnimation animRun;
-	animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
-	HumanoidAnimationTable.push_back(animRun);  // Run
-
-	HumanoidAnimation animAim;
-	animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
-	HumanoidAnimationTable.push_back(animAim);  // 3: Aim
-
-	HumanoidAnimation animShoot;
-	animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
-	HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
-
-	constexpr bool kLoadSniperModel = true;
-	constexpr bool kLoadRifleModel = true;
-	constexpr bool kLoadPistolModel = true;
-	constexpr bool kLoadShotGunModel = true;
-	constexpr bool kLoadMachineGunModel = true;
-
-	// 스나이퍼 모델 로드
-	game.SniperModel = nullptr;
-	if (kLoadSniperModel) {
-		game.SniperModel = new Model;
-		game.SniperModel->LoadModelFile2("Resources/Model/sniper.model");
-	}
-
-	// 라이플 모델 로드
-	game.RifleModel = nullptr;
-	if (kLoadRifleModel) {
-		game.RifleModel = new Model;
-		game.RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
-	}
-
-	// 권총 모델 로드
-	game.PistolModel = nullptr;
-	if (kLoadPistolModel) {
-		game.PistolModel = new Model;
-		game.PistolModel->LoadModelFile2("Resources/Model/pistol.model");
-	}
-
-	/*game.Pistol_SlideIndices.clear();
-	{
-		int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
-		if (upperIdx >= 0) {
-			game.Pistol_SlideIndices.push_back(upperIdx);
-			game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
-		}
-	}*/
-
-	// 샷건 모델 로드
-	game.ShotGunModel = nullptr;
-	if (kLoadShotGunModel) {
-		game.ShotGunModel = new Model;
-		game.ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
-	}
-	//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
-
-	/*game.SG_PumpIndices.clear();
-	{
-		int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
-		if (pumpIdx >= 0) {
-			game.SG_PumpIndices.push_back(pumpIdx);
-			game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
-		}
-	}*/
-
-	//// 머신건(미니건) 모델 로드
-	game.MachineGunModel = nullptr;
-	if (kLoadMachineGunModel) {
-		game.MachineGunModel = new Model;
-		game.MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
-	}
-
-	/*game.MG_BarrelIndices.clear();
-	{
-		auto addBarrel = [&](const char* name) {
-			int idx = game.MachineGunModel->FindNodeIndexByName(name);
-			if (idx >= 0) game.MG_BarrelIndices.push_back(idx);
-			};
-
-		addBarrel("Cylinder.107");
-		addBarrel("Cylinder.108");
-		addBarrel("Cylinder.109");
-		addBarrel("Cylinder.110");
-	}*/
-
-	game.GunModel = game.SniperModel;
-
-	Model* PlayerModel = new Model();
-	PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
-	PlayerModel->Retargeting_Humanoid(); // 휴머노이드 리타겟팅
-	int playerMesh_index = Shape::AddModel("Player", PlayerModel);
-
-	Model* MonsterModel = new Model();
-	MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
-	MonsterModel->Retargeting_Humanoid();
-	int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
-
-	Mesh* portalMesh = new Mesh();
-	portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
-	Shape::AddMesh("Portal", portalMesh);
-
-	//// LOD Sphere Mesh 생성
-	//Mesh* SphereHigh = new Mesh();
-	//SphereHigh->CreateSphereMesh(gd.gpucmd, 1.5f, 10, 5, vec4(1, 0, 0, 1)); // 100 triangles
-	//Shape::AddMesh("SphereHigh100", SphereHigh);
-
-	//Mesh* SphereLow = new Mesh();
-	//SphereLow->CreateSphereMesh(gd.gpucmd, 1.5f, 5, 2, vec4(0, 1, 0, 1));   // 20 triangles
-	//Shape::AddMesh("SphereLow20", SphereLow);
-
-	////LOD Sphere Object 생성
-	//SphereLODObject* lodSphere = new SphereLODObject();
-	//lodSphere->MeshNear = SphereHigh;
-	//lodSphere->MeshFar = SphereLow;
-	///*lodSphere->m_pShader = MyShader;
-	//lodSphere->MaterialIndex = 0;*/
-	//lodSphere->FixedPos = vec4(5, 5, 0, 1);
-	//lodSphere->worldMat = (XMMatrixTranslation(5.0f, 5.0f, 0.0f));
-	//lodSphere->SwitchDistance = 20.0f;
-
-	//game.DynmaicGameObjects.push_back(lodSphere);
-
-	BulletRay::mesh = (Mesh*)new Mesh();
-	BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
-
-	//game.GunModel = new Model;
-	//game.GunModel->LoadModelFile("Resources/Model/sniper.model");
-	//game.GunModel->DebugPrintHierarchy(game.GunModel->RootNode);
-
-
-	game.HPBarMesh = new Mesh();
-	game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
-	//Shape::AddMesh("HPBar", HPBarMesh);
-
-	game.HeatBarMesh = new Mesh();
-	game.HeatBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 0, 0, 1 }, false);
-	//Mesh::meshmap.insert(pair<string, Mesh*>("HeatBar", HeatBarMesh));
-
-	game.ShootPointMesh = new Mesh();
-	game.ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
-	//Mesh::meshmap.insert(pair<string, Mesh*>("ShootPoint", ShootPointMesh));
-
-	MyDirLight.ShadowMap = gd.CreateShadowMap(4096, 4096, gd.GetDirLightCascadingShadowDSVIndex(0), MyDirLight);
-	MyDirLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
-
-	// particle init
-	InitParticlePool(FirePool, FIRE_COUNT);
-	InitParticlePool(FirePillarPool, FIRE_PILLAR_COUNT);
-	InitParticlePool(FireRingPool, FIRE_RING_COUNT);
-
-	FireCS = new ParticleCompute();
-	FireCS->Init(L"Particle.hlsl", "FireCS");
-
-	FirePillarCS = new ParticleCompute();
-	FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS");
-
-	FireRingCS = new ParticleCompute();
-	FireRingCS->Init(L"Particle.hlsl", "FireRingCS");
-
-	ParticleDraw = new ParticleShader();
-	ParticleDraw->InitShader();
-
-	ParticleDraw->FireTexture = &FireTextureRes;
-
-	OBBDebugMesh = new Mesh();
-	OBBDebugMesh->CreateWallMesh(1.0f, 1.0f, 1.0f, vec4(1, 1, 1, 1));
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
-	gd.WaitGPUComplete();
+	gd.gpucmd.WaitGPUComplete();
+	if (CmdInitStateIsClose == false) {
+		gd.gpucmd.Reset();
+	}
+
+	isMapInit = true;
+
+	// Zone의 에셋을 모두 불러왔으니 다시 공용 에셋을 로드하는 모드로 변경한다.
+	isAssetAddingInGlobal = true;
 }
 
 void Game::InitDirLightGPURes() {
@@ -1520,7 +1678,7 @@ void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
 void Game::Update()
 {
 	static float accSend = 0.0f;
-	const float SendPeriod = 0.03f;
+	const float SendPeriod = 0.05f;
 
 	accSend += DeltaTime;
 
@@ -1545,33 +1703,7 @@ void Game::Update()
 		ClipCursor(NULL);
 	}
 
-	if (player != nullptr) {
-		//dbglog1(L"playerpos y : %f \n", player->worldMat.pos.y);
-
-		const float rate = 0.005f;
-
-		player->m_yaw += DeltaMousePos.x * rate;
-		player->m_pitch += DeltaMousePos.y * rate;
-
-		DeltaMousePos.x = 0;
-		DeltaMousePos.y = 0;
-
-		if (player->m_yaw > XM_2PI)  player->m_yaw -= XM_2PI;
-		if (player->m_yaw < -XM_2PI) player->m_yaw += XM_2PI;
-		if (player->m_pitch > XM_PIDIV2 - 0.05f) player->m_pitch = XM_PIDIV2 - 0.05f;
-		if (player->m_pitch < -XM_PIDIV2 + 0.05f) player->m_pitch = -XM_PIDIV2 + 0.05f;
-
-		if (accSend >= SendPeriod) {
-			CTS_SyncRotation_Header pkt;
-			pkt.size = sizeof(CTS_SyncRotation_Header);
-			pkt.st = CTS_Protocol::SyncRotation;
-			pkt.yaw = player->m_yaw;
-			pkt.pitch = player->m_pitch;
-			client.send((char*)&pkt, sizeof(CTS_SyncRotation_Header), 0);
-			accSend = 0;
-		}
-	}
-
+	// 네트워크 패킷 받기
 	//gd.AverageSecPer60Start(Update_ClientRecv);
 	while (true) {
 		int result = client.recv(client.rBuf + client.rbufOffset, client.rbufMax - client.rbufOffset);
@@ -1603,63 +1735,93 @@ void Game::Update()
 	}
 	//gd.AverageSecPer60End(Update_ClientRecv);
 
-	gd.AverageSecPer60Start(Update_ChunksUpdate);
+	if (isPrepared) {
+		// 플레이어 회전 정보 전송
+		if (player != nullptr) {
+			//dbglog1(L"playerpos y : %f \n", player->worldMat.pos.y);
+
+			const float rate = 0.005f;
+
+			player->m_yaw += DeltaMousePos.x * rate;
+			player->m_pitch += DeltaMousePos.y * rate;
+
+			DeltaMousePos.x = 0;
+			DeltaMousePos.y = 0;
+
+			if (player->m_yaw > XM_2PI)  player->m_yaw -= XM_2PI;
+			if (player->m_yaw < -XM_2PI) player->m_yaw += XM_2PI;
+			if (player->m_pitch > XM_PIDIV2 - 0.05f) player->m_pitch = XM_PIDIV2 - 0.05f;
+			if (player->m_pitch < -XM_PIDIV2 + 0.05f) player->m_pitch = -XM_PIDIV2 + 0.05f;
+
+			if (accSend >= SendPeriod) {
+				CTS_SyncRotation_Header pkt;
+				pkt.size = sizeof(CTS_SyncRotation_Header);
+				pkt.st = CTS_Protocol::SyncRotation;
+				pkt.yaw = player->m_yaw;
+				pkt.pitch = player->m_pitch;
+				client.send((char*)&pkt, sizeof(CTS_SyncRotation_Header), 0);
+				accSend = 0;
+			}
+		}
+
+		//gd.AverageSecPer60Start(Update_ChunksUpdate);
 	// chunk에서 업데이트 수행.
-	for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
-		if (DynmaicGameObjects[i] == nullptr || DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
-		if (DynmaicGameObjects[i]->shape.FlagPtr == 0) continue;
-		DynmaicGameObjects[i]->Update(DeltaTime);
-	}
-	gd.AverageSecPer60End(Update_ChunksUpdate);
-
-	//gd.AverageSecPer60Start(Update_ClientUpdate);
-	if (playerGameObjectIndex >= 0 && playerGameObjectIndex < DynmaicGameObjects.size()) {
-		Player* p = (Player*)DynmaicGameObjects[playerGameObjectIndex];
-		if (p == nullptr) return;
-		p->ClientUpdate(DeltaTime);
-		player = (Player*)DynmaicGameObjects[playerGameObjectIndex];
-	}
-	//gd.AverageSecPer60End(Update_ClientUpdate);
-
-	if (player != nullptr) {
-		XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, player->m_yaw, 0);
-		vec4 currentPos = player->worldMat.pos;
-		player->worldMat.mat = rotMat;
-		player->worldMat.pos = currentPos;
-
-		XMVECTOR lookQuat = XMQuaternionRotationRollPitchYaw(player->m_pitch, player->m_yaw, 0);
-		vec4 clook = { 0, 0, 1, 0 };
-		clook = XMVector3Rotate(clook, lookQuat);
-
-		vec4 peye = player->worldMat.pos;
-		vec4 pat = player->worldMat.pos;
-
-		if (bFirstPersonVision) {
-			peye += 1.55f * player->worldMat.up;
-			pat += 1.55f * player->worldMat.up;
-			pat += 10.0f * clook;
+		for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
+			if (DynmaicGameObjects[i] == nullptr || DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
+			if (DynmaicGameObjects[i]->shape.FlagPtr == 0) continue;
+			DynmaicGameObjects[i]->Update(DeltaTime);
 		}
-		else {
-			peye += 1.35f * player->worldMat.up;
-			peye -= 4.0f * clook;
-			peye += 1.10f * player->worldMat.right;
-			pat += 1.20f * player->worldMat.up;
-			pat += 10.0f * clook;
-			pat += 0.35f * player->worldMat.right;
-		}
+		//gd.AverageSecPer60End(Update_ChunksUpdate);
 
-		XMFLOAT3 Up = { 0, 1, 0 };
-		gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
-		gd.viewportArr[0].Camera_Pos = peye;
-		if (gd.isRaytracingRender) {
-			gd.raytracing.SetRaytracingCamera(peye, pat - peye);
+		//gd.AverageSecPer60Start(Update_ClientUpdate);
+		if (playerGameObjectIndex >= 0 && playerGameObjectIndex < DynmaicGameObjects.size()) {
+			Player* p = (Player*)DynmaicGameObjects[playerGameObjectIndex];
+			if (p == nullptr) return;
+			p->ClientUpdate(DeltaTime);
+			player = (Player*)DynmaicGameObjects[playerGameObjectIndex];
 		}
+		//gd.AverageSecPer60End(Update_ClientUpdate);
 
-		for (int i = 0; i < bulletRays.size; ++i) {
-			if (bulletRays.isnull(i)) continue;
-			bulletRays[i].Update();
-			if (bulletRays[i].direction.fast_square_of_len3 < 0.01f) {
-				bulletRays.Free(i);
+		if (player != nullptr) {
+			XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, player->m_yaw, 0);
+			vec4 currentPos = player->worldMat.pos;
+			player->worldMat.mat = rotMat;
+			player->worldMat.pos = currentPos;
+
+			XMVECTOR lookQuat = XMQuaternionRotationRollPitchYaw(player->m_pitch, player->m_yaw, 0);
+			vec4 clook = { 0, 0, 1, 0 };
+			clook = XMVector3Rotate(clook, lookQuat);
+
+			vec4 peye = player->worldMat.pos;
+			vec4 pat = player->worldMat.pos;
+
+			if (bFirstPersonVision) {
+				peye += 1.55f * player->worldMat.up;
+				pat += 1.55f * player->worldMat.up;
+				pat += 10.0f * clook;
+			}
+			else {
+				peye += 1.35f * player->worldMat.up;
+				peye -= 4.0f * clook;
+				peye += 1.10f * player->worldMat.right;
+				pat += 1.20f * player->worldMat.up;
+				pat += 10.0f * clook;
+				pat += 0.35f * player->worldMat.right;
+			}
+
+			XMFLOAT3 Up = { 0, 1, 0 };
+			gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
+			gd.viewportArr[0].Camera_Pos = peye;
+			if (gd.isRaytracingRender) {
+				gd.raytracing.SetRaytracingCamera(peye, pat - peye);
+			}
+
+			for (int i = 0; i < bulletRays.size; ++i) {
+				if (bulletRays.isnull(i)) continue;
+				bulletRays[i].Update();
+				if (bulletRays[i].direction.fast_square_of_len3 < 0.01f) {
+					bulletRays.Free(i);
+				}
 			}
 		}
 	}
@@ -1814,7 +1976,7 @@ READ_START:
 	{
 		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)currentPivot;
 
-		if (game.isPreparedGo) {
+		if (false) {
 			for (auto& pair : chunck) {
 				delete pair.second;
 			}
@@ -1825,7 +1987,7 @@ READ_START:
 			for (int i = 0; i < Map->MapObjects.size(); ++i) {
 				PushGameObject(Map->MapObjects[i]);
 			}
-			// ★ Dynamic 오브젝트도 재등록
+			// ★ Dynamic 오브젝트도 재등록 // ?? 주석에 별표 뭐임 AI 씀? 표시하세요.
 			for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
 				if (DynmaicGameObjects[i] == nullptr) continue;
 				if (DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
@@ -1851,7 +2013,7 @@ READ_START:
 			//player->Gun = game.GunMesh;
 			// 
 			 //Zone 이동 시 즉시 위치 설정
-			if (game.isPreparedGo) {
+			if (game.isPreparedClientIndex) {
 				player->worldMat.pos = player->DestPos;
 				player->worldMat.pos.w = 1;
 			}
@@ -1894,7 +2056,7 @@ READ_START:
 			}
 		}
 
-		game.isPreparedGo = true;
+		game.isPreparedClientIndex = true;
 
 		currentPivot += header.size;
 		offset += header.size;
@@ -1984,6 +2146,20 @@ READ_START:
 		offset += header.size;
 	}
 	break;
+	case STC_Protocol::SyncPlayerMoveZone:
+	{
+		STC_PlayerMoveZone_Header& header = *(STC_PlayerMoveZone_Header*)currentPivot;
+
+		game.isPrepared = false;
+		game.isPreparedClientIndex = false;
+		game.isMapInit = false;
+
+		game.MoveZone(header.zoneId);
+		
+		currentPivot += header.size;
+		offset += header.size;
+	}
+		break;
 	}
 
 	goto READ_START;

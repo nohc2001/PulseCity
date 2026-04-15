@@ -149,7 +149,7 @@ struct Model {
 	* 매개변수:
 	* string filename : 모델의 경로
 	*/
-	void LoadModelFile(string filename);
+	//void LoadModelFile(string filename);
 
 	/*
 	* 설명 : Unity에서 뽑아온 맵에 존재하는 모델 바이너리 정보를 로드함.
@@ -157,7 +157,7 @@ struct Model {
 	* 매개변수:
 	* string filename : 모델의 경로
 	*/
-	void LoadModelFile2(string filename);
+	void LoadModelFile2(string filename, Zone* zone = nullptr);
 
 	/*
 	* 설명 : Model의 AABB를 구성한다.
@@ -251,6 +251,23 @@ struct Shape {
 	*/
 	static int AddModel(string name, Model* ptr);
 
+	/*
+	* 설명 : Mesh의 이름과 Mesh 포인터를 받아 Mesh를 추가하는 함수
+	* 매개변수 :
+	* string name : Mesh의 이름
+	* Mesh* ptr : Mesh의 포인터
+	* zoneid : Zone의 id
+	*/
+	static int AddMeshInZone(string name, Mesh* ptr, int zoneid);
+
+	/*
+	* 설명 : Model의 이름과 Model 포인터를 받아 Model를 추가하는 함수
+	* 매개변수 :
+	* string name : Model의 이름
+	* Model* ptr : Model의 포인터
+	*/
+	static int AddModelInZone(string name, Model* ptr, int zoneid);
+
 	void GetRealShape(Mesh*& out0, Model*& out1) {
 		if (isMesh()) out0 = reinterpret_cast<Mesh*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
 		else out1 = reinterpret_cast<Model*>(FlagPtr & 0x7FFFFFFFFFFFFFFF);
@@ -331,6 +348,10 @@ struct GameObject {
 		int* material = nullptr; // mesh 일 경우에만 활성화됨. slotNum만큼. game.MaterialTable에서 접근.
 		matrix* transforms_innerModel; // model 일 경우만 활성화됨. nodeCount 만큼.
 	};
+
+	// 현재 속해있는 Zone의 id.
+	int zoneId = 0;
+
 	static unsigned int _offset_fn_material() {
 		GameObject obj{}; char* base = reinterpret_cast<char*>(&obj); char* mem = reinterpret_cast<char*>(&obj.material); return (mem - base);
 	} inline static MemberInfo _reg_material{ "material", _offset_fn_material, sizeof(int*) };;
@@ -338,7 +359,7 @@ struct GameObject {
 		GameObject obj{}; char* base = reinterpret_cast<char*>(&obj); char* mem = reinterpret_cast<char*>(&obj.transforms_innerModel); return (mem - base);
 	} inline static MemberInfo _reg_transforms_innerModel{ "transforms_innerModel", _offset_fn_transforms_innerModel, sizeof(matrix*) };;
 
-	// transform
+	// transform (게임 플레이 로직에서는 직접 설정하는 것은 금기다. - 청크 구성이 뒤틀린다.)
 	STCDef(matrix, worldMat);
 
 	//처음 생성 시에는 enable이 false. 업데이트를 하지 않는다. 
@@ -367,58 +388,7 @@ struct GameObject {
 	};
 #pragma pack(pop)
 
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		//calculate app packet siz.
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-
-		Mesh* mesh = nullptr;
-		Model* model = nullptr;
-		if (shapeindex >= 0 && shapeindex < Shape::ShapeTable.size()) {
-			Shape& s = Shape::ShapeTable[shapeindex];
-			s.GetRealShape(mesh, model);
-			if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-			else if (model) reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-		}
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-		
-		//static pushv
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_GameObject;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.worldMatrix = worldMat;
-		offset += sizeof(STC_SyncObjData);
-
-		//dynamic push
-		if (mesh) {
-			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum;
-			offset += sizeof(int);
-			memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
-			offset += sizeof(int) * mesh->subMeshNum;
-		}
-		else if (model) {
-			int& nodecount = *(int*)(sds.ofbuff + offset);
-			nodecount = model->nodeCount;
-			offset += sizeof(int);
-			memcpy(sds.ofbuff + offset, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(matrix) * model->nodeCount;
-		}
-
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		for (int i = 0;i < g_member.size();++i) {
@@ -444,8 +414,6 @@ struct StaticGameObject : public GameObject {
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
 	BoundingOrientedBox GetOBBw(matrix worldMat);
 
-	Zone* zone = nullptr;
-
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
 		Tag tag;
@@ -457,76 +425,7 @@ struct StaticGameObject : public GameObject {
 	};
 #pragma pack(pop)
 
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		//calculate app packet siz.
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh = nullptr; 
-		Model* model = nullptr; 
-		s.GetRealShape(mesh, model);
-		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-		reqsiz += sizeof(int) + obbArr.size() * (sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT4));
-
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-
-		//static pushv
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_StaticGameObject;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.worldMatrix = worldMat;
-		offset += sizeof(STC_SyncObjData);
-
-		//dynamic push
-		if (mesh) {
-			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum;
-			offset += sizeof(int);
-
-			int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-			memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
-			offset += sizeof(int) * mesh->subMeshNum;
-		}
-		else {
-			int& nodecount = *(int*)(sds.ofbuff + offset);
-			nodecount = model->nodeCount;
-			offset += sizeof(int);
-
-			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
-			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(matrix) * model->nodeCount;
-		}
-
-		int& aabbCount = *(int*)(sds.ofbuff + offset);
-		aabbCount = obbArr.size();
-		for (int i = 0;i < obbArr.size();++i) {
-			XMFLOAT3& Center = *(XMFLOAT3*)(sds.ofbuff + offset);
-			Center = obbArr[i].Center;
-			offset += sizeof(XMFLOAT3);
-
-			XMFLOAT3& Extents = *(XMFLOAT3*)(sds.ofbuff + offset);
-			Extents = obbArr[i].Extents;
-			offset += sizeof(XMFLOAT3);
-
-			XMFLOAT4& Orientation = *(XMFLOAT4*)(sds.ofbuff + offset);
-			Orientation = obbArr[i].Orientation;
-			offset += sizeof(XMFLOAT3);
-		}
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		for (int i = 0;i < g_member.size();++i) {
@@ -673,7 +572,15 @@ struct DynamicGameObject : public GameObject {
 	virtual ~DynamicGameObject();
 
 	virtual matrix GetWorld();
-	virtual void SetWorld(matrix localWorldMat);
+
+	/*
+	* 설명 : 현재 포함 청크에서 정보를 해제하고, local world matrix 를 변경한다.
+	* 그 후, 다시 바뀐 위치의 청크 정보를 기입한다.
+	* 단순히 변수를 바꾸는 것 이상의 연산을 하기 때문에 자주 사용하는건 좋지 않다.
+	* 포탈과 같은 특수 상황에서나 사용이 가능하다.
+	* 위치를 바꾸려면 그냥 Velocity를 조정하는 것이 좋다.
+	*/
+	virtual void SetWorld(matrix local);
 
 	//ServerOnly
 	vec4 tickLVelocity;
@@ -771,60 +678,7 @@ struct DynamicGameObject : public GameObject {
 	};
 #pragma pack(pop)
 
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		//calculate app packet siz.
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh = nullptr; 
-		Model* model = nullptr; 
-		s.GetRealShape(mesh, model);
-		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-
-		//static pushv
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_DynamicGameObject;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.DestWorld = worldMat;
-		static_data.LVelocity = LVelocity;
-		offset += sizeof(STC_SyncObjData);
-
-		//dynamic push
-		if (mesh) {
-			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum;
-			offset += sizeof(int);
-
-			int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-			memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
-			offset += sizeof(int) * mesh->subMeshNum;
-		}
-		else {
-			int& nodecount = *(int*)(sds.ofbuff + offset);
-			nodecount = model->nodeCount;
-			offset += sizeof(int);
-
-			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
-			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(matrix) * model->nodeCount;
-		}
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		GameObject::PrintOffset(ofs);
@@ -846,6 +700,15 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	STCDef(float, AnimationFlowTime);
 	STCDef(int, PlayingAnimationIndex);
 
+	/*
+	* 설명 : 현재 포함 청크에서 정보를 해제하고, local world matrix 를 변경한다.
+	* 그 후, 다시 바뀐 위치의 청크 정보를 기입한다.
+	* 단순히 변수를 바꾸는 것 이상의 연산을 하기 때문에 자주 사용하는건 좋지 않다.
+	* 포탈과 같은 특수 상황에서나 사용이 가능하다.
+	* 위치를 바꾸려면 그냥 Velocity를 조정하는 것이 좋다.
+	*/
+	virtual void SetWorld(matrix local);
+
 	virtual void Update(float delatTime);
 
 	virtual void MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
@@ -864,65 +727,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	};
 #pragma pack(pop)
 
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		//calculate app packet siz.
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh = nullptr; 
-		Model* model = nullptr; 
-		s.GetRealShape(mesh, model);
-		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-
-		//static pushv
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_DynamicGameObject;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.DestWorld = worldMat;
-		static_data.LVelocity = LVelocity;
-		static_data.AnimationFlowTime = AnimationFlowTime;
-		static_data.PlayingAnimationIndex = PlayingAnimationIndex;
-		offset += sizeof(STC_SyncObjData);
-
-		//dynamic push
-
-		//shape
-		if (mesh) {
-			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum;
-			offset += sizeof(int);
-
-			int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-			memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
-			offset += sizeof(int) * mesh->subMeshNum;
-		}
-		else {
-			int& nodecount = *(int*)(sds.ofbuff + offset);
-			nodecount = model->nodeCount;
-			offset += sizeof(int);
-
-			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
-			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(matrix) * model->nodeCount;
-		}
-
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		DynamicGameObject::PrintOffset(ofs);
@@ -1029,7 +834,7 @@ struct Player : public SkinMeshGameObject {
 	STCDef(Weapon, weapon);
 
 	//ServerOnly 점프력
-	float JumpVelocity = 20;
+	float JumpVelocity = 5;
 	//ServerOnly 현재 땅에 닿아있는지를 나타낸다.
 	bool isGround = false;
 	//ServerOnly 얼마나 많은 게임 오브젝트와 충돌되었는지를 나타낸다.
@@ -1136,78 +941,7 @@ struct Player : public SkinMeshGameObject {
 	};
 #pragma pack(pop)
 
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		//calculate app packet siz.
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh = nullptr; 
-		Model* model = nullptr; 
-		s.GetRealShape(mesh, model);
-		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-
-		//static pushv
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_Player;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.DestWorld = worldMat;
-		static_data.LVelocity = LVelocity;
-		static_data.AnimationFlowTime = AnimationFlowTime;
-		static_data.PlayingAnimationIndex = PlayingAnimationIndex;
-
-		static_data.HP = HP;
-		static_data.MaxHP = MaxHP;
-		static_data.bullets = bullets;
-		static_data.KillCount = KillCount;
-		static_data.DeathCount = DeathCount;
-		static_data.HeatGauge = HeatGauge;
-		static_data.MaxHeatGauge = MaxHeatGauge;
-		static_data.HealSkillCooldown = HealSkillCooldown;
-		static_data.HealSkillCooldownFlow = HealSkillCooldownFlow;
-		static_data.m_currentWeaponType = m_currentWeaponType;
-		memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);
-		static_data.weapon = weapon;
-		offset += sizeof(STC_SyncObjData);
-
-		//dynamic push
-
-		//shape
-		if (mesh) {
-			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum;
-			offset += sizeof(int);
-
-			int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-			memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
-			offset += sizeof(int) * mesh->subMeshNum;
-		}
-		else {
-			int& nodecount = *(int*)(sds.ofbuff + offset);
-			nodecount = model->nodeCount;
-			offset += sizeof(int);
-
-			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
-			memcpy(InnerModelTransformArr, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(matrix) * model->nodeCount;
-		}
-
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		SkinMeshGameObject::PrintOffset(ofs);
@@ -1285,9 +1019,6 @@ struct Monster : public SkinMeshGameObject {
 	float respawntimer = 0;
 	//ServerOnly ??
 	float pathfindTimer = 0.0f;
-	//몬스터가 속한 zone
-	int zoneId = 0;
-
 
 	Monster();
 	virtual ~Monster() {}
@@ -1334,68 +1065,7 @@ struct Monster : public SkinMeshGameObject {
 	};
 #pragma pack(pop)
 
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		//calculate app packet siz.
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-		Shape& s = Shape::ShapeTable[shapeindex];
-		Mesh* mesh = nullptr; 
-		Model* model = nullptr; 
-		s.GetRealShape(mesh, model);
-		if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
-		else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
-
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-
-		//static pushv
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_Monster;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.DestWorld = worldMat;
-		static_data.LVelocity = LVelocity;
-		static_data.AnimationFlowTime = AnimationFlowTime;
-		static_data.PlayingAnimationIndex = PlayingAnimationIndex;
-		static_data.HP = HP;
-		static_data.MaxHP = MaxHP;
-		static_data.isDead = isDead;
-		offset += sizeof(STC_SyncObjData);
-
-		//dynamic push
-
-		//shape
-		if (mesh) {
-			int& submeshNum = *(int*)(sds.ofbuff + offset);
-			submeshNum = mesh->subMeshNum;
-			offset += sizeof(int);
-
-			int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-			memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
-			offset += sizeof(int) * mesh->subMeshNum;
-		}
-		else {
-			int& nodecount = *(int*)(sds.ofbuff + offset);
-			nodecount = model->nodeCount;
-			offset += sizeof(int);
-
-			matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
-			memcpy_s(InnerModelTransformArr, sizeof(matrix) * model->nodeCount, transforms_innerModel, sizeof(matrix) * model->nodeCount);
-			offset += sizeof(matrix) * model->nodeCount;
-		}
-
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		SkinMeshGameObject::PrintOffset(ofs);
@@ -1677,6 +1347,16 @@ struct Zone {
 	// 게임내의 Chunck들의 모임.
 	unordered_map<ChunkIndex, GameChunk*> chunck;
 
+	// Zone전용 ShapeTable (아래 3개의 자료구조는 온전히 zone내부의 인덱스로만 동작한다.)
+	// 외부에서 사용하기 위해 신경을 좀 써줘야 한다.
+	vector<Shape> ZoneShapeTable;
+	unordered_map<string, int> ZoneStrToShapeIndex;
+	vector<string> ZoneShapeStrTable;
+	Shape& GetShape(int shapeindex);
+
+	int ZoneTextureCount = 0;
+	int ZoneMaterialCount = 0;
+
 	// 생성자
 	Zone() : world(nullptr), zoneId(0) {}
 	Zone(World* w, int id) : world(w), zoneId(id) {}
@@ -1754,7 +1434,7 @@ struct Zone {
 	}
 
 	void Sending_NewRay(SendDataSaver& sds, vec4 rayStart, vec4 rayDirection, float rayDistance);
-	void Sending_SetMeshInGameObject(SendDataSaver& sds, int objindex, string str);
+	//void Sending_SetMeshInGameObject(SendDataSaver& sds, int objindex, string str);
 	void Sending_DeleteGameObject(SendDataSaver& sds, int objindex);
 	void Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdata);
 	void Sending_ItemRemove(SendDataSaver& sds, int dropindex);
@@ -1793,15 +1473,29 @@ struct World {
 	// TODO : <지워야 할 것. PACK을 지워야 함.>
 	twoPage tempbuffer;
 
-	// 머터리얼 카운트
-	unsigned int MaterialCount = 0;
+	// 글로벌 텍스쳐 카운트
+	unsigned int GlobalTextureCount = 0;
+	// 글로벌 머터리얼 카운트
+	unsigned int GlobalMaterialSiz = 0;
+	unsigned int GlobalMaterialCount = 0;
+	// 글로벌 메쉬 카운트
+	unsigned int GlobalMeshCount = 0;
+	// 글로벌 휴머노이드 애니메이션 카운트
+	unsigned int GlobalHumanoidAnimaionCount = 0;
+	// Sync된 ShapeTable 항목 개수
+	unsigned int GlobalShapeTableSyncSiz = 0;
 
 	// 휴머노이드 애니메이션 테이블
 	vector<HumanoidAnimation> HumanoidAnimationTable;
 
 	// ===== Zone 관리 =====
+	static constexpr int zoneCount = 2;
+	const char* ZoneMapName[zoneCount] = {
+		"The_Port",
+		"OfficeDungeon_1floor",
+	};
 	vector<Zone> zones;
-	int zoneCount = 2;
+	
 
 	/*
 	* 설명 : 게임서버를 초기화한다.
@@ -1837,6 +1531,19 @@ struct World {
 		header.server_obj_index = objindex;
 		sds.postpush_end();
 	}
+
+	__forceinline void Sending_PlayerMoveZone(SendDataSaver& sds, int clientindex, int zoneId){
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_PlayerMoveZone_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_PlayerMoveZone_Header& header = *(STC_PlayerMoveZone_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::SyncPlayerMoveZone;
+		header.clientIndex = clientindex;
+		header.zoneId = zoneId;
+		sds.postpush_end();
+	}
+
 	/*
 	* 설명 : 게임 상태를 동기화한다.
 	*/
@@ -1863,7 +1570,6 @@ struct World {
 	void PrintOffset();
 };
 
-
 struct Portal : public GameObject {
 #define STC_CurrentStruct Portal
 	STC_STATICINIT_innerStruct;
@@ -1878,21 +1584,7 @@ struct Portal : public GameObject {
 	Portal() {}
 	virtual ~Portal() {}
 
-	virtual BoundingOrientedBox GetOBB() {
-		BoundingOrientedBox obb_local;
-		Mesh* mesh = nullptr;
-		Model* model = nullptr;
-		if (shapeindex < 0) {
-			obb_local.Extents.x = -1;
-			return obb_local;
-		}
-		Shape::ShapeTable[shapeindex].GetRealShape(mesh, model);
-		if (mesh != nullptr) obb_local = mesh->GetOBB();
-		if (model != nullptr) obb_local = model->GetOBB();
-		BoundingOrientedBox obb_world;
-		obb_local.Transform(obb_world, worldMat);
-		return obb_world;
-	};
+	virtual BoundingOrientedBox GetOBB();
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -1911,38 +1603,7 @@ struct Portal : public GameObject {
 	};
 
 #pragma pack(pop)
-	virtual void SendGameObject(int objindex, SendDataSaver& sds) {
-		sds.postpush_start();
-
-		// mesh/model 없이 기본 데이터만 전송
-		int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(Portal::STC_SyncObjData);
-		sds.postpush_reserve(reqsiz);
-		int offset = 0;
-
-		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
-		header.size = reqsiz;
-		header.st = STC_Protocol::SyncGameObject;
-		header.objindex = objindex;
-		header.type = GameObjectType::_Portal;
-		offset += sizeof(STC_SyncGameObject_Header);
-
-		Portal::STC_SyncObjData& static_data = *(Portal::STC_SyncObjData*)(sds.ofbuff + offset);
-		static_data.tag = tag;
-		static_data.shapeindex = shapeindex;
-		static_data.parent = parent;
-		static_data.childs = childs;
-		static_data.sibling = sibling;
-		static_data.DestWorld = worldMat;
-		static_data.spawnX = spawnX;
-		static_data.spawnY = spawnY;
-		static_data.spawnZ = spawnZ;
-		static_data.radius = radius;
-		static_data.zoneId = zoneId;
-		static_data.dstzoneId = dstzoneId;
-		offset += sizeof(STC_SyncObjData);
-
-		sds.postpush_end();
-	}
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
 
 	static void PrintOffset(ofstream& ofs) {
 		GameObject::PrintOffset(ofs);

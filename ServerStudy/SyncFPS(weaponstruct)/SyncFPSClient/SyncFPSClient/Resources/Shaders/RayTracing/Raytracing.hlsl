@@ -355,7 +355,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
     float Distance = length(ViewDir);
     float depth = min(Distance / 1000.0f, 1.0f);
-    int SampleLevel = GetSampleLevel(Distance, Normal);
+    int SampleLevel = 0;//GetSampleLevel(Distance, Normal);
     
      //Get Material & Tiling
     stMaterial material;
@@ -500,7 +500,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
     float Distance = length(ViewDir);
     float depth = max(Distance / 1000.0f, 1.0f);
-    int SampleLevel = GetSampleLevel(Distance, Normal);
+    int SampleLevel = 0; //GetSampleLevel(Distance, Normal);
     
      //Get Material & Tiling
     stMaterial material;

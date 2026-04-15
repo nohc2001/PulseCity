@@ -7,7 +7,7 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
+worldMat 64 64
 StaticGameObject
 8
 tag 20 4
@@ -17,7 +17,7 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
+worldMat 64 64
 DynamicGameObject
 9
 tag 20 4
@@ -27,8 +27,8 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
-LVelocity 208 16
+worldMat 64 64
+LVelocity 224 16
 SkinMeshGameObject
 11
 tag 20 4
@@ -38,10 +38,10 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
-LVelocity 208 16
-AnimationFlowTime 224 4
-PlayingAnimationIndex 228 4
+worldMat 64 64
+LVelocity 224 16
+AnimationFlowTime 240 4
+PlayingAnimationIndex 244 4
 Player
 23
 tag 20 4
@@ -51,22 +51,22 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
-LVelocity 208 16
-AnimationFlowTime 224 4
-PlayingAnimationIndex 228 4
-HP 240 4
-MaxHP 244 4
-bullets 248 4
-KillCount 252 4
-DeathCount 256 4
-HeatGauge 260 4
-MaxHeatGauge 264 4
-HealSkillCooldown 268 4
-HealSkillCooldownFlow 272 4
-m_currentWeaponType 276 4
-Inventory 280 288
-weapon 568 48
+worldMat 64 64
+LVelocity 224 16
+AnimationFlowTime 240 4
+PlayingAnimationIndex 244 4
+HP 256 4
+MaxHP 260 4
+bullets 264 4
+KillCount 268 4
+DeathCount 272 4
+HeatGauge 276 4
+MaxHeatGauge 280 4
+HealSkillCooldown 284 4
+HealSkillCooldownFlow 288 4
+m_currentWeaponType 292 4
+Inventory 296 288
+weapon 584 48
 Monster
 14
 tag 20 4
@@ -76,13 +76,13 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
-LVelocity 208 16
-AnimationFlowTime 224 4
-PlayingAnimationIndex 228 4
-HP 240 4
-MaxHP 244 4
-isDead 248 1
+worldMat 64 64
+LVelocity 224 16
+AnimationFlowTime 240 4
+PlayingAnimationIndex 244 4
+HP 256 4
+MaxHP 260 4
+isDead 264 1
 Portal
 14
 tag 20 4
@@ -92,10 +92,10 @@ childs 32 4
 sibling 36 4
 material 40 8
 transforms_innerModel 40 8
-worldMat 48 64
-spawnX 112 4
-spawnY 116 4
-spawnZ 120 4
-radius 124 4
-zoneId 128 4
-dstzoneId 132 4
+worldMat 64 64
+spawnX 128 4
+spawnY 132 4
+spawnZ 136 4
+radius 140 4
+zoneId 144 4
+dstzoneId 148 4

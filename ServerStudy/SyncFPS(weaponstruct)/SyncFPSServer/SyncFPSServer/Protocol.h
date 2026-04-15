@@ -1,6 +1,17 @@
 #pragma once
 #pragma region ProtocolStruct
 
+///개발 중에 사용될 정의들.
+
+//청크 디버깅을 위한 도구
+#define DEVELOPMODE_ChunckDEBUG
+//공용 에셋 개수 맞추기 도구
+#define DEVELOPMODE_SYNC_GLOBAL_ASSET
+//GPUResource의 할당과 해제를 GPU VA와 함께 디버그. 어떤 리소스가 언제 할당되고 언제 해제되는지 알 수 있다.
+#define DEVELOPMODE_DBG_GPURESOURCES
+
+///
+
 #pragma pack(push, 1)
 
 /*
@@ -42,6 +53,8 @@ union STC_Protocol {
 
 		SyncGameState = 10,
 		// [int size] [st] [int DynamicGameObjectCapacity] [int StaticGameObjectCapacity]
+
+		SyncPlayerMoveZone = 11,
 	};
 
 	// enum을 숫자로 나타낸 것.
@@ -149,6 +162,16 @@ struct STC_PlayerFire_Header {
 	unsigned int size = 10; // 크기고정
 	STC_Protocol st = STC_Protocol::PlayerFire;
 	int objindex;
+};
+
+/*
+* 설명 : 서버에서 플레이어가 Zone 이동을 하게 되면 전달되는 프로토콜
+*/
+struct STC_PlayerMoveZone_Header {
+	unsigned int size = 14;
+	STC_Protocol st = STC_Protocol::SyncPlayerMoveZone;
+	int clientIndex;
+	int zoneId;
 };
 
 /*
