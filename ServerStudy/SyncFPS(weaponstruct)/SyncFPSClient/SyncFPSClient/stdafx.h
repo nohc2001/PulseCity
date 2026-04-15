@@ -1,6 +1,6 @@
 #pragma once
 
-#define DEVELOPMODE_PIX_DEBUGING
+//#define DEVELOPMODE_PIX_DEBUGING
 
 #include <SDKDDKVer.h>
 
