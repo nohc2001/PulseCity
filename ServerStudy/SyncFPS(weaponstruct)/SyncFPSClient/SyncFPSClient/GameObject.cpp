@@ -2629,9 +2629,14 @@ void Player::Render(matrix parent)
 	}
 }
 
+static bool TryFindHumanoidNodeIndex(Model* model, HumanoidAnimation::HumanBodyBones bone, int& outNodeIndex);
+static matrix GetAnimatedNodeLocalMatrix(SkinMeshGameObject* obj, Model* model, int nodeIndex);
+static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::HumanBodyBones bone, matrix& outBoneWorld);
+static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponType, matrix& outWeaponWorld);
+
 void Player::Render_ThirdPersonWeapon()
 {
-	if (game.player != this || game.bFirstPersonVision) {
+	if (game.player == this && game.bFirstPersonVision) {
 		return;
 	}
 
@@ -2643,12 +2648,15 @@ void Player::Render_ThirdPersonWeapon()
 		return;
 	}
 
-	matrix gunmat = gunMatrix_thirdPersonView;
-	gunmat *= XMMatrixRotationY(XM_PI);
-	gunmat.pos.y -= 0.40f;
-	gunmat.pos.x += 0.55f;
-	gunmat.pos.z += 0.80f;
-	gunmat *= worldMat;
+	matrix gunmat;
+	if (!TryBuildThirdPersonWeaponMatrix(this, (WeaponType)m_currentWeaponType, gunmat)) {
+		gunmat = gunMatrix_thirdPersonView;
+		gunmat *= XMMatrixRotationX(XM_PI);
+		gunmat.pos.y -= 0.40f;
+		gunmat.pos.x += 0.55f;
+		gunmat.pos.z += 0.80f;
+		gunmat *= worldMat;
+	}
 
 	pTargetModel->Render(gd.gpucmd, gunmat, nullptr);
 }
@@ -2789,6 +2797,143 @@ void Player::UpdateGunBarrelNodes()
 	for (int idx : game.MG_BarrelIndices) {
 		game.MachineGunModel->Nodes[idx].transform = rot * game.MachineGunModel->BindPose[idx];
 	}
+}
+
+static bool TryFindHumanoidNodeIndex(Model* model, HumanoidAnimation::HumanBodyBones bone, int& outNodeIndex)
+{
+	if (!model) return false;
+
+	if (model->Humanoid_retargeting) {
+		for (int i = 0; i < model->nodeCount; ++i) {
+			if (model->Humanoid_retargeting[i] == bone) {
+				outNodeIndex = i;
+				return true;
+			}
+		}
+	}
+
+	outNodeIndex = model->FindNodeIndexByName(HumanoidAnimation::HumanBoneNames[bone]);
+	return (outNodeIndex >= 0);
+}
+
+static matrix GetAnimatedNodeLocalMatrix(SkinMeshGameObject* obj, Model* model, int nodeIndex)
+{
+	if (obj && obj->transforms_innerModel) {
+		return obj->transforms_innerModel[nodeIndex];
+	}
+	return model->Nodes[nodeIndex].transform;
+}
+
+static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::HumanBodyBones bone, matrix& outBoneWorld)
+{
+	if (!player) return false;
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	player->shape.GetRealShape(mesh, model);
+	if (!model) return false;
+
+	int nodeIndex = -1;
+	if (!TryFindHumanoidNodeIndex(model, bone, nodeIndex)) {
+		return false;
+	}
+
+	std::vector<matrix> blendedLocal(model->nodeCount);
+	for (int i = 0; i < model->nodeCount; ++i) {
+		blendedLocal[i].Id();
+	}
+
+	int baseAnim = player->PlayingAnimationIndex[0];
+	if (baseAnim >= 0 && baseAnim < game.HumanoidAnimationTable.size()) {
+		player->GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[baseAnim], blendedLocal.data(), player->AnimationFlowTime[0]);
+	}
+
+	int upperAnim = player->PlayingAnimationIndex[1];
+	if (upperAnim >= 0 && upperAnim < game.HumanoidAnimationTable.size()) {
+		std::vector<matrix> upperLocal(model->nodeCount);
+		for (int i = 0; i < model->nodeCount; ++i) {
+			upperLocal[i].Id();
+		}
+
+		player->GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[upperAnim], upperLocal.data(), player->AnimationFlowTime[1]);
+		for (int i = 0; i < model->nodeCount; ++i) {
+			int humanoidIndex = model->Humanoid_retargeting ? model->Humanoid_retargeting[i] : -1;
+			if (humanoidIndex >= 0 && humanoidIndex < 64) {
+				if (player->m_animMask[1] & (1ULL << humanoidIndex)) {
+					blendedLocal[i] = upperLocal[i];
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < model->nodeCount; ++i) {
+		blendedLocal[i] *= model->DefaultNodelocalTr[i];
+	}
+	blendedLocal[0] = player->worldMat;
+
+	matrix boneWorld = blendedLocal[nodeIndex];
+	ModelNode* node = model->Nodes[nodeIndex].parent;
+	while (node != nullptr) {
+		int parentIndex = (int)(((char*)node - (char*)model->Nodes) / sizeof(ModelNode));
+		boneWorld *= blendedLocal[parentIndex];
+		node = node->parent;
+	}
+
+	outBoneWorld = boneWorld;
+	return true;
+}
+
+static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponType, matrix& outWeaponWorld)
+{
+	matrix handWorld;
+	if (!TryGetHumanoidBoneWorldMatrix(player, HumanoidAnimation::RightHand, handWorld)) {
+		return false;
+	}
+
+	matrix attachWorld = player->worldMat;
+	attachWorld.pos = handWorld.pos;
+
+	matrix weaponLocal;
+	weaponLocal.Id();
+
+	switch (weaponType)
+	{
+	case WeaponType::Sniper:
+		weaponLocal *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
+		weaponLocal.pos.x += 0.07f;
+		weaponLocal.pos.y -= 0.02f;
+		weaponLocal.pos.z += 0.28f;
+		break;
+	case WeaponType::MachineGun:
+		weaponLocal *= XMMatrixScaling(0.45f, 0.45f, 0.45f);
+		weaponLocal.pos.x += 0.08f;
+		weaponLocal.pos.y -= 0.02f;
+		weaponLocal.pos.z += 0.02f;
+		break;
+	case WeaponType::Shotgun:
+		weaponLocal *= XMMatrixScaling(0.16f, 0.16f, 0.16f);
+		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+		weaponLocal.pos.x += 0.12f;
+		weaponLocal.pos.y -= 0.06f;
+		weaponLocal.pos.z += 0.02f;
+		break;
+	case WeaponType::Rifle:
+		weaponLocal *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+		weaponLocal.pos.x += 0.10f;
+		weaponLocal.pos.y -= 0.05f;
+		weaponLocal.pos.z += 0.03f;
+		break;
+	case WeaponType::Pistol:
+		weaponLocal *= XMMatrixScaling(1.2f, 1.2f, 1.2f);
+		weaponLocal.pos.x += 0.06f;
+		weaponLocal.pos.y -= 0.03f;
+		weaponLocal.pos.z += 0.01f;
+		break;
+	}
+
+	outWeaponWorld = weaponLocal * attachWorld;
+	return true;
 }
 
 void Player::RecvSTC_SyncObj(char* data) {
