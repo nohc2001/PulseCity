@@ -151,7 +151,7 @@ public:
 	bool isInventoryOpen = false;
 
 	// 충돌체들의 상태를 보여주는지
-	static constexpr bool DebugCollisions = true;
+	static constexpr bool DebugCollisions = false;
 
 	bool isAssetAddingInGlobal = true;
 	// 모든 텍스쳐들이 담겨있는 배열
