@@ -1,0 +1,311 @@
+앞으로 해야할 기술적 과제
+고칠 오류
+1. 맵 로딩 0
+2. 청크 오류 고치기
+3. 충돌 오류 고치기 2
+4. 사운드 출력 1
+
+1. server raytracing 으로 충돌처리 / 총알 일괄 처리
+	- inline raytracing? (outside)
+2. 글자를 모두 모아서 하나의 텍스쳐로 만들고 그걸 sdf로 사용.
+	- 모든 영어 알파벳, 자주쓰이는 한글, 그리고 자주 쓰이는 특수기호들을 모아서 여러장의 텍스쳐로 만든다.
+	- unordered_map<wchar_t, tex_index> 으로 인덱스를 받고, vector<tex_index, SDFInfo> 으로 sdf 정보 받는다.
+		-> sdf info에는 실제 몇번째 덩어리 텍스쳐에 있는지와, 그 덩어리 텍스쳐 내부의 UV AABB가 있다.
+3. 메쉬 텍스트와 그 효과 만들기.
+	- 메쉬에서 어떻게 속을 비우는지. 구현이 필요. (outside)
+	- 이렇게 만든 효과들을 연출하기 위한 에디터도 필요.
+4. 애니메이션 총과 같이 사용할 수 있도록 하기
+	- 어떻게 ? (outside)
+5. raytracing 텍스쳐링
+	- 일단 Geometry를 하나로 다시 합쳐야 하고,
+	각 서브메쉬의 Vertex마다 자신의 Material의 인덱스를 붙여야 한다. -> 이건 상대적인 인덱스로 붙여라.
+		>> 이거 했는데 Geomeetry를 하나로 만들었더니 에러남.
+	그리고 로컬 루트 시그니처에 자신의 시작 Material Index를 받고
+	글로벌 루트시그니처에서는 Material과 Texture를 마치 인스턴싱을 하듯이 바인딩 한다.
+	그렇게 텍스쳐, 머터리얼을 PBR 의 방법으로 셰이딩 한다.
+6. 멀티스레드용 vecset 개발
+7. IOCP로 서버 돌리고 멀티스레드로 돌리기
+8. LOD / Tesslation Mesh
+9. UI 제작.
+10. 메모리 관리
+11. Raytracing / Raster 불투명 물체 처리
+12. Raster 포인트 라이트 / Raytracing 라이트 / DirLight Cascade
+13. 비동기 렌더링
+14. Cascade Shadow Map
+15. 3D 사운드 레이트레이싱?
+
+앞으로 해야할 게임기획적 과제
+1. 맵 만들기
+2. 스토리 / 퀘스트 만들기
+3. 여러 총기 구현 각자의 특성
+4. 여러 직업과 스킬 / 스텟 구현.
+5. 결말.
+
+//
+왜 충돌처리가 안되는가
+어떻게 잡을 것인가?
+잘 되는 비교군이 있어야 하지 않나?
+1. 충돌처리를 할 때 어떻게 하고 있는지 먼저 보자.
+2. 그리고 aabb 들을 어떻게 가져오는지도 보자.
+>> 근데 aabb 적용 안하고 Get OBB로 가져오면 
+
+// 
+왜 레이트레이싱에서 사라졌는가?
+TLAS인스턴스에서 BLAS들이 바인딩이 안되었다.
+BLAS 빌드하는걸 안해서 - 커맨드 자체는 실행이 된다.
+추측
+1. 업로드 버퍼로 다룰 수 있는 메모리가 너무 커서? >> 그럼 일단 업로드 Map 을 안하고 해보자.
+-> Reinit 때문에 그런 것이었다.
+다만 이것이 일어난 이유가 인스턴싱이 커져서 이게 일어난 건데,
+[사실 인스턴싱이 늘어난거는 관련이 없어야 맞다. 텍스쳐가 늘어난거여야 처리하도록 만들도록 하자.]
+다만 Reinit 할때의 오류가 발견되었으니 빨리 이것을 먼저 고치는 것이 중요할 것 같다.
+
+그림자랑 텍스쳐링은 자체는 됬는데, 텍스쳐들의 인덱스가 뭔가 이상하다. 
+아마 머터리얼의 인덱스가 잘못된것 같다.
+>> 왜 스킨메쉬는 머터리얼이 적용이 안되는가?
+PIX로 실제 MaterialIndex 들어있는지 보기 137과 그 후의 머터리얼과 텍스쳐들을 살펴보면 됨.
+
+///
+문제 : 이제 레이트레이싱 텍스쳐링을 해야 함.
+>> 일단 Local Root Signature 로 텍스쳐링을 하는게 맞아 보임.
+>> 아님 그냥 애초에 인스턴싱처럼 텍스쳐를 바인딩하는 것도 좋다. (Global RootSig)
+
+고쳐야할 오루 목록
+1. 서버가 Debug고 클라이언트가 Release일때 클라가 안켜짐. >> 왜?
+
+// 이제 집에 컴퓨터 있어서 게속 개발을 할 수 있게 되었다.
+
+////////
+GameObject 변환
+isExsit -> Tag의 첫번째 비트
+m_worldMatrix -> worldMat
+m_pMesh, pModel, rmod -> shape
+velocity, vec4 Destpos; -> onlydynamicobjects
+m_pShader-> 무조건 pbrshader
+움직이는 오브젝트 -> DynamicGameObject상속.
+
+/*
+* 설명 : 클라이언트의 게임 오브젝트
+* Sentinal Value : 
+* NULL = (isExist == false)
+*/
+struct GameObject {
+	// 게임오브젝트가 활성화 되었는지 여부
+	bool isExist = true;
+	// 해당 게임 오브젝트가 가진 머터리얼의 인덱스
+	int MaterialIndex = 0;
+	// 월드 행렬
+	matrix m_worldMatrix;
+	// 현재 속도
+	vec4 LVelocity;
+	// 다음 프레임에서 변경될 예정인 위치변화량
+	vec4 tickLVelocity;
+
+	union {
+		// 가지고 있는 Mesh (Mesh/Model중 하나만 가져야 함.)
+		Mesh* m_pMesh;
+		// 가지고 있는 Model (Mesh/Model중 하나만 가져야 함.)
+		Model* pModel = nullptr;
+	};
+	// 이 오브젝트를 그릴 셰이더 
+	// <셰이더 통일을 할 것인가?>
+	Shader* m_pShader = nullptr;
+	// 서버로부터 받은 위치. 해당 위치로 클라이언트는 보간한다.
+	vec4 Destpos;
+
+	enum eRenderMeshMod {
+		single_Mesh = 0,
+		Model = 1
+	};
+	// 렌더링하는 것이 Mesh인지, Model인지 결정하는 enum.
+	// improve : Shape으로 통일 못하나??
+	eRenderMeshMod rmod = eRenderMeshMod::single_Mesh;
+
+	GameObject();
+	virtual ~GameObject();
+
+	/*
+	* 설명 : 한 프레임 마다 실행될 업데이트 함수
+	* 매개변수 : 
+	* float deltaTime : 이전 프레임에서 지금 프레임까지의 시간간격
+	*/
+	virtual void Update(float deltaTime);
+	/*
+	* 설명 : 
+	* <메쉬일 경우>
+	* WorldMatrix를 Root Param 1에 0~16에 Set하고,
+	* Material의 텍스쳐는 Root Param 3에 DescTable로 Set하고,
+	* Material의 Constant Buffer 값은 Root Param 4에 DescTable로 Set하고,
+	* 메쉬를 사용해
+	* <모델일 경우>
+	* //fix <처리 안함>
+	*/
+	virtual void Render();
+
+	/*
+	* //improve : Shape로 통합되면 이 함수가 필요할까?
+	* 설명 : Mesh를 설정한다.
+	* 매개변수 : 
+	* Mesh* pMesh : 설정할 mesh
+	*/
+	__forceinline void SetMesh(Mesh* pMesh);
+	/*
+	* //improve : Shader가 통일되면 이 함수가 필요하나?
+	* 설명 : Shader를 설정한다.
+	* 매개변수 : 
+	* Shader* pShader : 설정할 셰이더
+	*/
+	__forceinline void SetShader(Shader* pShader);
+	/*
+	* 설명 : worldMatrix의 Z 기저를 look을 향하도록 한다.
+	* 매개변수 : 
+	* vec4 look : 바라볼 방향
+	* vec4 up : 위쪽 방향
+	*/
+	void LookAt(vec4 look, vec4 up = { 0, 1, 0, 0 });
+	/*
+	* 설명 : 게임 오브젝트의 위치를 DestPos로 보간한다.
+	*/
+	__forceinline void PositionInterpolation(float deltaTime);
+};
+
+Copy
+.descindex.hRender.hgpu
+.descindex.hCreation.hcpu
+//
+
+졸작 개선점
+1. 그림자 뷰 프러스텀 컬링의 처리 기준이 이상함. v
+2. 자동차 출력
+3. 밉맵 필터링이 잘 안됨. ??
+4. 맵의 일정한 오브젝트가 transform이 이상하게 임포트 됨. v
+5. 몬스터가 어떤 영역을 벗어나면 뭔가 강제로 어디로 이동되는듯 ?
+6. 화면 돌리는 걸 클라이언트 도미넌트로 바꾸셈.
+
+XMVector4TransformStream : 행렬변환을 VECTOR 배열에 대해 모두 적용시키는 연산. 아마 일반적인 반복문보다 빠르게 수행할 것이다.
+
+XMVector4AngleBetweenVectors : 두 벡터 사이의 각도를 구한다.
+XMVector4AngleBetweenNormals : 두 단위벡터 사이의 각도를 구한다 (더 빠름)
+
+XMVector4Orthogonal : 어떤 벡터의 수직인 벡터를 반환한다. (무슨기준으로 수직벡터를 결정하는지는 모름.) -> 코드를 봐야 할 듯.
+
+XMVector4RefractV : 굴절벡터 계산하는 함수
+
+XMVector4ClampLength : 벡터 길이의 최대와 최소를 받아 변환된 벡터를 반환합니다. -> 길이가 범위 안에 없으면 범위안으로 넣는 작업 하는듯.
+
+XMVector4ReciprocalLength : 벡터 길이의 역수를 반환합니다.
+
+XMVector4LengthSq : 벡터길이의 제곱을 반환합니다. 이게 더 빠름. sqrt연산을 안해도 됨.
+
+XMVector4IsInfinite : 벡터의 요소중 하나라도 무한이면 true.
+XMVector4IsNaN : 벡터의 요소중 하나라도 Nan 이면 true
+
+XMVector4InBounds : 
+//bound vector = {a, b, c, d} // xmin : -a, xmax : a ...
+해당 바운드안에 위치벡터가 위치하는지.
+
+XMVector3UnprojectStream
+XMVector3Unproject : 이 둘은 화면 공간의 벡터를 
+개체공간(게임공간)상의 벡터로 변환하는 작업을 한다.
+Stream이 붙이면 여러개를 빠르게 처리 가능하다.
+
+XMVector3ProjectStream
+XMVector3Project : 개체공간의 벡터를 화면공간의 벡터로 변환한다.
+
+XMVector3TransformNormalStream
+XMVector3TransformNormal
+: 위치이동을 지원하지 않는 변환함수로, w 값을 0으로 채운다.
+
+XMVector3TransformCoordStream
+XMVector3TransformCoord
+: 위치 이동을 지원하는 변환함수로, w값을 1로 채운다.
+
+XMVector3InverseRotate
+XMVector3Rotate : 이건 쿼터니언으로 회전시키고, 역회전이나 복원하는 것.
+
+XMVector3ComponentsFromNormal
+	: 노멀벡터를 활용해 하나의 벡터를 두가지 벡터로 나누는데,
+		노멀벡터와 같은 방향의 벡터하나와,
+		해당 노멀을 가지는 평면 위의 벡터 하나로 나눈다.
+
+XMVector3LinePointDistance
+	: 선분과 점 사이의 거리를 얻는다.
+
+XMVector3AngleBetweenVectors : 두 벡터사이의 라디안 각도
+XMVector3AngleBetweenNormals : 두 단위벡터 사이의 라디안 각도
+
+XMVector3Orthogonal
+
+XMVectorBaryCentricV
+XMVectorBaryCentric
+XMVectorCatmullRomV
+XMVectorHermiteV
+XMVectorLerpV
+
+XMVectorSin/Cos/Tan/aSin, aCos, aTan
+
+XMVectorModAngles
+XMVectorMod
+XMVectorAbs
+XMVectorPow
+XMVectorLog
+XMVectorExp
+
+XMVectorReciprocalSqrt
+XMVectorSqrt
+
+XMVectorNegativeMultiplySubtract
+XMVectorAddAngles
+
+XMVectorNegate
+XMVectorAnd, Or, Xor, Nor, Int
+
+XMVectorSaturate
+XMVectorClamp
+XMVectorCeiling
+XMVectorFloor
+XMVectorTruncate
+XMVectorRound
+
+XMVectorMax
+XMVectorMin
+
+XMVectorInsert
+
+XMVectorReplicate
+
+
+
+///////////////
+
+XMQuaternionBaryCentric;
+XMQuaternionMultiply;
+XMQuaternionConjugate;
+XMQuaternionSlerpV;
+XMQuaternionDot;
+XMQuaternionEqual;
+XMQuaternionExp;
+XMQuaternionIdentity;
+XMQuaternionIsInfinite;
+XMQuaternionInverse;
+XMQuaternionIsIdentity;
+XMQuaternionLength;
+XMQuaternionNormalize;
+XMQuaternionLn;
+XMQuaternionSquad;
+XMQuaternionRotationAxis;
+XMQuaternionRotationMatrix;
+XMQuaternionRotationNormal;
+
+XMPlaneDot;
+XMPlaneNormalize;
+XMPlaneDotCoord;
+XMPlaneDotNormal;
+XMPlaneFromPointNormal;
+XMPlaneFromPoints;
+XMPlaneIntersectLine;
+XMPlaneIntersectPlane;
+XMPlaneIntersectPlane;
+XMPlaneTransform;
+XMPlaneIsInfinite;
+XMPlaneIsNaN;
