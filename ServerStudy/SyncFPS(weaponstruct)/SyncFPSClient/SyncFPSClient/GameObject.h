@@ -490,9 +490,15 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	vector<GPUResource> BoneToWorldMatrixCB;
 	vector<GPUResource> BoneToWorldMatrixCB_Default;
 	vector<DescIndex> BoneToWorldMatrix_UAVDescIndex;
-
 	vector<GPUResource> NodeToBone;
 	vector<DescIndex> NodeToBone_SRVDescIndex;
+
+	// 특정 Node의 현재 ToWorldMatrix를 가져오기 위한 ReadBackBuffer
+	GPUResource NodeWorldMatrixReadBack;
+	// 몇번째 Node를 가져올 건지에 대한 배열.
+	vector<int> GetWorldMat_NodeIndexArr;
+	// CPU 접근 가능한 
+	matrix* Mapped_NodeWorldMatrixReadBack;
 
 #pragma region GPUAnimation
 	struct AnimationBlendingCBStruct
