@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #pragma region ProtocolStruct
 
 ///개발 중에 사용될 정의들.
@@ -213,3 +213,7 @@ struct CTS_SyncRotation_Header {
 
 #pragma pack(pop)
 #pragma endregion
+
+// 서명 있는 UTF8 
+   
+
