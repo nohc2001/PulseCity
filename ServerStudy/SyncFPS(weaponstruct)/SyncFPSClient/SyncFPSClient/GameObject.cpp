@@ -2680,11 +2680,16 @@ void Player::Render_AfterDepthClear()
 			switch ((WeaponType)m_currentWeaponType)
 			{
 			case WeaponType::MachineGun:
-				gunmat *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
-				gunmat.pos.y -= 0.40f;
+			{
+				matrix modelFix = XMMatrixScaling(0.8f, 0.8f, 0.8f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(180.0f));
+				modelFix *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+				gunmat.pos.y -= 0.60f;
 				gunmat.pos.x += 0.35f;
 				gunmat.pos.z += 0.90f;
 				break;
+			}
 			case WeaponType::Sniper:
 				if (m_isZooming && m_currentFov < 25.0f) {
 					pTargetModel = nullptr;
@@ -2704,8 +2709,8 @@ void Player::Render_AfterDepthClear()
 				break;
 			case WeaponType::Rifle:
 			{
-				matrix modelFix = XMMatrixScaling(1.2f, 1.2f, 1.2f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+				matrix modelFix = XMMatrixScaling(1.5f, 1.5f, 1.5f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
 				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
 
 				float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f);
@@ -2723,8 +2728,8 @@ void Player::Render_AfterDepthClear()
 			}
 			case WeaponType::Shotgun:
 			{
-				matrix modelFix = XMMatrixScaling(0.15f, 0.15f, 0.15f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+				matrix modelFix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
 				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
 				gunmat.pos.y -= 0.70f;
 				gunmat.pos.x += 0.75f;
@@ -2906,26 +2911,28 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponTyp
 		break;
 	case WeaponType::MachineGun:
 		weaponLocal *= XMMatrixScaling(0.45f, 0.45f, 0.45f);
+		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(180.0f));
+		weaponLocal *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
 		weaponLocal.pos.x += 0.08f;
 		weaponLocal.pos.y -= 0.02f;
 		weaponLocal.pos.z += 0.02f;
 		break;
 	case WeaponType::Shotgun:
-		weaponLocal *= XMMatrixScaling(0.16f, 0.16f, 0.16f);
-		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+		weaponLocal *= XMMatrixScaling(0.7f, 0.7f, 0.7f);
+		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(90.0f));
 		weaponLocal.pos.x += 0.12f;
 		weaponLocal.pos.y -= 0.06f;
 		weaponLocal.pos.z += 0.02f;
 		break;
 	case WeaponType::Rifle:
 		weaponLocal *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
-		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
 		weaponLocal.pos.x += 0.10f;
 		weaponLocal.pos.y -= 0.05f;
 		weaponLocal.pos.z += 0.03f;
 		break;
 	case WeaponType::Pistol:
-		weaponLocal *= XMMatrixScaling(1.2f, 1.2f, 1.2f);
+		weaponLocal *= XMMatrixScaling(0.7f, 0.7f, 0.7f);
 		weaponLocal.pos.x += 0.06f;
 		weaponLocal.pos.y -= 0.03f;
 		weaponLocal.pos.z += 0.01f;
