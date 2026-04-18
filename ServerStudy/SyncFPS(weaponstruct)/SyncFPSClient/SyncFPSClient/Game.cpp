@@ -356,6 +356,376 @@ void Game::PushLight(Light* light)
 {
 }
 
+namespace
+{
+	enum class ParticleSpriteSlot
+	{
+		FirePrimary = 0,
+		FireSecondary,
+		FireFlipbook,
+		Electric,
+	};
+
+	GPUResource gParticleSecondaryTexture;
+	GPUResource gParticleFlipbookTexture;
+	GPUResource gParticleElectricTexture;
+
+	constexpr UINT ELECTRIC_COUNT = 180;
+	constexpr UINT ELECTRIC_BURST_COUNT = 96;
+	constexpr UINT EMBER_SHOWER_COUNT = 220;
+	constexpr UINT MUZZLE_FLASH_COUNT = 96;
+	constexpr UINT BULLET_TRACER_COUNT = 256;
+	constexpr UINT PARTICLE_FLAG_COLLIDE_GROUND = 1u;
+	ParticlePool gElectricPool;
+	ParticlePool gElectricBurstPool;
+	ParticlePool gEmberShowerPool;
+	ParticlePool gMuzzleFlashPool;
+	ParticlePool gBulletTracerPool;
+	ParticleCompute* gElectricCS = nullptr;
+	ParticleCompute* gElectricBurstCS = nullptr;
+	ParticleCompute* gEmberShowerCS = nullptr;
+	GPUResource gMuzzleFlashUpload;
+	GPUResource gBulletTracerUpload;
+	std::vector<Particle> gMuzzleFlashParticles;
+	std::vector<Particle> gBulletTracerParticles;
+
+	ParticleSpriteSlot gFireSpriteSlot = ParticleSpriteSlot::FirePrimary;
+	ParticleSpriteSlot gFirePillarSpriteSlot = ParticleSpriteSlot::FirePrimary;
+	ParticleSpriteSlot gFireRingSpriteSlot = ParticleSpriteSlot::FirePrimary;
+	ParticleSpriteSlot gElectricSpriteSlot = ParticleSpriteSlot::Electric;
+	ParticleSpriteSlot gElectricBurstSpriteSlot = ParticleSpriteSlot::Electric;
+	ParticleSpriteSlot gEmberShowerSpriteSlot = ParticleSpriteSlot::FirePrimary;
+	ParticleSpriteSlot gMuzzleFlashSpriteSlot = ParticleSpriteSlot::FirePrimary;
+	ParticleSpriteSlot gBulletTracerSpriteSlot = ParticleSpriteSlot::Electric;
+	UINT gTransientParticleSeed = 1u;
+
+	struct ParticleEffectRuntime
+	{
+		ParticlePool* Pool;
+		ParticleCompute** Compute;
+		ParticleSpriteSlot* SpriteSlot;
+		const char* EntryPoint;
+		UINT Count;
+	};
+
+	GPUResource* GetParticleSpriteResource(ParticleSpriteSlot slot)
+	{
+		switch (slot) {
+		case ParticleSpriteSlot::FireSecondary:
+			return &gParticleSecondaryTexture;
+		case ParticleSpriteSlot::FireFlipbook:
+			return &gParticleFlipbookTexture;
+		case ParticleSpriteSlot::Electric:
+			return &gParticleElectricTexture;
+		case ParticleSpriteSlot::FirePrimary:
+		default:
+			return &game.FireTextureRes;
+		}
+	}
+
+	auto GetParticleEffectRuntimes() -> std::vector<ParticleEffectRuntime>
+	{
+		std::vector<ParticleEffectRuntime> effects;
+		effects.reserve(4);
+		effects.push_back(ParticleEffectRuntime{ &game.FirePool, &game.FireCS, &gFireSpriteSlot, "FireCS", Game::FIRE_COUNT });
+		effects.push_back(ParticleEffectRuntime{ &game.FirePillarPool, &game.FirePillarCS, &gFirePillarSpriteSlot, "FirePillarCS", Game::FIRE_PILLAR_COUNT });
+		effects.push_back(ParticleEffectRuntime{ &game.FireRingPool, &game.FireRingCS, &gFireRingSpriteSlot, "FireRingCS", Game::FIRE_RING_COUNT });
+		effects.push_back(ParticleEffectRuntime{ &gElectricPool, &gElectricCS, &gElectricSpriteSlot, "ElectricArcCS", ELECTRIC_COUNT });
+		return effects;
+	}
+
+	float RandomUnit()
+	{
+		return static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+	}
+
+	float RandomRange(float minValue, float maxValue)
+	{
+		return minValue + (maxValue - minValue) * RandomUnit();
+	}
+
+	vec4 NormalizeOrFallback(vec4 v, vec4 fallback)
+	{
+		if (v.fast_square_of_len3 > 0.0001f) {
+			v.len3 = 1.0f;
+			return v;
+		}
+		return fallback;
+	}
+
+	void KillParticle(Particle& particle)
+	{
+		particle.Position = XMFLOAT3(0.0f, -1000.0f, 0.0f);
+		particle.Age = 1.0f;
+		particle.Velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
+		particle.LifeTime = 0.0f;
+		particle.StartColor = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
+		particle.EndColor = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
+		particle.StartSize = 0.0f;
+		particle.EndSize = 0.0f;
+		particle.Rotation = 0.0f;
+		particle.RotationSpeed = 0.0f;
+		particle.Drag = 0.0f;
+		particle.GravityScale = 0.0f;
+		particle.Stretch = 0.0f;
+		particle.CollisionRadius = 0.0f;
+		particle.Flags = 0;
+		particle.RandomSeed = 0;
+		particle.FrameIndex = 0;
+		particle.FrameCount = 1;
+	}
+
+	Particle* AllocateTransientParticle(std::vector<Particle>& particles)
+	{
+		for (Particle& particle : particles) {
+			if (particle.LifeTime <= 0.0f || particle.Age >= particle.LifeTime) {
+				return &particle;
+			}
+		}
+
+		if (particles.empty()) return nullptr;
+
+		Particle* oldest = &particles[0];
+		float maxAge = particles[0].Age;
+		for (Particle& particle : particles) {
+			if (particle.Age > maxAge) {
+				maxAge = particle.Age;
+				oldest = &particle;
+			}
+		}
+		return oldest;
+	}
+
+	void InitTransientParticlePool(ParticlePool& pool, GPUResource& upload, std::vector<Particle>& particles, UINT count)
+	{
+		particles.resize(count);
+		for (Particle& particle : particles) {
+			KillParticle(particle);
+			particle.RandomSeed = gTransientParticleSeed++;
+		}
+
+		pool.Count = count;
+		pool.Buffer = gd.CreateCommitedGPUBuffer(
+			D3D12_HEAP_TYPE_DEFAULT,
+			D3D12_RESOURCE_STATE_COMMON,
+			D3D12_RESOURCE_DIMENSION_BUFFER,
+			sizeof(Particle) * count,
+			1,
+			DXGI_FORMAT_UNKNOWN,
+			1,
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+		);
+
+		upload = gd.CreateCommitedGPUBuffer(
+			D3D12_HEAP_TYPE_UPLOAD,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			D3D12_RESOURCE_DIMENSION_BUFFER,
+			sizeof(Particle) * count,
+			1,
+			DXGI_FORMAT_UNKNOWN
+		);
+
+		gd.UploadToCommitedGPUBuffer(
+			particles.data(),
+			&upload,
+			&pool.Buffer,
+			true
+		);
+	}
+
+	void TickTransientParticles(std::vector<Particle>& particles, float dt)
+	{
+		for (Particle& particle : particles) {
+			if (particle.LifeTime <= 0.0f || particle.Age >= particle.LifeTime) continue;
+
+			particle.Age += dt;
+			if (particle.Age >= particle.LifeTime) {
+				KillParticle(particle);
+				continue;
+			}
+
+			particle.Velocity.y += -9.81f * particle.GravityScale * dt;
+			float dragFactor = max(0.0f, 1.0f - particle.Drag * dt);
+			particle.Velocity.x *= dragFactor;
+			particle.Velocity.y *= dragFactor;
+			particle.Velocity.z *= dragFactor;
+
+			particle.Position.x += particle.Velocity.x * dt;
+			particle.Position.y += particle.Velocity.y * dt;
+			particle.Position.z += particle.Velocity.z * dt;
+			particle.Rotation += particle.RotationSpeed * dt;
+
+			if ((particle.Flags & PARTICLE_FLAG_COLLIDE_GROUND) != 0u) {
+				float floorY = 0.0f + particle.CollisionRadius;
+				if (particle.Position.y < floorY) {
+					particle.Position.y = floorY;
+					if (particle.Velocity.y < 0.0f) {
+						particle.Velocity.y *= -0.25f;
+						particle.Velocity.x *= 0.72f;
+						particle.Velocity.z *= 0.72f;
+					}
+				}
+			}
+
+			float lifeT = min(1.0f, particle.Age / max(particle.LifeTime, 0.0001f));
+			UINT frameCount = max(particle.FrameCount, 1u);
+			particle.FrameIndex = min(static_cast<UINT>(lifeT * static_cast<float>(frameCount - 1)), frameCount - 1);
+		}
+	}
+
+	void UploadTransientParticles(ParticlePool& pool, GPUResource& upload, const std::vector<Particle>& particles)
+	{
+		if (particles.empty()) return;
+		gd.UploadToCommitedGPUBuffer(
+			const_cast<Particle*>(particles.data()),
+			&upload,
+			&pool.Buffer,
+			true
+		);
+	}
+
+	void TryGetMuzzleBasis(Player* player, vec4& origin, vec4& forward, vec4& right, vec4& up)
+	{
+		if (player == game.player && game.bFirstPersonVision) {
+			matrix view = gd.viewportArr[0].ViewMatrix;
+			XMMATRIX invViewXm = XMMatrixInverse(nullptr, (XMMATRIX)view);
+			matrix invView = invViewXm;
+
+			forward = NormalizeOrFallback(invView.look, vec4(0, 0, 1, 0));
+			right = NormalizeOrFallback(invView.right, vec4(1, 0, 0, 0));
+			up = NormalizeOrFallback(invView.up, vec4(0, 1, 0, 0));
+			origin = gd.viewportArr[0].Camera_Pos + forward * 0.72f + right * 0.15f - up * 0.10f;
+			return;
+		}
+
+		forward = NormalizeOrFallback(player->worldMat.look, vec4(0, 0, 1, 0));
+		right = NormalizeOrFallback(player->worldMat.right, vec4(1, 0, 0, 0));
+		up = NormalizeOrFallback(player->worldMat.up, vec4(0, 1, 0, 0));
+		origin = player->worldMat.pos + right * 0.30f + up * 1.35f + forward * 0.48f;
+	}
+
+	void SpawnMuzzleFlash(Player* player)
+	{
+		if (player == nullptr) return;
+
+		vec4 origin;
+		vec4 forward;
+		vec4 right;
+		vec4 up;
+		TryGetMuzzleBasis(player, origin, forward, right, up);
+
+		for (int i = 0; i < 12; ++i) {
+			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
+			if (particle == nullptr) break;
+
+			vec4 dir = NormalizeOrFallback(
+				forward
+				+ right * RandomRange(-0.35f, 0.35f)
+				+ up * RandomRange(-0.22f, 0.22f),
+				forward
+			);
+			vec4 pos = origin
+				+ forward * RandomRange(0.00f, 0.08f)
+				+ right * RandomRange(-0.04f, 0.04f)
+				+ up * RandomRange(-0.04f, 0.04f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(
+				dir.x * RandomRange(5.5f, 11.0f) + up.x * RandomRange(0.4f, 1.1f),
+				dir.y * RandomRange(5.5f, 11.0f) + up.y * RandomRange(0.4f, 1.1f),
+				dir.z * RandomRange(5.5f, 11.0f) + up.z * RandomRange(0.4f, 1.1f));
+			particle->Age = 0.0f;
+			particle->LifeTime = RandomRange(0.05f, 0.11f);
+			particle->StartColor = XMFLOAT4(2.2f, 1.35f, 0.72f, 1.0f);
+			particle->EndColor = XMFLOAT4(0.45f, 0.18f, 0.05f, 0.0f);
+			particle->StartSize = RandomRange(0.10f, 0.18f);
+			particle->EndSize = 0.015f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-5.0f, 5.0f);
+			particle->Drag = RandomRange(6.0f, 10.0f);
+			particle->GravityScale = -0.10f;
+			particle->Stretch = RandomRange(0.8f, 1.6f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 36u;
+		}
+	}
+
+	void SpawnElectricTracer(vec4 start, vec4 direction, float distance)
+	{
+		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
+		vec4 right = forward.cross(upHint);
+		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
+		vec4 up = right.cross(forward);
+		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
+
+		Particle* core = AllocateTransientParticle(gBulletTracerParticles);
+		if (core != nullptr) {
+			vec4 corePos = start + forward * 0.08f;
+			core->Position = XMFLOAT3(corePos.x, corePos.y, corePos.z);
+			core->Velocity = XMFLOAT3(
+				forward.x * RandomRange(42.0f, 52.0f),
+				forward.y * RandomRange(42.0f, 52.0f),
+				forward.z * RandomRange(42.0f, 52.0f));
+			core->Age = 0.0f;
+			core->LifeTime = min(0.13f, 0.045f + distance * 0.00055f);
+			core->StartColor = XMFLOAT4(2.05f, 2.95f, 3.75f, 1.0f);
+			core->EndColor = XMFLOAT4(0.10f, 0.52f, 1.12f, 0.0f);
+			core->StartSize = RandomRange(0.060f, 0.082f);
+			core->EndSize = 0.020f;
+			core->Rotation = RandomRange(0.0f, XM_2PI);
+			core->RotationSpeed = RandomRange(-2.0f, 2.0f);
+			core->Drag = RandomRange(0.25f, 0.55f);
+			core->GravityScale = 0.0f;
+			core->Stretch = RandomRange(6.2f, 7.6f);
+			core->CollisionRadius = 0.0f;
+			core->Flags = 0u;
+			core->RandomSeed = gTransientParticleSeed++;
+			core->FrameIndex = 0;
+			core->FrameCount = 1u;
+		}
+
+		const float tracerLife = min(0.14f, 0.04f + distance * 0.0008f);
+		const int tracerCount = 4;
+		for (int i = 0; i < tracerCount; ++i) {
+			Particle* particle = AllocateTransientParticle(gBulletTracerParticles);
+			if (particle == nullptr) break;
+
+			float along = distance * (static_cast<float>(i) / static_cast<float>(tracerCount + 1));
+			vec4 pos = start
+				+ forward * (0.03f + along * 0.05f)
+				+ right * RandomRange(-0.007f, 0.007f)
+				+ up * RandomRange(-0.007f, 0.007f);
+			vec4 lateral = right * RandomRange(-0.35f, 0.35f) + up * RandomRange(-0.35f, 0.35f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(
+				forward.x * RandomRange(30.0f, 38.0f) + lateral.x,
+				forward.y * RandomRange(30.0f, 38.0f) + lateral.y,
+				forward.z * RandomRange(30.0f, 38.0f) + lateral.z);
+			particle->Age = RandomRange(0.0f, tracerLife * 0.30f);
+			particle->LifeTime = tracerLife + RandomRange(-0.01f, 0.01f);
+			particle->StartColor = XMFLOAT4(0.42f, 1.12f, 2.05f, 0.72f);
+			particle->EndColor = XMFLOAT4(0.02f, 0.14f, 0.52f, 0.0f);
+			particle->StartSize = RandomRange(0.028f, 0.040f);
+			particle->EndSize = 0.006f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-1.5f, 1.5f);
+			particle->Drag = RandomRange(0.55f, 0.95f);
+			particle->GravityScale = 0.0f;
+			particle->Stretch = RandomRange(3.8f, 4.8f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 6u;
+		}
+	}
+}
+
 void Game::InitParticlePool(ParticlePool& pool, UINT count)
 {
 	pool.Count = count;
@@ -363,9 +733,24 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 	std::vector<Particle> init(count);
 	for (UINT i = 0; i < count; ++i)
 	{
-		init[i].Life = 0.0f;
 		init[i].Age = 0.0f;
-		init[i].Size = 0.02f;
+		init[i].LifeTime = 0.0f;
+		init[i].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+		init[i].Velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
+		init[i].StartColor = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		init[i].EndColor = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
+		init[i].StartSize = 0.05f;
+		init[i].EndSize = 0.01f;
+		init[i].Rotation = 0.0f;
+		init[i].RotationSpeed = 0.0f;
+		init[i].Drag = 0.0f;
+		init[i].GravityScale = 1.0f;
+		init[i].Stretch = 0.0f;
+		init[i].CollisionRadius = 0.0f;
+		init[i].Flags = 0;
+		init[i].RandomSeed = i * 9781u + 1u;
+		init[i].FrameIndex = 0;
+		init[i].FrameCount = 36;
 	}
 
 	
@@ -455,13 +840,16 @@ void Game::Init()
 		DefaultAmbientTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultAmbientTexture.png", basicTexFormat, basicTexMip);
 		// particle texture
 		FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", game.basicTexFormat, game.basicTexMip /*DXGI_FORMAT_UNKNOWN, 1*/, true);
+		gParticleSecondaryTexture.CreateTexture_fromFile(L"Resources/fire2.jpg", game.basicTexFormat, game.basicTexMip, true);
+		gParticleFlipbookTexture.CreateTexture_fromFile(L"Resources/fire.dds", game.basicTexFormat, game.basicTexMip, true);
+		gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.jpg", game.basicTexFormat, game.basicTexMip, true);
 
 		//텍스트 출력에 사용할 메쉬를 가져온다.
 		TextMesh = new UVMesh();
 		TextMesh->CreateTextRectMesh();
 
 		BulletRay::mesh = (Mesh*)new Mesh();
-		BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1, 1, 0, 1 }, false);
+		BulletRay::mesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 1.0f, 0.62f, 0.12f, 1.0f }, false);
 
 		game.HPBarMesh = new Mesh();
 		game.HPBarMesh->ReadMeshFromFile_OBJ("Resources/Mesh/RayMesh.obj", { 0, 1, 0, 1 }, false);
@@ -476,18 +864,19 @@ void Game::Init()
 		MyDirLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
 
 		// particle init
-		InitParticlePool(FirePool, FIRE_COUNT);
-		InitParticlePool(FirePillarPool, FIRE_PILLAR_COUNT);
-		InitParticlePool(FireRingPool, FIRE_RING_COUNT);
+		{
+			const auto effects = GetParticleEffectRuntimes();
+			for (const ParticleEffectRuntime& effect : effects) {
+				InitParticlePool(*effect.Pool, effect.Count);
+			}
+			for (const ParticleEffectRuntime& effect : effects) {
+				*effect.Compute = new ParticleCompute();
+				(*effect.Compute)->Init(L"Particle.hlsl", effect.EntryPoint);
+			}
 
-		FireCS = new ParticleCompute();
-		FireCS->Init(L"Particle.hlsl", "FireCS");
-
-		FirePillarCS = new ParticleCompute();
-		FirePillarCS->Init(L"Particle.hlsl", "FirePillarCS");
-
-		FireRingCS = new ParticleCompute();
-		FireRingCS->Init(L"Particle.hlsl", "FireRingCS");
+			InitTransientParticlePool(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles, MUZZLE_FLASH_COUNT);
+			InitTransientParticlePool(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles, BULLET_TRACER_COUNT);
+		}
 
 		ParticleDraw = new ParticleShader();
 		ParticleDraw->InitShader();
@@ -1063,12 +1452,26 @@ void Game::Render() {
 	//}
 
 	// 19. 파티클을 계산하고 출력한다.
-	FireCS->Dispatch(gd.gpucmd, &FirePool.Buffer, FirePool.Count, DeltaTime);
-	ParticleDraw->Render(gd.gpucmd, &FirePool.Buffer, FirePool.Count);
-	FirePillarCS->Dispatch(gd.gpucmd, &FirePillarPool.Buffer, FirePillarPool.Count, DeltaTime);
-	ParticleDraw->Render(gd.gpucmd, &FirePillarPool.Buffer, FirePillarPool.Count);
-	FireRingCS->Dispatch(gd.gpucmd, &FireRingPool.Buffer, FireRingPool.Count, DeltaTime);
-	ParticleDraw->Render(gd.gpucmd, &FireRingPool.Buffer, FireRingPool.Count);
+	{
+		const auto effects = GetParticleEffectRuntimes();
+		for (const ParticleEffectRuntime& effect : effects) {
+			if (*effect.Compute == nullptr) continue;
+			(*effect.Compute)->Dispatch(gd.gpucmd, &effect.Pool->Buffer, effect.Pool->Count, DeltaTime);
+			ParticleDraw->FireTexture = GetParticleSpriteResource(*effect.SpriteSlot);
+			ParticleDraw->Render(gd.gpucmd, &effect.Pool->Buffer, effect.Pool->Count);
+		}
+
+		TickTransientParticles(gMuzzleFlashParticles, DeltaTime);
+		TickTransientParticles(gBulletTracerParticles, DeltaTime);
+		UploadTransientParticles(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles);
+		UploadTransientParticles(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(gMuzzleFlashSpriteSlot);
+		ParticleDraw->Render(gd.gpucmd, &gMuzzleFlashPool.Buffer, gMuzzleFlashPool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(gBulletTracerSpriteSlot);
+		ParticleDraw->Render(gd.gpucmd, &gBulletTracerPool.Buffer, gBulletTracerPool.Count);
+	}
 
 	//20~21. 거울 렌더링 생략
 
@@ -1963,11 +2366,11 @@ READ_START:
 	{
 		STC_NewRay_Header& header = *(STC_NewRay_Header*)currentPivot;
 		int BulletIndex = bulletRays.Alloc();
-		if (BulletIndex < 0) {
-			return offset;
+		if (BulletIndex >= 0) {
+			BulletRay& bray = bulletRays[BulletIndex];
+			bray = BulletRay(header.raystart, header.rayDir, header.distance);
 		}
-		BulletRay& bray = bulletRays[BulletIndex];
-		bray = BulletRay(header.raystart, header.rayDir, header.distance);
+		SpawnElectricTracer(header.raystart, header.rayDir, header.distance);
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -2128,6 +2531,7 @@ READ_START:
 
 				if (pTarget) {
 					pTarget->weapon.OnFire();
+					SpawnMuzzleFlash(pTarget);
 				}
 			}
 		}

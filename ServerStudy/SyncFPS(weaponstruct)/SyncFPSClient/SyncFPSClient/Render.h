@@ -517,14 +517,30 @@ struct SpotLight {
 struct Particle
 {
 	XMFLOAT3 Position;
-	float Life;
-
-	XMFLOAT3 Velocity;
 	float Age;
 
-	float Size;
-	float Padding[3];
+	XMFLOAT3 Velocity;
+	float LifeTime;
+
+	XMFLOAT4 StartColor;
+	XMFLOAT4 EndColor;
+
+	float StartSize;
+	float EndSize;
+	float Rotation;
+	float RotationSpeed;
+
+	float Drag;
+	float GravityScale;
+	float Stretch;
+	float CollisionRadius;
+
+	UINT Flags;
+	UINT RandomSeed;
+	UINT FrameIndex;
+	UINT FrameCount;
 };
+
 
 struct ParticlePool
 {
