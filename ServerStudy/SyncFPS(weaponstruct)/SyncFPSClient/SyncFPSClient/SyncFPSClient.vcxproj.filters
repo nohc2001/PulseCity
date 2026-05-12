@@ -54,6 +54,9 @@
     <ClCompile Include="GameObject.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="MeshSimplifier.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
     <ClCompile Include="D3D_Util\D3DUtil.cpp">
       <Filter>소스 파일\Utill</Filter>
     </ClCompile>
@@ -65,6 +68,21 @@
     </ClCompile>
     <ClCompile Include="DDSTextureLoader12.cpp">
       <Filter>소스 파일\Utill</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\src\allocator.cpp">
+      <Filter>소스 파일\UtillSource</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\src\indexgenerator.cpp">
+      <Filter>소스 파일\UtillSource</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\src\simplifier.cpp">
+      <Filter>소스 파일\UtillSource</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\src\vcacheoptimizer.cpp">
+      <Filter>소스 파일\UtillSource</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\src\vfetchoptimizer.cpp">
+      <Filter>소스 파일\UtillSource</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -78,6 +96,9 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="GameObject.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshSimplifier.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="NetworkDefs.h">
@@ -126,6 +147,9 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="Utill_Wave.h">
+      <Filter>헤더 파일\UtillHeader</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\meshoptimizer\src\meshoptimizer.h">
       <Filter>헤더 파일\UtillHeader</Filter>
     </ClInclude>
   </ItemGroup>

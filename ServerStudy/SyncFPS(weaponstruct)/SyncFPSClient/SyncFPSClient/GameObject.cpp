@@ -1,13 +1,77 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "Render.h"
 #include "Game.h"
 #include "GameObject.h"
+#include "MeshSimplifier.h"
 
 extern int dbgc[128];
 
 Mesh* BulletRay::mesh = nullptr;
 extern GlobalDevice gd;
 extern Game game;
+
+namespace {
+	constexpr float kBoxLODEnterDistance = 65.0f;
+	constexpr float kBoxLODLeaveDistance = 52.0f;
+	bool gEnableBoxLOD = true;
+	std::unordered_map<const void*, bool> gBoxLODState;
+
+	bool IsFloorLikeOBB(const BoundingOrientedBox& obb)
+	{
+		const float width = max(obb.Extents.x, obb.Extents.z);
+		const float thin = obb.Extents.y;
+		return (width >= 20.0f && thin <= 1.5f);
+	}
+
+	bool ShouldUseBoxLODByKey(const void* key, const BoundingOrientedBox& obb)
+	{
+		if (!gEnableBoxLOD || game.renderViewPort == nullptr) return false;
+		if (obb.Extents.x <= 0 || obb.Extents.y <= 0 || obb.Extents.z <= 0) return false;
+		if (IsFloorLikeOBB(obb)) return false;
+
+		vec4 delta = vec4(obb.Center.x, obb.Center.y, obb.Center.z, 0.0f) - game.renderViewPort->Camera_Pos;
+		delta.w = 0;
+		float distance = delta.getlen3();
+		bool wasUsingLOD = false;
+		auto it = gBoxLODState.find(key);
+		if (it != gBoxLODState.end()) {
+			wasUsingLOD = it->second;
+		}
+
+		bool useLOD = wasUsingLOD ? (distance > kBoxLODLeaveDistance) : (distance >= kBoxLODEnterDistance);
+		gBoxLODState[key] = useLOD;
+
+		return useLOD;
+	}
+}
+
+bool BoxLOD_ShouldUseForKey(const void* key, const BoundingOrientedBox& obb)
+{
+	return ShouldUseBoxLODByKey(key, obb);
+}
+
+void BoxLOD_QueueOBB(const BoundingOrientedBox& obb)
+{
+	(void)obb;
+}
+
+void BoxLOD_ClearQueue()
+{
+}
+
+void BoxLOD_BeginFrame()
+{
+	AutoLOD_BeginFrame();
+}
+
+void BoxLOD_FlushQueued()
+{
+}
+
+void BoxLOD_DebugUpdate(float deltaTime)
+{
+	AutoLOD_DebugUpdate(deltaTime);
+}
 
 void GameObject::StaticInit()
 {
@@ -69,14 +133,28 @@ void GameObject::Render(matrix parent)
 	else if (model != nullptr) obb_local = model->GetOBB();
 	else return;
 
-	/*obb_local.Transform(obb, world);
-	b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
+	obb_local.Transform(obb, world);
+	/*b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
 	if (b == false) return;*/
+	const bool allowAutoLOD = (dynamic_cast<StaticGameObject*>(this) != nullptr);
+	const bool useAutoLOD = allowAutoLOD && ShouldUseBoxLODByKey(this, obb);
 
 	if (mesh != nullptr) {
+		Mesh* drawMesh = mesh;
+		bool resolvedLOD = false;
+		if (useAutoLOD) {
+			if (Mesh* lodMesh = AutoLOD_GetLODMesh(mesh)) {
+				drawMesh = lodMesh;
+				resolvedLOD = true;
+			}
+		}
+		if (allowAutoLOD) {
+			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+		}
+
 		matrix rootWorld = world;
 		rootWorld.transpose();
-		BumpMesh* Bmesh = (BumpMesh*)mesh;
+		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
 		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &rootWorld, 0);
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
 			Material* Mat = game.MaterialTable[material[i]];
@@ -84,10 +162,28 @@ void GameObject::Render(matrix parent)
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, Mat->CB_Resource.descindex.hRender.hgpu);
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, Mat->TextureSRVTableIndex.hRender.hgpu);
 		}
-		mesh->Render(gd.gpucmd, 1);
+		drawMesh->Render(gd.gpucmd, 1);
 	}
 	else {
+		bool resolvedLOD = false;
+		if (useAutoLOD) {
+			for (unsigned int i = 0; i < model->mNumMeshes; ++i) {
+				if (AutoLOD_GetLODMesh(model->mMeshes[i]) != nullptr) {
+					resolvedLOD = true;
+					break;
+				}
+			}
+		}
+		if (allowAutoLOD) {
+			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+		}
+		if (resolvedLOD) {
+			AutoLOD_SetModelLODRenderActive(true);
+		}
 		model->Render(gd.gpucmd, world, this);
+		if (resolvedLOD) {
+			AutoLOD_SetModelLODRenderActive(false);
+		}
 	}
 }
 
@@ -105,26 +201,59 @@ void GameObject::PushRenderBatch(matrix parent)
 	else if (model != nullptr) obb_local = model->GetOBB();
 	else return;
 
-	/*obb_local.Transform(obb, world);
-	b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
+	obb_local.Transform(obb, world);
+	/*b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
 	if (b == false) return;*/
+	const bool allowAutoLOD = (dynamic_cast<StaticGameObject*>(this) != nullptr);
+	const bool useAutoLOD = allowAutoLOD && ShouldUseBoxLODByKey(this, obb);
 
 	if (mesh != nullptr) {
+		Mesh* drawMesh = mesh;
+		bool resolvedLOD = false;
+		if (useAutoLOD) {
+			if (Mesh* lodMesh = AutoLOD_GetLODMesh(mesh)) {
+				drawMesh = lodMesh;
+				resolvedLOD = true;
+			}
+		}
+		if (allowAutoLOD) {
+			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+		}
+
 		matrix rootWorld = world;
 		rootWorld.transpose();
-		BumpMesh* Bmesh = (BumpMesh*)mesh;
+		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
 			Bmesh->InstanceData[i].PushInstance(RenderInstanceData(rootWorld, material[i]));
 		}
 	}
 	else {
+		bool resolvedLOD = false;
+		if (useAutoLOD) {
+			for (unsigned int i = 0; i < model->mNumMeshes; ++i) {
+				if (AutoLOD_GetLODMesh(model->mMeshes[i]) != nullptr) {
+					resolvedLOD = true;
+					break;
+				}
+			}
+		}
+		if (allowAutoLOD) {
+			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+		}
+		if (resolvedLOD) {
+			AutoLOD_SetModelLODRenderActive(true);
+		}
 		model->PushRenderBatch(world, this);
+		if (resolvedLOD) {
+			AutoLOD_SetModelLODRenderActive(false);
+		}
 	}
 }
 
 void GameObject::Release()
 {
 	tag[GameObjectTag::Tag_Enable] = false;
+	gBoxLODState.erase((const void*)this);
 	if (transforms_innerModel) {
 		delete[] transforms_innerModel;
 	}
@@ -1670,6 +1799,8 @@ void SkinMeshGameObject::Render(matrix parent) {
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	else if (model != nullptr) obb_local = model->GetOBB();
 	else return;
+
+	obb_local.Transform(obb, world);
 
 	if (mesh == nullptr) {
 		model->Render<true>(gd.gpucmd, world, this);

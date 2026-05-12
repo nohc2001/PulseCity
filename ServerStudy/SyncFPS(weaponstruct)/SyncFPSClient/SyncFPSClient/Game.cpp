@@ -1,7 +1,12 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "main.h"
 #include "Render.h"
 #include "Game.h"
+void BoxLOD_ClearQueue();
+void BoxLOD_BeginFrame();
+void BoxLOD_FlushQueued();
+void BoxLOD_DebugUpdate(float deltaTime);
+
 #include "GameObject.h"
 #include "NetworkDefs.h"
 
@@ -17,6 +22,45 @@ template <typename T> void* GetVptr() {
 
 extern GlobalDevice gd;
 Game game;
+
+namespace {
+	void SpawnDebugSniperObject()
+	{
+		if (game.SniperModel == nullptr) return;
+
+		StaticGameObject* sniperObject = new StaticGameObject();
+		sniperObject->SetShape(game.SniperModel);
+		sniperObject->worldMat = XMMatrixScaling(2, 2, 2);
+		sniperObject->worldMat.pos.y = 10;
+		sniperObject->worldMat.pos.w = 1;
+		sniperObject->tag[GameObjectTag::Tag_Enable] = true;
+		game.PushGameObject(sniperObject);
+		game.StaticGameObjects.push_back(sniperObject);
+	}
+
+	void PrebuildStaticObjectAutoLOD()
+	{
+		AutoLOD_ResetPreloadQueue();
+
+		for (int i = 0; i < game.StaticGameObjects.size(); ++i) {
+			StaticGameObject* obj = game.StaticGameObjects[i];
+			if (obj == nullptr) continue;
+
+			Mesh* mesh = nullptr;
+			Model* model = nullptr;
+			obj->shape.GetRealShape(mesh, model);
+
+			if (mesh != nullptr) {
+				AutoLOD_QueueMeshForPreload(mesh);
+			}
+			else if (model != nullptr) {
+				AutoLOD_QueueModelForPreload(model);
+			}
+		}
+
+		AutoLOD_ProcessPreloadQueue();
+	}
+}
 
 void* GameObjectType::vptr[GameObjectType::ObjectTypeCount];
 vector<MemberInfo> GameObjectType::Server_STCMembers[GameObjectType::ObjectTypeCount];
@@ -1076,6 +1120,9 @@ void Game::Init()
 		}
 		ofs.close();*/
 
+		SpawnDebugSniperObject();
+		PrebuildStaticObjectAutoLOD();
+
 		// 앞으로 쓰일 모든 글로벌 Asset들을 SVDescHeap에 올려놓는 작업을 한다.
 		// 만약 이 크기가 너무 커지게 된다면 클라이언트에서 어떻게 조절을 할지도 생각해야 한다.
 		for (int i = 0; i < GlobalMaterialCount; ++i) {
@@ -1202,6 +1249,8 @@ void Game::MoveZone(int zoneid) {
 		PushGameObject(Map->MapObjects[i]);
 		game.StaticGameObjects.push_back(Map->MapObjects[i]);
 	}
+	SpawnDebugSniperObject();
+	PrebuildStaticObjectAutoLOD();
 
 	// 앞으로 쓰일 모든 글로벌 Asset들을 SVDescHeap에 올려놓는 작업을 한다.
 	// 만약 이 크기가 너무 커지게 된다면 클라이언트에서 어떻게 조절을 할지도 생각해야 한다.
@@ -1263,8 +1312,10 @@ void Game::Render() {
 		game.renderViewPort = &gd.viewportArr[0];
 		SetRenderMod(SceneRenderBatch);
 		ClearAllMeshInstancing();
+		BoxLOD_ClearQueue();
 		RenderTour<false>();
 		SetRenderMod(false);
+		BoxLOD_ClearQueue();
 
 		//for (int i = 0; i < MeshTable.size(); ++i) {
 		//	for (int k = 0; k < MeshTable[i]->subMeshNum; ++k) {
@@ -1363,6 +1414,7 @@ void Game::Render() {
 	//gd.AverageTimerStart();
 	matrix idmat;
 	idmat.Id();
+	BoxLOD_BeginFrame();
 	SetRenderMod(SceneRenderBatch);
 	if (CurrentRenderBatch) {
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::InstancingWithShadow);
@@ -1384,6 +1436,7 @@ void Game::Render() {
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialTexturePool, texarrSRV.hRender.hgpu);
 		}
 		BatchRender(gd.gpucmd);
+		BoxLOD_FlushQueued();
 		SetRenderMod(false);
 	}
 	else {
@@ -1403,13 +1456,6 @@ void Game::Render() {
 		}
 
 		RenderTour<false>();
-
-		//temp code
-		{
-			matrix idmat = XMMatrixScaling(2, 2, 2);
-			idmat.pos.y = 10;
-			SniperModel->Render<false>(gd.gpucmd, idmat, nullptr);
-		}
 
 		// 18-2. 스킨 메쉬들을 출력하기 위해 Shader를 Set.
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
@@ -1431,6 +1477,7 @@ void Game::Render() {
 			BindStaticPBRRenderState();
 			game.player->Render_ThirdPersonWeapon();
 		}
+		BoxLOD_FlushQueued();
 	}
 
 	//Render Items
@@ -1642,7 +1689,7 @@ void Game::Render() {
 	//maybe..1706x960
 	float Rate = gd.ClientFrameHeight / 960.0f;
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
-	game.RenderSDFText(L"이어가그요다", 6, rt, 30, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
+	game.RenderSDFText(L"Gamelo", 6, rt, 30, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
 
 	// 27. �׾Ƴ� Text ���� ����ϱ�
 	MyScreenCharactorShader->RenderAllSDFTexts();
@@ -2080,6 +2127,8 @@ void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
 
 void Game::Update()
 {
+	AutoLOD_ProcessRuntimeQueue(1);
+	BoxLOD_DebugUpdate(DeltaTime);
 	static float accSend = 0.0f;
 	const float SendPeriod = 0.05f;
 

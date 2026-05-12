@@ -4,6 +4,7 @@
 #include "Render.h"
 #include "NetworkDefs.h"
 #include "GameObject.h"
+#include "MeshSimplifier.h"
 
 extern Client client;
 

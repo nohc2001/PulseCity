@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Render.h"
 #include "Game.h"
+#include "MeshSimplifier.h"
 #include "main.h"
 #include "stb_image.h"
 
@@ -4045,6 +4046,19 @@ void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color
 
 void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SubMeshNum, int* SubMeshIndexArr, bool include_DXR)
 {
+	if (!IsAutoLODGenerated) {
+		sourceVertexData = vert;
+		sourceIndexData = inds;
+		sourceSubMeshIndexStart.clear();
+		if (SubMeshIndexArr != nullptr && SubMeshNum > 0) {
+			sourceSubMeshIndexStart.assign(SubMeshIndexArr, SubMeshIndexArr + SubMeshNum + 1);
+		}
+		else {
+			sourceSubMeshIndexStart = { 0, static_cast<int>(inds.size() * 3) };
+		}
+		sourceAutoLODReady = true;
+	}
+
 	if (SubMeshIndexArr == nullptr) {
 		int* _SubMeshIndexArr = new int[2];
 		_SubMeshIndexArr[0] = 0;
@@ -4089,6 +4103,9 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 	}
 	InstancingInit();
 	game.AddMesh(this);
+	if (!IsAutoLODGenerated) {
+		AutoLOD_RegisterBumpMesh(this);
+	}
 }
 
 void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering, bool include_DXR)
@@ -4422,6 +4439,10 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 void BumpMesh::Release()
 {
 	rmesh.Release();
+	sourceVertexData.clear();
+	sourceIndexData.clear();
+	sourceSubMeshIndexStart.clear();
+	sourceAutoLODReady = false;
 	Mesh::Release();
 }
 
@@ -4681,7 +4702,16 @@ void ModelNode::PushRenderBatch(void* model, const matrix& parentMat, void* pGam
 		m.transpose();
 
 		for (int i = 0; i < numMesh; ++i) {
-			BumpMesh* Bmesh = (BumpMesh*)((BumpMesh*)pModel->mMeshes[Meshes[i]]);
+			Mesh* drawMesh = pModel->mMeshes[Meshes[i]];
+			if (AutoLOD_IsModelLODRenderActive()) {
+				if (Mesh* lodMesh = AutoLOD_GetLODMesh(drawMesh)) {
+					drawMesh = lodMesh;
+				}
+			}
+			if (drawMesh == nullptr || drawMesh->type != Mesh::MeshType::_BumpMesh) {
+				continue;
+			}
+			BumpMesh* Bmesh = static_cast<BumpMesh*>(drawMesh);
 			for (int k = 0; k < Bmesh->subMeshNum; ++k) {
 				using PBRRPI = PBRShader1::RootParamId;
 				Bmesh->InstanceData[k].PushInstance(RenderInstanceData(m, materialIndex[k]));

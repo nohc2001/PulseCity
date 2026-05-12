@@ -2274,6 +2274,11 @@ public:
 	RayTracingMesh rmesh;
 
 	typedef RayTracingMesh::Vertex Vertex;
+	std::vector<Vertex> sourceVertexData;
+	std::vector<TriangleIndex> sourceIndexData;
+	std::vector<int> sourceSubMeshIndexStart;
+	bool sourceAutoLODReady = false;
+	bool IsAutoLODGenerated = false;
 
 	BumpMesh() {
 		type = Mesh::MeshType::_BumpMesh;
