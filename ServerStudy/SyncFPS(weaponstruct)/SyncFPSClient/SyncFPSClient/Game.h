@@ -73,6 +73,7 @@ public:
 
 	// GameObject 배열
 	std::vector<StaticGameObject*> StaticGameObjects;
+	std::vector<StaticGameObject*> VisibleStaticGameObjects;
 	std::vector<DynamicGameObject*> DynmaicGameObjects;
 
 	// 드롭된 아이템의 배열
@@ -196,6 +197,12 @@ public:
 
 	// 게임의 맵 정보
 	GameMap* Map = nullptr;
+	vector<GameMap*> LoadedZoneMaps;
+	vector<vector<XMFLOAT4>> LoadedZoneOriginalPositions;
+	vec4 LinkedZoneWorldOffset[ZoneCount] = {};
+	vec4 CurrentWorldShift = vec4(0, 0, 0, 0);
+	bool isLinkedZoneMapsLoaded = false;
+	int currentZoneId = 0;
 
 	//하나의 청크의 정육면체의 한 변의 길이를 결정한다.
 	static constexpr float chunck_divide_Width = 50.0f;
@@ -260,6 +267,17 @@ public:
 
 	// 기존 맵을 모두 해제한 후, 새로운 맵을 로드하는것.
 	void MoveZone(int zoneid);
+	bool BeginServerTransfer(const char* ip, unsigned short port, int dstZoneId, int transferToken);
+	void ResendHeldMovementKeys();
+	void SetCurrentZoneStaticObjects(int zoneId);
+	vec4 GetZoneWorldOffset(int zoneId) const;
+	vec4 GetRenderedZoneOffset(int zoneId) const;
+	void LoadLinkedZoneMaps();
+	void RefreshLoadedZoneMapTransforms();
+	void RebuildStaticChunks();
+	void ApplyZoneOffsetToStaticObject(GameObject* go);
+	void ApplyZoneOffsetToDynamicObject(DynamicGameObject* go);
+	void ApplyZoneOffsetToPortal(Portal* portal);
 
 	/*
 	* 설명 : 게임을 렌더링 한다.
@@ -488,8 +506,14 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::_BumpMesh) {
 					BumpMesh* Bmesh = (BumpMesh*)((BumpMesh*)pModel->mMeshes[Meshes[i]]);
 					for (int k = 0; k < Bmesh->subMeshNum; ++k) {
+						if (materialIndex[k] < 0 || materialIndex[k] >= game.MaterialTable.size()) continue;
 						using PBRRPI = PBRShader1::RootParamId;
 						Material* mat = game.MaterialTable[materialIndex[k]];
+						if (mat == nullptr) continue;
+						if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) {
+							mat->SetDescTable();
+						}
+						if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) continue;
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
 						pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
@@ -529,7 +553,12 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
 
 						for (int k = 0; k < bmesh->subMeshNum; ++k) {
+							if (materialIndex[k] < 0 || materialIndex[k] >= game.MaterialTable.size()) continue;
 							Material& mat = game.MaterialTable[materialIndex[k]];
+							if (mat.TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat.CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) {
+								mat.SetDescTable();
+							}
+							if (mat.TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat.CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) continue;
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat.TextureSRVTableIndex.hRender.hgpu);
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat.CB_Resource.descindex.hRender.hgpu);
 
@@ -553,7 +582,13 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
 
 							for (int k = 0; k < bmesh->subMeshNum; ++k) {
+								if (materialIndex[k] < 0 || materialIndex[k] >= game.MaterialTable.size()) continue;
 								Material* mat = game.MaterialTable[materialIndex[k]];
+								if (mat == nullptr) continue;
+								if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) {
+									mat->SetDescTable();
+								}
+								if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) continue;
 								cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
 								cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat->CB_Resource.descindex.hRender.hgpu);
 

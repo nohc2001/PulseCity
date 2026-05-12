@@ -1,13 +1,13 @@
 ﻿#pragma once
 #pragma region ProtocolStruct
 
-///개발 중에 사용될 정의들.
+///���� �߿� ���� ���ǵ�.
 
-//청크 디버깅을 위한 도구
-#define DEVELOPMODE_ChunckDEBUG
-//공용 에셋 개수 맞추기 도구
+//ûũ ������� ���� ����
+//#define DEVELOPMODE_ChunckDEBUG
+//���� ���� ���� ���߱� ����
 #define DEVELOPMODE_SYNC_GLOBAL_ASSET
-//GPUResource의 할당과 해제를 GPU VA와 함께 디버그. 어떤 리소스가 언제 할당되고 언제 해제되는지 알 수 있다.
+//GPUResource�� �Ҵ�� ������ GPU VA�� �Բ� �����. � ���ҽ��� ���� �Ҵ�ǰ� ���� �����Ǵ��� �� �� �ִ�.
 #define DEVELOPMODE_DBG_GPURESOURCES
 
 ///
@@ -15,7 +15,7 @@
 #pragma pack(push, 1)
 
 /*
-설명 : Server 에서 Client로 보내는 데이터 프로토콜의 타입
+���� : Server ���� Client�� ������ ������ ���������� Ÿ��
 Sentinal Value :
 NULL = (short)0
 */
@@ -55,9 +55,11 @@ union STC_Protocol {
 		// [int size] [st] [int DynamicGameObjectCapacity] [int StaticGameObjectCapacity]
 
 		SyncPlayerMoveZone = 11,
+
+		ServerTransfer = 12,
 	};
 
-	// enum을 숫자로 나타낸 것.
+	// enum�� ���ڷ� ��Ÿ�� ��.
 	short n;
 	char two_byte[2];
 
@@ -66,8 +68,8 @@ union STC_Protocol {
 };
 
 /*
-* 설명 : 전체 오브젝트 하나를 통체로 동기화 하고 싶을때 사용된다.
-* 각 게임오브젝트들의 맴버변수로 해당 데이터를 만들어 SendDataSaver에 보낼 수 있다.
+* ���� : ��ü ������Ʈ �ϳ��� ��ü�� ����ȭ �ϰ� ������ ���ȴ�.
+* �� ���ӿ�����Ʈ���� �ɹ������� �ش� �����͸� ����� SendDataSaver�� ���� �� �ִ�.
 */
 struct STC_SyncGameObject_Header {
 	unsigned int size = 0;
@@ -77,25 +79,25 @@ struct STC_SyncGameObject_Header {
 };
 
 /*
-* 설명 : 게임오브젝트에서 어떤 오브젝트의 어떤 맴버를 변경하고 싶을때 사용된다.
+* ���� : ���ӿ�����Ʈ���� � ������Ʈ�� � �ɹ��� �����ϰ� ������ ���ȴ�.
 */
 struct STC_ChangeMemberOfGameObject_Header {
 	unsigned int size = 0;
 	STC_Protocol st = STC_Protocol::ChangeMemberOfGameObject;
 	GameObjectType type;
 	int objindex;
-	// 서버의 오프셋을 사용한다. (클라가 알아서 해석한다.)
+	// ������ �������� ����Ѵ�. (Ŭ�� �˾Ƽ� �ؼ��Ѵ�.)
 	int serveroffset;
 	int datasize;
-	// 이 이후로 실제 동기화할 데이터가 붙는다.
+	// �� ���ķ� ���� ����ȭ�� �����Ͱ� �ٴ´�.
 };
 
 /*
-* 설명 : 그냥 클라이언트에게 어떤 총알 궤적을 그리라 명령하는 것.
-	사실 충돌이 결정나고 보내진다.
+* ���� : �׳� Ŭ���̾�Ʈ���� � �Ѿ� ������ �׸��� �����ϴ� ��.
+	��� �浹�� �������� ��������.
 */
 struct STC_NewRay_Header {
-	unsigned int size = 34; // 크기고정
+	unsigned int size = 34; // ũ�����
 	STC_Protocol st = STC_Protocol::NewRay;
 	XMFLOAT3 raystart;
 	XMFLOAT3 rayDir;
@@ -103,69 +105,79 @@ struct STC_NewRay_Header {
 };
 
 /*
-* 설명 : 클라이언트에게 서버에서 자신과 자신의 오브젝트가 어떻게 관리되고 있는지 알려준다.
+* ���� : Ŭ���̾�Ʈ���� �������� �ڽŰ� �ڽ��� ������Ʈ�� ��� �����ǰ� �ִ��� �˷��ش�.
 */
 struct STC_AllocPlayerIndexes_Header {
-	unsigned int size = 14; // 크기고정
+	unsigned int size = 14; // ũ�����
 	STC_Protocol st = STC_Protocol::AllocPlayerIndexes;
 
-	// 데이터를 받을 클라이언트가 서버내에서 몇번째 클라이언트인지
+	// �����͸� ���� Ŭ���̾�Ʈ�� ���������� ���° Ŭ���̾�Ʈ����
 	int clientindex;
-	// 그 클라이언트가 조작하는 오브젝트가 서버에서 몇번째 Dynamic오브젝트인지.
+	// �� Ŭ���̾�Ʈ�� �����ϴ� ������Ʈ�� �������� ���° Dynamic������Ʈ����.
 	int server_obj_index;
 };
 
 /*
-* 설명 : 특정 오브젝트가 삭제되었다는 사실을 클라이언트에게 보고한다.
+* ���� : Ư�� ������Ʈ�� �����Ǿ��ٴ� ����� Ŭ���̾�Ʈ���� �����Ѵ�.
 */
 struct STC_DeleteGameObject_Header {
-	unsigned int size = 10; // 크기고정
+	unsigned int size = 10; // ũ�����
 	STC_Protocol st = STC_Protocol::DeleteGameObject;
-	int obj_index; // 삭제를 진행할 dynamic 오브젝트의 인덱스
+	int obj_index; // ������ ������ dynamic ������Ʈ�� �ε���
 };
 
 /*
-* 설명 : 아이템이 드롭되었다는 걸 클라이언트에게 알리는 역할.
+* ���� : �������� ��ӵǾ��ٴ� �� Ŭ���̾�Ʈ���� �˸��� ����.
 */
 struct STC_ItemDrop_Header {
-	unsigned int size = 48; // 크기고정
+	unsigned int size = 48; // ũ�����
 	STC_Protocol st = STC_Protocol::ItemDrop;
-	int dropindex; // 드롭아이템 인덱스
-	ItemLoot lootData; // 루팅된 아이템의 데이터
+	int dropindex; // ��Ӿ����� �ε���
+	ItemLoot lootData; // ���õ� �������� ������
 };
 
 /*
-* 설명 : 드롭 아이템이 삭제되었다는걸 클라이언트에게 알리는 역할
+* ���� : ��� �������� �����Ǿ��ٴ°� Ŭ���̾�Ʈ���� �˸��� ����
 */
 struct STC_ItemDropRemove_Header {
-	unsigned int size = 10; // 크기고정
+	unsigned int size = 10; // ũ�����
 	STC_Protocol st = STC_Protocol::ItemDropRemove;
-	int dropindex; // 삭제된 드롭아이템의 인덱스
+	int dropindex; // ������ ��Ӿ������� �ε���
 };
 
 /*
-* 설명 : 인벤토리의 특정 칸을 동기화 하는 역할
+* ���� : �κ��丮�� Ư�� ĭ�� ����ȭ �ϴ� ����
 */
 struct STC_InventoryItemSync_Header {
-	unsigned int size = 18; // 크기고정
+	unsigned int size = 18; // ũ�����
 	STC_Protocol st = STC_Protocol::InventoryItemSync;
-	// 인벤토리에 들어갈 아이템
+	// �κ��丮�� �� ������
 	ItemStack Iteminfo;
-	// 인벤토리 몇번째 칸인지.
+	// �κ��丮 ���° ĭ����.
 	int inventoryIndex;
 };
 
 /*
-* 설명 : ???
+* ���� : ???
 */
 struct STC_PlayerFire_Header {
-	unsigned int size = 10; // 크기고정
+	unsigned int size = 10; // ũ�����
 	STC_Protocol st = STC_Protocol::PlayerFire;
 	int objindex;
 };
 
 /*
-* 설명 : 서버에서 플레이어가 Zone 이동을 하게 되면 전달되는 프로토콜
+* ���� : ���� ������ �⺻ ũ�⸦ ����ȭ�Ѵ�.
+*/
+struct STC_SyncGameState_Header {
+	unsigned int size = 14;
+	STC_Protocol st = STC_Protocol::SyncGameState;
+	int DynamicGameObjectCapacity;
+	int StaticGameObjectCapacity;
+};
+
+/*
+* ���� : �������� �÷��̾ Zone �̵��� �ϰ� �Ǹ� ���޵Ǵ� ��������
 */
 struct STC_PlayerMoveZone_Header {
 	unsigned int size = 14;
@@ -175,20 +187,24 @@ struct STC_PlayerMoveZone_Header {
 };
 
 /*
-* 설명 : 전반적인 게임과 관련된 상태들을 공유한다.
+* ���� : ������ �̵��� ���� Ŭ���̾�Ʈ���� ������ ������ �������� �����Ѵ�.
 */
-struct STC_SyncGameState_Header {
-	unsigned int size = 10; // 크기고정
-	STC_Protocol st = STC_Protocol::SyncGameState;
-	int DynamicGameObjectCapacity;
-	int StaticGameObjectCapacity;
-	//int mapOBBCount;
+struct STC_ServerTransfer_Header {
+	unsigned int size = 48;
+	STC_Protocol st = STC_Protocol::ServerTransfer;
+	int dstZoneId;
+	unsigned short port;
+	int transferToken;
+	char ip[32] = {};
 };
 
 union CTS_Protocol {
 	enum {
 		KeyInput = 0,
-		SyncRotation = 1
+		SyncRotation = 1,
+		ClientHello = 2,
+		TransferConnect = 3,
+		ServerPlayerTransfer = 4
 	};
 	short n;
 	char two_byte[2];
@@ -198,7 +214,7 @@ union CTS_Protocol {
 };
 
 struct CTS_KeyInput_Header {
-	unsigned int size = 8; // 크기고정
+	unsigned int size = 8; // ũ�����
 	CTS_Protocol st = CTS_Protocol::KeyInput;
 	char Key;
 	bool isdown;
@@ -206,14 +222,50 @@ struct CTS_KeyInput_Header {
 
 struct CTS_SyncRotation_Header {
 	unsigned int size = 14;
-	CTS_Protocol st = CTS_Protocol::KeyInput;
+	CTS_Protocol st = CTS_Protocol::SyncRotation;
 	float yaw;
 	float pitch;
+};
+
+struct CTS_ClientHello_Header {
+	unsigned int size = 6;
+	CTS_Protocol st = CTS_Protocol::ClientHello;
+};
+
+struct CTS_TransferConnect_Header {
+	unsigned int size = 10;
+	CTS_Protocol st = CTS_Protocol::TransferConnect;
+	int transferToken;
+};
+
+struct PlayerTransferData {
+	int transferToken = 0;
+	int dstZoneId = 0;
+	vec4 spawnPos = vec4(0, 0, 0, 1);
+	float yaw = 0.0f;
+	float pitch = 0.0f;
+	float HP = 0.0f;
+	float MaxHP = 100.0f;
+	int bullets = 0;
+	int KillCount = 0;
+	int DeathCount = 0;
+	float HeatGauge = 0.0f;
+	float MaxHeatGauge = 100.0f;
+	float HealSkillCooldown = 10.0f;
+	float HealSkillCooldownFlow = 0.0f;
+	int m_currentWeaponType = 0;
+	ItemStack Inventory[36] = {};
+};
+
+struct CTS_ServerPlayerTransfer_Header {
+	unsigned int size = 0;
+	CTS_Protocol st = CTS_Protocol::ServerPlayerTransfer;
+	PlayerTransferData data;
 };
 
 #pragma pack(pop)
 #pragma endregion
 
-// 서명 있는 UTF8 
+// ���� �ִ� UTF8 
    
 

@@ -832,6 +832,13 @@ struct Player : public SkinMeshGameObject {
 	STCDefArr(ItemStack, Inventory, maxItem);
 	//STC 들고있는 무기
 	STCDef(Weapon, weapon);
+	//STC 플레이어의 존 간 이동 쿨다운
+	STCDef(float, ZoneMoveCooldown);
+
+	//ServerOnly 플레이어가 존 간 이동을 한 후, 다시 이동하기 까지 남은 쿨다운 시간을 나타낸다. 이동하고 계속 존에 걸쳐있으면 계속 이동하는 현상이 발생할 수 있으니.
+	float zoneMoveCooldownRemain = 0.0f;
+	int lastBoundaryIndex = -1;
+	bool wasInsideBoundary = false;
 
 	//ServerOnly 점프력
 	float JumpVelocity = 5;
@@ -1231,13 +1238,14 @@ struct ClientData {
 	//Send하는 데이터를 쌓아놓는 곳.
 	SendDataSaver PersonalSDS;
 
-	__forceinline DWORD recv(char* data, int len, DWORD flag) {
+	__forceinline int recv(char* data, int len, DWORD flag) {
 		WSABUF buf;
 		buf.buf = data;
 		buf.len = len;
 		DWORD retval = 0;
-		WSARecv(socket, &buf, 1, &retval, &flag, NULL, NULL);
-		return retval;
+		int err = WSARecv(socket, &buf, 1, &retval, &flag, NULL, NULL);
+		if (err == SOCKET_ERROR) return -1;
+		return (int)retval;
 	}
 
 	void SetNonBlocking() {
@@ -1283,6 +1291,24 @@ struct Zone;
 struct Portal;
 
 /*
+* 설명 :존의 경계 정보. 존의 경계에 닿으면 존 사이를 이동하기 위함.
+*/
+struct Zoneboundary {
+	int basezoneId;
+	int dstzoneId;
+	int dstServerId = 0;
+
+	vec4 minPos = {};
+	vec4 maxPos = {};
+
+	vec4 spawnPos = {};
+    float spawnYaw = 0.0f;
+	float cooldownSec = 2.0f;
+
+	bool enabled = true;
+};
+
+/*
 * 설명 : 게임 월드 내의 독립적인 구역.
 * 각 Zone은 자체적인 오브젝트 배열, 맵, 청크, Astar 그리드를 보유한다.
 * Zone 간 이동은 Portal을 통해 이루어진다.
@@ -1309,6 +1335,9 @@ struct Zone {
 
 	// 게임 맵 데이터
 	GameMap map;
+
+	// 존의 경계 정보 (존의 경계에 닿으면 존 사이를 이동하기 위함)
+	vector<Zoneboundary> boundaries;
 
 	// Astar pathfinding
 	vector<AstarNode*> allnodes;
@@ -1398,7 +1427,9 @@ struct Zone {
 	// ===== 포탈 관련 =====
 
 	void SpawnPortal();
+	void Spawnboundary();
 	void CheckPortalCollision(Player* p);
+	void CheckBoundaryCrossing(Player* p, float deltaTime);
 
 	// ===== 전송 관련 =====
 
@@ -1495,6 +1526,16 @@ struct World {
 		"OfficeDungeon_1floor",
 	};
 	vector<Zone> zones;
+	int serverId = 0;
+	unsigned short listenPort = 9000;
+	int ownedZoneId = 0;
+    unordered_map<int, PlayerTransferData> pendingTransfers;
+    int nextTransferToken = 1;
+	
+	bool IsZoneOwned(int zoneId) const {
+		return zoneId == ownedZoneId;
+	}
+
 	
 
 	/*
@@ -1544,10 +1585,35 @@ struct World {
 		sds.postpush_end();
 	}
 
+    	__forceinline void Sending_ServerTransfer(SendDataSaver& sds, int dstZoneId, const char* ip, unsigned short port, int transferToken) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_ServerTransfer_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_ServerTransfer_Header& header = *(STC_ServerTransfer_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::ServerTransfer;
+		header.dstZoneId = dstZoneId;
+		header.port = port;
+		header.transferToken = transferToken;
+		strncpy_s(header.ip, ip, _TRUNCATE);
+		sds.postpush_end();
+	}
+
+
 	/*
 	* 설명 : 게임 상태를 동기화한다.
 	*/
-	__forceinline void Sending_SyncGameState(SendDataSaver& sds);
+	__forceinline void Sending_SyncGameState(SendDataSaver& sds) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_SyncGameState_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::SyncGameState;
+		header.DynamicGameObjectCapacity = zones[ownedZoneId].Dynamic_gameObjects.Capacity;
+		header.StaticGameObjectCapacity = zones[ownedZoneId].Static_gameObjects.Capacity;
+		sds.postpush_end();
+	}
 
 	/*
 	* 설명 : 플레이어를 srcZone에서 dstZone으로 이동시킨다.
@@ -1564,8 +1630,17 @@ struct World {
 	*/
 	Zone* GetZone(int zoneId) {
 		if (zoneId < 0 || zoneId >= zoneCount) return nullptr;
+		if (IsZoneOwned(zoneId) == false) return nullptr;
 		return &zones[zoneId];
-	};
+	}
+
+	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
+	const char* GetZoneIP(int zoneId) const { return "127.0.0.1"; }
+	int IssueTransferToken() { return nextTransferToken++; }
+	bool SendPlayerTransferToServer(const PlayerTransferData& data);
+	void AcceptClientHello(int clientIndex);
+	bool AcceptTransferConnect(int clientIndex, int transferToken);
+	void StoreIncomingPlayerTransfer(const PlayerTransferData& data);
 
 	void PrintOffset();
 };
@@ -1614,3 +1689,4 @@ struct Portal : public GameObject {
 	}
 #undef STC_CurrentStruct
 };
+
