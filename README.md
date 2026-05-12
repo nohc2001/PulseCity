@@ -7,3 +7,5 @@ https://1drv.ms/f/c/44e385af96afd433/IgBf6LbNlsG5T7NFNmW7Ev5PAaFKBOZArpXcLsVNCaE
 PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\Resources\Map\The_Port
 PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\Resources\Map\OfficeDungeon_1floor
 로 붙여넣으면 맵 로딩이 가능해집니다.
+
+2026-05-12 work: https://1drv.ms/u/c/44e385af96afd433/IQBgipMSpQxISaG0CbyxUuPYAZBF-I9QYswm_B1Z2G2BuXo?e=HM7Iy0
