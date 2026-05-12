@@ -350,6 +350,13 @@ struct GPUResource {
 		DDS_ALPHA_MODE ddsAlphaMode = DDS_ALPHA_MODE_UNKNOWN;
 
 		HRESULT hResult = DirectX::LoadDDSTextureFromFileEx(pd3dDevice, pszFileName, 0, D3D12_RESOURCE_FLAG_NONE, DDS_LOADER_DEFAULT, &pd3dTexture, ddsData, vSubresources, &ddsAlphaMode, &bIsCubeMap);
+		if (FAILED(hResult) || pd3dTexture == nullptr || vSubresources.empty()) {
+            std::wstringstream ss;
+            ss << L"ERROR : DDS texture load failed - " << pszFileName << L", hr = " << hResult << L"\n";
+            OutputDebugStringW(ss.str().c_str());
+			if (ppd3dUploadBuffer) *ppd3dUploadBuffer = nullptr;
+			return nullptr;
+		}
 
 		D3D12_HEAP_PROPERTIES d3dHeapPropertiesDesc;
 		::ZeroMemory(&d3dHeapPropertiesDesc, sizeof(D3D12_HEAP_PROPERTIES));

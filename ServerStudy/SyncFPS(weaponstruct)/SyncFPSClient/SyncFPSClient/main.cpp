@@ -21,9 +21,15 @@ int resolutionLevel = 3;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
-	// 오류등이 한글로 표시되도록 한다.
+	AllocConsole();
+	FILE* _fpStdOut = nullptr;
+	FILE* _fpStdErr = nullptr;
+	freopen_s(&_fpStdOut, "CONOUT$", "w", stdout);
+	freopen_s(&_fpStdErr, "CONOUT$", "w", stderr);
+	SetConsoleTitleA("SyncFPSClient Console");
+	// �������� �ѱ۷� ǥ�õǵ��� �Ѵ�.
 	wcout.imbue(locale("korean"));
-	//WSA 초기화
+	//WSA �ʱ�ȭ
 	WSADATA wsa;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 		return 1;
@@ -40,7 +46,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	gd.Factory_Adaptor_Output_Init();
 	
 	int i = (int)((float)gd.EnableFullScreenMode_Resolusions.size() * 0.75f);
-	//16:9 비율의 해상도를 찾으면 채택한다.
+	//16:9 ������ �ػ󵵸� ã���� ä���Ѵ�.
 	for (;i < gd.EnableFullScreenMode_Resolusions.size();++i) {
 		float rate = (float)gd.EnableFullScreenMode_Resolusions[i].height / (float)gd.EnableFullScreenMode_Resolusions[i].width;
 		if (fabsf(rate - 0.5625f) < 0.001f) {
@@ -51,12 +57,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	gd.ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
 	gd.ClientFrameHeight = gd.EnableFullScreenMode_Resolusions[resolutionLevel].height;
 
-	//RawInput Mouse
-	gd.RawMouse.usUsagePage = 0x01; // general input device
-	gd.RawMouse.usUsage = 0x02;     // mouse
-	gd.RawMouse.dwFlags = 0;        // initial setting
-	gd.RawMouse.hwndTarget = hWnd;
-	RegisterRawInputDevices(&gd.RawMouse, 1, sizeof(gd.RawMouse));
 
 	MSG Message;
 	WNDCLASSEX WndClass;
@@ -75,9 +75,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	WndClass.lpszClassName = lpszClass;
 	WndClass.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
 
-	RegisterClassEx(&WndClass);
+	if (RegisterClassEx(&WndClass) == 0) {
+		WSACleanup();
+		return 1;
+	}
 
 	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, gd.ClientFrameWidth, gd.ClientFrameHeight, NULL, (HMENU)NULL, hInstance, NULL);
+	if (hWnd == NULL) {
+		WSACleanup();
+		return 1;
+	}
+	gd.RawMouse.usUsagePage = 0x01;
+	gd.RawMouse.usUsage = 0x02;
+	gd.RawMouse.dwFlags = 0;
+	gd.RawMouse.hwndTarget = hWnd;
+	RegisterRawInputDevices(&gd.RawMouse, 1, sizeof(gd.RawMouse));
 	ShowWindow(hWnd, nCmdShow);
 	UpdateWindow(hWnd);
 	ShowCursor(FALSE);
@@ -85,12 +97,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	//init.
 	gd.Init();
 	game.Init();
+	GetKeyboardState(game.pKeyBuffer);
 	
 	bool Connected = client.Init("127.0.0.1", 9000);
 	if (Connected == false) {
 		WSACleanup();
 		return 0;
 	}
+
+	CTS_ClientHello_Header hello;
+	hello.size = sizeof(CTS_ClientHello_Header);
+	hello.st = CTS_Protocol::ClientHello;
+	client.send((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
 
 	wchar_t m_pszFrameRate[32] = L"Pulse City Client 001 ____FPS";
 	constexpr double MaxFPSFlow = 10000;
@@ -546,12 +564,5 @@ void PrintOffset() {
 	//	n = (char*)&temp - (char*)&temp.m_pShader;
 	//	dbglog1(L"class Monster.m_pShader%d\n", n);
 	//	n = (char*)&temp - (char*)&temp.Destpos;
-	//	dbglog1(L"class Monster.Destpos%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.isDead;
-	//	dbglog1(L"class Monster.isDead%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HP;
-	//	dbglog1(L"class Monster.HP%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.MaxHP;
-	//	dbglog1(L"class Monster.MaxHP%d\n", n);
-	//}
+	//	dbglog1(L"class Monster.Dest
 }

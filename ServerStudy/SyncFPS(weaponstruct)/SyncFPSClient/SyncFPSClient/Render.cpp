@@ -323,6 +323,12 @@ void GPUResource::CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Fo
 
 			// raw image data load
 			BYTE* pImageData = stbi_load(cfilename, &TexWidth, &TexHeight, &nrChannels, 4);
+			if (pImageData == nullptr) {
+                std::wstringstream ss;
+                ss << L"ERROR : Texture source image load failed - " << filename << L"\n";
+                OutputDebugStringW(ss.str().c_str());
+				return;
+			}
 
 			// create bmp image file to convert dds
 			char BMPFile[512] = {};
@@ -379,6 +385,13 @@ TEXTURE_LOAD_START:
 	std::unique_ptr<uint8_t[]> ddsData;
 	std::vector<D3D12_SUBRESOURCE_DATA> subresources;
 	texture = CreateTextureResourceFromDDSFile(gd.pDevice, gd.gpucmd, DDSName, &uploadbuff, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	if (texture == nullptr) {
+        std::wstringstream ss;
+        ss << L"ERROR : CreateTextureResourceFromDDSFile failed - " << DDSName << L"\n";
+        OutputDebugStringW(ss.str().c_str());
+		resource = nullptr;
+		return;
+	}
 	texture->QueryInterface<ID3D12Resource2>(&resource);
 	this->CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
@@ -5201,8 +5214,16 @@ void Model::LoadModelFile2(string filename)
 				ifstex.read((char*)pdata, datasiz);
 			}
 			else {
-				dbglog1(L"texture is not exist. %d\n", 0);
-				return;
+				string msg = "WARN : Model texture is not exist. model = ";
+				msg += filename;
+				msg += ", dds = ";
+				msg += DDSFilename;
+				msg += ", tex = ";
+				msg += texfile;
+				msg += "\n";
+				OutputDebugStringA(msg.c_str());
+				Texture->CreateTexture_fromFile(L"Resources/DefaultTexture.dds", game.basicTexFormat, game.basicTexMip);
+				continue;
 			}
 
 			//make dds texture in DDSFilename path
@@ -5584,15 +5605,21 @@ void Material::SetDescTable()
 			hOriginDesc = hDesc;
 
 			GPUResource* diffuseTex = &game.DefaultTex;
-			if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
+			if (ti.Diffuse >= 0 && ti.Diffuse < game.TextureTable.size()) diffuseTex = game.TextureTable[ti.Diffuse];
 			GPUResource* normalTex = &game.DefaultNoramlTex;
-			if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
+			if (ti.Normal >= 0 && ti.Normal < game.TextureTable.size()) normalTex = game.TextureTable[ti.Normal];
 			GPUResource* ambientTex = &game.DefaultTex;
-			if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
+			if (ti.AmbientOcculsion >= 0 && ti.AmbientOcculsion < game.TextureTable.size()) ambientTex = game.TextureTable[ti.AmbientOcculsion];
 			GPUResource* MetalicTex = &game.DefaultAmbientTex;
-			if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
+			if (ti.Metalic >= 0 && ti.Metalic < game.TextureTable.size()) MetalicTex = game.TextureTable[ti.Metalic];
 			GPUResource* roughnessTex = &game.DefaultAmbientTex;
-			if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
+			if (ti.Roughness >= 0 && ti.Roughness < game.TextureTable.size()) roughnessTex = game.TextureTable[ti.Roughness];
+
+			if (diffuseTex == nullptr || diffuseTex->resource == nullptr) diffuseTex = &game.DefaultTex;
+			if (normalTex == nullptr || normalTex->resource == nullptr) normalTex = &game.DefaultNoramlTex;
+			if (ambientTex == nullptr || ambientTex->resource == nullptr) ambientTex = &game.DefaultTex;
+			if (MetalicTex == nullptr || MetalicTex->resource == nullptr) MetalicTex = &game.DefaultAmbientTex;
+			if (roughnessTex == nullptr || roughnessTex->resource == nullptr) roughnessTex = &game.DefaultAmbientTex;
 
 			const int inc = gd.CBVSRVUAVSize;
 			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -7982,6 +8009,12 @@ void PBRShader1::SetTextureCommand(GPUResource* Color, GPUResource* Normal, GPUR
 	//if (gd.ShaderVisibleDescPool.IncludeHandle(Color->hCpu) == false) {
 	//	
 	//}
+
+	if (Color == nullptr || Color->resource == nullptr) Color = &game.DefaultTex;
+	if (Normal == nullptr || Normal->resource == nullptr) Normal = &game.DefaultNoramlTex;
+	if (AO == nullptr || AO->resource == nullptr) AO = &game.DefaultTex;
+	if (Metalic == nullptr || Metalic->resource == nullptr) Metalic = &game.DefaultAmbientTex;
+	if (Roughness == nullptr || Roughness->resource == nullptr) Roughness = &game.DefaultAmbientTex;
 
 	gd.pDevice->CopyDescriptorsSimple(1, hDesc.hcpu, Color->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	hDesc += gd.SRVSize;
