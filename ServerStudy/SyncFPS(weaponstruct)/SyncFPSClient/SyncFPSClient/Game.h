@@ -11,17 +11,100 @@ extern Client client;
 class UVMesh;
 class Player;
 
+//696byte
+struct Zone {
+	static constexpr int MaxStaticObjectCount = 16384; // 8byte ptr array = 131KB.
+	static constexpr int MAXZoneTextureCount = 16384;
+	static constexpr int MAXZoneMaterialCount = 8196;
+
+	static constexpr int OffsetMulArr[3][3] = { 
+		{ 5, 1, 6 }, 
+		{ 2, 0, 3 }, 
+		{ 7, 4, 8 } };
+
+	// Location information of Zone. Facilitate asset management through the location information.
+	int x = 0;
+	int y = 0;
+	
+	// all of this zone's asset is located GameAssetTable start GlobalAssetCount + Asset_OffsetMul * AssetMAXByZone;
+	int Asset_OffsetMul = 0;
+
+	// index of zone table
+	int zoneid;
+
+	// zone that have near xy with this zone xy
+	Zone* nearZones[9] = {};
+	const char* Load_MapName;
+
+	// 0 : Zone AABB
+	// n != 0 : range that render proxy dynamic object of <n-th nearZone>
+	BoundingBox ProxyDynamicObject_VisibleRange[9] = {};
+	BoundingBox ProxyStaticObject_VisibleRange[9] = {};
+
+	//Zone의 맵
+	GameMap* Map = nullptr;
+
+	//청크 정보
+	//하나의 청크의 정육면체의 한 변의 길이를 결정한다.
+	static constexpr float chunck_divide_Width = 50.0f;
+	//chunkIndex로 StaticCollision을 위한 청크를 찾기 위한 Map
+	unordered_map<ChunkIndex, GameChunk*> chunck;
+
+	// 청크에 게임오브젝트를 넣는다.
+	GameObjectIncludeChunks GetChunks_Include_OBB(BoundingOrientedBox obb);
+	GameChunk* GetChunkFromPos(vec4 pos);
+	void PushGameObject(GameObject* go);
+	void PushLight(Light* light);
+
+	// 씬에 쓰인 모든 Static Light들
+	vector<Light*> LightTable;
+
+	bool bReqireBakeLight_Raster = true;
+	bool bReqireBakeLight_Raytracing = true;
+
+	// 청크에 붙은 라이트들을 저장하기 위한 업로드 버퍼
+	GPUResource ZoneLightChuncks;
+
+	// StructuredBuffer 인덱스 접근 방법 : zindex + yindex * ChunckCountZ + x * ChunckCountZ * ChunckCountY;
+	ChunckLightData* ZoneLightChuncks_Mapped = nullptr;
+	DescIndex Immortal_ZoneLightBuffer_SRV;
+	int ChunckCountX = 0;
+	int ChunckCountY = 0;
+	int ChunckCountZ = 0;
+
+	Zone() {
+
+	}
+
+	~Zone() {
+
+	}
+
+	Zone(int zoneindex, const char* name, int _x, int _y) {
+		x = _x;
+		y = _y;
+		Asset_OffsetMul = OffsetMulArr[y % 3][x % 3];
+		zoneid = zoneindex;
+		Load_MapName = name;
+		ZeroMemory(nearZones, sizeof(Zone*) * 9);
+		nearZones[0] = this;
+	}
+
+	void GetImmortal_ZoneLightBuffer_SRV();
+};
+
 /*
 * 설명 : 클라이언트의 게임을 나타내는 자료구조.
 */
 class Game {
 public:
+	vector<Zone*> ZoneTable;
+	Zone* Current_Zone = nullptr;
+	int currentZoneId = 0;
 
-	static constexpr int ZoneCount = 4;
-	const char* ZoneIDToMapName[ZoneCount]{
-		"The_Port",
-		"OfficeDungeon_1floor",
-	};
+	// 씬의 태양광 방향 (태양 -> 물체 방향 기준)
+	vec4 LightDirection = vec4(-1, -2, -1);
+	BoundingOrientedBox LightOBB;
 
 	//마우스 움직임의 X 부분 변화량을 쌓는다.
 	int m_stackMouseX = 0;
@@ -33,7 +116,7 @@ public:
 	//3D 공간에서 빛처리를 하지 않고, 색만 보여주는 셰이더
 	OnlyColorShader* MyOnlyColorShader;
 	//RECT를 받아 텍스쳐를 화면상에 영역에 그리는 셰이더. 글자를 출력할때 많이 쓰인다.
-	ScreenCharactorShader* MyScreenCharactorShader;
+	ScreenShader* MyScreenShader;
 	//PBR 렌더링을 하는 첫번째 셰이더.
 	PBRShader1* MyPBRShader1;
 	//스카이박스를 그리는 셰이더.
@@ -74,7 +157,6 @@ public:
 
 	// GameObject 배열
 	std::vector<StaticGameObject*> StaticGameObjects;
-	std::vector<StaticGameObject*> VisibleStaticGameObjects;
 	std::vector<DynamicGameObject*> DynmaicGameObjects;
 
 	// 드롭된 아이템의 배열
@@ -91,8 +173,6 @@ public:
 	// y는 -200 ~ 200 까지의 값만 가질 수 있다.
 	vec4 DeltaMousePos;
 
-	// 어떤 Key가 눌려있는지 표현하는 배열
-	UCHAR pKeyBuffer[256];
 
 	// 서버에서 클라이언트의 인덱스
 	int clientIndexInServer = -1;
@@ -120,18 +200,17 @@ public:
 	LightCB_DATA* LightCBData;
 
 	// 라이트 정보를 담고 있는 쉐도우 맵핑을 위한 CB 리소스
-	GPUResource LightCB_withShadowResource;
+	GPUResource LightCB_withShadowResource[9];
 	// Upload Buffer에 Mapping 된 cpu 메모리
-	LightCB_DATA_withShadow* LightCBData_withShadow;
+	LightCB_DATA_withShadow* LightCBData_withShadow[9];
 
 	// <수정 필요>
 	// 쉐도우 맵을 만들어내는 객체. 셰이더라고 되어 있지만 실제 셰이더 역할을 하지는 않는다.
 	// 나중에 기능을 따로 빼내어 정비해야 함.
 	// fix
 
-	// SpotLight 라고 되어있지만, 사실 씬 전체를 덮는 DirectionLight 정보가 있다.
-	// improve : 이름 바꾸세요.
-	SpotLight MyDirLight;
+	//  DirectionLight 정보가 있다.
+	SpotLight MyDirLight[3];
 
 	// 라이트 정보를 초기화 한다.
 	void SetLight();
@@ -196,29 +275,7 @@ public:
 
 	void AddMesh(Mesh* mesh);
 
-	// 게임의 맵 정보
-	GameMap* Map = nullptr;
-	vector<GameMap*> LoadedZoneMaps;
-	vector<vector<XMFLOAT4>> LoadedZoneOriginalPositions;
-	vec4 LinkedZoneWorldOffset[ZoneCount] = {};
-	vec4 CurrentWorldShift = vec4(0, 0, 0, 0);
-	bool isLinkedZoneMapsLoaded = false;
-	int currentZoneId = 0;
-
-	//하나의 청크의 정육면체의 한 변의 길이를 결정한다.
-	static constexpr float chunck_divide_Width = 50.0f;
-	//chunkIndex로 StaticCollision을 위한 청크를 찾기 위한 Map
-	unordered_map<ChunkIndex, GameChunk*> chunck;
-
-	UINT PresentChunkSeekDepth = 0;
-	vector<GameChunk*> SameDepthChunkArr[2];
-
-	// 청크에 게임오브젝트를 넣는다.
-	GameObjectIncludeChunks GetChunks_Include_OBB(BoundingOrientedBox obb);
-	GameChunk* GetChunkFromPos(vec4 pos);
-	void PushGameObject(GameObject* go);
-
-	void PushLight(Light* light);
+	void GameTableArrangeMent();
 
 	// 기본 텍스쳐 밉맵 레벨
 	static constexpr int basicTexMip = 10;
@@ -245,6 +302,9 @@ public:
 	ParticleCompute* ParticleCS = nullptr;
 	ParticleShader* ParticleDraw = nullptr;
 
+	UINT PresentChunkSeekDepth = 0;
+	vector<GameChunk*> SameDepthChunkArr[2];
+
 	void InitParticlePool(ParticlePool& pool, UINT count);
 
 	Game() {}
@@ -265,6 +325,70 @@ public:
 	* 3-9. 커맨드리스트를 닫고 GPU에 실행시킨다.
 	*/
 	void Init();
+
+#pragma region UIDefine
+	//Global Variable
+	// xy : 마우스 좌표값. DirectX Render Coord임. 
+	vec4 CurrentCursorPos;
+	// 현재 왼쪽클릭되어있는지
+	bool LBtnDown = false;
+	// 현재 오른쪽클릭되어있는지
+	bool RBtnDown = false;
+	// 최근에 IME에 의해 완성된 문자.
+	wchar_t CurrentCompleteCharactor;
+	// 최근에 눌린 Key
+	WPARAM CurrentKeyDown;
+	// 어떤 Key가 눌려있는지 표현하는 배열
+	UCHAR pKeyBuffer[256];
+	// 최근에 실행된 이벤트 값.
+	DXEvent evt;
+	// 모든 UI Page를 모아놓은 테이블
+	vector<DXPage*> UIPageTable;
+	// 현재 나타낼 UI Page들의 Stack
+	vector<DXPage*> mainPageStack;
+
+	vector<DXPage*>* CurrentPageStack = nullptr;
+	vec4 CurrentUICenter = vec4(0, 0, 0, 0);
+	static constexpr float ui_depth_epsilon = 0.0001f;
+	static constexpr float uipage_depth_epsilon = 0.001f;
+	static constexpr float uiwindow_depth_epsilon = 0.01f;
+
+	// 윈도우 상대 정규화 좌표계 (0~1) y는 아래로 갈 수록 늘어남. / 에서 DirectX 렌더 좌표계로 바꾸는 함수
+	// 일반 2d 점을 상대로 해도 되고, vec4로 이루어진 직사각형 영역을 연산해도 됨.
+	void WindowNormalizeCoordToDirectXRenderCoord_vec4(vec4& v, float W, float H);
+	// 어떤 영역에 어떤 점이 포함되는지 여부
+	bool RectContainPos(vec4 rt, vec4 pos);
+	// 어떤 영역에 어떤 영역이 포함되는지 여부
+	bool RectContainRect(vec4 rt, vec4 rt2);
+	// 텍스쳐 직사각형 영역으로 그리기 함수
+	void UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid);
+	// 텍스쳐 직선으로 그리기 함수
+	void UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float LineWidth, int uitextureid);
+	//UI 초기화 코드.
+	void UI_Init();
+
+	//UI Depthj 관련 코드
+	float depth_min = 0.9999f;
+	float depth_max = 0;
+	int depthlevel_Count = 0;
+	float GetDepth(int level) {
+		float rate = (float)level / (float)depthlevel_Count;
+		rate = clamp<float>(rate, 0, 1);
+		return depth_min + (depth_max - depth_min) * rate;
+	}
+	void AlignUIDepth();
+	bool hasToAlginUIDepth = false;
+
+	// UI에 쓰일 텍스쳐들의 Table
+	vector<GPUResource*> UITextureTable;
+
+	DXUI* GetSlotUIFromPos(vec4 pos);
+	SlotData CurrentGrabSlotData;
+
+	static constexpr int inventorySlotCount = 49;
+	DXUI* InventorySlots[inventorySlotCount] = {};
+
+#pragma endregion
 
 	// 기존 맵을 모두 해제한 후, 새로운 맵을 로드하는것.
 	void MoveZone(int zoneid);
@@ -319,13 +443,14 @@ public:
 	template <bool isSkinMesh>
 	void RenderTour()
 	{
+		Zone* zone = Current_Zone;
 		matrix idmat;
 		idmat.Id();
 		renderViewPort->UpdateFrustum();
 		PresentChunkSeekDepth = 0;
 		SameDepthChunkArr[0].clear();
 		SameDepthChunkArr[1].clear();
-		GameChunk* gc = GetChunkFromPos(renderViewPort->Camera_Pos);
+		GameChunk* gc = zone->GetChunkFromPos(renderViewPort->Camera_Pos);
 		int SDCAIndex = PresentChunkSeekDepth & 1;
 		int SDCANextIndex = (PresentChunkSeekDepth + 1) & 1;
 		TourID += 1;
@@ -371,8 +496,8 @@ public:
 					ChunkIndex ci = gc->cindex;
 				IX_CHUNKFIND:
 					ci.x += ix;
-					auto gci = chunck.find(ci);
-					if (gci != chunck.end()) {
+					auto gci = zone->chunck.find(ci);
+					if (gci != zone->chunck.end()) {
 						GameChunk* gc0 = gci->second;
 						if (gc0->TourID != TourID) {
 							if (renderViewPort->m_xmFrustumWorld.Intersects(gc->AABB)) {
@@ -391,8 +516,8 @@ public:
 					ChunkIndex ci = gc->cindex;
 				IY_CHUNKFIND:
 					ci.y += iy;
-					auto gci = chunck.find(ci);
-					if (gci != chunck.end()) {
+					auto gci = zone->chunck.find(ci);
+					if (gci != zone->chunck.end()) {
 						GameChunk* gc0 = gci->second;
 						if (gc0->TourID != TourID) {
 							if (renderViewPort->m_xmFrustumWorld.Intersects(gc->AABB)) {
@@ -411,8 +536,8 @@ public:
 					ChunkIndex ci = gc->cindex;
 				IZ_CHUNKFIND:
 					ci.z += iz;
-					auto gci = chunck.find(ci);
-					if (gci != chunck.end()) {
+					auto gci = zone->chunck.find(ci);
+					if (gci != zone->chunck.end()) {
 						GameChunk* gc0 = gci->second;
 						if (gc0->TourID != TourID) {
 							if (renderViewPort->m_xmFrustumWorld.Intersects(gc->AABB)) {
@@ -470,10 +595,27 @@ public:
 	*/
 	void RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, float depth = 0.01f);
 
-	void RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth);
+	void RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth, vec4* SDFRectOut = nullptr);
 
-	// Zone Asset Table
+	//Zone들의 LightStructuredBuffer를 담고 있는 배열
+	DescIndex Immortal_ZoneLightBuffer_SRV[9] = {};
 
+	// 빈도 제어
+	static constexpr float lowFrequencyDelay = 1.0f;
+	float lowFrequencyFlow = 0.0f;
+	__forceinline bool lowHit() {
+		return lowFrequencyFlow > lowFrequencyDelay;
+	}
+	static constexpr float midFrequencyDelay = 0.2f;
+	float midFrequencyFlow = 0.0f;
+	__forceinline bool midHit() {
+		return midFrequencyFlow > midFrequencyDelay;
+	}
+	static constexpr float highFrequencyDelay = 0.017f;
+	float highFrequencyFlow = 0.0f;
+	__forceinline bool highHit() {
+		return highFrequencyFlow > highFrequencyDelay;
+	}
 };
 
 extern Game game;
@@ -507,14 +649,8 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 				if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::_BumpMesh) {
 					BumpMesh* Bmesh = (BumpMesh*)((BumpMesh*)pModel->mMeshes[Meshes[i]]);
 					for (int k = 0; k < Bmesh->subMeshNum; ++k) {
-						if (materialIndex[k] < 0 || materialIndex[k] >= game.MaterialTable.size()) continue;
 						using PBRRPI = PBRShader1::RootParamId;
 						Material* mat = game.MaterialTable[materialIndex[k]];
-						if (mat == nullptr) continue;
-						if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) {
-							mat->SetDescTable();
-						}
-						if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) continue;
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
 						pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
@@ -554,12 +690,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
 
 						for (int k = 0; k < bmesh->subMeshNum; ++k) {
-							if (materialIndex[k] < 0 || materialIndex[k] >= game.MaterialTable.size()) continue;
 							Material& mat = game.MaterialTable[materialIndex[k]];
-							if (mat.TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat.CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) {
-								mat.SetDescTable();
-							}
-							if (mat.TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat.CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) continue;
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat.TextureSRVTableIndex.hRender.hgpu);
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat.CB_Resource.descindex.hRender.hgpu);
 
@@ -569,7 +700,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 					else {
 						//Set Offset
 						if (true) {
-							
+
 							//Set Offset
 							DescHandle OffsetMatrixCBVHandle;
 							gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);
@@ -583,13 +714,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 							cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
 
 							for (int k = 0; k < bmesh->subMeshNum; ++k) {
-								if (materialIndex[k] < 0 || materialIndex[k] >= game.MaterialTable.size()) continue;
 								Material* mat = game.MaterialTable[materialIndex[k]];
-								if (mat == nullptr) continue;
-								if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) {
-									mat->SetDescTable();
-								}
-								if (mat->TextureSRVTableIndex.GetRenderDescHandle().hgpu.ptr == 0 || mat->CB_Resource.descindex.GetRenderDescHandle().hgpu.ptr == 0) continue;
 								cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_SkinMeshMaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
 								cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshMaterial, mat->CB_Resource.descindex.hRender.hgpu);
 

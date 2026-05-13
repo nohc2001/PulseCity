@@ -57,7 +57,7 @@ int main() {
 	constexpr double InvHZ = 1.0 / (double)QUERYPERFORMANCE_HZ;
 
 	gameworld.Init();
-cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=" << ownedZoneId << endl;
+	cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=" << ownedZoneId << endl;
 
 	ui64 ft, st;
 	ui64 TimeStack = 0;
@@ -69,47 +69,6 @@ cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=
 		if (DeltaFlow >= 0.016) { // limiting fps.
 			DeltaTime = (float)DeltaFlow;
 			gameworld.Update();
-			
-			//indexRange ir[2048] = {};
-			//int irlen = 0;
-			//gameworld.clients.GetTourPairs(ir, &irlen);
-			//WSABUF sendbuf[2];
-			////sendbuf[1].buf = gameworld.CommonSDS.buffer;
-			////sendbuf[1].len = gameworld.CommonSDS.size;
-			//for (int i = 0;i < irlen;++i) {
-			//	for (int k = ir[i].start;k <= ir[i].end;++k) {
-			//		sendbuf[0].buf = gameworld.clients[k].PersonalSDS.buffer;
-			//		sendbuf[0].len = gameworld.clients[k].PersonalSDS.size;
-			//		DWORD retval = 0;
-
-			//		bool sendSuccess = true;
-			//		STARTSEND:
-			//		int err = WSASend(gameworld.clients[k].socket, sendbuf, 1, &retval, 0, NULL, NULL);
-			//		if (err == SOCKET_ERROR) {
-			//			int error = WSAGetLastError();
-			//			ClientData::DisconnectToServer(k);
-			//			continue;
-			//		}
-			//		if (retval != sendbuf[0].len + sendbuf[1].len) {
-			//			int sav = sendbuf[0].len;
-			//			sendbuf[0].len -= retval;
-			//			sendbuf[0].buf += retval;
-			//			if (sendbuf[0].len < 0) sendbuf[0].len = 0;
-			//			retval -= sav;
-			//			sendbuf[1].len -= retval;
-			//			sendbuf[1].buf += retval;
-			//			if (sendbuf[1].len < 0) sendbuf[0].len = 0;
-			//			sendSuccess = false;
-			//		}
-			//		if (sendSuccess == false) goto STARTSEND;
-
-			//		//sendbuf[1].buf = gameworld.CommonSDS.buffer;
-			//		//sendbuf[1].len = gameworld.CommonSDS.size;
-			//		gameworld.clients[k].PersonalSDS.Clear();
-			//	}
-			//}
-			////gameworld.CommonSDS.Clear();
-
 			DeltaFlow = 0;
 		}
 
@@ -186,7 +145,6 @@ cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=
 							else {
 								// 네트워크 오류가 발생되었거나 클라이언트가 죽은 상황
 								// TODO : 서버와의 연결 끊을때의 처리
-                                cout << "[ServerRecv] socket error client=" << index << " err=" << WSAGetLastError() << endl;
 								ClientData::DisconnectToServer(index);
 								break;
 							}
@@ -194,7 +152,6 @@ cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=
 						else if (result == 0) {
 							// 서버가 종료됨.
 							// TODO : 서버와의 연결 끊을때의 처리
-                            cout << "[ServerRecv] client closed connection client=" << index << endl;
 							ClientData::DisconnectToServer(index);
 							break;
 						}
@@ -212,64 +169,116 @@ cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=
 	return 0;
 }
 
-
-
 int World::Receiving(int clientIndex, char* rBuffer, int totallen) {
-	//cout << "[Receiving] client=" << clientIndex << " bytes=" << totallen << endl;
+	Zone* zone = GetClientZone(clientIndex);
 	ClientData& client = clients[clientIndex];
 	Player* p = (Player*)client.pObjData;
+
 	char* currentPivot = rBuffer;
 	int offset = 0;
+	int size;
+	CTS_Protocol type = CTS_Protocol::KeyInput;
+READ_START:
+	if (offset + sizeof(int) > totallen) return offset; // 이거 살리는게 좋지 않나? 흠. // fix
+	size = *(int*)currentPivot;
+	if (offset + size > totallen) return offset;
+	type = *(CTS_Protocol*)(currentPivot + sizeof(int));
 
-	while (true) {
-		if (offset + (int)sizeof(int) > totallen) return offset;
-		int size = *(int*)currentPivot;
-		if (size <= 0) return offset;
-		if (offset + size > totallen) return offset;
-
-		CTS_Protocol type = *(CTS_Protocol*)(currentPivot + sizeof(int));
-		//cout << "[Receiving] size=" << size << " type=" << (short)type << endl;
-		switch (type) {
-		case CTS_Protocol::ClientHello:
-			//cout << "[Receiving] ClientHello" << endl;
-			AcceptClientHello(clientIndex);
-			break;
-		case CTS_Protocol::TransferConnect:
-		{
-			CTS_TransferConnect_Header& header = *(CTS_TransferConnect_Header*)currentPivot;
-			AcceptTransferConnect(clientIndex, header.transferToken);
-		}
-		break;
-		case CTS_Protocol::ServerPlayerTransfer:
-		{
-			CTS_ServerPlayerTransfer_Header& header = *(CTS_ServerPlayerTransfer_Header*)currentPivot;
-			StoreIncomingPlayerTransfer(header.data);
-		}
-		break;
-		case CTS_Protocol::KeyInput:
-		{
-			CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
-			if (p != nullptr) {
-				p->InputBuffer[header.Key] = header.isdown;
-				cout << "client" << clientIndex << " : " << header.Key << " isdown : " << header.isdown << endl;
-			}
-		}
-		break;
-		case CTS_Protocol::SyncRotation:
-		{
-			CTS_SyncRotation_Header& header = *(CTS_SyncRotation_Header*)currentPivot;
-			if (p != nullptr) {
-				p->m_yaw = header.yaw;
-				p->m_pitch = header.pitch;
-			}
-		}
-		break;
-		default:
-			return offset;
-		}
-
-		offset += size;
-		currentPivot += size;
-		p = (Player*)client.pObjData;
+	switch (type) {
+	
+	case CTS_Protocol::KeyInput:
+	{
+		CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
+		p->InputBuffer[header.Key] = header.isdown;
+		cout << "client" << clientIndex << " : " << header.Key << " isdown : " << header.isdown << endl;
+		currentPivot += header.size;
+		offset += header.size;
 	}
+	break;
+	case CTS_Protocol::SyncRotation:
+	{
+		CTS_SyncRotation_Header& header = *(CTS_SyncRotation_Header*)currentPivot;
+		p->m_yaw = header.yaw;
+		p->m_pitch = header.pitch;
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::ClientHello: {
+		//cout << "[Receiving] ClientHello" << endl;
+		CTS_ClientHello_Header& header = *(CTS_ClientHello_Header*)currentPivot;
+		AcceptClientHello(clientIndex);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::TransferConnect:
+	{
+		CTS_TransferConnect_Header& header = *(CTS_TransferConnect_Header*)currentPivot;
+		AcceptTransferConnect(clientIndex, header.transferToken);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::ServerPlayerTransfer:
+	{
+		CTS_ServerPlayerTransfer_Header& header = *(CTS_ServerPlayerTransfer_Header*)currentPivot;
+		StoreIncomingPlayerTransfer(header.data);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::ChangeInventoryItemSlot:
+	{
+		CTS_ChangeInventoryItemSlot_Header& header = *(CTS_ChangeInventoryItemSlot_Header*)currentPivot;
+		switch (header.ciitType) {
+		case _ChangeInventoryItemSlot_Type::CIIT_ItemCountCombine:
+		{
+			ItemStack& dest_slot = p->Inventory[header.destIndex];
+			ItemStack& src_slot = p->Inventory[header.srcIndex];
+			if (dest_slot.id == src_slot.id && src_slot.ItemCount >= header.srcCount) {
+				dest_slot.ItemCount += header.srcCount;
+				src_slot.ItemCount -= header.srcCount;
+
+				//dest, src 를 STC로 Sync Protocol을 보내기
+				p->zone->Sending_InventoryItemSync(gameworld.clients[p->clientIndex].PersonalSDS, dest_slot, header.destIndex);
+				p->zone->Sending_InventoryItemSync(gameworld.clients[p->clientIndex].PersonalSDS, src_slot, header.srcIndex);
+			}
+		}
+		break;
+		case _ChangeInventoryItemSlot_Type::CIIT_ItemMoveToBlankSlot:
+		{
+			ItemStack& dest_slot = p->Inventory[header.destIndex];
+			ItemStack& src_slot = p->Inventory[header.srcIndex];
+			if (dest_slot.ItemCount == 0 && src_slot.ItemCount >= header.srcCount) {
+				dest_slot.id = src_slot.id;
+				dest_slot.ItemCount += header.srcCount;
+				src_slot.ItemCount -= header.srcCount;
+				//dest, src 를 STC로 Sync Protocol을 보내기
+				p->zone->Sending_InventoryItemSync(gameworld.clients[p->clientIndex].PersonalSDS, dest_slot, header.destIndex);
+				p->zone->Sending_InventoryItemSync(gameworld.clients[p->clientIndex].PersonalSDS, src_slot, header.srcIndex);
+			}
+		}
+		break;
+		case _ChangeInventoryItemSlot_Type::CIIT_Swap:
+		{
+			ItemStack& dest_slot = p->Inventory[header.destIndex];
+			ItemStack& src_slot = p->Inventory[header.srcIndex];
+			if (dest_slot.id != src_slot.id && src_slot.ItemCount == header.srcCount) {
+				swap(dest_slot.id, src_slot.id);
+				swap(dest_slot.ItemCount, src_slot.ItemCount);
+				//dest, src 를 STC로 Sync Protocol을 보내기
+				p->zone->Sending_InventoryItemSync(gameworld.clients[p->clientIndex].PersonalSDS, dest_slot, header.destIndex);
+				p->zone->Sending_InventoryItemSync(gameworld.clients[p->clientIndex].PersonalSDS, src_slot, header.srcIndex);
+			}
+		}
+		break;
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	}
+
+	goto READ_START;
 }

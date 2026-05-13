@@ -828,7 +828,7 @@ struct Player : public SkinMeshGameObject {
 	//STC 현재 무기 타입?
 	STCDef(int, m_currentWeaponType);// = 0;
 	//STC 플레이어의 인벤토리 정보
-	static constexpr int maxItem = 36;
+	static constexpr int maxItem = 49;
 	STCDefArr(ItemStack, Inventory, maxItem);
 	//STC 들고있는 무기
 	STCDef(Weapon, weapon);
@@ -940,9 +940,9 @@ struct Player : public SkinMeshGameObject {
 		//STC 현재 무기 타입?
 		int m_currentWeaponType = 0;
 
-		//STC 플레이어의 인벤토리 정보
-		static constexpr int maxItem = 36;
-		ItemStack Inventory[maxItem];
+		////STC 플레이어의 인벤토리 정보
+		//static constexpr int maxItem = 36;
+		//ItemStack Inventory[maxItem];
 		//STC 들고있는 무기
 		Weapon weapon;
 	};
@@ -1422,7 +1422,7 @@ struct Zone {
 	/*
 	* 설명 : 다른 Zone에서 온 플레이어를 이 Zone에 추가한다.
 	*/
-	int AddPlayer(int clientIndex, Player* player, vec4 spawnPos);
+	int AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_Map = true);
 
 	// ===== 포탈 관련 =====
 
@@ -1585,7 +1585,7 @@ struct World {
 		sds.postpush_end();
 	}
 
-    	__forceinline void Sending_ServerTransfer(SendDataSaver& sds, int dstZoneId, const char* ip, unsigned short port, int transferToken) {
+    __forceinline void Sending_ServerTransfer(SendDataSaver& sds, int dstZoneId, const char* ip, unsigned short port, int transferToken) {
 		sds.postpush_start();
 		constexpr int reqsiz = sizeof(STC_ServerTransfer_Header);
 		sds.postpush_reserve(reqsiz);

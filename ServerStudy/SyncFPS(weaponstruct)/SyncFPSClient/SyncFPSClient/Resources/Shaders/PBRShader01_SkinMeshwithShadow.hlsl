@@ -1,3 +1,10 @@
+//#define DEBUG_NORMAL
+//#define ADD_PONG_SPECULAR
+//#define DEBUG_ENVIRONMENTLIGHT
+
+// 청크 크기가 달라지면 바꾸어야 함.
+#define CHUNCK_WIDTH 50
+
 cbuffer cbCameraInfo : register(b0)
 {
     //matrix gProjection;
@@ -16,8 +23,43 @@ cbuffer cbWorldInfo : register(b2)
     matrix ToWorldMatrixs[128];
 };
 
+struct Light
+{
+	// 라이트의 위치
+    float3 pos;
+    
+    // 라이트의 개수
+    int MaxLightCount;
+
+	// 라이트의 방향
+    float4 dir;
+
+	// 라이트의 종류
+    int lightType;
+
+	// 스포트 라이트의 경우, 얼마나 넓게 퍼질것이냐를 결정함.
+    float spot_angle;
+
+	// 라이트가 반영되는 거리를 나타냄
+    float range;
+
+	// 라이트가 얼마나 강한지
+    float intencity;
+
+	// 빛의 색깔
+    float4 LightColor;
+};
+
+struct ChunckLightData
+{
+    Light lights[32];
+};
+
 Texture2D PBR_Tex[5] : register(t0);
-Texture2D LightShadowMap : register(t5);
+Texture2D LightShadowMap[3] : register(t5); // t5, t6, t7
+TextureCube EnvironmentCubeMap : register(t9); // t9 : 환경맵
+StructuredBuffer<ChunckLightData> ChunckStaticLightArr : register(t10); // t10 : Static Light Structured Buffer
+
 /*
 t0 : color
 t1 : normal
@@ -52,12 +94,15 @@ struct Material
 
 cbuffer cbLightInfo : register(b3)
 {
+    // 태양빛
     DirectionLight dirLight;
-    PointLight pointLightArr[8];
+    matrix DirLightProjection[3];
+    matrix DirLightView[3];
+    float4 DirLightPos[3];
     
-    matrix LightProjection;
-    matrix LightView;
-    float3 LightPos;
+    // 스테틱 라이팅을 위한 추가 요소.
+    float4 ChunckStart; // 가장 인덱스가 작은 청크 시작점.
+    uint4 ChunckCount; // 청크의 개수
 }
 
 cbuffer cbMaterial : register(b4)
@@ -101,18 +146,33 @@ struct VS_INPUT
     float weight3 : BONEWEIGHT3;
 };
 
+int GetChunkIndexFromPosition(float3 pos)
+{
+    float3 cspos = pos - ChunckStart.xyz;
+    cspos /= CHUNCK_WIDTH;
+    cspos = floor(cspos);
+    int index = int(cspos.z + cspos.y * ChunckCount.z + cspos.x * ChunckCount.z * ChunckCount.y);
+    return index;
+}
+
 float Sigmoid(float x)
 {
     return 1.0 / (1.0 + (exp(-x)));
 }
 
-//function from LearnOpenGL.
-
-float Dfunction(float3 N, float3 H, float a)
+// Base in LearnOpenGL PBR function modified
+float Dfunction(float3 N, float3 H, float a, float3 V, float shininess)
 {
+    // 퐁 공식을 유지하면서 늘어짐만 추가하는 트릭
+    float NdotH = max(dot(N, H), 0.0);
+    // 시선이 낮아질수록(멀리 볼수록) 하이라이트를 강제로 옆으로 퍼뜨림
+    float stretching = 1.0 / (max(dot(N, V), 0.0) + 0.1);
+    float spec = pow(NdotH, shininess / stretching); // 거듭제곱 지수를 낮춰서 퍼뜨림
+    
     float a2 = a * a;
-    float NdotH = max(dot(N, H), 0);
-    float NdotH2 = NdotH * NdotH;
+    //float NdotH = max(dot(N, H), 0);
+    //float NdotH2 = NdotH * NdotH;
+    float NdotH2 = spec * spec;
     float nom = a2;
     float denom = NdotH2 * (a2 - 1.0) + 1.0;
     denom = 3.141592 * denom * denom;
@@ -151,12 +211,22 @@ float K_IBL(float Roughness)
     return Roughness * Roughness / 2;
 }
 
-float3 BRDF_cookToorrance(float3 Pos, float3 Wi, float3 ViewDir,
+float3 BRDF_cookToorrance_Direct(float3 Pos, float3 Wi, float3 ViewDir,
     float3 N, float Roughness, float3 Frenel)
 {
     float3 Half = normalize(Wi + ViewDir);
-    float D = Dfunction(N, Half, Roughness);
+    float D = Dfunction(N, Half, Roughness, ViewDir, 1 - Roughness);
     float G = Gfunction(N, ViewDir, Wi, K_Direct(Roughness));
+    float denom = 4 * max(dot(ViewDir, N), 0.0) * max(dot(Wi, N), 0.0) + 1e-5;
+    return D * Frenel * G / denom;
+}
+
+float3 BRDF_cookToorrance_IBL(float3 Pos, float3 Wi, float3 ViewDir,
+    float3 N, float Roughness, float3 Frenel)
+{
+    float3 Half = normalize(Wi + ViewDir);
+    float D = Dfunction(N, Half, Roughness, ViewDir, 1 - Roughness);
+    float G = Gfunction(N, ViewDir, Wi, K_IBL(Roughness));
     float denom = 4 * max(dot(ViewDir, N), 0.0) * max(dot(Wi, N), 0.0) + 1e-5;
     return D * Frenel * G / denom;
 }
@@ -178,6 +248,22 @@ struct VS_OUTPUT
     float3 B : TEXCOORD3;
     float3 N : TEXCOORD4;
 };
+
+VS_OUTPUT VSMain_RenderShadow(VS_INPUT input)
+{
+    VS_OUTPUT output;
+    float4x4 mtxVertexToBoneWorld = (float4x4) 0.0f;
+    matrix w0 = ToWorldMatrixs[input.boneindex0];
+    matrix w1 = ToWorldMatrixs[input.boneindex1];
+    matrix w2 = ToWorldMatrixs[input.boneindex2];
+    matrix w3 = ToWorldMatrixs[input.boneindex3];
+    mtxVertexToBoneWorld += input.weight0 * mul(ToLocalMatrixs[input.boneindex0], w0);
+    mtxVertexToBoneWorld += input.weight1 * mul(ToLocalMatrixs[input.boneindex1], w1);
+    mtxVertexToBoneWorld += input.weight2 * mul(ToLocalMatrixs[input.boneindex2], w2);
+    mtxVertexToBoneWorld += input.weight3 * mul(ToLocalMatrixs[input.boneindex3], w3);
+    output.position = mul(mul(float4(input.position, 1.0f), mtxVertexToBoneWorld), gView);
+    return output;
+}
 
 VS_OUTPUT VSMain(VS_INPUT input)
 {
@@ -204,6 +290,7 @@ VS_OUTPUT VSMain(VS_INPUT input)
     return (output);
 }
 
+//Base in Pong Shadeing
 float4 DefaultPS(VS_OUTPUT input)
 {
     float3 Color = PBR_Tex[0].Sample(StaticSampler, input.uv);
@@ -252,7 +339,38 @@ float4 DefaultPS(VS_OUTPUT input)
     return float4(finalColor, 1.0f);
 }
 
-float4 PBRPS(VS_OUTPUT input)
+float4 PBRonOneLightRay(float3 invviewDir, float3 wi, float3 normalW, float3 Frenel0, float Roughness, float3 MatColor, float3 LightColor, float3 hitpos)
+{
+    float3 H = normalize(invviewDir + wi);
+    float3 radiance = LightColor;
+        // Cook-Torrance BRDF
+    float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
+        // scale light by NdotL
+    float NdotL = max(dot(normalW, wi), 0.0);
+        // add to outgoing radiance Lo
+    float pbrRough = max(Roughness, 0.02f);
+    return float4((BRDF_lambert(MatColor) + BRDF_cookToorrance_Direct(hitpos, wi, invviewDir, normalW, pbrRough, F)) * radiance * NdotL, 1);
+}
+
+float4 PBRonOneLightRay_IBL(float3 invviewDir, float3 wi, float3 normalW, float3 Frenel0, float Roughness, float3 MatColor, float3 LightColor, float3 hitpos)
+{
+    float3 H = normalize(invviewDir + wi);
+    float3 radiance = LightColor;
+        // Cook-Torrance BRDF
+    float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
+        // scale light by NdotL
+    float NdotL = max(dot(normalW, wi), 0.0);
+        // add to outgoing radiance Lo
+    float pbrRough = max(Roughness, 0.02f);
+    return float4((BRDF_lambert(MatColor) + BRDF_cookToorrance_IBL(hitpos, wi, invviewDir, normalW, pbrRough, F)) * radiance * NdotL, 1);
+}
+
+float CosAttenuation(float x)
+{
+    return 0.5 * cos(3.141592 * x) + 0.5;
+}
+
+float4 PBRPS(VS_OUTPUT input, float isShadow)
 {
     float3 Color = PBR_Tex[0].Sample(StaticSampler, input.uv) * baseColor;
     float3 TBNnormal = PBR_Tex[1].Sample(StaticSampler, input.uv);
@@ -260,74 +378,114 @@ float4 PBRPS(VS_OUTPUT input)
     TBNnormal = 2.0 * (TBNnormal - 0.5);
     float AmbientOculusion = PBR_Tex[2].Sample(StaticSampler, input.uv).r;
     float Metalic = PBR_Tex[3].Sample(StaticSampler, input.uv).r;
-    float Roughness = min(0.5 + PBR_Tex[4].Sample(StaticSampler, input.uv).r, 1.0);
+    float Roughness = max(min(0.5f + PBR_Tex[4].Sample(StaticSampler, input.uv).r, 1.0), 0.02f);
     
-    float3 Frenel0 = float3(0.02, 0.02, 0.02);
+    float fValue = 0.2f;
+    //(1.0f - 0.02f) * Metalic + 0.02f;
+    float3 Frenel0 = float3(fValue, fValue, fValue);
     Frenel0 = lerp(Frenel0, Color, Metalic);
     
     float3 albedo = pow(Color, float3(2.2, 2.2, 2.2));
     float3x3 TBN = float3x3(input.T, input.B, input.N);
     float3x3 invTBN = transpose(TBN);
-    float3 normalW = normalize(mul(TBNnormal, invTBN));
+    float3 normalW = normalize(mul(invTBN, TBNnormal));
     //normalW = input.normalW;
     
     //PBR operation
     float sum = 0;
-    float dW = 1.0 / 8;
+    int pointLightCount = 0;
+    
+    ChunckLightData cld = ChunckStaticLightArr[GetChunkIndexFromPosition(input.positionW.xyz)];
+    int AdditionLightCount = cld.lights[0].MaxLightCount;
+    float LightCalculCount = 0;
     float3 Lo = float3(0.0, 0, 0);
     float3 diffuseColor = 0;
-    //for (int i = 0; i < 8; ++i)
-    //{
-    //    PointLight p = pointLightArr[i];
-    //    float3 wi = normalize(p.LightPos - input.positionW.xyz);
-    //    float3 H = normalize(input.ViewDir.xyz + wi);
-    //    float distance = length(p.LightPos - input.positionW.xyz);
-    //    float attenuation = 1.0f / distance; //1.0 / (distance * distance);
-        
-    //    // Diffuse
-    //    float3 lightVector = normalize(p.LightPos - input.positionW.xyz);
-    //    float diffuse = saturate(dot(normalW, lightVector)); // dot normal & light direction 
-    //    diffuseColor += p.LightColor * diffuse * albedo;
-        
-    //    float3 radiance = diffuse * p.LightIntencity * attenuation * p.LightColor;
-        
-    //    // Cook-Torrance BRDF
-    //    float F = Ffunction(dot(H, wi), Frenel0);
-
-    //    // scale light by NdotL
-    //    float NdotL = max(dot(normalW, wi), 0.0);
-
-    //    // add to outgoing radiance Lo
-    //    Lo += dW * (BRDF_cookToorrance(input.positionW.xyz, wi, input.ViewDir.xyz, normalW, Roughness, F)) * radiance * NdotL;
-    //}
+    float3 viewDir = normalize(input.positionW.xyz - Camera_Position.xyz);
+    float3 invviewDir = -viewDir;
     
+    // Light Calculation
     {
+        //DirLight
         float3 wi = normalize(-dirLight.gLightDirection);
+        Lo += isShadow * PBRonOneLightRay(invviewDir, wi, normalW, Frenel0, Roughness, Color.xyz, dirLight.gLightColor.xyz, input.positionW.xyz);
+        LightCalculCount += 1;
         
-        float3 reflectV = reflect(wi, normalW);
-        float specularRate = pow(max(dot(input.ViewDir.xyz, reflectV), 0), 5.0f) * Roughness; // PBR이 지금 안되어서 임시 스페큘러
+        //Environment Light
+        wi = reflect(viewDir, normalW);
+        float Envlod = floor(10 * Roughness);
+        float EnvRate = 10 * Roughness - floor(10 * Roughness);
+        float3 EnvColor0 = EnvironmentCubeMap.SampleLevel(StaticSampler, wi, Envlod).xyz;
+        float3 EnvColor1 = EnvironmentCubeMap.SampleLevel(StaticSampler, wi, Envlod + 1).xyz;
+        float3 EnvColor = EnvRate * EnvColor1 + (1 - EnvColor1) * EnvColor0;
+        Lo += isShadow * PBRonOneLightRay_IBL(invviewDir, wi, normalW, Frenel0, Roughness, Color.xyz, EnvColor, input.positionW.xyz);
+        LightCalculCount += 1;
         
-        float3 H = normalize(input.ViewDir.xyz + wi);
-        float3 radiance = dirLight.gLightColor.xyz;
-        // Cook-Torrance BRDF
-        float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
-        // scale light by NdotL
-        float NdotL = max(dot(normalW, wi), 0.0);
-        // add to outgoing radiance Lo
-        Lo += /* dW **/(BRDF_lambert(Color.xyz) + BRDF_cookToorrance(input.positionW.xyz, wi, input.ViewDir.xyz, normalW, Roughness, F) /*+ specularRate*/) * radiance * NdotL;
+        for (int i = 0; i < AdditionLightCount; ++i)
+        {
+            Light l = cld.lights[i];
+            float3 LightVector = input.positionW.xyz - l.pos;
+            float rate = 1 - (length(LightVector) / l.range);
+            if (l.lightType == 0) // SpotLight
+            {
+                LightVector = normalize(LightVector);
+                if (dot(LightVector, l.dir.xyz) > cos(0.5 * 3.141592 * l.spot_angle / 180) && rate > 0)
+                {
+                    wi = -LightVector;
+                    float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
+                    Lo += PBRonOneLightRay(invviewDir, wi, normalW, Frenel0, Roughness, Color.xyz, Radiance, input.positionW.xyz);
+                    LightCalculCount += 1;
+                    //return float4(1, 1, 1, 1);
+                }
+            }
+            else if (l.lightType == 2) // PointLight
+            {
+                if (rate > 0)
+                {
+                    wi = normalize(-LightVector);
+                    float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
+                    Lo += PBRonOneLightRay(invviewDir, wi, normalW, Frenel0, Roughness, Color.xyz, Radiance, input.positionW.xyz);
+                    LightCalculCount += 1;
+                    //return float4(1, 1, 1, 1);
+                }
+            }
+        }
     }
+    //Lo /= LightCalculCount;
     
     //diffuseColor = saturate(diffuseColor);
     float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;
     float3 color = ambient + Lo;
 
-    float exposure = 1; // 1.0보다 크면 더 밝음
+    float exposure = 1.0; // 1.0보다 크면 더 밝음
     color = 1.0 - exp(-color * exposure); // exponential tone mapping
     // HDR tonemapping
     color = color / (color + float3(0.5f, 0.5f, 0.5f));
     // gamma correct
     color = pow(color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
+    
+    // 이건 현실적인 렌더링은 아니다.
+    // 하지만 퐁 스페큘러를 추가하는 편이 더 보기가 좋더라
+#ifdef ADD_PONG_SPECULAR
+        float3 reflectDir = reflect(normalize(dirLight.gLightDirection), normalW);
+        float specular = pow(saturate(dot(invviewDir, reflectDir)), 10.0f - 10*Roughness); // dot half vector & normal
+        float3 specularColor = dirLight.gLightColor.xyz * specular * 0.25f;
+        color = saturate(color + specularColor * isShadow);
+#else
+    //color = saturate(color + specular);
+#endif
+    
+#ifdef DEBUG_ENVIRONMENTLIGHT
+    float3 wi = reflect(normalize(viewDir), normalW);
+    float3 EnvColor = EnvironmentCubeMap.SampleLevel(StaticSampler, wi, 0).xyz;
+    float reflectRate = 0.5;
+    return float4((1 - reflectRate) * color + reflectRate * EnvColor, 1.0);
+#endif
+    
+#ifdef DEBUG_NORMAL
+    return float4(normalW, 1.0);
+#else
     return float4(color, 1.0);
+#endif
 }
 
 float DistributionGGX(float3 N, float3 H, float roughness)
@@ -448,52 +606,51 @@ float4 OuterPBR(VS_OUTPUT input)
  //픽셀 셰이더를 정의한다.
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {
-    //return float4(input.normalW, 1.0f);
-    //float depth = LightShadowMap.Sample(StaticSampler, vShadowTexCoord).r;
-    if (distance(Camera_Position, input.positionW) > 200)
-    {
-        return PBRPS(input);
-    }
-    else
+#ifdef DEBUG_NORMAL
+    return PBRPS(input);
+#endif
+    const float Dir_ambient = 0.2f;
+    for (int i = 0; i < 3; ++i)
     {
         // Compute pixel position in light space.
         float4 vLightSpacePos = input.positionW;
-        vLightSpacePos = mul(vLightSpacePos, LightView);
-        vLightSpacePos = mul(vLightSpacePos, LightProjection);
+        vLightSpacePos = mul(vLightSpacePos, DirLightView[i]);
+        vLightSpacePos = mul(vLightSpacePos, DirLightProjection[i]);
         vLightSpacePos.xyz /= vLightSpacePos.w;
+        bool b = vLightSpacePos.x == clamp(vLightSpacePos.x, -1, 1);
+        b = b && vLightSpacePos.y == clamp(vLightSpacePos.y, -1, 1);
+        if (b)
+        {
         //vLightSpacePos.xy = vLightSpacePos.xy * 0.5f + 0.5f;
 
-        float2 vShadowTexCoord = 0.5f * vLightSpacePos.xy + 0.5f;
-        vShadowTexCoord.y = 1.0f - vShadowTexCoord.y;
+            float2 vShadowTexCoord = 0.5f * vLightSpacePos.xy + 0.5f;
+            vShadowTexCoord.y = 1.0f - vShadowTexCoord.y;
         
         // Depth bias to avoid pixel self-shadowing.
-        float vLightSpaceDepth = vLightSpacePos.z - SHADOW_DEPTH_BIAS;
+            float vLightSpaceDepth = vLightSpacePos.z - SHADOW_DEPTH_BIAS;
 
         // Find sub-pixel weights.
-        float2 vShadowMapDims = float2(4096, 4096); // need to keep in sync with .cpp file
-        float4 vSubPixelCoords = float4(1.0f, 1.0f, 1.0f, 1.0f);
-        vSubPixelCoords.xy = frac(vShadowMapDims * vShadowTexCoord);
-        vSubPixelCoords.zw = 1.0f - vSubPixelCoords.xy;
-        float4 vBilinearWeights = vSubPixelCoords.zxzx * vSubPixelCoords.wwyy;
+            float2 vShadowMapDims = float2(4096, 4096); // need to keep in sync with .cpp file
+            float4 vSubPixelCoords = float4(1.0f, 1.0f, 1.0f, 1.0f);
+            vSubPixelCoords.xy = frac(vShadowMapDims * vShadowTexCoord);
+            vSubPixelCoords.zw = 1.0f - vSubPixelCoords.xy;
+            float4 vBilinearWeights = vSubPixelCoords.zxzx * vSubPixelCoords.wwyy;
         
-        float2 vTexelUnits = 1.0f / vShadowMapDims;
-        float4 vShadowDepths;
-        vShadowDepths.x = LightShadowMap.Sample(StaticSampler, vShadowTexCoord);
-        vShadowDepths.y = LightShadowMap.Sample(StaticSampler, vShadowTexCoord + float2(vTexelUnits.x, 0.0f));
-        vShadowDepths.z = LightShadowMap.Sample(StaticSampler, vShadowTexCoord + float2(0.0f, vTexelUnits.y));
-        vShadowDepths.w = LightShadowMap.Sample(StaticSampler, vShadowTexCoord + vTexelUnits);
-
+            float2 vTexelUnits = 1.0f / vShadowMapDims;
+            float4 vShadowDepths;
+            vShadowDepths.x = LightShadowMap[i].Sample(StaticSampler, vShadowTexCoord);
+            vShadowDepths.y = LightShadowMap[i].Sample(StaticSampler, vShadowTexCoord + float2(vTexelUnits.x, 0.0f));
+            vShadowDepths.z = LightShadowMap[i].Sample(StaticSampler, vShadowTexCoord + float2(0.0f, vTexelUnits.y));
+            vShadowDepths.w = LightShadowMap[i].Sample(StaticSampler, vShadowTexCoord + vTexelUnits);
+            
         // What weighted fraction of the 4 samples are nearer to the light than this pixel?
-        float4 vShadowTests = (vShadowDepths >= vLightSpaceDepth) ? 1.0f : 0.0f;
-        float f = 0.25 * (vShadowTests.x + vShadowTests.y + vShadowTests.z + vShadowTests.w);
+            float4 vShadowTests = (vShadowDepths >= vLightSpaceDepth) ? 1.0f : 0.0f;
         //dot(vBilinearWeights, vShadowTests);
-        
-        float4 Color = PBRPS(input); //baseColor * PBR_Tex[0].Sample(StaticSampler, input.uv);
-        if (f <= 0.001 /*abs(vShadowDepths - vLightSpaceDepth) > SHADOW_DEPTH_BIAS*/)
-        {
-            //PBR_Tex[0].Sample(StaticSampler, input.uv);
-            return float4(Color.xyz * 0.2f, 1);
+            float f = (vShadowTests.x + vShadowTests.y + vShadowTests.z + vShadowTests.w) * 0.25f;
+            float4 Color = PBRPS(input, f);
+            return float4(Color.xyz, 1);
         }
-        return float4((f * Color).xyz, 1);
     }
+    
+    return float4(0, 0, 0, 1);
 }

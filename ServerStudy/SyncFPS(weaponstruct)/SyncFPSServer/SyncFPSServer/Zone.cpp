@@ -218,16 +218,17 @@ void Zone::Update(float deltaTime) {
                             StaticGameObject* sgo = c->Static_gameobjects[k];
 
                             if (sgo->obbArr.size() == 0) {
-                                BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
+                                ////Static Object에서 obb 정보가 없으면 따로 충돌체를 만들지 않게 조정한다.
+                                //BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
 
-                                if (obb_after.Intersects(staticobb)) {
-                                    gbj1->OnStaticCollision(staticobb);
-                                    DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+                                //if (obb_after.Intersects(staticobb)) {
+                                //    gbj1->OnStaticCollision(staticobb);
+                                //    DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
 
-                                    if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-                                        goto GOTO_NEXTOBJ;
-                                    }
-                                }
+                                //    if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+                                //        goto GOTO_NEXTOBJ;
+                                //    }
+                                //}
                             }
                             else {
                                 for (int u = 0; u < sgo->obbArr.size(); ++u) {
@@ -385,7 +386,7 @@ void Zone::RemovePlayer(int clientIndex) {
     Dynamic_gameObjects.Free(objindex);
 }
 
-int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos) {
+int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_Map) {
     cout << "[Zone " << zoneId << "] AddPlayer clientIndex=" << clientIndex << endl;
 
     //�� ����
@@ -414,14 +415,22 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos) {
     // �� Ŭ���̾�Ʈ���� �� ���� ���?������ ���� (PersonalSDS)
     SendDataSaver& personalSDS = gameworld.clients[clientIndex].PersonalSDS;
 
-    // Ŭ���̾�Ʈ�� Zone �̵��� �� �� �ֵ��� ��Ŷ�� �����Ѵ�. (Ŭ���̾�Ʈ �� �ε��� ����)
-    gameworld.Sending_PlayerMoveZone(personalSDS, clientIndex, zoneId);
-    
+    if (update_Map) {
+        //// Ŭ���̾�Ʈ�� Zone �̵��� �� �� �ֵ��� ��Ŷ�� �����Ѵ�. (Ŭ���̾�Ʈ �� �ε��� ����)
+        gameworld.Sending_PlayerMoveZone(personalSDS, clientIndex, zoneId);
+    }
+
     // �� Ŭ���̾�Ʈ���� Zone�� �ִ� ���?������Ʈ�� ������ ����.
     SendingAllObjectForNewClient(personalSDS);
 
     // AllocPlayerIndex ����
     gameworld.Sending_AllocPlayerIndex(personalSDS, clientIndex, newIdx);
+
+    // 플레이어 인벤토리 정보를 전송
+    // 이때 필요하면 데이터베이스에서 플레이어 정보 얻기..
+    for (int i = 0; i < player->maxItem; ++i) {
+        Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
+    }
 
     PushGameObject(player);
     return newIdx;
@@ -621,7 +630,6 @@ void Zone::CheckBoundaryCrossing(Player* p, float deltaTime)
     p->lastBoundaryIndex = currentBoundaryIndex;
 }
 
-//���� ���� 
 void Zone::FlushSendToClients() {
     bool keepCommonSDS = false;
     for (int i = 0; i < gameworld.clients.size; ++i) {
@@ -630,8 +638,6 @@ void Zone::FlushSendToClients() {
         bool isTransferring = (gameworld.clients[i].pObjData == nullptr);
         if (gameworld.clients[i].PersonalSDS.size <= 0 && (CommonSDS.size <= 0 || isTransferring)) continue;
 
-        // ?? ???? ??????????? CommonSDS ??????? PersonalSDS ??? ????? ????
-        // ??? ???? WSASend
         WSABUF sendbuf[2];
         DWORD sendbufCount = 0;
         if (gameworld.clients[i].PersonalSDS.size > 0) {
@@ -984,7 +990,8 @@ void Zone::PushGameObject(GameObject* go) {
             // dynamic game object
             SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
             smgo->InitialChunkSetting();
-            GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
+            smgo->IncludeChunks = GetChunks_Include_OBB(go->GetOBB());
+            GameObjectIncludeChunks& chunkIds = smgo->IncludeChunks;
             ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
             ci.extra = 0;
             int chunckCount = chunkIds.GetChunckSize();
@@ -1026,7 +1033,8 @@ void Zone::PushGameObject(GameObject* go) {
             // dynamic game object
             DynamicGameObject* dgo = (DynamicGameObject*)go;
             dgo->InitialChunkSetting();
-            GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
+            dgo->IncludeChunks = GetChunks_Include_OBB(go->GetOBB());
+            GameObjectIncludeChunks& chunkIds = dgo->IncludeChunks;
             ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
             ci.extra = 0;
             int chunckCount = chunkIds.GetChunckSize();

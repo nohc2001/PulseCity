@@ -24,20 +24,7 @@ extern GlobalDevice gd;
 Game game;
 
 namespace {
-	void SpawnDebugSniperObject()
-	{
-		if (game.SniperModel == nullptr) return;
-
-		StaticGameObject* sniperObject = new StaticGameObject();
-		sniperObject->SetShape(game.SniperModel);
-		sniperObject->worldMat = XMMatrixScaling(2, 2, 2);
-		sniperObject->worldMat.pos.y = 10;
-		sniperObject->worldMat.pos.w = 1;
-		sniperObject->tag[GameObjectTag::Tag_Enable] = true;
-		game.PushGameObject(sniperObject);
-		game.StaticGameObjects.push_back(sniperObject);
-	}
-
+	//Collect Preload Object From Static Object
 	void PrebuildStaticObjectAutoLOD()
 	{
 		AutoLOD_ResetPreloadQueue();
@@ -189,32 +176,27 @@ void Game::SetLight()
 	//LightCBData->pointLights[3].LightPos = { 5, 1, -5 };
 	LightCBResource.resource->Unmap(0, nullptr);
 
-	//LightCBData_withShadow = new LightCB_DATA_withShadow();
-	ncbElementBytes = ((sizeof(LightCB_DATA) + 255) & ~255); //256¿« πËºˆ
-	LightCB_withShadowResource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-	LightCB_withShadowResource.resource->Map(0, NULL, (void**)&LightCBData_withShadow);
-	LightCBData_withShadow->dirlight.gLightColor = { 0.5f, 0.5f, 0.5f };
-	vec4 dir = vec4(1, -2, 1, 0);
-	dir.len3 = 1;
-	LightCBData_withShadow->dirlight.gLightDirection = { dir.x, dir.y, dir.z };
-	for (int i = 0; i < 8; ++i) {
-		PointLightCBData& p = LightCBData_withShadow->pointLights[i];
-		p.LightPos = { (float)(rand() % 40 - 20), 1, (float)(rand() % 40 - 20) };
-		p.LightIntencity = 20;
-		p.LightColor = { 1, 1, 1 };
-		p.LightRange = 50;
+	for (int k = 0; k < 9; ++k) {
+		//LightCBData_withShadow = new LightCB_DATA_withShadow();
+		ncbElementBytes = ((sizeof(LightCB_DATA_withShadow) + 255) & ~255); //256??Î∞∞Ï
+		LightCB_withShadowResource[k] = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+		LightCB_withShadowResource[k].resource->Map(0, NULL, (void**)&LightCBData_withShadow[k]);
+		LightCBData_withShadow[k]->dirlight.gLightColor = {1, 1, 1};
+		vec4 dir = vec4(1, -2, 1, 0);
+		dir.len3 = 1;
+		LightCBData_withShadow[k]->dirlight.gLightDirection = {dir.x, dir.y, dir.z};
+		for (int i = 0; i < 3; ++i)
+		{
+			LightCBData_withShadow[k]->LightProjection[i] = gd.viewportArr[0].ProjectMatrix;
+			LightCBData_withShadow[k]->LightView[i] = MyDirLight[i].View;
+			LightCBData_withShadow[k]->LightPos[i] = MyDirLight[i].LightPos.f3;
+		}
+		gd.ShaderVisibleDescPool.ImmortalAlloc(&LightCB_withShadowResource[k].descindex, 1);
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvdesc;
+		cbvdesc.BufferLocation = LightCB_withShadowResource[k].resource->GetGPUVirtualAddress();
+		cbvdesc.SizeInBytes = ncbElementBytes;
+		gd.pDevice->CreateConstantBufferView(&cbvdesc, LightCB_withShadowResource[k].descindex.hCreation.hcpu);
 	}
-	LightCBData_withShadow->LightProjection = gd.viewportArr[0].ProjectMatrix;
-	LightCBData_withShadow->LightView = MyDirLight.View;
-	LightCBData_withShadow->LightPos = MyDirLight.LightPos.f3;
-	LightCBData_withShadow->pointLights[0].LightPos = { 10, 0, 0 };
-	LightCB_withShadowResource.resource->Unmap(0, nullptr);
-
-	gd.ShaderVisibleDescPool.ImmortalAlloc(&LightCB_withShadowResource.descindex, 1);
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvdesc;
-	cbvdesc.BufferLocation = LightCB_withShadowResource.resource->GetGPUVirtualAddress();
-	cbvdesc.SizeInBytes = ncbElementBytes;
-	gd.pDevice->CreateConstantBufferView(&cbvdesc, LightCB_withShadowResource.descindex.hCreation.hcpu);
 }
 
 int Game::GetRenderMaterialIndexFromGlobalMaterialIndex(int globalMatIndex)
@@ -232,7 +214,12 @@ void Game::AddMesh(Mesh* mesh)
 	MeshTable.push_back(mesh);
 }
 
-GameObjectIncludeChunks Game::GetChunks_Include_OBB(BoundingOrientedBox obb)
+void Game::GameTableArrangeMent()
+{
+
+}
+
+GameObjectIncludeChunks Zone::GetChunks_Include_OBB(BoundingOrientedBox obb)
 {
 	GameObjectIncludeChunks ret;
 	XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];
@@ -257,7 +244,7 @@ GameObjectIncludeChunks Game::GetChunks_Include_OBB(BoundingOrientedBox obb)
 	return ret;
 }
 
-GameChunk* Game::GetChunkFromPos(vec4 pos) {
+GameChunk* Zone::GetChunkFromPos(vec4 pos) {
 	int ix = floor(pos.x / chunck_divide_Width);
 	int iy = floor(pos.y / chunck_divide_Width);
 	int iz = floor(pos.z / chunck_divide_Width);
@@ -271,7 +258,7 @@ GameChunk* Game::GetChunkFromPos(vec4 pos) {
 	}
 }
 
-void Game::PushGameObject(GameObject* go)
+void Zone::PushGameObject(GameObject* go)
 {
 	vec4 pos = go->worldMat.pos;
 	/*if (pos.y < -100.0f || pos.y > 500.0f ||
@@ -396,8 +383,42 @@ void Game::PushGameObject(GameObject* go)
 	}
 }
 
-void Game::PushLight(Light* light)
+void Zone::PushLight(Light* light)
 {
+	BoundingBox MapBB;
+	vec4 start, end;
+	start = game.Current_Zone->Map->AABB[0].f3;
+	end = game.Current_Zone->Map->AABB[1].f3;
+	BoundingBox::CreateFromPoints(MapBB, start, end);
+
+	vec4 pos = light->pos;
+	GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(light->GetOBB());
+	int xmax = chunkIds.xmin + chunkIds.xlen;
+	int ymax = chunkIds.ymin + chunkIds.ylen;
+	int zmax = chunkIds.zmin + chunkIds.zlen;
+	for (int ix = chunkIds.xmin; ix <= xmax; ++ix) {
+		for (int iy = chunkIds.ymin; iy <= ymax; ++iy) {
+			for (int iz = chunkIds.zmin; iz <= zmax; ++iz) {
+				ChunkIndex ci = ChunkIndex(ix, iy, iz);
+				if (MapBB.Intersects(ci.GetAABB())) {
+					auto c = chunck.find(ci);
+					GameChunk* gc;
+					if (c == chunck.end()) {
+						gc = new GameChunk();
+						gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
+						chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+					}
+					else gc = c->second;
+					gc->Lights.push_back(light);
+				}
+			}
+		}
+	}
+}
+
+void Zone::GetImmortal_ZoneLightBuffer_SRV()
+{
+	Immortal_ZoneLightBuffer_SRV = game.Immortal_ZoneLightBuffer_SRV[Asset_OffsetMul];
 }
 
 namespace
@@ -831,6 +852,21 @@ void Game::Init()
 {
 	GameObjectType::STATICINIT();
 
+	StaticGameObjects.reserve(Zone::MaxStaticObjectCount * 9); // 1MB
+	StaticGameObjects.resize(Zone::MaxStaticObjectCount * 9); // 1MB
+	//1. Zone Init. - //fix - planning . unity map exporter export zone info. and client and server use it.
+
+	{
+		Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
+		game.ZoneTable.push_back(Zone_ThePort);
+		
+		Zone* Zone_OfficeDungeon_1floor = new Zone(1, "OfficeDungeon_1floor", 1, 0);
+		game.ZoneTable.push_back(Zone_OfficeDungeon_1floor);
+
+		Zone_ThePort->nearZones[1] = Zone_OfficeDungeon_1floor;
+	}
+	Current_Zone = game.ZoneTable[0];
+
 	// 2. DirLight∏¶ √ ±‚»≠«—¥Ÿ.
 	InitDirLightGPURes();
 
@@ -854,8 +890,8 @@ void Game::Init()
 		MyOnlyColorShader = new OnlyColorShader();
 		MyOnlyColorShader->InitShader();
 
-		MyScreenCharactorShader = new ScreenCharactorShader();
-		MyScreenCharactorShader->InitShader();
+		MyScreenShader = new ScreenShader();
+		MyScreenShader->InitShader();
 
 		MyPBRShader1 = new PBRShader1();
 		MyPBRShader1->InitShader();
@@ -904,8 +940,10 @@ void Game::Init()
 		game.ShootPointMesh = new Mesh();
 		game.ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
 
-		MyDirLight.ShadowMap = gd.CreateShadowMap(4096, 4096, gd.GetDirLightCascadingShadowDSVIndex(0), MyDirLight);
-		MyDirLight.View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
+		for (int i = 0; i < 3; ++i) {
+			MyDirLight[i].ShadowMap = gd.CreateShadowMap(4096, 4096, gd.GetDirLightCascadingShadowDSVIndex(i), MyDirLight[i]);
+			MyDirLight[i].View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
+		}
 
 		// particle init
 		{
@@ -934,19 +972,11 @@ void Game::Init()
 
 		gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 	}
-	
-	// æÓ∂≤ ¡∏ø°º≠≥™ ∞¯µø¿∏∑Œ ªÁøÎ∞°¥…«— ±€∑Œπ˙ ø°º¬µÈ¿ª ∞°¡Æø¬¥Ÿ.
-	
-	// isAssetAddingInGlobal = true ∏È ¿Ã¡¶ ø°º¬¿Ã ∞¯øÎ¿∏∑Œ √ﬂ∞°µ«±‚ Ω√¿€«—¥Ÿ. ±◊ Ω≈»£∏¶ ¡ÿ¥Ÿ.
 	isAssetAddingInGlobal = true;
-    const int syncedGlobalMaterialStart = MaterialTable.size();
+	const int syncedGlobalMaterialStart = MaterialTable.size();
 	{
-		BumpMesh* ItemMesh = new BumpMesh();
-		ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
-		ItemTable.push_back(Item(0, vec4(0, 0, 0, 0), nullptr, nullptr, L"")); // blank space in inventory.
-		ItemTable.push_back(Item(1, vec4(1, 0, 0, 1), ItemMesh, &DefaultTex, L"[ª°∞£ ≈∫æÀ¡˝]"));
-		ItemTable.push_back(Item(2, vec4(0, 1, 0, 1), ItemMesh, &DefaultTex, L"[≥Ïªˆ ≈∫æÀ¡˝]"));
-		ItemTable.push_back(Item(3, vec4(0, 0, 1, 1), ItemMesh, &DefaultTex, L"[«œæ· ≈∫æÀ¡˝]")); // test items. red, green, blue bullet mags.
+		//BumpMesh* ItemMesh = new BumpMesh();
+		//ItemMesh->ReadMeshFromFile_OBJ("Resources/Mesh/BulletMag001.obj", vec4(1, 1, 1, 1), true);
 
 		HumanoidAnimation animIdle;
 		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
@@ -968,81 +998,6 @@ void Game::Init()
 		animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
 		HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
 
-		constexpr bool kLoadSniperModel = true;
-		constexpr bool kLoadRifleModel = true;
-		constexpr bool kLoadPistolModel = true;
-		constexpr bool kLoadShotGunModel = true;
-		constexpr bool kLoadMachineGunModel = true;
-
-		// Ω∫≥™¿Ã∆€ ∏µ® ∑ŒµÂ
-		game.SniperModel = nullptr;
-		if (kLoadSniperModel) {
-			game.SniperModel = new Model;
-			game.SniperModel->LoadModelFile2("Resources/Model/sniper.model");
-		}
-
-		// ∂Û¿Ã«√ ∏µ® ∑ŒµÂ
-		game.RifleModel = nullptr;
-		if (kLoadRifleModel) {
-			game.RifleModel = new Model;
-			game.RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
-		}
-
-		// ±«√— ∏µ® ∑ŒµÂ
-		game.PistolModel = nullptr;
-		if (kLoadPistolModel) {
-			game.PistolModel = new Model;
-			game.PistolModel->LoadModelFile2("Resources/Model/pistol.model");
-		}
-
-		/*game.Pistol_SlideIndices.clear();
-		{
-			int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
-			if (upperIdx >= 0) {
-				game.Pistol_SlideIndices.push_back(upperIdx);
-				game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
-			}
-		}*/
-
-		// ±«√— ∏µ® ∑ŒµÂ
-		game.ShotGunModel = nullptr;
-		if (kLoadShotGunModel) {
-			game.ShotGunModel = new Model;
-			game.ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
-		}
-		//game.ShotGunModel->DebugPrintHierarchy(game.ShotGunModel->RootNode);
-
-		/*game.SG_PumpIndices.clear();
-		{
-			int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
-			if (pumpIdx >= 0) {
-				game.SG_PumpIndices.push_back(pumpIdx);
-				game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
-			}
-		}*/
-
-		//// ∏”Ω≈∞«(πÃ¥œ∞«) ∏µ® ∑ŒµÂ
-		game.MachineGunModel = nullptr;
-		if (kLoadMachineGunModel) {
-			game.MachineGunModel = new Model;
-			game.MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
-		}
-
-		/*game.MG_BarrelIndices.clear();
-		{
-			auto addBarrel = [&](const char* name) {
-				int idx = game.MachineGunModel->FindNodeIndexByName(name);
-				if (idx >= 0) game.MG_BarrelIndices.push_back(idx);
-				};
-
-			addBarrel("Cylinder.107");
-			addBarrel("Cylinder.108");
-			addBarrel("Cylinder.109");
-			addBarrel("Cylinder.110");
-		}*/
-
-		game.GunModel = game.SniperModel;
-
 		Model* PlayerModel = new Model();
 		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
 		PlayerModel->Retargeting_Humanoid(); // »ﬁ∏”≥Î¿ÃµÂ ∏Æ≈∏∞Ÿ∆√
@@ -1056,6 +1011,107 @@ void Game::Init()
 		Mesh* portalMesh = new Mesh();
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
 		Shape::AddMesh("Portal", portalMesh);
+
+		//Item ¡§¿«
+		{
+			int globalitem_index = 0;
+			Shape BlackShape;
+			BlackShape.FlagPtr = 0;
+			ItemTable.push_back(Item(globalitem_index, ItemType::_NULL, vec4(1, 1, 1, 1), BlackShape, nullptr, nullptr, L"")); // blank space in inventory.
+			globalitem_index += 1;
+
+			auto AddItemFunc = [&](int id, ItemType t, const char* ItemName, const char* modelfilepath, const wchar_t* ItemIconPath, const wchar_t* ItemDescription) -> Model* {
+				Model* ItemModel = new Model();
+				ItemModel->LoadModelFile2(modelfilepath);
+				int Item_shapeindex = Shape::AddModel(ItemName, ItemModel);
+				GPUResource* ItemIcon = new GPUResource();
+				ItemIcon->CreateTexture_fromFile(ItemIconPath, game.basicTexFormat, game.basicTexMip, false);
+				ItemTable.push_back(Item(globalitem_index, t, vec4(1, 1, 1, 1), Shape::ShapeTable[Item_shapeindex], nullptr, ItemIcon, ItemDescription));
+				return ItemModel;
+				};
+
+
+			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
+				"Resources/Model/ItemModel/BioFix.model",
+				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",
+				L"[πŸ¿Ãø¿«»Ω∫] : Ω≈√º ¡∂¡˜¿ª ¿Áª˝«œ¥¬ ∞°º∫∫Ò ¿«∑· ¡÷ªÁ±‚! \n HP+20");
+			globalitem_index += 1;
+
+			AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
+				"Resources/Model/ItemModel/Tier4Gear.model",
+				L"Resources/UI/ItemIcons/ItemIcon_Tier4Gear.png",
+				L"[∆ºæÓ4 ∫Œ«∞] : ∆ºæÓ 4 µµ±∏ ¡¶¿€ø° ªÁøÎµ«¥¬ ¡÷ø‰¿Á∑·. ∏π¿Ã ∏¿∏∏È π´±‚≥™ µµ±∏∏¶ ¡¶¿€«œ¥¬µ• µµøÚ¿Ã µ»¥Ÿ.");
+			globalitem_index += 1;
+
+			Model* Sniper_IronSight = AddItemFunc(globalitem_index, ItemType::_Weapon, "Sniper_IronSight",
+				"Resources/Model/sniper.model",
+				L"Resources/UI/ItemIcons/ItemIcon_IronSight.png",
+				L"[Ω∫≥™¿Ã∆€ - æ∆¿ÃæªÁ¿Ã∆Æ] : ±§«– ¿Â∫Ò¡∂¬˜ ¡¶¥Î∑Œ ¥ﬁ∏Æ¡ˆ æ ¿∫ ±∏Ωƒ Ω«≈∫ ¿˙∞›º“√—.");
+			globalitem_index += 1;
+			game.SniperModel = Sniper_IronSight;
+
+			// ∂Û¿Ã«√ ∏µ® ∑ŒµÂ
+			Model* Rifle_StreetSweeper = AddItemFunc(globalitem_index, ItemType::_Weapon, "Rifle_StreetSweeper",
+				"Resources/Model/Rifle.model",
+				L"Resources/UI/ItemIcons/ItemIcon_StreetSweeper.png",
+				L"[µπ∞›º“√— - Ω∫∆Æ∏Æ∆ÆΩ∫¿ß∆€] : «—∂ß ∞≈∏Æ∏¶ æµæÓπˆ∑»¥¯ ≈¨∑°Ωƒ µπ∞›º“√—. ¿Ã¡¶¥¬ »Á«ÿ ∫¸¡¯ ∏µ®¿Ã¥Ÿ.");
+			globalitem_index += 1;
+			game.RifleModel = Rifle_StreetSweeper;
+
+			// ±«√— ∏µ® ∑ŒµÂ
+			Model* Pistol_DoubleTroble = AddItemFunc(globalitem_index, ItemType::_Weapon, "Pistol_DoubleTroble",
+				"Resources/Model/pistol.model",
+				L"Resources/UI/ItemIcons/ItemIcon_DoubleTroble.png",
+				L"[Ω÷±«√— - ¥ı∫Ì∆Æ∑Ø∫Ì] : º∫¥…¿∫ ≥∑¡ˆ∏∏ µŒ πË∑Œ ΩÓæ∆∫Ÿ¿Ã¥¬ ¿˙∞°«¸ Ω÷±«√—.");
+			globalitem_index += 1;
+			game.PistolModel = Pistol_DoubleTroble;
+			/*game.Pistol_SlideIndices.clear();
+			{
+				int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
+				if (upperIdx >= 0) {
+					game.Pistol_SlideIndices.push_back(upperIdx);
+					game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
+				}
+			}*/
+
+			// º¶∞« ∏µ® ∑ŒµÂ
+			Model* ShotGun_SlagShot = AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
+				"Resources/Model/shootgun.model",
+				L"Resources/UI/ItemIcons/ItemIcon_SlagShot.png",
+				L"[º¶∞« - ΩΩ∑°±◊Ω∏] : ¡¶∑√ ¬Ó≤®±‚∏¶ ΩÓ¥¬ µÌ«— ∞≈ƒ•∞Ì æÓ∑¡øÓ √—. ±∏«¸ ∏µ®¿Ã∂Û º∫¥…µµ ±◊¥Ÿ¡ˆ ¡¡¡ˆ æ ¥Ÿ.");
+			globalitem_index += 1;
+			game.ShotGunModel = ShotGun_SlagShot;
+			/*game.SG_PumpIndices.clear();
+			{
+				int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
+				if (pumpIdx >= 0) {
+					game.SG_PumpIndices.push_back(pumpIdx);
+					game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
+				}
+			}*/
+
+			// ∏”Ω≈∞«(πÃ¥œ∞«) ∏µ® ∑ŒµÂ
+			Model* MachineGun_Ratler = AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
+				"Resources/Model/minigun.model",
+				L"Resources/UI/ItemIcons/ItemIcon_Ratler.png",
+				L"[∏”Ω≈∞« - ∂Û∆≤∑Ø] : ≥∞¿∫ ∫Œ«∞¿Ã ¥˙¥˙∞≈∏Æ¥¬ º“∏Æø°º≠ µ˚ø¬ ¿Ã∏ß. æ¡¶ ∏∏µÈæÓ¡≥¥¬¡ˆ æÀ ºˆ æ¯¥Ÿ.");
+			globalitem_index += 1;
+			game.MachineGunModel = MachineGun_Ratler;
+			/*game.MG_BarrelIndices.clear();
+			{
+				auto addBarrel = [&](const char* name) {
+					int idx = game.MachineGunModel->FindNodeIndexByName(name);
+					if (idx >= 0) game.MG_BarrelIndices.push_back(idx);
+					};
+
+				addBarrel("Cylinder.107");
+				addBarrel("Cylinder.108");
+				addBarrel("Cylinder.109");
+				addBarrel("Cylinder.110");
+			}*/
+		}
+
+		game.GunModel = game.SniperModel;
 	}
 
 	// ±€∑Œπ˙ ø°º¬µÈ¿« ∞≥ºˆ∏¶ º≠πˆøÕ µø±‚»≠«œ±‚ ¿ß«ÿ ∆ƒ¿œ∑Œ ¿˙¿Â«—¥Ÿ.
@@ -1077,74 +1133,44 @@ void Game::Init()
 	GlobalAssetCountFile.close();
 #endif
 
-	// ±‚¡∏ LoadMap ƒ⁄µÂ. ¿Ã¡¶ æ»æ≤¿œµÌ?
-	if(false)
-	{
-		// ±Ÿµ• ¿Ã∞« º≠πˆø°º≠ Zone ¿ª øÚ¡˜¿Ã∏È ±◊∂ß ∞°¡ÆøÕæﬂ µ«¥¬ ∞≈ æ∆¥‘?
-	// ¿Ã¡¶ ¡∏ ∏∂¥Ÿ µ˚∑Œ ∞°¡ˆ∞Ì ¿÷¥¬ ø°º¬µÈ¿ª ∞°¡Æø¬¥Ÿ.
-
-	// isAssetAddingInGlobal = false ∏È ¿Ã¡¶ ø°º¬¿Ã ¡∏(∏ )ø° √ﬂ∞°µ«±‚ Ω√¿€«—¥Ÿ. ±◊ Ω≈»£∏¶ ¡ÿ¥Ÿ.
-		isAssetAddingInGlobal = false;
-		Map = new GameMap();
-		Map->LoadMap("The_Port");
-		//Map->LoadMap("OfficeDungeon_1floor");
-		game.StaticGameObjects.reserve(Map->MapObjects.size());
-		for (int i = 0; i < Map->MapObjects.size(); ++i) {
-			PushGameObject(Map->MapObjects[i]);
-			game.StaticGameObjects.push_back(Map->MapObjects[i]);
-		}
-		/*ofstream ofs{ "ClientStaticGameObjectOBBData.txt" };
-		for (int i = 0;i < Map->MapObjects.size();++i) {
-			ofs << i << " obj : \n";
-			for (int k = 0;k < 4;++k) {
-				for (int j = 0;j < 4;++j) {
-					ofs << Map->MapObjects[i]->worldMat.f16.m[k][j] << ", ";
-				}
-				ofs << endl;
-			}
-
-			BoundingOrientedBox obb = Map->MapObjects[i]->GetOBB();
-			if (obb.Extents.x <= 0) {
-				ofs << "invalid obb" << endl;
-			}
-			else {
-				ofs << obb.Center.x << ", ";
-				ofs << obb.Center.y << ", ";
-				ofs << obb.Center.z << endl;
-				ofs << obb.Extents.x << ", ";
-				ofs << obb.Extents.y << ", ";
-				ofs << obb.Extents.z << endl;
-				ofs << obb.Orientation.x << ", ";
-				ofs << obb.Orientation.y << ", ";
-				ofs << obb.Orientation.z << ", ";
-				ofs << obb.Orientation.w << endl;
-			}
-		}
-		ofs.close();*/
-
-		SpawnDebugSniperObject();
-		PrebuildStaticObjectAutoLOD();
-
-		// ÏïûÏúºÎ°ú Ïì∞Ïùº Î™®Îì† Í∏ÄÎ°úÎ≤å AssetÎì§ÏùÑ SVDescHeapÏóê Ïò¨Î†§ÎÜìÎäî ÏûëÏóÖÏùÑ ÌïúÎã§.
-		// ÎßåÏïΩ Ïù¥ ÌÅ¨Í∏∞Í∞Ä ÎÑàÎ¨¥ Ïª§ÏßÄÍ≤å ÎêúÎã§Î©¥ ÌÅ¥ÎùºÏù¥Ïñ∏Ìä∏ÏóêÏÑú Ïñ¥ÎñªÍ≤å Ï°∞Ï†àÏùÑ Ìï†ÏßÄÎèÑ ÏÉùÍ∞ÅÌï¥Ïïº ÌïúÎã§.
-
-		for (int i = 0; i < GlobalMaterialCount; ++i) {
-			Material* mat = MaterialTable[i];
-			if (isAssetAddingInGlobal == false) {
-				mat->SetDescTable();
-				RenderMaterialTable.push_back(mat);
-				// MaterialTable to DescIndex > CBResource.resource.descindex.indexø° ¿÷¿Ω.
-				// CBResource.resource.descindex > MaterialTable ?? ¿Ã∞≈ « ø‰«—∞°? 
-				// >> « ø‰«— ªÛ»≤¿Ã ∂∞ø¿∏£¡ˆ æ ¥¬µ•? ±◊≥… ¿Ã¥Î∑Œ «ÿµµ ±¶¬˙¡ˆ æ ≥™?
-			}
-		}
+	for (int i = 0; i < 9; ++i) {
+		gd.ShaderVisibleDescPool.ImmortalAlloc(&Immortal_ZoneLightBuffer_SRV[i], 1);
 	}
+	for (int i = 0; i < ZoneTable.size(); ++i) {
+		ZoneTable[i]->GetImmortal_ZoneLightBuffer_SRV();
+	}
+	
+	UI_Init();
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
 	gd.WaitGPUComplete();
 
 	isGlobalAssetInit = true;
+
+	LightDirection = vec4(-1, -2, -1);
+	LightDirection.len3 = 1;
+}
+
+void Game::AlignUIDepth()
+{
+	depthlevel_Count = mainPageStack.size();
+	for (int i = 0; i < depthlevel_Count; ++i) {
+		mainPageStack[i]->depth_min = GetDepth(i);
+		mainPageStack[i]->depth_max = GetDepth(i+1);
+		mainPageStack[i]->AlignUIDepth();
+	}
+}
+
+DXUI* Game::GetSlotUIFromPos(vec4 pos)
+{
+	DXUI* selected = nullptr;
+	for (int i = CurrentPageStack->size() - 1; i >= 0 ; ++i) {
+		DXPage* page = CurrentPageStack->at(i);
+		selected = page->GetSlotUIFromPos(pos);
+		if (selected != nullptr) return selected;
+	}
+	return nullptr;
 }
 
 namespace {
@@ -1184,25 +1210,25 @@ void ShiftMapObjects(GameMap* map, vec4 offset)
 
 void Game::SetCurrentZoneStaticObjects(int zoneId)
 {
-	StaticGameObjects.clear();
-	if (zoneId < 0 || zoneId >= LoadedZoneMaps.size()) return;
-	GameMap* currentMap = LoadedZoneMaps[zoneId];
-	if (currentMap == nullptr) return;
-	StaticGameObjects.reserve(currentMap->MapObjects.size());
-	for (int i = 0; i < currentMap->MapObjects.size(); ++i) {
-		StaticGameObjects.push_back(currentMap->MapObjects[i]);
-	}
+	//if (zoneId < 0 || zoneId >= LoadedZoneMaps.size()) return;
+	//GameMap* currentMap = LoadedZoneMaps[zoneId];
+	//if (currentMap == nullptr) return;
+	//for (int i = 0; i < currentMap->MapObjects.size(); ++i) {
+	//	StaticGameObjects.push_back(currentMap->MapObjects[i]);
+	//}
 }
 
 vec4 Game::GetZoneWorldOffset(int zoneId) const
 {
-	if (zoneId < 0 || zoneId >= ZoneCount) return vec4(0, 0, 0, 0);
-	return LinkedZoneWorldOffset[zoneId];
+	//if (zoneId < 0 || zoneId >= ZoneCount) return vec4(0, 0, 0, 0);
+	//return LinkedZoneWorldOffset[zoneId];
+	return vec4(0);
 }
 
 vec4 Game::GetRenderedZoneOffset(int zoneId) const
 {
-	return GetZoneWorldOffset(zoneId) - CurrentWorldShift;
+	//return GetZoneWorldOffset(zoneId) - CurrentWorldShift;
+	return vec4(0);
 }
 
 void Game::ApplyZoneOffsetToStaticObject(GameObject* go)
@@ -1233,98 +1259,84 @@ void Game::ApplyZoneOffsetToPortal(Portal* portal)
 
 void Game::RefreshLoadedZoneMapTransforms()
 {
-	for (int zoneId = 0; zoneId < LoadedZoneMaps.size(); ++zoneId) {
-		GameMap* map = LoadedZoneMaps[zoneId];
-		if (map == nullptr) continue;
-		if (zoneId >= LoadedZoneOriginalPositions.size()) continue;
+	//for (int zoneId = 0; zoneId < LoadedZoneMaps.size(); ++zoneId) {
+	//	GameMap* map = LoadedZoneMaps[zoneId];
+	//	if (map == nullptr) continue;
+	//	if (zoneId >= LoadedZoneOriginalPositions.size()) continue;
 
-		vec4 offset = GetRenderedZoneOffset(zoneId);
-		int count = min((int)map->MapObjects.size(), (int)LoadedZoneOriginalPositions[zoneId].size());
-		for (int i = 0; i < count; ++i) {
-			StaticGameObject* go = map->MapObjects[i];
-			if (go == nullptr) continue;
+	//	vec4 offset = GetRenderedZoneOffset(zoneId);
+	//	int count = min((int)map->MapObjects.size(), (int)LoadedZoneOriginalPositions[zoneId].size());
+	//	for (int i = 0; i < count; ++i) {
+	//		StaticGameObject* go = map->MapObjects[i];
+	//		if (go == nullptr) continue;
 
-			go->worldMat.pos = vec4(LoadedZoneOriginalPositions[zoneId][i]) + offset;
-			go->worldMat.pos.w = 1.0f;
-			if (gd.isSupportRaytracing) {
-				go->RaytracingUpdateTransform();
-			}
-		}
-	}
+	//		go->worldMat.pos = vec4(LoadedZoneOriginalPositions[zoneId][i]) + offset;
+	//		go->worldMat.pos.w = 1.0f;
+	//		if (gd.isSupportRaytracing) {
+	//			go->RaytracingUpdateTransform();
+	//		}
+	//	}
+	//}
 }
 
 void Game::RebuildStaticChunks()
 {
-	GameChunk** gcarr = new GameChunk * [chunck.size()];
-	int index = 0;
-	for (auto c : chunck) {
-		gcarr[index] = c.second;
-		index += 1;
-	}
-	chunck.clear();
-	for (int i = 0; i < index; ++i) {
-		GameChunk* gc = gcarr[i];
-		gc->Release();
-		delete gc;
-	}
-	delete[] gcarr;
-
-	for (int i = 0; i < VisibleStaticGameObjects.size(); ++i) {
-		if (VisibleStaticGameObjects[i] == nullptr) continue;
-		PushGameObject(VisibleStaticGameObjects[i]);
-	}
+	//GameChunk** gcarr = new GameChunk * [chunck.size()];
+	//int index = 0;
+	//for (auto c : chunck) {
+	//	gcarr[index] = c.second;
+	//	index += 1;
+	//}
+	//chunck.clear();
+	//for (int i = 0; i < index; ++i) {
+	//	GameChunk* gc = gcarr[i];
+	//	gc->Release();
+	//	delete gc;
+	//}
+	//delete[] gcarr;
 }
 
+// maybe .. present zone 's nearzone's map loading
+/*
+* spec : 
+* 1. must load all nearzone.
+*/
 void Game::LoadLinkedZoneMaps()
 {
-	if (isLinkedZoneMapsLoaded) return;
+	bool loadingMap = false;
+	for (int i = 0; i < 9; ++i) {
+		Zone* nearzone = game.Current_Zone->nearZones[i];
+		if (nearzone == nullptr) continue;
+		if (nearzone->Map != nullptr) continue;
+		loadingMap = true;
+		nearzone->Map = new GameMap();
+		nearzone->Map->LoadMap(nearzone->Load_MapName, nearzone->zoneid);
 
-	LoadedZoneMaps.clear();
-	LoadedZoneOriginalPositions.clear();
-	VisibleStaticGameObjects.clear();
-	StaticGameObjects.clear();
-	for (int i = 0; i < ZoneCount; ++i) {
-		LinkedZoneWorldOffset[i] = vec4(0, 0, 0, 0);
-	}
-
-	for (int zoneId = 0; zoneId < 2; ++zoneId) {
-		GameMap* loadedMap = new GameMap();
-		loadedMap->LoadMap(ZoneIDToMapName[zoneId]);
-		LoadedZoneMaps.push_back(loadedMap);
-
-		vector<XMFLOAT4> originalPositions;
-		originalPositions.reserve(loadedMap->MapObjects.size());
-		for (int i = 0; i < loadedMap->MapObjects.size(); ++i) {
-			originalPositions.push_back(loadedMap->MapObjects[i]->worldMat.pos.f4);
+		//push object to chunck and bake aabb
+		nearzone->Map->AABB[0] = INFINITY;
+		nearzone->Map->AABB[1] = -INFINITY;
+		for (int u = 0; u < nearzone->Map->MapObjects.size(); ++u) {
+			nearzone->PushGameObject(nearzone->Map->MapObjects[u]);
+			game.StaticGameObjects[Zone::MaxStaticObjectCount * i + u] = nearzone->Map->MapObjects[i];
+			BoundingOrientedBox obb = nearzone->Map->MapObjects[u]->GetOBB();
+			XMFLOAT3 corners[8];
+			obb.GetCorners(corners);
+			for (int k = 0; k < 8; ++k) {
+				vec4 c = corners[k];
+				nearzone->Map->AABB[0] = _mm_min_ps(c, nearzone->Map->AABB[0]);
+				nearzone->Map->AABB[1] = _mm_max_ps(c, nearzone->Map->AABB[1]);
+			}
 		}
-		LoadedZoneOriginalPositions.push_back(originalPositions);
-	}
+		nearzone->Map->AABB[0].w = -INFINITY;
+		nearzone->Map->AABB[1].w = INFINITY;
 
-	if (LoadedZoneMaps.size() >= 2) {
-		const float zone0GateZ = 24.0f;
-		const float zone1GateZ = -24.0f;
-		LinkedZoneWorldOffset[1] = vec4(0, 2.0f, zone0GateZ - zone1GateZ, 0);
-	}
-
-	CurrentWorldShift = LinkedZoneWorldOffset[0];
-	RefreshLoadedZoneMapTransforms();
-
-	int totalStaticCount = 0;
-	for (int i = 0; i < LoadedZoneMaps.size(); ++i) {
-		totalStaticCount += (int)LoadedZoneMaps[i]->MapObjects.size();
-	}
-	VisibleStaticGameObjects.reserve(totalStaticCount);
-	for (int i = 0; i < LoadedZoneMaps.size(); ++i) {
-		for (int k = 0; k < LoadedZoneMaps[i]->MapObjects.size(); ++k) {
-			VisibleStaticGameObjects.push_back(LoadedZoneMaps[i]->MapObjects[k]);
+		for (int u = 0; u < nearzone->LightTable.size(); ++u) {
+			nearzone->PushLight(nearzone->LightTable[u]);
 		}
-	}
 
-	currentZoneId = 0;
-	SetCurrentZoneStaticObjects(0);
-	Map = LoadedZoneMaps[0];
-	RebuildStaticChunks();
-	isLinkedZoneMapsLoaded = true;
+		PrebuildStaticObjectAutoLOD();
+	}
+	if (loadingMap == false) return;
 }
 
 bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneId, int transferToken)
@@ -1371,6 +1383,7 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	}
 
 	MoveZone(dstZoneId);
+	isPrepared = true;
 	return true;
 }
 
@@ -1387,6 +1400,7 @@ void Game::ResendHeldMovementKeys()
 		client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 	}
 }
+
 void Game::MoveZone(int zoneid) {
 	bool CmdInitStateIsClose = gd.gpucmd.isClose;
 	if (CmdInitStateIsClose) {
@@ -1412,28 +1426,73 @@ void Game::MoveZone(int zoneid) {
 	}
 	Portals.clear();
 
-	if (isLinkedZoneMapsLoaded == false) {
-		isAssetAddingInGlobal = false;
-		LoadLinkedZoneMaps();
-		gd.gpucmd.Close();
-		gd.gpucmd.Execute();
-		gd.gpucmd.WaitGPUComplete();
-		if (CmdInitStateIsClose == false) {
-			gd.gpucmd.Reset();
+	isAssetAddingInGlobal = false;
+	LoadLinkedZoneMaps();
+
+	//ReLoadMap
+	//if (Map) {
+	//	Map->Release();
+	//}
+	//else {
+	//	Map = new GameMap();
+	//}
+	// isAssetAddingInGlobal = false ∏È ¿Ã¡¶ ø°º¬¿Ã ¡∏(∏ )ø° √ﬂ∞°µ«±‚ Ω√¿€«—¥Ÿ. ±◊ Ω≈»£∏¶ ¡ÿ¥Ÿ.
+	//isAssetAddingInGlobal = false;
+	//Map->LoadMap(ZoneIDToMapName[zoneid]);
+	//game.StaticGameObjects.reserve(Map->MapObjects.size());
+	//Map->AABB[0] = INFINITY;
+	//Map->AABB[1] = -INFINITY;
+	//for (int i = 0; i < Map->MapObjects.size(); ++i) {
+	//	PushGameObject(Map->MapObjects[i]);
+	//	game.StaticGameObjects.push_back(Map->MapObjects[i]);
+	//	BoundingOrientedBox obb = Map->MapObjects[i]->GetOBB();
+	//	XMFLOAT3 corners[8];
+	//	obb.GetCorners(corners);
+	//	for (int k = 0; k < 8; ++k) {
+	//		vec4 c = corners[k];
+	//		Map->AABB[0] = _mm_min_ps(c, Map->AABB[0]);
+	//		Map->AABB[1] = _mm_max_ps(c, Map->AABB[1]);
+	//	}
+	//}
+	//Map->AABB[0].w = -INFINITY;
+	//Map->AABB[1].w = INFINITY;
+	//for (int i = 0; i < game.LightTable.size(); ++i) {
+	//	game.PushLight(game.LightTable[i]);
+	//}
+
+	// æ’¿∏∑Œ æ≤¿œ ∏µÁ ±€∑Œπ˙ AssetµÈ¿ª SVDescHeapø° ø√∑¡≥ı¥¬ ¿€æ˜¿ª «—¥Ÿ.
+	// ∏∏æ‡ ¿Ã ≈©±‚∞° ≥ π´ ƒø¡ˆ∞‘ µ»¥Ÿ∏È ≈¨∂Û¿Ãæ∆Æø°º≠ æÓ∂ª∞‘ ¡∂¿˝¿ª «“¡ˆµµ ª˝∞¢«ÿæﬂ «—¥Ÿ.
+	
+	// æ’¿∏∑Œ æ≤¿œ ∏µÁ ±€∑Œπ˙ AssetµÈ¿ª SVDescHeapø° ø√∑¡≥ı¥¬ ¿€æ˜¿ª «—¥Ÿ.
+	// ∏∏æ‡ ¿Ã ≈©±‚∞° ≥ π´ ƒø¡ˆ∞‘ µ»¥Ÿ∏È ≈¨∂Û¿Ãæ∆Æø°º≠ æÓ∂ª∞‘ ¡∂¿˝¿ª «“¡ˆµµ ª˝∞¢«ÿæﬂ «—¥Ÿ.
+	for (int i = 0; i < GlobalMaterialCount; ++i) {
+		Material* mat = MaterialTable[i];
+		if (isAssetAddingInGlobal == false) {
+			mat->SetDescTable();
+			RenderMaterialTable.push_back(mat);
+			// MaterialTable to DescIndex > CBResource.resource.descindex.indexø° ¿÷¿Ω.
+			// CBResource.resource.descindex > MaterialTable ?? ¿Ã∞≈ « ø‰«—∞°? 
+			// >> « ø‰«— ªÛ»≤¿Ã ∂∞ø¿∏£¡ˆ æ ¥¬µ•? ±◊≥… ¿Ã¥Î∑Œ «ÿµµ ±¶¬˙¡ˆ æ ≥™?
 		}
 	}
 
-	currentZoneId = zoneid;
-	if (zoneid >= 0 && zoneid < LoadedZoneMaps.size()) {
-		CurrentWorldShift = LinkedZoneWorldOffset[zoneid];
-		RefreshLoadedZoneMapTransforms();
-		Map = LoadedZoneMaps[zoneid];
-		SetCurrentZoneStaticObjects(zoneid);
-
-		SpawnDebugSniperObject();
-		PrebuildStaticObjectAutoLOD();
+	gd.gpucmd.Close();
+	gd.gpucmd.Execute();
+	gd.gpucmd.WaitGPUComplete();
+	if (CmdInitStateIsClose == false) {
+		gd.gpucmd.Reset();
 	}
-	RebuildStaticChunks();
+
+	currentZoneId = zoneid;
+	//if (zoneid >= 0 && zoneid < LoadedZoneMaps.size()) {
+	//	//CurrentWorldShift = LinkedZoneWorldOffset[zoneid];
+	//	//RefreshLoadedZoneMapTransforms();
+	//	//Map = LoadedZoneMaps[zoneid];
+	//	//SetCurrentZoneStaticObjects(zoneid);
+
+	//	
+	//}
+	//RebuildStaticChunks();
 
 	isMapInit = true;
 	isAssetAddingInGlobal = true;
@@ -1456,17 +1515,79 @@ void Game::Render() {
 	// 1. DRED »∞º∫»≠
 	D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr);
 
+	for (int i = 0; i < 9; ++i) {
+		Zone* nearzone = game.Current_Zone->nearZones[i];
+		if (nearzone == nullptr) continue;
+		if (nearzone->bReqireBakeLight_Raster) {
+			if (nearzone->ZoneLightChuncks.resource) nearzone->ZoneLightChuncks.Release();
+			if (nearzone->ZoneLightChuncks_Mapped) nearzone->ZoneLightChuncks_Mapped = nullptr;
+
+			vec4 Counts = (nearzone->Map->AABB[1] - nearzone->Map->AABB[0]) / Zone::chunck_divide_Width;
+			nearzone->ChunckCountX = floor(Counts.x + 1);
+			nearzone->ChunckCountY = floor(Counts.y + 1);
+			nearzone->ChunckCountZ = floor(Counts.z + 1);
+
+			int ix = floor(nearzone->Map->AABB[0].x / Zone::chunck_divide_Width);
+			int iy = floor(nearzone->Map->AABB[0].y / Zone::chunck_divide_Width);
+			int iz = floor(nearzone->Map->AABB[0].z / Zone::chunck_divide_Width);
+			ChunkIndex startci = ChunkIndex(ix, iy, iz);
+			BoundingBox bb = startci.GetAABB();
+			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckStart = bb.Center;
+			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckStart -= vec4(bb.Extents);
+			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[0] = nearzone->ChunckCountX;
+			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[1] = nearzone->ChunckCountY;
+			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[2] = nearzone->ChunckCountZ;
+
+			UINT ncbElementBytes = ((sizeof(ChunckLightData) * (nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ) + 255) & ~255); //256??Î∞∞Ïàò
+			nearzone->ZoneLightChuncks = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+			nearzone->ZoneLightChuncks.resource->Map(0, NULL, (void**)&nearzone->ZoneLightChuncks_Mapped);
+			ZeroMemory(nearzone->ZoneLightChuncks_Mapped, ncbElementBytes);
+			for (auto f : nearzone->chunck) {
+				GameChunk* gc = f.second;
+				ChunkIndex ci = f.first;
+				ChunkIndex rci;
+				rci.x = ci.x - startci.x;
+				rci.y = ci.y - startci.y;
+				rci.z = ci.z - startci.z;
+				int index = rci.z + rci.y * nearzone->ChunckCountZ + rci.x * nearzone->ChunckCountZ * nearzone->ChunckCountY;
+				if (index > nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ) continue;
+				ChunckLightData& LightChunck = nearzone->ZoneLightChuncks_Mapped[index];
+				int maxSiz = min(gc->Lights.size(), 32);
+				for (int i = 0; i < maxSiz; ++i) {
+					LightChunck.lights[i] = *gc->Lights[i];
+				}
+				LightChunck.lights[0].MaxLightCount = maxSiz;
+			}
+			nearzone->ZoneLightChuncks.resource->Unmap(0, nullptr);
+
+			//MaterialStructuredBufferSRVÎ•??¨Ìï†?πÌïòÏßÄ ?äÎäî?? (Í∞ôÏ? ?êÎ¶¨Î•?Ï∞®Ï??úÎã§.)
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Buffer.FirstElement = 0;
+			srvDesc.Buffer.NumElements = nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ;
+			srvDesc.Buffer.StructureByteStride = sizeof(ChunckLightData);
+			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			gd.pDevice->CreateShaderResourceView(nearzone->ZoneLightChuncks.resource, &srvDesc, nearzone->Immortal_ZoneLightBuffer_SRV.hCreation.hcpu);
+
+			nearzone->bReqireBakeLight_Raster = false;
+		}
+	}
+	
+
 	for (int i = 0;i < gd.addSDFTextureStack.size();++i) {
 		gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
 	}
 	gd.addSDFTextureStack.clear();
+
 	for (int i = gd.SDFTextureArr_immortalSize; i < gd.SDFTextureArr.size(); ++i) {
 		SDFTextPageTextureBuffer* page = gd.SDFTextureArr[i];
 		page->BakeSDF();
 	}
-	game.MyScreenCharactorShader->ClearSDFInstance();
-	game.MyScreenCharactorShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenCharactorShader->MappedSDFInstance);
-	//2. «¡∑ØΩ∫≈“ æ˜µ•¿Ã∆Æ
+
+	game.MyScreenShader->ClearSDFInstance();
+	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
 	gd.viewportArr[0].UpdateFrustum();
 
 	//2.5. ¿ŒΩ∫≈œΩÃ πÃ∏Æ ∞ËªÍ
@@ -1510,13 +1631,12 @@ void Game::Render() {
 	//5. Ω¶µµøÏ ∆–Ω∫
 	Render_ShadowPass();
 
-	//gd.DeviceRemoveResonDebug();
-
-	//6. ∑ª¥ı∆–Ω∫ Ω√¿€, ƒø∏«µÂ∏ÆΩ∫∆Æ ∏Æº¬
 	HRESULT hResult = gd.gpucmd.Reset();
 
-	//7. Ω¶µµøÏ ∏ ¿« STATE ∏¶ PIXEL SHADER RESOURCE∑Œ ∫Ø»Ø (Ω¶µµøÏ ∏ ¿∏∑Œ æ≤±‚ ¿ß«ÿº≠)
-	gd.gpucmd.ResBarrierTr(&game.MyDirLight.ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	//7. ?êÎèÑ??ÎßµÏùò STATE Î•?PIXEL SHADER RESOURCEÎ°?Î≥Ä??(?êÎèÑ??ÎßµÏúºÎ°??∞Í∏∞ ?ÑÌï¥??
+	for (int i = 0; i < 3; ++i) {
+		gd.gpucmd.ResBarrierTr(&game.MyDirLight[i].ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	}
 
 	//8. º≠∫Í∑ª¥ı≈∏∞Ÿ¿« STATE∏¶ PRESENTø°º≠ RENDER TARGET¿∏∑Œ ∫Ø»Ø (º≠∫Í∑ª¥ı≈∏∞Ÿø° ±◊∑¡æﬂ µ«º≠)
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -1564,8 +1684,10 @@ void Game::Render() {
 			using PRID = PBRShader1::RootParamId;
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &pbrView, 0);
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight.descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+			if(game.Current_Zone->bReqireBakeLight_Raster == false) gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
 		}
 	};
 
@@ -1592,7 +1714,7 @@ void Game::Render() {
 			// 18-3. Material Structured Buffer
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialPool, Material::MaterialStructuredBufferSRV.hRender.hgpu);
 			// 18-4. ShadowMap
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_ShadowMap, game.MyDirLight.descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
 			// 18-5. TextureArr[]
 			DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialTexturePool, texarrSRV.hRender.hgpu);
@@ -1612,28 +1734,26 @@ void Game::Render() {
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
 			// 18-2. ∫˚ ¡§∫∏ CBV
-			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource.resource->GetGPUVirtualAddress());
-			// 18-3. Direction Light ¿« Ω¶µµøÏ ∏ ¿ª ¿˚øÎ.
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight.descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
+			// 18-3. Direction Light
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+			if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
 		}
 
 		RenderTour<false>();
-
-		// 18-2. Ïä§ÌÇ® Î©îÏâ¨Îì§ÏùÑ Ï∂úÎ†•ÌïòÍ∏∞ ÏúÑÌï¥ ShaderÎ•º Set.
-
 
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
 		game.PresentShaderType = ShaderType::SkinMeshRender;
 		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 		{
 			using PRID = PBRShader1::RootParamId;
-			// 18-1. ƒ´∏ﬁ∂Û ¡§∫∏ 
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			// 18-2. ∫˚ ¡§∫∏ CBV
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource.descindex.hRender.hgpu);
-			// 18-3. Direction Light ¿« Ω¶µµøÏ ∏ ¿ª ¿˚øÎ.
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight.descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight[0].descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMeshEnvironmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+			if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
 		}
 		RenderTour<true>();
 		for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
@@ -1736,6 +1856,8 @@ void Game::Render() {
 			game.HPBarMesh->Render(gd.gpucmd, 1);
 		}
 	}
+
+	
 
 	if (game.DebugCollisions) {
 		using OCSRP = OnlyColorShader::RootParamId;
@@ -1851,7 +1973,6 @@ void Game::Render() {
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
-	// 25. ?°¿?????? ???? ???? ??? ?????????? ??? ?????? (ex> ???)
 	float hhpp = 0;
 	float HeatGauge = 0;
 	int kill = 0;
@@ -1869,157 +1990,19 @@ void Game::Render() {
 		HealSkillCooldownFlow = game.player->HealSkillCooldownFlow;
 	}
 
-	// 26. UI ≈ÿΩ∫∆Æ ∑ª¥ı∏µ
-	// HP 
-	//maybe..1706x960
 	float Rate = gd.ClientFrameHeight / 960.0f;
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
 
-	game.RenderSDFText(L"¿ÃæÓ∞°±◊ø‰¥Ÿ", 6, rt, 30, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
 
-
-	// 27. ±◊µøæ» Text µÈ¿ª √‚∑¬«œ±‚
-	MyScreenCharactorShader->RenderAllSDFTexts();
-
-	//std::wstring ui_hp = L"HP: " + std::to_wstring(hhpp);
-	//RenderText(ui_hp.c_str(), ui_hp.length(), rt, 30);
-	////Heat Gauge
-	//vec4 rt_heat = rt;
-	//rt_heat.y -= 80 * Rate;   // HP???? ?? ????? ???? (???? 50 ????)
-	//std::wstring ui_heat = L"Heat: " + std::to_wstring((int)HeatGauge);
-	//RenderText(ui_heat.c_str(), ui_heat.length(), rt_heat, 30);
-	////Skill
-	//	rt = Rate * vec4(-900, 850, -200, 700);
-	//std::wstring ui_cool = L"[Q] Heal CD: " + std::to_wstring((int)HealSkillCooldownFlow);
-	//RenderText(ui_cool.c_str(), ui_cool.length(), rt, 30);
-	//// Bullet
-	//rt = Rate * vec4(900, -800, 1550, -900);
-	//std::wstring ui_bullet = L"Bullet: " + std::to_wstring(bulletCount);
-	//RenderText(ui_bullet.c_str(), ui_bullet.length(), rt, 30);
-	//// Kill/Death Counter
-	//rt = Rate * vec4(1100, 920, 1550, 700);
-	//std::wstring ui_kd = std::to_wstring(kill) + L" / " + std::to_wstring(death);
-	//RenderText(L"Kill/Death", 10, rt, 30);
-	//rt = Rate * vec4(1190, 850, 1550, 600);
-	//RenderText(ui_kd.c_str(), ui_kd.length(), rt, 30);
-	//// Player name
-	//rt = Rate * vec4(-1650, 700, -1000, 500);
-	//std::wstring playerName = L"Player: Leo";
-	//RenderText(playerName.c_str(), playerName.length(), rt, 30);
-
-	// ----------Inventory------------
-	if (isInventoryOpen) {
-		matrix orthoMatrix = XMMatrixOrthographicOffCenterLH(0.0f, (float)gd.ClientFrameWidth, (float)gd.ClientFrameHeight, 0.0f, 0.01f, 1.0f);
-		matrix uiViewMat = orthoMatrix;
-		uiViewMat.transpose();
-		((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.gpucmd);
-		MyScreenCharactorShader->SetTextureCommand(&DefaultTex);
-		/*gd.gpucmd->SetPipelineState(MyOnlyColorShader->pUiPipelineState);*/
-		//gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &uiViewMat, 0);
-
-		const int gridColumns = 5;
-		const int gridRows = 5;
-		const float slotSize = Rate * 150.0f;
-		const float itemPadding = Rate * 20.0f;
-		const float slotPadding = Rate * 10.0f;
-
-		const float actualItemSize = slotSize - (itemPadding * 2);
-
-		float invWidth = (gridColumns * slotSize) + ((gridColumns + 1) * slotPadding);
-		float invHeight = (gridRows * slotSize) + ((gridRows + 1) * slotPadding);
-		float invPosX = 0;
-		float invPosY = 0;
-
-		vec4 bgColor = { 0.2f, 0.2f, 0.2f, 0.8f };
-		float CB[11] = { invPosX - invWidth ,invPosY - invHeight , invPosX + invWidth ,invPosY + invHeight, bgColor.r, bgColor.g, bgColor.b, bgColor.a, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.5f };
-		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 11, CB, 0);
-		TextMesh->Render(gd.gpucmd, 1);
-
-		vec4 slotColor = { 0.15f, 0.15f, 0.15f, 0.9f };
-
-		float startSlotX = invPosX - invWidth + slotPadding + slotSize;
-		float startSlotY = invPosY - invHeight + slotPadding + slotSize;
-
-		for (int row = 0; row < gridRows; ++row) {
-			for (int col = 0; col < gridColumns; ++col) {
-				float slotCurrentX = startSlotX + col * (2 * (slotSize + slotPadding));
-				float slotCurrentY = startSlotY + row * (2 * (slotSize + slotPadding));
-
-				float CB2[11] = { slotCurrentX - slotSize ,slotCurrentY - slotSize , slotCurrentX + slotSize ,slotCurrentY + slotSize, slotColor.r, slotColor.g, slotColor.b, slotColor.a, gd.ClientFrameWidth, gd.ClientFrameHeight, 0.05f };
-				gd.gpucmd->SetGraphicsRoot32BitConstants(0, 11, CB2, 0);
-				TextMesh->Render(gd.gpucmd, 1);
-			}
-		}
-
-		float startItemX = invPosX - Rate * 140.0f;
-		float startItemY = invPosY - Rate * 130.0f;
-
-		matrix viewMat2 = DirectX::XMMatrixLookAtLH(vec4(0, 0, 0), vec4(0, 0, 1), vec4(0, 1, 0));
-		viewMat2 *= gd.viewportArr[0].ProjectMatrix;
-		//gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-		//	D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-		////((Shader*)MyDiffuseTextureShader)->Add_RegisterShaderCommand(gd.gpucmd);
-		//gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &viewMat, 0);
-		//gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
-		//gd.gpucmd->SetGraphicsRootConstantBufferView(2, LightCBResource.resource->GetGPUVirtualAddress());
-		//for (int i = 0; i < player->maxItem; ++i) {
-		//	if (i >= gridColumns * gridRows)
-		//		break;
-		//	ItemStack& currentStack = player->Inventory[i];
-		//	ItemID currentItemID = currentStack.id;
-		//	if (currentItemID == 0) continue;
-		//	if (currentItemID >= ItemTable.size())
-		//		continue;
-		//	Item& itemInfo = ItemTable[currentItemID];
-		//	//Mesh* itemMesh = GetOrCreateColoredQuadMesh(itemInfo.color);
-		//	int column = i % gridColumns;
-		//	int row = i / gridColumns;
-		//	float itemCurrentX = startItemX + column * (2 * (slotSize + slotPadding));
-		//	float itemCurrentY = startItemY + row * (2 * (slotSize + slotPadding));
-		//	/*vec4 v = gd.viewportArr[0].unproject(vec4(gd.ClientFrameWidth/2, gd.ClientFrameHeight/2, 0, 1));
-		//	v *= 5;
-		//	v += gd.viewportArr[0].Camera_Pos;*/
-		//	/*vec4 unproj = gd.viewportArr[0].unproject(vec4(-0.5f, 0.5f, 0, 1));*/
-		//	matrix itemMat;
-		//	itemMat.pos = gd.viewportArr[0].Camera_Pos;
-		//	//caminvMat.look.x *= -1;
-		//	itemMat.pos += viewMat.look * 7;
-		//	constexpr float xmul = 1.35f;
-		//	constexpr float ymul = 0.825f;
-		//	itemMat.pos += viewMat.right * (-2.7f + xmul * column);
-		//	itemMat.pos += viewMat.up * (1.65f - ymul * row);
-		//	itemMat.pos.w = 1;
-		//	itemMat.transpose();
-		//	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &itemMat, 0);
-		//	MyDiffuseTextureShader->SetTextureCommand(ItemTable[currentItemID].tex);
-		//	ItemTable[currentItemID].MeshInInventory->Render(gd.gpucmd, 1);
-		//	//RenderUIObject(itemMesh, itemMat);
-		//}
-
-		gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
-			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
-		((Shader*)MyScreenCharactorShader)->Add_RegisterShaderCommand(gd.gpucmd);
-
-		int i = 0;
-		float top = startSlotY + (gridRows - 1) * (2 * (slotSize + slotPadding));
-		for (int row = 0; row < gridRows; ++row) {
-			for (int col = 0; col < gridColumns; ++col) {
-				if (player->Inventory[i].id == 0) {
-					i++; continue;
-				}
-
-				float slotCurrentX = startSlotX + col * (2 * (slotSize + slotPadding));
-				float slotCurrentY = top - row * (2 * (slotSize + slotPadding));
-
-				ItemStack& currentStack = player->Inventory[i];
-				std::wstring countStr = L"x" + std::to_wstring(currentStack.ItemCount);
-				vec4 textRect = { slotCurrentX - slotSize ,slotCurrentY - slotSize , slotCurrentX + slotSize ,slotCurrentY + slotSize };
-				float fontSize = 20.0f;
-				RenderText(countStr.c_str(), countStr.length(), textRect, fontSize, 0.01f);
-				i++;
-			}
-		}
+	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	vector<DXPage*>* savePageStack = game.CurrentPageStack;
+	game.CurrentPageStack = &game.mainPageStack;
+	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
+		DXPage* page = game.CurrentPageStack->at(i);
+		page->Render();
 	}
+	// 27.
+	MyScreenShader->RenderAllSDFTexts();
 
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -2050,6 +2033,33 @@ void Game::Render() {
 
 void Game::Render_RayTracing()
 {
+	for (int i = 0; i < 9; ++i) {
+		gd.raytracing.MappedCB[i]->DirLight_invDirection = vec4(vec4(0) - LightDirection).f3;
+	}
+
+	for (int i = 0; i < 9; ++i) {
+		Zone* nearZone = game.Current_Zone->nearZones[i];
+		if (nearZone == nullptr) continue;
+		if (nearZone->bReqireBakeLight_Raytracing) {
+			vec4 Counts = (nearZone->Map->AABB[1] - nearZone->Map->AABB[0]) / Zone::chunck_divide_Width;
+			nearZone->ChunckCountX = floor(Counts.x + 1);
+			nearZone->ChunckCountY = floor(Counts.y + 1);
+			nearZone->ChunckCountZ = floor(Counts.z + 1);
+
+			int ix = floor(nearZone->Map->AABB[0].x / Zone::chunck_divide_Width);
+			int iy = floor(nearZone->Map->AABB[0].y / Zone::chunck_divide_Width);
+			int iz = floor(nearZone->Map->AABB[0].z / Zone::chunck_divide_Width);
+			ChunkIndex startci = ChunkIndex(ix, iy, iz);
+			BoundingBox bb = startci.GetAABB();
+			gd.raytracing.MappedCB[nearZone->Asset_OffsetMul]->ChunckStart = bb.Center;
+			gd.raytracing.MappedCB[nearZone->Asset_OffsetMul]->ChunckStart -= vec4(bb.Extents);
+			gd.raytracing.MappedCB[nearZone->Asset_OffsetMul]->ChunckCount[0] = nearZone->ChunckCountX;
+			gd.raytracing.MappedCB[nearZone->Asset_OffsetMul]->ChunckCount[1] = nearZone->ChunckCountY;
+			gd.raytracing.MappedCB[nearZone->Asset_OffsetMul]->ChunckCount[2] = nearZone->ChunckCountZ;
+			nearZone->bReqireBakeLight_Raytracing = false;
+		}
+	}
+	
 	if (Material::LastMaterialStructureBufferUp < game.MaterialTable.size()) {
 		Material::InitMaterialStructuredBuffer();
 	}
@@ -2080,14 +2090,17 @@ void Game::Render_RayTracing()
 	commandList->SetComputeRootDescriptorTable(1, gd.raytracing.MainDepth_UAV.hRender.hgpu); // DSV
 
 	commandList->SetComputeRootShaderResourceView(2, MyRayTracingShader->TLAS->GetGPUVirtualAddress()); // AS SRV
-	commandList->SetComputeRootConstantBufferView(3, gd.raytracing.CameraCB->GetGPUVirtualAddress()); // Camera CB CBV
+	commandList->SetComputeRootConstantBufferView(3, gd.raytracing.CameraCB[game.Current_Zone->Asset_OffsetMul]->GetGPUVirtualAddress()); // Camera CB CBV
 	commandList->SetComputeRootDescriptorTable(4, RayTracingMesh::VBIB_DescIndex.hRender.hgpu); // Vertex, IndexBuffer SRV
 	commandList->SetComputeRootDescriptorTable(5, MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu); // SkyBox SRV
 	commandList->SetComputeRootDescriptorTable(6, RayTracingMesh::UAV_VBIB_DescIndex.hRender.hgpu); // SkinMesh SRV
 
 	commandList->SetComputeRootDescriptorTable(7, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
 	DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
-	commandList->SetComputeRootDescriptorTable(8, texarrSRV.hRender.hgpu); // Texture Arr
+
+	// ¿œ¥‹ Light¥¬ «ˆ¿Á ¡∏∏∏ ∑ŒµÂ∏¶ «—¥Ÿ. ø÷¿Œ∞°? ∆Æ∑π¿ÃΩÃ µ» ∏ﬁΩ¨∞° æÓ∂≤ ¡∏ø° ¿÷¥¬¡ˆ æÀ ºˆ ¿÷¥¬ πÊπ˝¿Ã ¿÷¥¬∞°?
+	commandList->SetComputeRootDescriptorTable(8, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu); // ZoneLightChuncks Arr
+	commandList->SetComputeRootDescriptorTable(9, texarrSRV.hRender.hgpu); // Texture Arr
 
 	commandList->SetPipelineState1(MyRayTracingShader->RTPSO);
 
@@ -2163,114 +2176,151 @@ void Game::Render_RayTracing()
 
 void Game::Render_ShadowPass()
 {
-	// 1. µ∑∫º« ∂Û¿Ã∆Æ∏¶ √ ±‚»≠
-	constexpr int ShadowResolusion = 4096;
-	vec4 LightDirection = vec4(1, 2, 1);
-	LightDirection.len3 = 1;
-	constexpr float LightDistance = 500;
-	game.MyDirLight.viewport.Viewport.Width = ShadowResolusion;
-	game.MyDirLight.viewport.Viewport.Height = ShadowResolusion;
-	game.MyDirLight.viewport.Viewport.MaxDepth = 1.0f;
-	game.MyDirLight.viewport.Viewport.MinDepth = 0.0f;
-	game.MyDirLight.viewport.Viewport.TopLeftX = 0.0f;
-	game.MyDirLight.viewport.Viewport.TopLeftY = 0.0f;
-	game.MyDirLight.viewport.ScissorRect = { 0, 0, (long)ShadowResolusion, (long)ShadowResolusion };
-	// 1-1 («√∑π¿ÃæÓ∏¶ πŸ∂Û∫∏∞‘ «—¥Ÿ.)
-	vec4 obj = 0;
-	if(player) obj = player->worldMat.pos;
-	obj.w = 0;
 
-	game.MyDirLight.viewport.Camera_Pos = obj + LightDirection * LightDistance;
-	game.MyDirLight.viewport.Camera_Pos.w = 0;
-	game.MyDirLight.LightPos = game.MyDirLight.viewport.Camera_Pos;
-	MyDirLight.View.mat = XMMatrixLookAtLH(MyDirLight.LightPos, obj, vec4(0, 1, 0, 0));
-	game.MyDirLight.viewport.ViewMatrix = MyDirLight.View;
-	// 1-2. ºŒµµøÏ ∏  1m ¥Á ∏Ó∞≥¿« «»ºø¿ª ¥„¿ª∞«¡ˆ ∞·¡§«—¥Ÿ.
-	constexpr float rate = 1.0f / 8.0f;
-	game.MyDirLight.viewport.ProjectMatrix = XMMatrixOrthographicLH(rate * ShadowResolusion, rate * ShadowResolusion, 0.1f, 1000.0f);
-	// 1-3. Light CB µ•¿Ã≈Õ∏¶ √ ±‚»≠«—¥Ÿ.
-	matrix projmat = XMMatrixTranspose(MyDirLight.viewport.ProjectMatrix);
-	LightCB_withShadowResource.resource->Map(0, NULL, (void**)&LightCBData_withShadow);
-	LightCBData_withShadow->LightProjection = projmat;
-	LightCBData_withShadow->LightView = XMMatrixTranspose(MyDirLight.viewport.ViewMatrix);
-	LightCBData_withShadow->LightPos = MyDirLight.LightPos.f3;
-	LightCB_withShadowResource.resource->Unmap(0, nullptr);
-	// 1-4. Dir Light ¿¸øÎ Upload Buffer¿« ∞™¿ª º≥¡§«—¥Ÿ.
-	MappedDirLightData->DirLightView = LightCBData_withShadow->LightView;
-	MappedDirLightData->DirLightProjection = projmat;
-	MappedDirLightData->DirLightPos = MyDirLight.LightPos.f3;
-	MappedDirLightData->DirLightDir = LightDirection;
-	MappedDirLightData->DirLightColor = vec4(1, 1, 1, 1);
+	static vector<SkinMeshGameObject*> ShadowRenderSkinMeshObjArr;
+	// 0. ?ÑÎü¨?§Ì???Î™®Îëê ?¨Ìï®?òÎ©¥??Extent.z Î∞©Ìñ•??Îπ?Î∞©Ìñ•??OBBÎ•?Íµ¨ÏÑ±
+	constexpr float CascadeRange[4] = { 0.01f, 50.0f, 200.0f, 1000.0f };
+
 
 	// 2. ∑ª¥ı∏µ¿ª Ω√¿€«—¥Ÿ.
 	HRESULT hResult = gd.gpucmd.Reset();
 
-	// 2-2. ∫‰∆˜∆Æ º≥¡§
-	gd.gpucmd->RSSetViewports(1, &game.MyDirLight.viewport.Viewport);
-	gd.gpucmd->RSSetScissorRects(1, &game.MyDirLight.viewport.ScissorRect);
-	// 2-3. ShadowMap¿« STATE∏¶ DEPTH WRITE∑Œ º≥¡§«—¥Ÿ.
-	gd.gpucmd.ResBarrierTr(&game.MyDirLight.ShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-	// 2-4. ∑ª¥ı≈∏∞Ÿ¿ª ShadowMap¿∏∑Œ Set«œ∞Ì Depth Stencil¿ª ≈¨∏ÆæÓ«—¥Ÿ.
-	//D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
-	//	gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	DescHandle dc = game.MyDirLight.ShadowMap.descindex.hRender;
-	gd.gpucmd->OMSetRenderTargets(0, nullptr, TRUE, &dc.hcpu);
-	gd.gpucmd->ClearDepthStencilView(game.MyDirLight.ShadowMap.descindex.hRender.hcpu,
-		D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
+	for (int i = 0; i < 3; ++i) {
+		matrix viewproj;
+		viewproj = gd.viewportArr[0].ViewMatrix;
+		matrix proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, CascadeRange[i], CascadeRange[i+1]);
+		viewproj *= proj;
+		vec4 LightDirQ = vec4::DirectionToQuaternion(LightDirection);
+		LightOBB = game.MyDirLight[0].viewport.GetOBB_IncludeFrustum(viewproj, LightDirQ);
 
-	// 2-5. ºŒµµøÏ ∏ ¿ª ∑ª¥ı∏µ «œ±‚ ¿ß«ÿ Shader ∏¶ Set«—¥Ÿ.
-	gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderShadowMap);
-	matrix xmf4x4View = game.MyDirLight.viewport.ViewMatrix;
-	xmf4x4View *= game.MyDirLight.viewport.ProjectMatrix;
-	xmf4x4View.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
-	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16); // no matter
-	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-	game.PresentShaderType = ShaderType::RenderShadowMap;
-	game.renderViewPort = &game.MyDirLight.viewport;
-	game.renderViewPort->UpdateOrthoFrustum(0.1f, 1000.0f);
+		// 1. ?îÎ†â???ºÏù¥?∏Î? Ï¥àÍ∏∞??
+		constexpr int ShadowResolusion = 4096;
+		constexpr float LightDistance = 1000;
+		vec4 obj = LightOBB.Center;
+		obj += LightDirection * LightOBB.Extents.z;
 
-	// 2-6. «ˆ¿Á «√∑π¿ÃæÓ∞° ¿ßƒ°«— √ª≈© ¡÷∫Ø¿« √ª≈©µÈ∏∏ Ω¶µµøÏ ∑ª¥ıø° ¬¸ø©.
-	GameChunk* center = game.GetChunkFromPos(obj);
-	game.TourID += 1;
-	if (center != nullptr) {
-		int chunck_extents = 2;
-		for (int ix = center->cindex.x - chunck_extents; ix <= center->cindex.x + chunck_extents; ++ix) {
-			for (int iy = center->cindex.y - chunck_extents; iy <= center->cindex.y + chunck_extents; ++iy) {
-				for (int iz = center->cindex.z - chunck_extents; iz <= center->cindex.z + chunck_extents; ++iz) {
-					auto neibor = chunck.find(ChunkIndex(ix, iy, iz));
-					if (neibor == chunck.end()) continue;
-					GameChunk* chck = neibor->second;
-					for (int i = 0;i < chck->Static_gameobjects.size; ++i) {
-						if (chck->Static_gameobjects.isnull(i)) continue;
-						StaticGameObject* sgo = chck->Static_gameobjects[i];
-						if (sgo == nullptr || sgo->TourID == game.TourID) continue;
-						sgo->Render();
-						sgo->TourID = game.TourID;
-					}
+		float MaxWidth = max(LightOBB.Extents.x, LightOBB.Extents.y) * 2;
+		game.MyDirLight[i].viewport.Viewport.Width = ShadowResolusion;
+		game.MyDirLight[i].viewport.Viewport.Height = ShadowResolusion;
+		game.MyDirLight[i].viewport.Viewport.MaxDepth = 1.0f;
+		game.MyDirLight[i].viewport.Viewport.MinDepth = 0.0f;
+		game.MyDirLight[i].viewport.Viewport.TopLeftX = 0.0f;
+		game.MyDirLight[i].viewport.Viewport.TopLeftY = 0.0f;
+		game.MyDirLight[i].viewport.ScissorRect = {0, 0, (long)ShadowResolusion, (long)ShadowResolusion};
 
-					for (int i = 0;i < chck->Dynamic_gameobjects.size; ++i) {
-						if (chck->Dynamic_gameobjects.isnull(i)) continue;
-						DynamicGameObject* dgo = chck->Dynamic_gameobjects[i];
-						if ((dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) || dgo->TourID == game.TourID) continue;
-						dgo->Render();
-						dgo->TourID = game.TourID;
-					}
+		// 1-1 Ïπ¥Î©î??Î∞©Ìñ• ?ïÌïòÍ∏?
 
-					/*for (int i = 0;i < chck->SkinMesh_gameobjects.size; ++i) {
-						if (chck->SkinMesh_gameobjects.isnull(i)) continue;
-						SkinMeshGameObject* dgo = chck->SkinMesh_gameobjects[i];
-						if (dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) continue;
-						dgo->Render();
-					}*/
+		game.MyDirLight[i].viewport.Camera_Pos = obj - (LightDirection * LightDistance);
+		game.MyDirLight[i].viewport.Camera_Pos.w = 0;
+		game.MyDirLight[i].LightPos = game.MyDirLight[i].viewport.Camera_Pos;
+
+		vec4 up = vec4(0, 1, 0, 0);
+		if (fabs(LightDirection.dot3(up)) > 0.99f) {
+			up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+		}
+		MyDirLight[i].View.mat = XMMatrixLookAtLH(MyDirLight[i].LightPos, obj, up);
+		game.MyDirLight[i].viewport.ViewMatrix = MyDirLight[i].View;
+
+		// 1-2. ?∞ÎèÑ??Îß?1m ??Î™áÍ∞ú???ΩÏ????¥ÏùÑÍ±¥Ï? Í≤∞Ï†ï?úÎã§.
+		constexpr float rate = 1.0f / 64.0f;
+		game.MyDirLight[i].viewport.ProjectMatrix = XMMatrixOrthographicLH(MaxWidth, MaxWidth/*rate * ShadowResolusion, rate * ShadowResolusion*/, 0.1f, 4000.0f);
+
+		// 1-3. Light CB ?∞Ïù¥?∞Î? Ï¥àÍ∏∞?îÌïú??
+		matrix projmat = XMMatrixTranspose(MyDirLight[i].viewport.ProjectMatrix);
+		LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->Map(0, NULL, (void**)&LightCBData_withShadow);
+		LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightProjection[i] = projmat;
+		LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightView[i] = XMMatrixTranspose(MyDirLight[i].viewport.ViewMatrix);
+		LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightPos[i] = MyDirLight[i].LightPos.f3;
+		LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->Unmap(0, nullptr);
+
+		// 1-4. Dir Light ?ÑÏö© Upload Buffer??Í∞íÏùÑ ?§Ï†ï?úÎã§.
+		MappedDirLightData->DirLightView = LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightView[i];
+		MappedDirLightData->DirLightProjection = projmat;
+		MappedDirLightData->DirLightPos = MyDirLight[i].LightPos.f3;
+		MappedDirLightData->DirLightDir = LightDirection;
+		MappedDirLightData->DirLightColor = vec4(1, 1, 1, 1);
+
+		// 2-2. Î∑∞Ìè¨???§Ï†ï
+		gd.gpucmd->RSSetViewports(1, &game.MyDirLight[i].viewport.Viewport);
+		gd.gpucmd->RSSetScissorRects(1, &game.MyDirLight[i].viewport.ScissorRect);
+		// 2-3. ShadowMap??STATEÎ•?DEPTH WRITEÎ°??§Ï†ï?úÎã§.
+		gd.gpucmd.ResBarrierTr(&game.MyDirLight[i].ShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+		// 2-4. ?åÎçî?ÄÍ≤üÏùÑ ShadowMap?ºÎ°ú Set?òÍ≥† Depth Stencil???¥Î¶¨?¥Ìïú??
+		//D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
+		//	gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+		DescHandle dc = game.MyDirLight[i].ShadowMap.descindex.hRender;
+		gd.gpucmd->OMSetRenderTargets(0, nullptr, TRUE, &dc.hcpu);
+		gd.gpucmd->ClearDepthStencilView(game.MyDirLight[i].ShadowMap.descindex.hRender.hcpu,
+			D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
+
+		// 2-5. ?∞ÎèÑ??ÎßµÏùÑ ?åÎçîÎß??òÍ∏∞ ?ÑÌï¥ Shader Î•?Set?úÎã§.
+		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderShadowMap);
+		matrix xmf4x4View = game.MyDirLight[i].viewport.ViewMatrix;
+		xmf4x4View *= game.MyDirLight[i].viewport.ProjectMatrix;
+		xmf4x4View.transpose();
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16); // no matter
+		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		game.PresentShaderType = ShaderType::RenderShadowMap;
+		game.renderViewPort = &game.MyDirLight[i].viewport;
+		game.renderViewPort->UpdateOrthoFrustum(0.1f, 1000.0f);
+
+		// 2-6. ?ÑÏû¨ ?åÎ†à?¥Ïñ¥Í∞Ä ?ÑÏπò??Ï≤?Å¨ Ï£ºÎ???Ï≤?Å¨?§Îßå ?êÎèÑ???åÎçî??Ï∞∏Ïó¨.
+		ShadowRenderSkinMeshObjArr.clear();
+		game.TourID += 1;
+		GameObjectIncludeChunks goic = game.Current_Zone->GetChunks_Include_OBB(LightOBB);
+		//goic.ylen -= (1 + game.Map->AABB[1].y / game.chunck_divide_Width) - goic.ymin;
+		ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
+		int ChunckSiz = goic.GetChunckSize();
+		for (; ci.extra < ChunckSiz; goic.Inc(ci)) {
+			auto f = game.Current_Zone->chunck.find(ci);
+			if (f != game.Current_Zone->chunck.end()) {
+				GameChunk* gc = f->second;
+
+				for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
+					if (gc->Static_gameobjects.isnull(i)) continue;
+					StaticGameObject* sgo = gc->Static_gameobjects[i];
+					if (sgo == nullptr || sgo->TourID == game.TourID) continue;
+					sgo->Render();
+					sgo->TourID = game.TourID;
+				}
+
+				for (int i = 0; i < gc->Dynamic_gameobjects.size; ++i) {
+					if (gc->Dynamic_gameobjects.isnull(i)) continue;
+					DynamicGameObject* dgo = gc->Dynamic_gameobjects[i];
+					if ((dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) || dgo->TourID == game.TourID) continue;
+					dgo->Render();
+					dgo->TourID = game.TourID;
+				}
+
+				for (int i = 0; i < gc->SkinMesh_gameobjects.size; ++i) {
+					if (gc->SkinMesh_gameobjects.isnull(i)) continue;
+					SkinMeshGameObject* smgo = gc->SkinMesh_gameobjects[i];
+					if ((smgo == nullptr || smgo->tag[GameObjectTag::Tag_Enable] == false) || smgo->TourID == game.TourID) continue;
+					ShadowRenderSkinMeshObjArr.push_back(smgo);
+					smgo->TourID = game.TourID;
 				}
 			}
 		}
-	}
 
-	if (player) {
-		//player->Render_AfterDepthClear();
+		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRenderShadowMap);
+		// 18-1. Ïπ¥Î©î???ïÎ≥¥ 
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
+		//// 18-2. Îπ??ïÎ≥¥ CBV
+		//gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource.descindex.hRender.hgpu);
+		//// 18-3. Direction Light ???êÎèÑ??ÎßµÏùÑ ?ÅÏö©.
+		//gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight[0].descindex.hRender.hgpu);
+
+		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		for (int i = 0; i < ShadowRenderSkinMeshObjArr.size(); ++i) {
+			Mesh* mesh = nullptr;
+			Model* model = nullptr;
+			ShadowRenderSkinMeshObjArr[i]->shape.GetRealShape(mesh, model);
+			model->RootNode->SkinMeshShadowRender(model, gd.gpucmd, XMMatrixIdentity(), ShadowRenderSkinMeshObjArr[i]);
+		}
 	}
 
 	gd.gpucmd.Close();
@@ -2316,12 +2366,31 @@ void Game::Update()
 {
 	AutoLOD_ProcessRuntimeQueue(1);
 	BoxLOD_DebugUpdate(DeltaTime);
+
+	lowFrequencyFlow += game.DeltaTime;
+	midFrequencyFlow += game.DeltaTime;
+	highFrequencyFlow += game.DeltaTime;
+
+	if (mainPageStack.size() >= 1) {
+		if (lowHit() || hasToAlginUIDepth) {
+			AlignUIDepth();
+			hasToAlginUIDepth = false;
+		}
+
+		game.CurrentPageStack = &game.mainPageStack;
+		mainPageStack[mainPageStack.size() - 1]->Update(game.DeltaTime);
+	}
+
+	LightDirection = LightDirection * XMMatrixRotationAxis(vec4(-1, 0, 1), DeltaTime / 120.0f);
+	for (int i = 0; i < 9; ++i) {
+		LightCBData_withShadow[i]->dirlight.gLightDirection = LightDirection.f3;
+	}
+
 	static float accSend = 0.0f;
 	const float SendPeriod = 0.05f;
 
 	accSend += DeltaTime;
-
-	if (isPrepared && !isInventoryOpen && GetActiveWindow() == hWnd) {
+	if ((isPrepared && !isInventoryOpen) && (GetActiveWindow() == hWnd && mainPageStack.size() == 0)) {
 		while (ShowCursor(FALSE) >= 0);
 
 		POINT center = { (LONG)gd.ClientFrameWidth / 2, (LONG)gd.ClientFrameHeight / 2 };
@@ -2451,9 +2520,9 @@ void Game::Update()
 					if (DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable]) enabled++;
 					if (DynmaicGameObjects[i]->shape.FlagPtr != 0) withShape++;
 				}
-				int chunkCnt = (int)chunck.size();
+				int chunkCnt = (int)Current_Zone->chunck.size();
 				int chunkSkin = 0, chunkDyn = 0, chunkStatic = 0;
-				for (auto& _ch : chunck) {
+				for (auto& _ch : Current_Zone->chunck) {
 					GameChunk* _c = _ch.second;
 					chunkSkin += _c->SkinMesh_gameobjects.size;
 					chunkDyn += _c->Dynamic_gameobjects.size;
@@ -2545,13 +2614,23 @@ void Game::Update()
 			}
 		}
 	}
+
+	if (lowHit()) {
+		lowFrequencyFlow = 0;
+	}
+	if (midHit()) {
+		midFrequencyFlow = 0;
+	}
+	if (highHit()) {
+		highFrequencyFlow = 0;
+	}
 }
 
 int Game::Receiving(char* ptr, int totallen)
 {
 	char* currentPivot = ptr;
     char dbg[128] = {};
-    sprintf_s(dbg, "[ClientReceiving] bytes=%d\n", totallen);
+    //sprintf_s(dbg, "[ClientReceiving] bytes=%d\n", totallen);
     OutputDebugStringA(dbg);
 	int offset = 0;
 	unsigned int size;
@@ -2561,19 +2640,16 @@ READ_START:
 		return offset;
 	}
 	size = *(unsigned int*)currentPivot;
-	if (size <= 0) {
-		return offset;
-	}
-	if (offset + size > totallen) {
+	if (offset + size >= totallen) {
 		return offset;
 	}
 	type = *(STC_Protocol*)(currentPivot + sizeof(int));
-    sprintf_s(dbg, "[ClientReceiving] size=%u type=%d offset=%d\n", size, (int)type, offset);
-    OutputDebugStringA(dbg);
+    //sprintf_s(dbg, "[ClientReceiving] size=%u type=%d offset=%d\n", size, (int)type, offset);
+    //OutputDebugStringA(dbg);
 	switch (type) {
 	case STC_Protocol::SyncGameObject:
 	{
-        OutputDebugStringA("[ClientReceiving] SyncGameObject\n");
+        //OutputDebugStringA("[ClientReceiving] SyncGameObject\n");
 		STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)currentPivot;
 		char* datapivot = currentPivot + sizeof(STC_SyncGameObject_Header);
 		switch (header.type) {
@@ -2581,9 +2657,7 @@ READ_START:
 		case GameObjectType::_StaticGameObject:
 		{
 			if (header.objindex >= StaticGameObjects.size()) {
-				// ?? ???? ??????? ????? ??. ?????. ?????? ?????? ?????? ??o??? ???? ??? ?????¢•?.
-				StaticGameObjects.reserve(header.objindex + 1);
-				StaticGameObjects.resize(header.objindex + 1);
+				break;
 			}
 
 			if (StaticGameObjects[header.objindex]) {
@@ -2604,7 +2678,7 @@ READ_START:
 			}
 			StaticGameObjects[header.objindex]->RecvSTC_SyncObj(datapivot);
 			game.ApplyZoneOffsetToStaticObject(StaticGameObjects[header.objindex]);
-			game.PushGameObject(StaticGameObjects[header.objindex]);
+			game.Current_Zone->PushGameObject(StaticGameObjects[header.objindex]);
 		}
 			break;
 		case GameObjectType::_DynamicGameObject:
@@ -2661,7 +2735,7 @@ READ_START:
 				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[header.objindex];
 				smgo->InitRootBoneMatrixs();
 			}
-			game.PushGameObject(DynmaicGameObjects[header.objindex]);
+			game.Current_Zone->PushGameObject(DynmaicGameObjects[header.objindex]);
 			{
 				DynamicGameObject* _dgo = DynmaicGameObjects[header.objindex];
 				char _dbg[256] = {};
@@ -2788,33 +2862,8 @@ READ_START:
 	break;
 	case STC_Protocol::AllocPlayerIndexes:
 	{
-        OutputDebugStringA("[ClientReceiving] AllocPlayerIndexes\n");
+        //OutputDebugStringA("[ClientReceiving] AllocPlayerIndexes\n");
 		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)currentPivot;
-
-		if (false) {
-			for (auto& pair : chunck) {
-				delete pair.second;
-			}
-			chunck.clear();
-			for (auto p : Portals) delete p;
-			Portals.clear();
-			// ?? ????
-			for (int i = 0; i < Map->MapObjects.size(); ++i) {
-				PushGameObject(Map->MapObjects[i]);
-			}
-			// Dynamic ø¿∫Í¡ß∆Æµµ ¿ÁµÓ∑œ
-			for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
-				if (DynmaicGameObjects[i] == nullptr) continue;
-				if (DynmaicGameObjects[i]->tag[GameObjectTag::Tag_Enable] == false) continue;
-				// √ª≈© ¡§∫∏ ∏Æº¬
-				if (DynmaicGameObjects[i]->chunkAllocIndexs) {
-					delete[] DynmaicGameObjects[i]->chunkAllocIndexs;
-					DynmaicGameObjects[i]->chunkAllocIndexs = nullptr;
-					DynmaicGameObjects[i]->chunkAllocIndexsCapacity = 0;
-				}
-				PushGameObject(DynmaicGameObjects[i]);
-			}
-		}
 
 		game.clientIndexInServer = header.clientindex;
 		game.playerGameObjectIndex = header.server_obj_index;
@@ -2861,10 +2910,10 @@ READ_START:
 			player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
 			player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
 
-			for (int i = 0; i < 36; ++i) {
-				player->Inventory[i].id = 0;
-				player->Inventory[i].ItemCount = 0;
-			}
+			//for (int i = 0; i < 36; ++i) {
+			//	player->Inventory[i].id = 0;
+			//	player->Inventory[i].ItemCount = 0;
+			//}
 		}
 
 		game.isPreparedClientIndex = true;
@@ -2923,8 +2972,14 @@ READ_START:
 	case STC_Protocol::InventoryItemSync:
 	{
 		STC_InventoryItemSync_Header& header = *(STC_InventoryItemSync_Header*)currentPivot;
-		game.player->Inventory[header.inventoryIndex].id = header.Iteminfo.id;
-		game.player->Inventory[header.inventoryIndex].ItemCount = header.Iteminfo.ItemCount;
+		//game.player->Inventory[header.inventoryIndex].id = header.Iteminfo.id;
+		//game.player->Inventory[header.inventoryIndex].ItemCount = header.Iteminfo.ItemCount;
+
+		DXUI* Slot = game.InventorySlots[header.inventoryIndex];
+		DXSlotParam* pslot = (DXSlotParam*)Slot->pParamterData;
+		pslot->objid = header.Iteminfo.id;
+		pslot->itemCount = header.Iteminfo.ItemCount;
+
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -2952,7 +3007,7 @@ READ_START:
 	break;
 	case STC_Protocol::SyncGameState:
 	{
-        OutputDebugStringA("[ClientReceiving] SyncGameState\n");
+        //OutputDebugStringA("[ClientReceiving] SyncGameState\n");
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)currentPivot;
 		game.DynmaicGameObjects.reserve(header.DynamicGameObjectCapacity);
 		game.DynmaicGameObjects.resize(header.DynamicGameObjectCapacity);
@@ -2962,29 +3017,27 @@ READ_START:
 	break;
 	case STC_Protocol::SyncPlayerMoveZone:
 	{
-        OutputDebugStringA("[ClientReceiving] SyncPlayerMoveZone\n");
+        //OutputDebugStringA("[ClientReceiving] SyncPlayerMoveZone\n");
 		STC_PlayerMoveZone_Header& header = *(STC_PlayerMoveZone_Header*)currentPivot;
 
 		game.isPrepared = false;
 		game.isPreparedClientIndex = false;
 		game.isMapInit = false;
-
 		game.MoveZone(header.zoneId);
-		
 		currentPivot += header.size;
 		offset += header.size;
 	}
 		break;
 	case STC_Protocol::ServerTransfer:
 	{
-        OutputDebugStringA("[ClientReceiving] ServerTransfer\n");
+       // OutputDebugStringA("[ClientReceiving] ServerTransfer\n");
 		STC_ServerTransfer_Header& header = *(STC_ServerTransfer_Header*)currentPivot;
-		{
-			char _dbg[256] = {};
-			sprintf_s(_dbg, "[ClientReceiving] ServerTransfer size=%u ip=\"%s\" port=%u dst=%d token=%d\n",
-				header.size, header.ip, (unsigned)header.port, header.dstZoneId, header.transferToken);
-			OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
-		}
+		//{
+		//	char _dbg[256] = {};
+		//	sprintf_s(_dbg, "[ClientReceiving] ServerTransfer size=%u ip=\"%s\" port=%u dst=%d token=%d\n",
+		//		header.size, header.ip, (unsigned)header.port, header.dstZoneId, header.transferToken);
+		//	OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
+		//}
 		game.BeginServerTransfer(header.ip, header.port, header.dstZoneId, header.transferToken);
 		return totallen;
 	}
@@ -2998,7 +3051,7 @@ READ_START:
 
 void Game::AddMouseInput(int deltaX, int deltaY)
 {
-	if (player != nullptr)
+	if (player != nullptr && mainPageStack.size() == 0)
 	{
 		m_stackMouseX += deltaX;
 		m_stackMouseY += deltaY;
@@ -3060,7 +3113,7 @@ void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz,
 		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameWidth, 4);
 		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &gd.ClientFrameHeight, 5);*/
 		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 11, &tConst, 0);
-		MyScreenCharactorShader->SetTextureCommand(texture);
+		MyScreenShader->SetTextureCommand(texture);
 
 		//Render Text
 		TextMesh->Render(gd.gpucmd, 1);
@@ -3077,32 +3130,36 @@ void Game::RenderText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz,
 	}
 }
 
-//this function must call after ScreenCharactorShader register in pipeline.
-void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth)
+void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fontsiz, vec4 color, float* minD, float* maxD, float depth, vec4* SDFRectOut)
 {
 	//fontsize = 100 -> 0.1x | 10 -> 0.01x
-	vec4 pos = vec4(Rect.x, Rect.y, 0, 0);
-	constexpr float Default_LineHeight = 750;
+	vec4 pos = vec4(Rect.x, Rect.w, 0, 0);
+	constexpr float Default_LineHeight = 750*2;
 	float mul = fontsiz / Default_LineHeight;
-
 	float basic_minD = -1;
 	float basic_maxD = 0;
 	bool isbasicDistance = false;
 	if (minD == nullptr || maxD == nullptr) {
 		isbasicDistance = true;
 	}
-
-	constexpr float lineheight_mul = 2.5f;
+	constexpr float lineheight_mul = 1.5f;
 	float lineheight = lineheight_mul * fontsiz;
+	pos.y -= lineheight;
 	for (int i = 0; i < length; ++i) {
 		wchar_t wc = wstr[i];
 		if (wc == L'\n') {
+			if (SDFRectOut) {
+				SDFRectOut[i] = vec4(pos.x, pos.y, pos.x + fontsiz, pos.y + lineheight);
+			}
 			pos.x = Rect.x;
 			pos.y -= lineheight;
 			continue;
 		}
 		else if (wc == L' ') {
 			pos.x += fontsiz;
+			if (SDFRectOut) {
+				SDFRectOut[i] = vec4(pos.x - fontsiz, pos.y, pos.x, pos.y + lineheight);
+			}
 			continue;
 		}
 		bool textureExist = false;
@@ -3139,6 +3196,9 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 		//set root variables
 		vec4 textRt = vec4(pos.x + g.bounding_box[0] * mul, pos.y + g.bounding_box[1] * mul, pos.x + g.bounding_box[2] * mul, pos.y + g.bounding_box[3] * mul);
 		//float tConst[14] = { textRt.x, textRt.y, textRt.z, textRt.w, gd.ClientFrameWidth , gd.ClientFrameHeight, depth, 0, color.x, color.y, color.z, color.w, minD[i], maxD[i] };
+		if (SDFRectOut) {
+			SDFRectOut[i] = textRt;
+		}
 
 		SDFInstance sdfins;
 		sdfins.Color = color;
@@ -3151,7 +3211,7 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 		sdfins.uvrange.y = (float)section->sy / (float)SDFTextPageTextureBuffer::MaxWidth;
 		sdfins.uvrange.z = (float)(section->sx + section->width) / (float)SDFTextPageTextureBuffer::MaxWidth;
 		sdfins.uvrange.w = (float)(section->sy + section->height) / (float)SDFTextPageTextureBuffer::MaxHeight;
-		game.MyScreenCharactorShader->PushSDFInstance(sdfins);
+		game.MyScreenShader->PushSDFInstance(sdfins);
 
 		//calculate next location of text
 		pos.x += g.advance_width * mul;
@@ -3165,7 +3225,1466 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 	}
 }
 
+void Game::WindowNormalizeCoordToDirectXRenderCoord_vec4(vec4& v, float W, float H)
+{
+	v -= 0.5f;
+	v * 2.0f;
+	v.x *= W;
+	v.z *= W;
+	v.y *= -H;
+	v.w *= -H;
+	swap(v.y, v.w);
+}
+
+bool Game::RectContainPos(vec4 rt, vec4 pos)
+{
+	bool b = clamp(pos.x, rt.x, rt.z) == pos.x;
+	b = b && clamp(pos.y, rt.y, rt.w) == pos.y;
+	return b;
+}
+
+bool Game::RectContainRect(vec4 rt, vec4 rt2)
+{
+	bool b = clamp(rt2.x, rt.x, rt.z) == rt2.x;
+	b = b && clamp(rt2.y, rt.y, rt.w) == rt2.y;
+	b = b && clamp(rt2.z, rt.x, rt.z) == rt2.z;
+	b = b && clamp(rt2.w, rt.y, rt.w) == rt2.w;
+	return b;
+}
+
+void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid)
+{
+	vec4 line = vec4(loc.x, (loc.y + loc.w) * 0.5f, loc.z, (loc.y + loc.w) * 0.5f);
+	float wid = gd.ClientFrameWidth;
+	float hei = gd.ClientFrameHeight;
+	float lineWidth = loc.w - loc.y;
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &wid, 0);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &hei, 1);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &depth, 2);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &lineWidth, 3);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &line, 4);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &color, 8);
+	
+	DescHandle di;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
+	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
+	game.TextMesh->Render(gd.gpucmd, 1);
+}
+
+void Game::UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float LineWidth, int uitextureid)
+{
+	float wid = gd.ClientFrameWidth;
+	float hei = gd.ClientFrameHeight;
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &wid, 0);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &hei, 1);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &depth, 2);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &LineWidth, 3);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &startToEnd, 4);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &color, 8);
+
+	DescHandle di;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
+	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
+	game.TextMesh->Render(gd.gpucmd, 1);
+}
+
+// ø©±‚º≠∫Œ≈Õ UI∏¶ ¡¶æÓ«œ¥¬ ƒ⁄µÂ¿”.
+#pragma region UICode
+void UIRenderDefaultBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	GPUResource* baseTex = game.UITextureTable[pbtn->Base_UITextureIndex];
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+
+	renderLoc.x += margin * rate;
+	renderLoc.y += margin * rate;
+	renderLoc.z -= margin * rate;
+	renderLoc.w -= margin * rate;
+
+	game.UIDraw_TextureRect(renderLoc, color, depth, 0);
+	game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 20, vec4(0, 0, 0, 1), nullptr, nullptr, -0.01f + depth);
+}
+
+void UIRender_CyberBtn001(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	renderLoc.x += margin * rate;
+	renderLoc.y += margin * rate;
+	renderLoc.z -= margin * rate;
+	renderLoc.w -= margin * rate;
+	game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+
+	renderLoc.x += 10;
+	renderLoc.w -= 5;
+	game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+}
+
+void UIUpdateDefaultBtn(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	pbtn->flow += deltaTime;
+	if (pbtn->flow > pbtn->maxtime) {
+		pbtn->flow = pbtn->maxtime;
+	}
+}
+
+void UIEventSaveBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		if (game.CurrentPageStack->size() >= 1) {
+			game.CurrentPageStack->pop_back();
+		}
+		// save logic
+	}
+}
+
+void UIEventCloseBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		// close logic
+		if (game.CurrentPageStack->size() >= 1) {
+			game.CurrentPageStack->pop_back();
+		}
+	}
+}
+
+void UIEventOpen_Inventory(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		// Showing Inventory Window Code
+		DXUI* parentUI = (DXUI*)pbtn->addtionalPtr[0];
+		parentUI->enable = true;
+	}
+}
+
+void UIRenderDefaultEdit(DXUI* ui) {
+	static vector<vec4> tempSDFRange;
+
+	DXEditParam* pedit = (DXEditParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pedit->flow / pedit->maxtime, 5);
+	constexpr float margin = 2.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+
+	renderLoc.x += margin * rate;
+	renderLoc.y += margin * rate;
+	renderLoc.z -= margin * rate;
+	renderLoc.w -= margin * rate;
+
+	game.UIDraw_TextureRect(renderLoc, color, depth, pedit->Base_UITextureIndex);
+
+	renderLoc.x += 20;
+	renderLoc.w -= 5;
+	if (pedit->wstr.size() == 0) {
+		game.RenderSDFText(pedit->text, wcslen(pedit->text), renderLoc, 15, vec4(0.5, 0.5, 0.5, 1), nullptr, nullptr, -0.01f + depth);
+	}
+	else {
+		const wchar_t* wstr = pedit->wstr.c_str();
+		int len = wcslen(wstr);
+		if (tempSDFRange.capacity() < len) {
+			tempSDFRange.reserve(len);
+		}
+		tempSDFRange.resize(len);
+		game.RenderSDFText(wstr, len, renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth, tempSDFRange.data());
+
+		if (pedit->wstr.size() > pedit->editCursor) {
+			vec4 CursorRange = tempSDFRange[pedit->editCursor];
+			CursorRange.w = CursorRange.y;
+			CursorRange.y -= 5;
+			vec4 CursorColor = vec4(0.75f, 0.75f, 0.75f, 1.0f);
+			game.UIDraw_TextureRect(CursorRange, CursorColor, -0.02f + depth, 0);
+		}
+	}
+}
+
+void UIUpdateDefaultEdit(DXUI* ui, float deltaTime) {
+	DXEditParam* pedit = (DXEditParam*)ui->pParamterData;
+	pedit->flow += deltaTime;
+	if (pedit->flow > pedit->maxtime) {
+		pedit->flow = pedit->maxtime;
+	}
+}
+
+void UIEventDefaultEdit(DXUI* ui) {
+	DXEditParam* pedit = (DXEditParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		if (ui->isFocus == false) {
+			ui->isFocus = true;
+		}
+		pedit->flow = 0;
+	}
+
+	if (ui->isFocus) {
+		if (game.evt.uMsg == WM_CHAR) {
+			//¡¶ø‹«“ πÆ¿⁄∏¶ ≥™ø≠
+			bool b = (game.evt.wParam != VK_BACK);
+			b = b && (game.evt.wParam != VK_RETURN);
+			b = b && (game.evt.wParam != VK_LEFT);
+			b = b && (game.evt.wParam != VK_RIGHT);
+			if (b == false) {
+				return;
+			}
+
+			pedit->flow = 0;
+			wchar_t addText[2] = { 0, 0 };
+			addText[0] = game.CurrentCompleteCharactor;
+			if (pedit->editCursor != pedit->wstr.size()) {
+				pedit->wstr.insert(pedit->editCursor, addText);
+			}
+			else {
+				pedit->wstr.push_back(game.CurrentCompleteCharactor);
+			}
+			pedit->editCursor = min(pedit->editCursor + 1, pedit->wstr.size());
+		}
+		else if (game.evt.uMsg == WM_KEYDOWN) {
+			pedit->flow = 0;
+			if (game.evt.wParam == VK_RETURN) {
+				wchar_t addText[2] = { 0, 0 };
+				addText[0] = L'\n';
+				if (pedit->editCursor != pedit->wstr.size()) {
+					pedit->wstr.insert(pedit->editCursor, addText);
+				}
+				else {
+					pedit->wstr.push_back(L'\n');
+				}
+				pedit->editCursor = min(pedit->editCursor + 1, pedit->wstr.size());
+			}
+			if (game.evt.wParam == VK_BACK) {
+				// ¡ˆøÏ±‚
+				if (pedit->wstr.size() >= 1 && pedit->editCursor >= 1) {
+					if (pedit->editCursor >= pedit->wstr.size()) {
+						pedit->wstr.pop_back();
+						pedit->editCursor = pedit->wstr.size();
+					}
+					else {
+						pedit->wstr.erase(pedit->editCursor, 1);
+						pedit->editCursor = max(pedit->editCursor - 1, 0);
+					}
+				}
+			}
+			else if (game.evt.wParam == VK_LEFT) {
+				pedit->editCursor = max(pedit->editCursor - 1, 0);
+			}
+			else if (game.evt.wParam == VK_RIGHT) {
+				pedit->editCursor = min(pedit->editCursor + 1, pedit->wstr.size());
+			}
+		}
+	}
+}
+
+void UIRenderDefaultSlider(DXUI* ui) {
+	constexpr float presentValue_Margin = 5.0f;
+	constexpr float textWid = 50.0f;
+	constexpr float textHei = 35.0f;
+	DXSliderParam* pslider = (DXSliderParam*)ui->pParamterData;
+	vec4 present_color = vec4(0.5f, 0.5f, 0.5f, 0.5f);
+	if (ui->isFocus) present_color *= 2;
+
+	wchar_t ValueStr[64] = {};
+	if (pslider->ShowValueMode != 0) {
+		switch (pslider->mod) {
+		case 'n':
+		{
+			int v = (int)(pslider->min + (pslider->max - pslider->min) * pslider->setter);
+			_itow_s(v, ValueStr, 64, 10);
+		}
+		break;
+		case 'f':
+		{
+			float v = (float)(pslider->min + (pslider->max - pslider->min) * pslider->setter);
+			swprintf_s(ValueStr, 64, L"%g", v);
+		}
+		break;
+		}
+	}
+
+	vec4 presentLoc = ui->location + game.CurrentUICenter;
+	if (pslider->horizontal) {
+		//base
+		vec4 LineLoc = ui->location + game.CurrentUICenter;
+		float centerY = (LineLoc.y + LineLoc.w) * 0.5f;
+		LineLoc.y = centerY - 2;
+		LineLoc.w = centerY + 2;
+		game.UIDraw_TextureRect(LineLoc, vec4(0, 0, 0, 1), ui->depth - game.ui_depth_epsilon, 0);
+
+		vec4 enableLoc = LineLoc;
+		if (pslider->inverse_direction == false) {
+			enableLoc.z = (LineLoc.z - LineLoc.x) * pslider->setter + LineLoc.x;
+			presentLoc.x = enableLoc.z - presentValue_Margin;
+			presentLoc.z = enableLoc.z + presentValue_Margin;
+		}
+		else {
+			enableLoc.x = LineLoc.z - (LineLoc.z - LineLoc.x) * pslider->setter;
+			presentLoc.x = enableLoc.x - presentValue_Margin;
+			presentLoc.z = enableLoc.x + presentValue_Margin;
+		}
+		game.UIDraw_TextureRect(enableLoc, vec4(0.5, 0.5, 0.5, 1), ui->depth - game.ui_depth_epsilon * 2, 0);
+		game.UIDraw_TextureRect(presentLoc, present_color, ui->depth - game.ui_depth_epsilon * 3, 0);
+
+		if (pslider->ShowValueMode != 0) {
+			vec4 textLoc = ui->location + game.CurrentUICenter;
+			switch (pslider->ShowValueMode) {
+			case 'f':
+			{
+				textLoc.z = textLoc.x;
+				textLoc.x = textLoc.x - textWid;
+			}
+			break;
+			case 'b':
+			{
+				textLoc.x = textLoc.z;
+				textLoc.z = textLoc.z + textWid;
+			}
+			break;
+			case 'q':
+			{
+				textLoc.x = presentLoc.x - textWid * 0.5f;
+				textLoc.z = presentLoc.x + textWid * 0.5f;
+				textLoc.y = presentLoc.w + 10;
+				textLoc.w = textLoc.y + textHei;
+			}
+			break;
+			case 'p':
+			{
+				textLoc.x = presentLoc.x - textWid * 0.5f;
+				textLoc.z = presentLoc.x + textWid * 0.5f;
+				textLoc.w = presentLoc.y - 10;
+				textLoc.y = textLoc.w - textHei;
+			}
+			break;
+			}
+			game.RenderSDFText(ValueStr, wcslen(ValueStr), textLoc, 10, vec4(1, 1, 1, 1), nullptr, nullptr, ui->depth - game.ui_depth_epsilon * 2, nullptr);
+		}
+	}
+	else {
+		vec4 LineLoc = ui->location + game.CurrentUICenter;
+		float centerX = (LineLoc.x + LineLoc.z) * 0.5f;
+		LineLoc.x = centerX - 2;
+		LineLoc.z = centerX + 2;
+		game.UIDraw_TextureRect(LineLoc, vec4(0, 0, 0, 1), ui->depth - game.ui_depth_epsilon, 0);
+
+		vec4 enableLoc = LineLoc;
+		if (pslider->inverse_direction == false) {
+			enableLoc.w = (LineLoc.w - LineLoc.y) * pslider->setter + LineLoc.y;
+			presentLoc.y = enableLoc.w - presentValue_Margin;
+			presentLoc.w = enableLoc.w + presentValue_Margin;
+		}
+		else {
+			enableLoc.y = LineLoc.w - (LineLoc.w - LineLoc.y) * pslider->setter;
+			presentLoc.y = enableLoc.y - presentValue_Margin;
+			presentLoc.w = enableLoc.y + presentValue_Margin;
+		}
+		game.UIDraw_TextureRect(enableLoc, vec4(0.5, 0.5, 0.5, 1), ui->depth - game.ui_depth_epsilon * 2, 0);
+		game.UIDraw_TextureRect(presentLoc, present_color, ui->depth - game.ui_depth_epsilon * 3, 0);
+
+		if (pslider->ShowValueMode != 0) {
+			vec4 textLoc = ui->location + game.CurrentUICenter;
+			switch (pslider->ShowValueMode) {
+			case 'f':
+			{
+				textLoc.w = textLoc.y;
+				textLoc.y = textLoc.y - textHei;
+			}
+			break;
+			case 'b':
+			{
+				textLoc.y = textLoc.w;
+				textLoc.w = textLoc.w + textHei;
+			}
+			break;
+			case 'q':
+			{
+				textLoc.y = presentLoc.y - textWid * 0.5f;
+				textLoc.w = presentLoc.y + textWid * 0.5f;
+				textLoc.x = presentLoc.z + 10;
+				textLoc.z = textLoc.x + textWid;
+			}
+			break;
+			case 'p':
+			{
+				textLoc.y = presentLoc.y - textWid * 0.5f;
+				textLoc.w = presentLoc.y + textWid * 0.5f;
+				textLoc.z = presentLoc.x - 10;
+				textLoc.x = textLoc.z - textWid;
+			}
+			break;
+			}
+			game.RenderSDFText(ValueStr, wcslen(ValueStr), textLoc, 10, vec4(1, 1, 1, 1), nullptr, nullptr, ui->depth - game.ui_depth_epsilon * 2, nullptr);
+		}
+	}
+}
+
+void UIRenderCyberSlider(DXUI* ui) {
+	constexpr float presentValue_Margin = 5.0f;
+	constexpr float textWid = 50.0f;
+	constexpr float textHei = 35.0f;
+	DXSliderParam* pslider = (DXSliderParam*)ui->pParamterData;
+	vec4 present_color = vec4(1, 1, 1, 0.75f);
+	if (ui->isFocus)  present_color = vec4(1, 1, 1, 1);
+
+	wchar_t ValueStr[64] = {};
+	if (pslider->ShowValueMode != 0) {
+		switch (pslider->mod) {
+		case 'n':
+		{
+			int v = (int)(pslider->min + (pslider->max - pslider->min) * pslider->setter);
+			_itow_s(v, ValueStr, 64, 10);
+		}
+		break;
+		case 'f':
+		{
+			float v = (float)(pslider->min + (pslider->max - pslider->min) * pslider->setter);
+			swprintf_s(ValueStr, 64, L"%g", v);
+		}
+		break;
+		}
+	}
+
+	vec4 presentLoc = ui->location + game.CurrentUICenter;
+	if (pslider->horizontal) {
+		//base
+		vec4 LineLoc = ui->location + game.CurrentUICenter;
+		float centerY = (LineLoc.y + LineLoc.w) * 0.5f;
+		LineLoc.y = centerY - 2;
+		LineLoc.w = centerY + 2;
+		presentLoc.y = centerY + pslider->NotchLoc.y;
+		presentLoc.w = centerY + pslider->NotchLoc.w;
+		game.UIDraw_TextureRect(LineLoc, vec4(0, 0, 0, 1), ui->depth - game.ui_depth_epsilon, 0);
+
+		vec4 enableLoc = LineLoc;
+		if (pslider->inverse_direction == false) {
+			enableLoc.z = (LineLoc.z - LineLoc.x) * pslider->setter + LineLoc.x;
+			presentLoc.x = enableLoc.z + pslider->NotchLoc.x;
+			presentLoc.z = enableLoc.z + pslider->NotchLoc.z;
+		}
+		else {
+			enableLoc.x = LineLoc.z - (LineLoc.z - LineLoc.x) * pslider->setter;
+			presentLoc.x = enableLoc.z + pslider->NotchLoc.x;
+			presentLoc.z = enableLoc.z + pslider->NotchLoc.z;
+		}
+		game.UIDraw_TextureRect(enableLoc, vec4(0.5, 0.5, 0.5, 1), ui->depth - game.ui_depth_epsilon * 2, 0);
+		game.UIDraw_TextureRect(presentLoc, present_color, ui->depth - game.ui_depth_epsilon * 3, pslider->Base_UITextureIndex);
+
+		if (pslider->ShowValueMode != 0) {
+			vec4 textLoc = ui->location + game.CurrentUICenter;
+			switch (pslider->ShowValueMode) {
+			case 'f':
+			{
+				textLoc.z = textLoc.x;
+				textLoc.x = textLoc.x - textWid;
+			}
+			break;
+			case 'b':
+			{
+				textLoc.x = textLoc.z;
+				textLoc.z = textLoc.z + textWid;
+			}
+			break;
+			case 'q':
+			{
+				textLoc.x = presentLoc.x - textWid * 0.5f;
+				textLoc.z = presentLoc.x + textWid * 0.5f;
+				textLoc.y = presentLoc.w + 10;
+				textLoc.w = textLoc.y + textHei;
+			}
+			break;
+			case 'p':
+			{
+				textLoc.x = presentLoc.x - textWid * 0.5f;
+				textLoc.z = presentLoc.x + textWid * 0.5f;
+				textLoc.w = presentLoc.y - 10;
+				textLoc.y = textLoc.w - textHei;
+			}
+			break;
+			}
+			game.RenderSDFText(ValueStr, wcslen(ValueStr), textLoc, 10, vec4(1, 1, 1, 1), nullptr, nullptr, ui->depth - game.ui_depth_epsilon * 2, nullptr);
+		}
+	}
+	else {
+		vec4 LineLoc = ui->location + game.CurrentUICenter;
+		float centerX = (LineLoc.x + LineLoc.z) * 0.5f;
+		LineLoc.x = centerX - 2;
+		LineLoc.z = centerX + 2;
+		presentLoc.x = centerX + pslider->NotchLoc.x;
+		presentLoc.z = centerX + pslider->NotchLoc.z;
+		game.UIDraw_TextureRect(LineLoc, vec4(0, 0, 0, 1), ui->depth - game.ui_depth_epsilon, 0);
+
+		vec4 enableLoc = LineLoc;
+		if (pslider->inverse_direction == false) {
+			enableLoc.w = (LineLoc.w - LineLoc.y) * pslider->setter + LineLoc.y;
+			presentLoc.y = enableLoc.w + pslider->NotchLoc.y;
+			presentLoc.w = enableLoc.w + pslider->NotchLoc.w;
+		}
+		else {
+			enableLoc.y = LineLoc.w - (LineLoc.w - LineLoc.y) * pslider->setter;
+			presentLoc.y = enableLoc.y + pslider->NotchLoc.y;
+			presentLoc.w = enableLoc.y + pslider->NotchLoc.w;
+		}
+		game.UIDraw_TextureRect(enableLoc, vec4(0.5, 0.5, 0.5, 1), ui->depth - game.ui_depth_epsilon * 2, 0);
+		game.UIDraw_TextureRect(presentLoc, present_color, ui->depth - game.ui_depth_epsilon * 3, pslider->Base_UITextureIndex);
+
+		if (pslider->ShowValueMode != 0) {
+			vec4 textLoc = ui->location + game.CurrentUICenter;
+			switch (pslider->ShowValueMode) {
+			case 'f':
+			{
+				textLoc.w = textLoc.y;
+				textLoc.y = textLoc.y - textHei;
+			}
+			break;
+			case 'b':
+			{
+				textLoc.y = textLoc.w;
+				textLoc.w = textLoc.w + textHei;
+			}
+			break;
+			case 'q':
+			{
+				textLoc.y = presentLoc.y - textWid * 0.5f;
+				textLoc.w = presentLoc.y + textWid * 0.5f;
+				textLoc.x = presentLoc.z + 10;
+				textLoc.z = textLoc.x + textWid;
+			}
+			break;
+			case 'p':
+			{
+				textLoc.y = presentLoc.y - textWid * 0.5f;
+				textLoc.w = presentLoc.y + textWid * 0.5f;
+				textLoc.z = presentLoc.x - 10;
+				textLoc.x = textLoc.z - textWid;
+			}
+			break;
+			}
+			game.RenderSDFText(ValueStr, wcslen(ValueStr), textLoc, 10, vec4(1, 1, 1, 1), nullptr, nullptr, ui->depth - game.ui_depth_epsilon * 2, nullptr);
+		}
+	}
+}
+
+void UIUpdateDefaultSlider(DXUI* ui, float deltaTime) {
+	DXSliderParam* pslider = (DXSliderParam*)ui->pParamterData;
+	*(float*)pslider->obj = pslider->setter;
+}
+
+void UIEventDefaultSlider(DXUI* ui) {
+	constexpr float presentValue_Margin = 5.0f;
+	DXSliderParam* pslider = (DXSliderParam*)ui->pParamterData;
+	vec4 uiloc = ui->location + game.CurrentUICenter;
+	vec4 focusRt = uiloc;
+	if (pslider->horizontal) {
+		float centerx = pslider->setter * (focusRt.z - focusRt.x);
+		if (pslider->inverse_direction == false) {
+			centerx = focusRt.x + centerx;
+		}
+		else {
+			centerx = focusRt.z - centerx;
+		}
+		focusRt.x = centerx - presentValue_Margin;
+		focusRt.z = centerx + presentValue_Margin;
+	}
+	else {
+		float centery = pslider->setter * (focusRt.w - focusRt.y);
+		if (pslider->inverse_direction == false) {
+			centery = centery + focusRt.y;
+		}
+		else {
+			centery = focusRt.w - centery;
+		}
+		focusRt.y = centery - presentValue_Margin;
+		focusRt.w = centery + presentValue_Margin;
+	}
+
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(focusRt, game.CurrentCursorPos)) {
+		if (ui->isFocus == false) {
+			ui->isFocus = true;
+		}
+	}
+
+	if (ui->isFocus) {
+		float rate = 0;
+		if (pslider->horizontal) {
+			if (pslider->inverse_direction == false) {
+				rate = (game.CurrentCursorPos.x - uiloc.x) / (uiloc.z - uiloc.x);
+			}
+			else {
+				rate = (uiloc.z - game.CurrentCursorPos.x) / (uiloc.z - uiloc.x);
+			}
+		}
+		else {
+			if (pslider->inverse_direction == false) {
+				rate = (game.CurrentCursorPos.y - uiloc.y) / (uiloc.w - uiloc.y);
+			}
+			else {
+				rate = (uiloc.w - game.CurrentCursorPos.y) / (uiloc.w - uiloc.y);
+			}
+		}
+		rate = max(min(rate, 1), 0);
+		pslider->setter = rate;
+	}
+
+	if (game.evt.uMsg == WM_LBUTTONUP) {
+		ui->isFocus = false;
+	}
+}
+
+void UIRenderDefaultWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	if (pWindow->page_stack.size() > 0) {
+		//PageRender
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		game.CurrentPageStack = &pWindow->page_stack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+		float lastDepth = 0;
+		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
+			DXPage* page = pWindow->page_stack[i];
+			lastDepth = page->GetDepth(0);
+			page->Render();
+		}
+
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+
+		//Header Render
+		vec4 uiloc = ui->location + game.CurrentUICenter;
+		vec4 headerloc = uiloc;
+		constexpr float headerMargin = 50;
+		headerloc.y = headerloc.w - headerMargin;
+		game.UIDraw_TextureRect(headerloc, vec4(0, 0, 1, 1.0), lastDepth - game.ui_depth_epsilon, 0);
+	}
+}
+
+void UIRenderCyberWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	game.UIDraw_TextureRect(ui->location, vec4(1, 1, 1, 1), ui->depth, pWindow->WindowImageIndex);
+
+	if (pWindow->page_stack.size() > 0) {
+		//PageRender
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		game.CurrentPageStack = &pWindow->page_stack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+		float lastDepth = 0;
+		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
+			DXPage* page = pWindow->page_stack[i];
+			lastDepth = page->GetDepth(0);
+			page->Render();
+		}
+
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+	}
+}
+
+void UIUpdateDefaultWindow(DXUI* ui, float deltaTime) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	if (pWindow->page_stack.size() > 0) {
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+		game.CurrentPageStack = &pWindow->page_stack;
+		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
+			DXPage* page = pWindow->page_stack[i];
+			page->Update(deltaTime);
+		}
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+	}
+}
+
+void UIEventDefaultWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	if (pWindow->page_stack.size() > 0) {
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		game.CurrentPageStack = &pWindow->page_stack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+		// ∏∂¡ˆ∏∑ ∆‰¿Ã¡ˆ∏∏¿ª ¥ÎªÛ¿∏∑Œ UI¿« Event ∏¶ √≥∏Æ«—¥Ÿ.
+		if (pWindow->page_stack.size() >= 1) {
+			DXPage* page = pWindow->page_stack[pWindow->page_stack.size() - 1];
+			page->Event();
+		}
+
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+
+		if (ui->enable) {
+			//Window Event
+			vec4 uiloc = ui->location + game.CurrentUICenter;
+			if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(uiloc, game.CurrentCursorPos)) {
+				if (ui->isFocus == false) {
+					ui->isFocus = true;
+					pWindow->LastFocusedTime = chrono::system_clock::now();
+					game.hasToAlginUIDepth = true;
+				}
+			}
+
+			if (game.evt.uMsg == WM_LBUTTONUP) {
+				ui->isFocus = false;
+				pWindow->Focus_Move = false;
+			}
+
+			if (ui->isFocus) {
+				vec4 headerloc = uiloc;
+				constexpr float headerMargin = 50;
+				headerloc.y = headerloc.w - headerMargin;
+				if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(headerloc, game.CurrentCursorPos)) {
+					if (pWindow->Focus_Move == false) {
+						pWindow->Focus_Move = true;
+						pWindow->MovePivot = game.CurrentCursorPos;
+					}
+				}
+
+				if (pWindow->Focus_Move) {
+					vec4 MoveVector = pWindow->MovePivot - game.CurrentCursorPos;
+					ui->location.x -= MoveVector.x;
+					ui->location.z -= MoveVector.x;
+					ui->location.y -= MoveVector.y;
+					ui->location.w -= MoveVector.y;
+					pWindow->MovePivot = game.CurrentCursorPos;
+				}
+			}
+		}
+	}
+}
+
+void UIInitDefaultWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0.5f);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		// ¿˙¿Â πˆ∆∞
+		vec4 rateloc = vec4(0.5, 0.8, 0.7, 0.9);
+		pWindow->NormalizeCoordToWindowCoord_vec4(rateloc);
+		DXUI* SaveBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)SaveBtn->pParamterData;
+		pbtn->Set(0, 1, 0, L"¿˙¿Â«œ±‚");
+		SaveBtn->SetFunctions(UIRenderDefaultBtn, UIUpdateDefaultBtn, UIEventSaveBtn);
+		sample_page->uiArr.push_back(SaveBtn);
+	}
+	pWindow->page_stack.push_back(sample_page);
+}
+
+void UIEvent_InventoryCloseBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//close inventory
+		DXUI* parentUI = (DXUI*)pbtn->addtionalPtr[0];
+		parentUI->enable = false;
+		DXWindowParam* pWin = (DXWindowParam*)parentUI->pParamterData;
+		pWin->Focus_Move = false;
+	}
+}
+
+void UIEvent_InventorySortBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//sort Inventory
+	}
+}
+
+void UIEvent_InventoryChangeItemTypeBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//change item type of Inventory
+		DXUI* parentUI = (DXUI*)pbtn->addtionalPtr[0];
+		DXWindowParam* winParam = (DXWindowParam*)parentUI->pParamterData;
+		winParam->addtionalParams_int[0] = pbtn->addtionalParams_int[2];
+	}
+}
+
+void UIRender_InventoryItemSlot(DXUI* ui) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	vec4& slotShowRt = *(vec4*)pslot->addtionalPtr[2];
+	if (game.RectContainRect(slotShowRt, ui->location)) {
+		vec4 color = vec4(1, 1, 1, 1);
+		float depth = ui->depth - game.ui_depth_epsilon;
+		float rate = 1.0f - AnimOperUtil::EaseOut(pslot->flow / pslot->maxtime, 5);
+		constexpr float margin = 10.0f;
+		vec4 renderLoc = ui->location + game.CurrentUICenter;
+
+		renderLoc.x += margin * rate;
+		renderLoc.y += margin * rate;
+		renderLoc.z -= margin * rate;
+		renderLoc.w -= margin * rate;
+
+		game.UIDraw_TextureRect(renderLoc, color, depth, pslot->Base_UITextureIndex);
+		wchar_t NumText[64] = {};
+		_itow_s(pslot->itemCount, NumText, 64, 10);
+		game.RenderSDFText(NumText, wcslen(NumText), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+	}
+}
+
+void UIUpdate_InventoryItemSlot(DXUI* ui, float deltaTime) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	pslot->flow += deltaTime;
+	if (pslot->flow > pslot->maxtime) {
+		pslot->flow = pslot->maxtime;
+	}
+	constexpr float slot_Margin = 80;
+	//ΩΩ∂Û¿Ã¥ı¿« ∆ƒ∂ÛπÃ≈Õø° µ˚∂Û Y ∞™∏∏ ¡∂¡§«—¥Ÿ.
+	float SliderY = *(float*)pslot->addtionalPtr[1];
+	float StartY = pslot->addtionalParams[0];
+	float MAXY = StartY + pslot->addtionalParams[1] * slot_Margin;
+	float present_w = SliderY * (MAXY - StartY) + StartY;
+	float height = ui->location.w - ui->location.y;
+	ui->location.w = present_w;
+	ui->location.y = ui->location.w - height;
+}
+
+void UIEvent_InventoryItemSlot(DXUI* ui) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	vec4& slotShowRt = *(vec4*)pslot->addtionalPtr[2];
+	if (game.RectContainRect(slotShowRt, ui->location))
+	{
+		vec4 evtloc = ui->location + game.CurrentUICenter;
+
+		if (game.CurrentGrabSlotData.itemCnt != 0) {
+			if (game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+				if (pslot->itemCount == 0 && game.evt.uMsg == WM_LBUTTONDOWN) {
+					pslot->itemCount = game.CurrentGrabSlotData.itemCnt;
+					pslot->objid = game.CurrentGrabSlotData.objid;
+					DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
+					srcslot->itemCount -= game.CurrentGrabSlotData.itemCnt;
+
+					//  ∫Û ∞¯∞£ø° æ∆¿Ã≈€ ¿¸√º ≥ı±‚
+					CTS_ChangeInventoryItemSlot_Header header;
+					header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.ciitType = _ChangeInventoryItemSlot_Type::CIIT_ItemMoveToBlankSlot;
+					header.destIndex = pslot->addtionalParams_int[7];
+					header.srcIndex = srcslot->addtionalParams_int[7];
+					header.srcCount = game.CurrentGrabSlotData.itemCnt;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+
+					game.CurrentGrabSlotData.itemCnt = 0;
+					game.CurrentGrabSlotData.objid = 0;
+					game.CurrentGrabSlotData.selectedSlot = nullptr;
+				}
+				else if (pslot->itemCount == 0 && game.evt.uMsg == WM_RBUTTONDOWN) {
+					if (game.CurrentGrabSlotData.itemCnt > 0) {
+						pslot->itemCount = 1;
+						pslot->objid = game.CurrentGrabSlotData.objid;
+						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
+						srcslot->itemCount -= 1;
+
+						//  ∫Û ∞¯∞£ø° æ∆¿Ã≈€ ¿¸√º ≥ı±‚
+						CTS_ChangeInventoryItemSlot_Header header;
+						header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
+						header.st = CTS_Protocol::KeyInput;
+						header.ciitType = _ChangeInventoryItemSlot_Type::CIIT_ItemMoveToBlankSlot;
+						header.destIndex = pslot->addtionalParams_int[7];
+						header.srcIndex = srcslot->addtionalParams_int[7];
+						header.srcCount = 1;
+						client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+
+						game.CurrentGrabSlotData.itemCnt = srcslot->itemCount;
+						if (srcslot->itemCount == 0) {
+							game.CurrentGrabSlotData.itemCnt = 0;
+							game.CurrentGrabSlotData.objid = 0;
+							game.CurrentGrabSlotData.selectedSlot = nullptr;
+						}
+						// ∫Û ∞¯∞£ø° æ∆¿Ã≈€ «œ≥™æø ≥ı±‚
+					}
+				}
+				else {
+					if (pslot->objid == game.CurrentGrabSlotData.objid && game.evt.uMsg == WM_LBUTTONDOWN) {
+						// ∞∞¿∫ ¡æ∑˘¿« æ∆¿Ã≈€¿ª ≥ı¿ª ∞ÊøÏ
+						pslot->itemCount += game.CurrentGrabSlotData.itemCnt;
+						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
+						srcslot->itemCount -= game.CurrentGrabSlotData.itemCnt;
+
+						//  ∞∞¿∫ ¡æ∑˘¿« æ∆¿Ã≈€¿ª ≥ı¿ª ∞ÊøÏ
+						CTS_ChangeInventoryItemSlot_Header header;
+						header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
+						header.st = CTS_Protocol::KeyInput;
+						header.ciitType = _ChangeInventoryItemSlot_Type::CIIT_ItemCountCombine;
+						header.destIndex = pslot->addtionalParams_int[7];
+						header.srcIndex = srcslot->addtionalParams_int[7];
+						header.srcCount = game.CurrentGrabSlotData.itemCnt;
+						client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+
+						game.CurrentGrabSlotData.itemCnt = 0;
+						game.CurrentGrabSlotData.objid = 0;
+						game.CurrentGrabSlotData.selectedSlot = nullptr;
+					}
+					else if (pslot->objid == game.CurrentGrabSlotData.objid && game.evt.uMsg == WM_RBUTTONDOWN) {
+						// ∞∞¿∫ ¡æ∑˘¿« æ∆¿Ã≈€¿ª ≥ı¿ª ∞ÊøÏ
+						pslot->itemCount += 1;
+						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
+
+						//  ∞∞¿∫ ¡æ∑˘¿« æ∆¿Ã≈€¿ª ≥ı¿ª ∞ÊøÏ
+						CTS_ChangeInventoryItemSlot_Header header;
+						header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
+						header.st = CTS_Protocol::KeyInput;
+						header.ciitType = _ChangeInventoryItemSlot_Type::CIIT_ItemCountCombine;
+						header.destIndex = pslot->addtionalParams_int[7];
+						header.srcIndex = srcslot->addtionalParams_int[7];
+						header.srcCount = 1;
+						client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+
+						srcslot->itemCount -= 1;
+						game.CurrentGrabSlotData.itemCnt = srcslot->itemCount;
+						if (srcslot->itemCount == 0) {
+							game.CurrentGrabSlotData.itemCnt = 0;
+							game.CurrentGrabSlotData.objid = 0;
+							game.CurrentGrabSlotData.selectedSlot = nullptr;
+						}
+					}
+					else if (game.evt.uMsg == WM_LBUTTONDOWN || game.evt.uMsg == WM_RBUTTONDOWN) {
+						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
+						if (srcslot->itemCount == game.CurrentGrabSlotData.itemCnt) {
+							// ¥Ÿ∏• ¡æ∑˘¿« æ∆¿Ã≈€¿ª ≥ı¿ª ∞ÊøÏ - Ω∫ø“
+							int itemId = pslot->objid;
+							int itemCnt = pslot->itemCount;
+							pslot->itemCount = game.CurrentGrabSlotData.itemCnt;
+							pslot->objid = game.CurrentGrabSlotData.objid;
+
+							// ±‚¡∏ ΩΩ∑‘∞˙ Ω∫ø“
+							DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
+							srcslot->itemCount = itemCnt;
+							srcslot->objid = itemId;
+							game.CurrentGrabSlotData.itemCnt = itemCnt;
+							game.CurrentGrabSlotData.objid = itemId;
+
+							//  ∞∞¿∫ ¡æ∑˘¿« æ∆¿Ã≈€¿ª ≥ı¿ª ∞ÊøÏ
+							CTS_ChangeInventoryItemSlot_Header header;
+							header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
+							header.st = CTS_Protocol::KeyInput;
+							header.ciitType = _ChangeInventoryItemSlot_Type::CIIT_Swap;
+							header.destIndex = pslot->addtionalParams_int[7];
+							header.srcIndex = srcslot->addtionalParams_int[7];
+							header.srcCount = 0;
+							client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+						}
+					}
+				}
+			}
+		}
+
+		if (game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+			// grab logic
+			if (game.evt.uMsg == WM_LBUTTONDOWN && game.CurrentGrabSlotData.itemCnt == 0 && pslot->itemCount > 0) {
+				pslot->flow = 0;
+				game.CurrentGrabSlotData.objid = pslot->objid;
+				game.CurrentGrabSlotData.itemCnt = pslot->itemCount;
+				game.CurrentGrabSlotData.selectedSlot = ui;
+			}
+
+			// divide logic
+			if (game.evt.uMsg == WM_RBUTTONDOWN && game.CurrentGrabSlotData.itemCnt == 0 && pslot->itemCount > 0) {
+				pslot->flow = 0;
+				game.CurrentGrabSlotData.objid = pslot->objid;
+				game.CurrentGrabSlotData.itemCnt = (int)ceilf((float)pslot->itemCount / 2.0f);
+				game.CurrentGrabSlotData.selectedSlot = ui;
+			}
+		}
+	}
+}
+
+void UIInitInventoryWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		// ¿Œ∫•≈‰∏Æ UI
+
+		//1. Close Btn (568, 12, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 568;
+		rateloc.w -= 12;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = ui;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
+
+		//2. Item Search EditBox (15, 51, W400, H40)
+		//ø°µ∆Æ π⁄Ω∫
+		rateloc = sample_page->location;
+		rateloc.x += 15;
+		rateloc.w -= 51;
+		rateloc.z = rateloc.x + 400;
+		rateloc.y = rateloc.w - 40;
+		DXUI* ItemSearchEditBox = new DXUI(DXUI_TYPE::DXUI_Edit, sizeof(DXEditParam), rateloc, 0, new DXEditParam());
+		DXEditParam* pEdit;
+		pEdit = (DXEditParam*)ItemSearchEditBox->pParamterData;
+		pEdit->Set(0, 1, 0, 5, L"æ∆¿Ã≈€ ∞Àªˆ√¢...");
+		ItemSearchEditBox->SetFunctions(UIRenderDefaultEdit, UIUpdateDefaultEdit, UIEventDefaultEdit);
+		sample_page->uiArr.push_back(ItemSearchEditBox);
+
+		//3. Item Sort Btn (555, 52, W40, H40)
+		rateloc = sample_page->location;
+		rateloc.x += 555;
+		rateloc.w -= 52;
+		rateloc.z = rateloc.x + 40;
+		rateloc.y = rateloc.w - 40;
+		DXUI* ItemSortBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		pbtn = (DXBtnParam*)ItemSortBtn->pParamterData;
+		pbtn->Set(0, 1, 4, L"");
+		ItemSortBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventorySortBtn);
+		sample_page->uiArr.push_back(ItemSortBtn);
+
+		//4. Item Type Select Tab Btn * 4
+		/*
+		* (18, 95, W130, H50) (157, 95, W130, H50) (297, 95, W130, H50) (437, 95, W130, H50)
+		*/
+		int startx = 18;
+		const wchar_t ItemTypes[4][32] = { L"¿Â∫Ò", L"º“∫Ò", L"±‚≈∏", L"¿¸√º" };
+		for (int i = 0; i < 4; ++i) {
+			rateloc = sample_page->location;
+			rateloc.x += startx;
+			rateloc.w -= 95;
+			rateloc.z = rateloc.x + 130;
+			rateloc.y = rateloc.w - 50;
+			DXUI* ItemTypeBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+			pbtn = (DXBtnParam*)ItemTypeBtn->pParamterData;
+			pbtn->Set(0, 1, 6, ItemTypes[i]);
+			pbtn->addtionalPtr[0] = ui;
+			pbtn->addtionalParams_int[2] = i;
+			ItemTypeBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventorySortBtn);
+			sample_page->uiArr.push_back(ItemTypeBtn);
+
+			startx += 139;
+		}
+
+		//5. Show Range Select Slider (574, 137, W32, H510)
+		rateloc = sample_page->location;
+		rateloc.x += 574;
+		rateloc.w -= 137;
+		rateloc.z = rateloc.x + 32;
+		rateloc.y = rateloc.w - 510;
+		DXUI* RangeSelectSlider = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		RangeSelectSlider->SetFunctions(UIRenderCyberSlider, UIUpdateDefaultSlider, UIEventDefaultSlider);
+		DXSliderParam* pRangeSelectSlider = (DXSliderParam*)RangeSelectSlider->pParamterData;
+		pRangeSelectSlider->Set(false, 'f', true, 0, 1, '\0', &pWindow->addtionalParams[1], 7, vec4(-15, -15, 25, 15));
+		sample_page->uiArr.push_back(RangeSelectSlider);
+
+		//Item Slot µÈ. (12, 151, 75, 75) inc 80 7x7
+		//pWindow->addtionalPtr[1] = new vec4();
+		vec4& slotShowRt = *(vec4*)pWindow->addtionalPtr[1];
+		rateloc = sample_page->location;
+		rateloc.x += 12;
+		rateloc.w -= 151;
+		rateloc.z = rateloc.x + 80;
+		rateloc.y = rateloc.w - 80;
+		slotShowRt = vec4(rateloc.x - 10, rateloc.w - 570, rateloc.x + 570, rateloc.w + 10);
+		constexpr float slot_Margin = 80;
+		vec4 startRateLoc = rateloc;
+		constexpr int inventory_slotCount = 49;
+		for (int i = 0; i < inventory_slotCount; ++i) {
+			DXUI* ItemSlot = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+			ItemSlot->SetFunctions(UIRender_InventoryItemSlot, UIUpdate_InventoryItemSlot, UIEvent_InventoryItemSlot);
+			DXSlotParam* slotparam = (DXSlotParam*)ItemSlot->pParamterData;
+			slotparam->Set(0, 1, SlotKind::_Item, 8);
+			slotparam->addtionalParams[0] = rateloc.w; // ±‚∫ª y Ω√¿€∞™
+			slotparam->addtionalParams[1] = inventory_slotCount / 7.0f; // ΩΩ∑‘ «‡ ∞≥ºˆ
+			slotparam->addtionalPtr[1] = &pWindow->addtionalParams[1]; // ΩΩ∂Û¿Ã¥ı ∞™ ∆˜¿Œ≈Õ
+			slotparam->addtionalPtr[2] = &slotShowRt; // Slot ¿Ã ∫∏¿œ ºˆ ¿÷¥¬ øµø™
+			slotparam->addtionalParams_int[7] = i; // ΩΩ∑‘π¯»£
+			sample_page->uiArr.push_back(ItemSlot);
+			game.InventorySlots[i] = ItemSlot;
+			if ((i + 1) % 7 == 0) {
+				rateloc.x = startRateLoc.x;
+				rateloc.z = startRateLoc.z;
+				rateloc.y -= slot_Margin;
+				rateloc.w -= slot_Margin;
+			}
+			else {
+				rateloc.x += slot_Margin;
+				rateloc.z += slot_Margin;
+			}
+		}
+	}
+	pWindow->page_stack.push_back(sample_page);
+}
+
+void UIInitEquipWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		// ¿Â∫Ò√¢ UI
+
+		//1. Close Btn (526, 10, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 526;
+		rateloc.w -= 10;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = ui;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
 
 
+	}
+	pWindow->page_stack.push_back(sample_page);
+}
 
+void Game::UI_Init()
+{
+	//TextureInit
+	UITextureTable.push_back(&game.DefaultTex);
+	GPUResource* NeonLight = new GPUResource();
+	NeonLight->CreateTexture_fromFile(L"Resources/UI/NeonLight.png", game.basicTexFormat, 1, false);
+	UITextureTable.push_back(NeonLight);
 
+	constexpr int UITextureCount = 40;
+	const wchar_t TextureNames[UITextureCount][512] = {
+		L"Resources/UI/UI_Inventory_Window.png", // 2
+		L"Resources/UI/UI_CloseBtn.png", //3
+		L"Resources/UI/UI_Inventory_SortBtn.png", // 4
+		L"Resources/UI/UI_Inventory_SearchEditBox.png", // 5
+		L"Resources/UI/UI_Inventory_TabBtn.png", // 6
+		L"Resources/UI/UI_SliderNotch.png", // 7
+		L"Resources/UI/UI_Inventory_ItemSlot.png", // 8
+		L"Resources/UI/UI_Equip_Window.png", // 9
+		L"Resources/UI/UI_Equip_Slot.png", // 10
+		L"Resources/UI/UI_Equip_Desc.png", // 11
+		L"Resources/UI/UI_Shop_Window.png", // 12
+		L"Resources/UI/UI_Shop_TabBtn.png", // 13
+		L"Resources/UI/UI_Shop_ItemObject.png", //14
+		L"Resources/UI/UI_Shop_AddSellItem.png", //15
+		L"Resources/UI/UI_SellBuy_ItemSlot.png", //16
+		L"Resources/UI/UI_SellBuy_ItemCountEdit.png", // 17
+		L"Resources/UI/UI_SellBuy_SliderNotch.png", //18
+		L"Resources/UI/UI_SellBuy_SliderBar.png", // 19
+		L"Resources/UI/UI_SellBuy_Btn.png", //20
+		L"Resources/UI/UI_QuestCashObject.png", //21
+		L"Resources/UI/UI_QuestCompleteObject.png", //22
+		L"Resources/UI/UI_QuestDangerObject.png", //23
+		L"Resources/UI/UI_Quest_Window.png", //24
+		L"Resources/UI/UI_Quest_CashDesc.png", //25
+		L"Resources/UI/UI_Quest_CompleteDesc.png", //26
+		L"Resources/UI/UI_Quest_DangerDesc.png", //27
+		L"Resources/UI/UI_KeyBind_Window.png", //28
+		L"Resources/UI/UI_KeyBind_KeySlot.png", //29
+		L"Resources/UI/UI_Social_Window.png", //30
+		L"Resources/UI/UI_Social_MessageEdit.png", //31
+		L"Resources/UI/UI_Social_SendBtn.png", //32
+		L"Resources/UI/UI_Social_PersonSlot.png", //33
+		L"Resources/UI/UI_Social_BlueBtn.png", //34
+		L"Resources/UI/UI_Social_OtherMessage.png", //35
+		L"Resources/UI/UI_Social_MyMessage.png", //36
+		L"Resources/UI/UI_Party_Window.png", //37
+		L"Resources/UI/UI_Party_LeaderSlot.png", //38
+		L"Resources/UI/UI_GamePlay_Passive.png", //39
+		L"Resources/UI/UI_GamePlay_HPBar.png", //40
+		L"Resources/UI/UI_GamePlay_HPBarGage.png", //41
+	};
+	for (int i = 0; i < UITextureCount; ++i) {
+		GPUResource* temp = new GPUResource();
+		temp->CreateTexture_fromFile(TextureNames[i], game.basicTexFormat, 1, false);
+		UITextureTable.push_back(temp);
+	}
+
+	mainPageStack.reserve(32);
+	UIPageTable.reserve(32);
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0.5f);
+	sample_page->location = vec4(-((float)gd.ClientFrameWidth * 0.5f), -((float)gd.ClientFrameHeight * 0.5f), (float)gd.ClientFrameWidth * 0.5f, (float)gd.ClientFrameHeight * 0.5f);
+	UIPageTable.push_back(sample_page);
+	float ScreenW = gd.ClientFrameWidth;
+	float ScreenH = gd.ClientFrameHeight;
+
+	//UI Test ∂ß æ≤¿Œ ƒ⁄µÂ
+	if (false)
+	{
+		// ¿˙¿Â πˆ∆∞
+		vec4 rateloc = vec4(0.5, 0.8, 0.7, 0.9);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* SaveBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)SaveBtn->pParamterData;
+		pbtn->flow = 0;
+		pbtn->maxtime = 1;
+		wcscpy_s(pbtn->text, 64, L"¿˙¿Â«œ±‚");
+		ZeroMemory(pbtn->addtionalParams, sizeof(float) * 16);
+		pbtn->Base_UITextureIndex = 0;
+		SaveBtn->RenderFunc = UIRenderDefaultBtn;
+		SaveBtn->UpdateFunc = UIUpdateDefaultBtn;
+		SaveBtn->EventFunc = UIEventSaveBtn;
+		sample_page->uiArr.push_back(SaveBtn);
+
+		// ¥›±‚ πˆ∆∞
+		rateloc = vec4(0.75, 0.8, 0.95, 0.9);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->flow = 0;
+		pbtn->maxtime = 1;
+		wcscpy_s(pbtn->text, 64, L"¥›±‚");
+		ZeroMemory(pbtn->addtionalParams, sizeof(float) * 16);
+		pbtn->Base_UITextureIndex = 0;
+		CloseBtn->RenderFunc = UIRenderDefaultBtn;
+		CloseBtn->UpdateFunc = UIUpdateDefaultBtn;
+		CloseBtn->EventFunc = UIEventCloseBtn;
+		sample_page->uiArr.push_back(CloseBtn);
+
+		//ø°µ∆Æ π⁄Ω∫
+		rateloc = vec4(0.1, 0.1, 0.9, 0.5);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* TextEdit = new DXUI(DXUI_TYPE::DXUI_Edit, sizeof(DXEditParam), rateloc, 0, new DXEditParam());
+		DXEditParam* pEdit;
+		pEdit = (DXEditParam*)TextEdit->pParamterData;
+		pEdit->flow = 0;
+		pEdit->maxtime = 1;
+		pEdit->ReturnMode = 0;
+		pEdit->Base_UITextureIndex = 0;
+		pEdit->editCursor = 0;
+		ZeroMemory(&pEdit->wstr, sizeof(wstring));
+		pEdit->wstr.reserve(64);
+		pEdit->wstr.clear();
+		TextEdit->RenderFunc = UIRenderDefaultEdit;
+		TextEdit->UpdateFunc = UIUpdateDefaultEdit;
+		TextEdit->EventFunc = UIEventDefaultEdit;
+		wcscpy_s(pEdit->text, 64, L"π´æ∞°∏¶ ¿‘∑¬«ÿ∫∏ººø‰!");
+		ZeroMemory(pEdit->addtionalParams, sizeof(float) * 16);
+		sample_page->uiArr.push_back(TextEdit);
+
+		// ∞°∑Œ ΩΩ∂Û¿Ã¥ı
+		rateloc = vec4(0.1, 0.6, 0.5, 0.67);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* SliderX = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		SliderX->RenderFunc = UIRenderDefaultSlider;
+		SliderX->UpdateFunc = UIUpdateDefaultSlider;
+		SliderX->EventFunc = UIEventDefaultSlider;
+		DXSliderParam* pSliderX = (DXSliderParam*)SliderX->pParamterData;
+		pSliderX->horizontal = true;
+		pSliderX->ShowValueMode = 'q';
+		pSliderX->inverse_direction = false;
+		pSliderX->min = -100.0f;
+		pSliderX->max = 100.0f;
+		pSliderX->setter = 0;
+		pSliderX->mod = 'f';
+		pSliderX->obj = new float(); // ∫∏≈Î Set«“ ø‹∫Œ ∫Øºˆ¿« ¡÷º“∏¶ ≥÷¥¬¥Ÿ. ¥Ÿ∏∏ ¡ˆ±›¿∫ new∑Œ ªı∑Œ ∏∏µÁ¥Ÿ.
+		ZeroMemory(pSliderX->addtionalParams, sizeof(float) * 16);
+		sample_page->uiArr.push_back(SliderX);
+
+		// ºº∑Œ ΩΩ∂Û¿Ã¥ı
+		rateloc = vec4(0.05, 0.6, 0.1, 0.9);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* SliderY = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		SliderY->RenderFunc = UIRenderDefaultSlider;
+		SliderY->UpdateFunc = UIUpdateDefaultSlider;
+		SliderY->EventFunc = UIEventDefaultSlider;
+		DXSliderParam* pSliderY = (DXSliderParam*)SliderY->pParamterData;
+		pSliderY->horizontal = false;
+		pSliderY->ShowValueMode = 'q';
+		pSliderY->inverse_direction = true;
+		pSliderY->min = -100.0f;
+		pSliderY->max = 100.0f;
+		pSliderY->setter = 0;
+		pSliderY->mod = 'n';
+		pSliderY->obj = new float(); // ∫∏≈Î Set«“ ø‹∫Œ ∫Øºˆ¿« ¡÷º“∏¶ ≥÷¥¬¥Ÿ. ¥Ÿ∏∏ ¡ˆ±›¿∫ new∑Œ ªı∑Œ ∏∏µÁ¥Ÿ.
+		ZeroMemory(pSliderY->addtionalParams, sizeof(float) * 16);
+		sample_page->uiArr.push_back(SliderY);
+
+		// ¿©µµøÏ √¢
+		rateloc = vec4(0.5, 0.1, 0.9, 0.5);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* SampleWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		SampleWindow->RenderFunc = UIRenderDefaultWindow;
+		SampleWindow->UpdateFunc = UIUpdateDefaultWindow;
+		SampleWindow->EventFunc = UIEventDefaultWindow;
+		DXWindowParam* pSampleWindow = (DXWindowParam*)SampleWindow->pParamterData;
+		ZeroMemory(pSampleWindow, sizeof(DXWindowParam));
+		pSampleWindow->origin = SampleWindow;
+		UIInitEquipWindow(SampleWindow);
+		sample_page->uiArr.push_back(SampleWindow);
+	}
+
+	//Ω«¡¶ UI Init Code
+	{
+
+		/*
+		0 :¿Œ∫•≈‰∏Æ (øœ)
+		1: ¿Â∫Ò√¢ (øœ)
+		2. ªÛ¡° (øœ)
+		3. ƒ˘Ω∫∆Æ√¢(øœ)
+		4. ≈∞πŸ¿Œ¥ı(øœ)
+		5. º“º» √¢(øœ)
+		6. ∆ƒ∆º√¢(øœ)
+		*/
+		//1. ¿©µµøÏ∏¶ ø©¥¬ πˆ∆∞ 6∞≥ ±∏º∫
+
+		// ¿Œ∫•≈‰∏Æ∏¶ ø©¥¬ ≈« πˆ∆∞. 6:(134x54)
+		vec4 rateloc = vec4(0.01f, 0.01f, 0.01f, 0.01f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 134;
+		rateloc.y -= 54;
+		DXUI* InventoryWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_openInven = (DXBtnParam*)InventoryWindowOpenBtn->pParamterData;
+		pbtn_openInven->Set(0, 1, 6, L"¿Œ∫•≈‰∏Æ");
+		InventoryWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		sample_page->uiArr.push_back(InventoryWindowOpenBtn);
+
+		// ¿Â∫Ò√¢¿ª ø©¥¬ ≈« πˆ∆∞. 6:(134x54)
+		rateloc.x += 140;
+		rateloc.z += 140;
+		DXUI* EquipWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_openequip = (DXBtnParam*)EquipWindowOpenBtn->pParamterData;
+		pbtn_openequip->Set(0, 1, 6, L"¿Â∫Ò√¢");
+		EquipWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		sample_page->uiArr.push_back(EquipWindowOpenBtn);
+
+		//¿Œ∫•≈‰∏Æ ¿©µµøÏ 2:(605x710)
+		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 605;
+		rateloc.y -= 710;
+		DXUI* InventoryWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		InventoryWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pInventoryWindow = (DXWindowParam*)InventoryWindow->pParamterData;
+		pInventoryWindow->Set(InventoryWindow, 2);
+		pInventoryWindow->addtionalParams_int[0] = 0; // «ˆ¿Á º±≈√µ» æ∆¿Ã≈€¿« ≈∏¿‘. (0 : ¿Â∫Ò / 1 : º“∫Ò / 2 : ±‚≈∏ / 3 : ∆Øºˆ)
+		pInventoryWindow->addtionalParams[1] = 0; // «ˆ¿Á ∫∏ø©¡÷¥¬ π¸¿ß º±≈√ ΩΩ∂Û¿Ã¥ı¿« ∞™
+		pInventoryWindow->addtionalPtr[1] = new vec4(); // æ∆¿Ã≈€ ΩΩ∑‘¿Ã ∫∏¿œ ºˆ ¿÷¥¬ øµø™¿ª ¿˙¿Â.
+		pInventoryWindow->LastFocusedTime = chrono::system_clock::now();
+		UIInitInventoryWindow(InventoryWindow);
+		sample_page->uiArr.push_back(InventoryWindow);
+		// πˆ∆∞¿ª ¥≠∑∂¿ªãx ¿©µµøÏ∞° ƒ—¡ˆµµ∑œ ø¨∞·
+		pbtn_openInven->addtionalPtr[0] = InventoryWindow;
+
+		//¿Â∫Ò√¢ ¿©µµøÏ 9:(567 429)
+		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 567;
+		rateloc.y -= 429;
+		DXUI* EquipWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		EquipWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pEquipWindow = (DXWindowParam*)EquipWindow->pParamterData;
+		pEquipWindow->Set(EquipWindow, 9);
+		pEquipWindow->LastFocusedTime = chrono::system_clock::now();
+		UIInitEquipWindow(EquipWindow);
+		sample_page->uiArr.push_back(EquipWindow);
+		// πˆ∆∞¿ª ¥≠∑∂¿ªãx ¿©µµøÏ∞° ƒ—¡ˆµµ∑œ ø¨∞·
+		pbtn_openequip->addtionalPtr[0] = EquipWindow;
+	}
+}
+
+void DXPage::AlignUIDepth() {
+	temp_WindowArr.clear();
+	for (int i = 0; i < uiArr.size(); ++i) {
+		DXUI* ui = uiArr[i];
+		if (ui->type == DXUI_TYPE::DXUI_Window) {
+			temp_WindowArr.push_back(ui);
+			continue;
+		}
+		else {
+			ui->depth = GetDepth(0) - game.ui_depth_epsilon;
+		}
+	}
+
+	std::sort(temp_WindowArr.begin(), temp_WindowArr.end(), [](DXUI* ui0, DXUI* ui1) {
+		DXWindowParam* w0 = (DXWindowParam*)ui0->pParamterData;
+		DXWindowParam* w1 = (DXWindowParam*)ui1->pParamterData;
+		return w0->LastFocusedTime < w1->LastFocusedTime;
+		});
+
+	depthlevel_Count = temp_WindowArr.size() + 1;
+	// ∏∂¡ˆ∏∑¿∏∑Œ ∆˜ƒøΩ∫µ» ¿©µµøÏ º¯º≠¥Î∑Œ ¡§∑ƒµ .
+	for (int i = 0; i < temp_WindowArr.size(); ++i) {
+		DXWindowParam* w = (DXWindowParam*)temp_WindowArr[i]->pParamterData;
+		temp_WindowArr[i]->depth = GetDepth(i + 1);
+		w->depth_min = GetDepth(i + 1);
+		w->depth_max = GetDepth(i + 2);
+		w->AlignUIDepth();
+	}
+}
+
+void DXPage::Render() {
+	//Page BackGround Render
+	GPUResource* baseTex = game.UITextureTable[0];
+	vec4 renderloc = location + game.CurrentUICenter;
+	game.UIDraw_TextureRect(renderloc, BackGroundColor, GetDepth(0), 0);
+
+	for (int i = 0; i < uiArr.size(); ++i) {
+		DXUI* ui = uiArr[i];
+		if (ui->enable == false) continue;
+		if (ui->RenderFunc) ui->RenderFunc(ui);
+	}
+}
+
+DXUI* DXPage::GetSlotUIFromPos(vec4 pos) {
+	temp_LocStack.clear();
+	for (int i = temp_WindowArr.size() - 1; i >= 0; --i) {
+		bool b = true;
+		for (vec4 rt : temp_LocStack) {
+			b = b && !game.RectContainPos(rt, pos);
+		}
+		if (b == false) {
+			break;
+		}
+		DXWindowParam* w = (DXWindowParam*)temp_WindowArr[i]->pParamterData;
+		vec4 loc = temp_WindowArr[i]->location;
+		loc = vec4(loc.x + loc.z, loc.y + loc.w, loc.x + loc.z, loc.y + loc.w);
+		loc *= 0.5f;
+		vec4 temp_pos = pos + loc;
+		DXUI* ui = w->GetSlotUIFromPos(temp_pos);
+		temp_LocStack.push_back(w->origin->location);
+		if (ui != nullptr) return ui;
+	}
+
+	//«ÿ¥Á Pageø° ¿÷¥¬ UI ≈Ωªˆ
+	for (int i = 0; i < uiArr.size(); ++i) {
+		if (game.RectContainPos(uiArr[i]->location, pos)) {
+			return uiArr[i];
+		}
+	}
+
+	return nullptr;
+}
+#pragma endregion

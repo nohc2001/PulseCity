@@ -78,6 +78,7 @@ union ShaderType {
 		SkinMeshRender = 9,
 		InstancingWithShadow = 10,
 		Debug_OBB = 11,
+		SkinMeshRenderShadowMap = 12,
 	};
 	int id;
 
@@ -196,6 +197,51 @@ struct ViewportData {
 		OrthoFrustum.Extents = { 0.5f * Viewport.Width, 0.5f * Viewport.Height, 0.5f * (farF - nearF) };
 		v = ViewMatrix;
 		OrthoFrustum.Orientation = vec4(XMQuaternionRotationMatrix(v.RTInverse)).f4;
+	}
+
+
+	inline static vec4 PresentFrustumCorner[8] = {};
+	/*
+	* 설명 : frustumViewProj 행렬로 생기는 프러스텀을 모두 포함하면서 targetOrientation의 방향을 가지는
+	*	OBB를 반환
+	* 반환 : 반환되는 obb는 Extent.z의 방향이 targetOrientation 방향이 됨.
+	*/
+	BoundingOrientedBox GetOBB_IncludeFrustum(matrix frustumViewProj, vec4 targetOrientation) {
+		//초기화 
+		matrix invProj = XMMatrixInverse(nullptr, frustumViewProj);
+		vec4 corners[8];
+		vec4 ndcCorners[8] = {
+			{-1,  1, 0, 1}, { 1,  1, 0, 1}, { 1, -1, 0, 1}, {-1, -1, 0, 1},
+			{-1,  1, 1, 1}, { 1,  1, 1, 1}, { 1, -1, 1, 1}, {-1, -1, 1, 1}
+		};
+		matrix invRotation = XMMatrixRotationQuaternion(XMQuaternionInverse(targetOrientation));
+
+		// 프러스텀 점 얻기 / 모든 점에 대해 역회전행렬공간으로 변환
+		vec4 Average = 0;
+		for (int i = 0; i < 8; ++i) {
+			corners[i] = XMVector3TransformCoord(ndcCorners[i], invProj);
+			PresentFrustumCorner[i] = corners[i];
+			corners[i].w = 1;
+			corners[i] = XMVector3TransformCoord(corners[i], invRotation);
+			Average += PresentFrustumCorner[i];
+		}
+		Average /= 8;
+		Average.w = 1;
+
+		// 역회전공간에서 해당 점들을 모두 포함하는 AABB를 구함.
+		BoundingBox AABB;
+		BoundingBox::CreateFromPoints(AABB, 8, (XMFLOAT3*)corners, sizeof(XMVECTOR));
+
+		// 역회전공간의 중심을 다시 월드 공간으로 바꾸어 놓기 위해 회전적용.
+		vec4 Center = AABB.Center;
+		Center.w = 1;
+		Center.trQ(targetOrientation);
+
+		// 변환된 8개 점을 모두 포함하는 OBB 생성
+		BoundingOrientedBox obb;
+		obb = BoundingOrientedBox(Average.f3, AABB.Extents, targetOrientation);
+
+		return obb;
 	}
 };
 
@@ -320,7 +366,11 @@ struct SVDescPool2
 };
 
 struct GPUResource {
-	ID3D12Resource2* resource;
+	// 업로드 버퍼는 텍스쳐를 업로드하고 커맨드가 Execute할때까지 해제되지 않고 유지되어야 하고, 
+	// 작업이 끝나면 해제되어야 한다.
+	static vector<ID3D12Resource*> TextureLoadedUploadBuffers;
+
+	ID3D12Resource2* resource = nullptr;
 
 	D3D12_RESOURCE_STATES CurrentState_InCommandWriteLine;
 	//when add Resource Barrier command in command list, It Simulate Change Of Resource State that executed by GPU later.
@@ -347,7 +397,7 @@ struct GPUResource {
 		ID3D12Resource* pd3dTexture = NULL;
 		std::unique_ptr<uint8_t[]> ddsData;
 		std::vector<D3D12_SUBRESOURCE_DATA> vSubresources;
-		DDS_ALPHA_MODE ddsAlphaMode = DDS_ALPHA_MODE_UNKNOWN;
+		DDS_ALPHA_MODE ddsAlphaMode = DDS_ALPHA_MODE_STRAIGHT;
 
 		HRESULT hResult = DirectX::LoadDDSTextureFromFileEx(pd3dDevice, pszFileName, 0, D3D12_RESOURCE_FLAG_NONE, DDS_LOADER_DEFAULT, &pd3dTexture, ddsData, vSubresources, &ddsAlphaMode, &bIsCubeMap);
 		if (FAILED(hResult) || pd3dTexture == nullptr || vSubresources.empty()) {
@@ -507,10 +557,13 @@ struct LightCB_DATA {
 
 struct LightCB_DATA_withShadow {
 	DirectionLight dirlight;
-	PointLightCBData pointLights[8];
-	XMMATRIX LightProjection;
-	XMMATRIX LightView;
-	XMFLOAT3 LightPos;
+	XMMATRIX LightProjection[3];
+	XMMATRIX LightView[3];
+	vec4 LightPos[3];
+
+	// 스테틱 라이팅을 위한 추가 요소.
+	vec4 ChunckStart; // 가장 인덱스가 작은 청크 시작점.
+	int ChunckCount[4]; // XYZ당 청크의 개수
 };
 
 struct SpotLight {
@@ -781,6 +834,12 @@ struct GPUCmd {
 			hResult = pFence->SetEventOnCompletion(nFence, hFenceEvent);
 			::WaitForSingleObject(hFenceEvent, INFINITE);
 		}
+
+		// 커맨드가 실행될 동안 로드된 텍스쳐가 있으면, 해당 업로드 버퍼를 해제한다.
+		for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
+			GPUResource::TextureLoadedUploadBuffers[i]->Release();
+		}
+		GPUResource::TextureLoadedUploadBuffers.clear();
 	}
 
 	void Release() {
@@ -847,6 +906,9 @@ struct RayTracingDevice {
 		float DirLight_intencity;
 		XMFLOAT3 DirLight_color;
 		float padding;
+		// 스테틱 라이팅을 위한 추가 요소.
+		vec4 ChunckStart; // 가장 인덱스가 작은 청크 시작점.
+		unsigned int ChunckCount[4]; // 청크의 개수
 	};
 
 	GlobalDevice* origin;
@@ -870,8 +932,8 @@ struct RayTracingDevice {
 	DescIndex MainDepth_UAV;
 	DescIndex MainDepth_SRV;
 
-	ID3D12Resource* CameraCB = nullptr;
-	CameraConstantBuffer* MappedCB = nullptr;
+	ID3D12Resource* CameraCB[9] = {};
+	CameraConstantBuffer* MappedCB[9] = {};
 
 	vec4 m_eye;
 	vec4 m_up;
@@ -945,9 +1007,10 @@ struct RayTracingMesh {
 	inline static ID3D12Resource* UAV_vertexBuffer = nullptr; // UAV, SRV
 
 	// VB, IB의 최대크기
-	static constexpr int VertexBufferCapacity = 524288000; // 500MB
-	static constexpr int IndexBufferCapacity = 524288000; // 100MB
-	static constexpr int UAV_VertexBufferCapacity = 524288000; // 500MB
+	static constexpr int MB = 1024 * 1024;
+	static constexpr int VertexBufferCapacity = 500 * MB; // 500MB
+	static constexpr int IndexBufferCapacity = 500 * MB; // 100MB
+	static constexpr int UAV_VertexBufferCapacity = 500 * MB; // 500MB
 
 	// 업로드할 메쉬의 VB, IB 가 들어갈 데이터
 	inline static ID3D12Resource* Upload_vertexBuffer = nullptr;
@@ -955,9 +1018,9 @@ struct RayTracingMesh {
 	inline static ID3D12Resource* UAV_Upload_vertexBuffer = nullptr;
 
 	// 업로드 VB, IB의 최대크기
-	static constexpr int Upload_VertexBufferCapacity = 20971520 * 10; // 10 * 20MB
-	static constexpr int Upload_IndexBufferCapacity = 20971520 * 2; // 2 * 10MB
-	static constexpr int UAV_Upload_VertexBufferCapacity = 20971520 * 2; // 2 * 20MB
+	static constexpr int Upload_VertexBufferCapacity = 10 * 20 * MB; // 10 * 20MB
+	static constexpr int Upload_IndexBufferCapacity = 20 * MB; // 2 * 10MB
+	static constexpr int UAV_Upload_VertexBufferCapacity = 20 * MB; // 2 * 20MB
 
 	// 업로드 VB, IB가 매핑된 CPURAM 데이터의 주소
 	inline static char* pVBMappedStart = nullptr;
@@ -1178,9 +1241,10 @@ struct SDFTextSection {
 struct SDFTextPageTextureBuffer {
 	static constexpr int MaxWidth = 4096;
 	static constexpr int MaxHeight = 4096;
+	
 	inline static unordered_map<wchar_t, SDFTextSection*> SDFSectionMap;
 
-	ui8 data[MaxHeight][MaxWidth] = { {} };
+	ui8* data = nullptr; // PushSDFText 에서 만들어지고 BakeSDF 에서 해제됨.
 	int present_StartX = 0;
 	int present_StartY = 0;
 	int present_height = 0;
@@ -1200,7 +1264,9 @@ struct SDFTextPageTextureBuffer {
 	DescIndex SDFTextureSRV;
 
 	SDFTextPageTextureBuffer(int page) :
-		present_StartX{ 0 }, present_StartY{ 0 }, present_height(0), pageindex{ page }
+		data{nullptr}, present_StartX {
+		0
+	}, present_StartY{ 0 }, present_height(0), pageindex{ page }
 	{
 		UploadTextureBuffer.resource = nullptr;
 		DefaultTextureBuffer.resource = nullptr;
@@ -3004,6 +3070,8 @@ struct ModelNode {
 	template <bool isSkinMesh = false>
 	void Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* pGameobject = nullptr);
 
+	void SkinMeshShadowRender(void* model, GPUCmd& cmd, const matrix& parentMat, void* pGameobject = nullptr);
+
 	void PushRenderBatch(void* model, const matrix& parentMat, void* pGameobject = nullptr);
 
 	/*
@@ -3240,13 +3308,13 @@ struct SDFInstance
 /*
 * 설명 : 화면에 글자를 출력하는 셰이더 / 어떤 화면 영역에 텍스쳐를 렌더링 하는 셰이더
 */
-class ScreenCharactorShader : public Shader {
+class ScreenShader : public Shader {
 public:
 	ID3D12PipelineState* pPipelineState_SDF = nullptr;
 	ID3D12RootSignature* pRootSignature_SDF = nullptr;
 
-	ScreenCharactorShader();
-	virtual ~ScreenCharactorShader();
+	ScreenShader();
+	virtual ~ScreenShader();
 
 	virtual void InitShader();
 	virtual void CreateRootSignature();
@@ -3295,6 +3363,9 @@ public:
 	ID3D12PipelineState* pPipelineState_Instancing_withShadow = nullptr;
 	ID3D12RootSignature* pRootSignature_Instancing_withShadow = nullptr;
 
+	ID3D12RootSignature* pRootSignature_SkinMesh_RenderShadow = nullptr;
+	ID3D12PipelineState* pPipelineState_SkinMesh_RenderShadow = nullptr;
+
 	PBRShader1() {}
 	virtual ~PBRShader1() {}
 
@@ -3303,10 +3374,12 @@ public:
 	virtual void CreateRootSignature_withShadow();
 	virtual void CreateRootSignature_SkinedMesh();
 	virtual void CreateRootSignature_Instancing_withShadow();
+	virtual void CreateRootSignature_SkinMesh_RenderShadowMap();
 
 	virtual void CreatePipelineState();
 	virtual void CreatePipelineState_withShadow();
 	virtual void CreatePipelineState_RenderShadowMap();
+	virtual void CreatePipelineState_SkinMesh_RenderShadowMap();
 	virtual void CreatePipelineState_RenderStencil();
 	virtual void CreatePipelineState_InnerMirror();
 	virtual void CreatePipelineState_SkinedMesh();
@@ -3324,7 +3397,9 @@ public:
 		CBVTable_Material = 4,
 		Normal_RootParamCapacity = 5,
 		SRVTable_ShadowMap = 5,
-		withShaow_RootParamCapacity = 6,
+		SRVTable_EnvionmentMap = 6,
+		SRVTable_Chunck_StaticLightStructuredBuffer = 7,
+		withShaow_RootParamCapacity = 8,
 
 		CBVTable_SkinMeshOffsetMatrix = 1,
 		CBVTable_SkinMeshToWorldMatrix = 2,
@@ -3332,7 +3407,9 @@ public:
 		SRVTable_SkinMeshMaterialTextures = 4,
 		CBVTable_SkinMeshMaterial = 5,
 		SRVTable_SkinMeshShadowMaps = 6,
-		withSkinMeshShaow_RootParamCapacity = 7,
+		SRVTable_SKinMeshEnvironmentMap = 7,
+		SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer = 8,
+		withSkinMeshShaow_RootParamCapacity = 9,
 
 		CBVTable_Instancing_DirLightData = 1,
 		SRVTable_Instancing_RenderInstance = 2,

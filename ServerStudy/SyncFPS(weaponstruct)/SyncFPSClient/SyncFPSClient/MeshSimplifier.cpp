@@ -383,6 +383,13 @@ namespace {
 		targetIndexCount = (targetIndexCount / 3) * 3;
 		targetIndexCount = std::max<size_t>(targetIndexCount, static_cast<size_t>(kAutoLODMinResultTriangles * 3));
 
+		if (expandedIndices.size() <= 3) {
+			gAutoLODSkipReason = "too-few-triangles";
+			return false;
+		}
+		const size_t maxReducibleIndexCount = expandedIndices.size() - 3;
+		targetIndexCount = (std::min)(targetIndexCount, maxReducibleIndexCount);
+
 		float protectedRatio = float(protectedVertexCount) / float((std::max)(vertexLocks.size(), size_t(1)));
 		const bool aggressiveSinglePartUnlock =
 			subMeshCount == 1 &&
@@ -882,12 +889,14 @@ namespace {
 	}
 }
 
+//Push mesh to AutoLOD System
 void AutoLOD_RegisterBumpMesh(BumpMesh* mesh)
 {
 	if (mesh == nullptr || mesh->IsAutoLODGenerated) return;
 	gRegisteredSourceMeshes[mesh] = mesh;
 }
 
+//Clear AutoLODQueue
 void AutoLOD_ResetPreloadQueue()
 {
 	gPreloadQueue.clear();
@@ -899,6 +908,7 @@ void AutoLOD_ResetPreloadQueue()
 	gAutoLODRuntimeTotal = 0;
 }
 
+//Push Single Mesh to Preload Queue
 void AutoLOD_QueueMeshForPreload(Mesh* mesh)
 {
 	if (mesh == nullptr || mesh->type != Mesh::_BumpMesh) return;
@@ -911,6 +921,7 @@ void AutoLOD_QueueMeshForPreload(Mesh* mesh)
 	gPreloadQueue.push_back({ bumpMesh, ComputeMeshPriority(bumpMesh) });
 }
 
+//Push Single Model to preload Queue
 void AutoLOD_QueueModelForPreload(Model* model)
 {
 	if (model == nullptr) return;

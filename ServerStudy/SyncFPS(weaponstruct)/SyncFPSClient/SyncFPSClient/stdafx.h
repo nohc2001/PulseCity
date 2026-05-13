@@ -31,6 +31,7 @@
 #include <string>
 #include <unordered_map>
 #include <random>
+#include <chrono>
 
 #include <dxcapi.h>
 #include <d3d12sdklayers.h>

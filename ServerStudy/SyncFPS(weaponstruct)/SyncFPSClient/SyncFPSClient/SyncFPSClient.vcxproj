@@ -136,10 +136,7 @@
     <ClCompile Include="D3D_Util\D3DUtil.cpp" />
     <ClCompile Include="D3D_Util\ShaderUtil.cpp" />
     <ClCompile Include="DDSTextureLoader12.cpp" />
-    <ClCompile Include="Game.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
+    <ClCompile Include="Game.cpp" />
     <ClCompile Include="GameObject.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
@@ -201,6 +198,7 @@
     <ClInclude Include="main.h" />
     <ClInclude Include="NetworkDefs.h" />
     <ClInclude Include="Render.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="SpaceMath.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="stdafx.h" />
@@ -287,7 +285,14 @@
     <Text Include="Resources\SDF\commonTextMeta.txt" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="cursor1.cur" />
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="SyncFPSClient.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\UI\GameCursor.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

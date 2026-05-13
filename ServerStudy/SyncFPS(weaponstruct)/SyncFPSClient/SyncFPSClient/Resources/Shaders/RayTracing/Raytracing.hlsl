@@ -9,6 +9,12 @@
 //
 //*********************************************************
 
+#define ADD_PONG_SPECULAR
+#define MAX_TraceRayCount 6
+
+// 청크 크기가 달라지면 바꾸어야 함.
+#define CHUNCK_WIDTH 50
+
 typedef float3 XMFLOAT3;
 typedef float4 XMFLOAT4;
 typedef float4 XMVECTOR;
@@ -22,6 +28,11 @@ struct SceneConstantBuffer
     float3 DirLight_invDirection;
     float DirLight_intencity;
     float3 DirLight_color;
+    float extra;
+    
+    // 스테틱 라이팅을 위한 추가 요소.
+    float4 ChunckStart; // 가장 인덱스가 작은 청크 시작점.
+    uint4 ChunckCount; // 청크의 개수
 };
 
 //48byte (768 바이트 정렬)
@@ -96,6 +107,38 @@ struct stMaterial
     float TilingOffsetY;
 };
 
+struct Light
+{
+	// 라이트의 위치
+    float3 pos;
+    
+    // 라이트의 개수
+    int MaxLightCount;
+
+	// 라이트의 방향
+    float4 dir;
+
+	// 라이트의 종류
+    int lightType;
+
+	// 스포트 라이트의 경우, 얼마나 넓게 퍼질것이냐를 결정함.
+    float spot_angle;
+
+	// 라이트가 반영되는 거리를 나타냄
+    float range;
+
+	// 라이트가 얼마나 강한지
+    float intencity;
+
+	// 빛의 색깔
+    float4 LightColor;
+};
+
+struct ChunckLightData
+{
+    Light lights[32];
+};
+
 // global
 RaytracingAccelerationStructure Scene : register(t0, space0);
 RWTexture2D<float4> RenderTarget : register(u0);
@@ -112,7 +155,9 @@ StructuredBuffer<stMaterial> Materials : register(t5, space0);
 0 : White (Defualt Diffuse)
 1 : Blue (Default Normal)
 */
-Texture2D MaterialTexArr[MAX_TEXTURES] : register(t6); // t6 ~ t(6 + MAX_TEXUTURES)
+StructuredBuffer<ChunckLightData> ChunckStaticLightArr : register(t6); // t6 : Static Light Structured Buffer
+Texture2D MaterialTexArr[MAX_TEXTURES] : register(t7); // t7 ~ t(7 + MAX_TEXUTURES)
+
 
 ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
 
@@ -131,13 +176,10 @@ typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 struct RayPayload
 {
     float4 color;
-    float3 ReflectRayStart;
     float isCollide_Light;
-    float3 ReflectRaydir;
-    float RelectRate;
     float depth;
     float stencil;
-    float2 extra;
+    float CalculationCount;
 };
 
 // Retrieve hit world position.
@@ -171,6 +213,20 @@ inline void GenerateCameraRay(uint2 index, out float3 origin, out float3 directi
     direction = normalize(world.xyz - origin);
 }
 
+int GetChunkIndexFromPosition(float3 pos)
+{
+    float3 cspos = pos - g_sceneCB.ChunckStart.xyz;
+    cspos /= CHUNCK_WIDTH;
+    cspos = floor(cspos);
+    int index = int(cspos.z + cspos.y * g_sceneCB.ChunckCount.z + cspos.x * g_sceneCB.ChunckCount.z * g_sceneCB.ChunckCount.y);
+    return index;
+}
+
+float CosAttenuation(float x)
+{
+    return 0.5 * cos(3.141592 * x) + 0.5;
+}
+
 // Diffuse lighting calculation.
 float4 CalculateDiffuseLighting(float3 hitPosition, float3 normal)
 {
@@ -182,48 +238,19 @@ float4 CalculateDiffuseLighting(float3 hitPosition, float3 normal)
     return float4(1,1, 1, 1) * fNDotL;
 }
 
-[shader("raygeneration")]
-void MyRaygenShader()
+// Base in LearnOpenGL PBR function modified
+float Dfunction(float3 N, float3 H, float a, float3 V, float shininess)
 {
-    float3 rayDir;
-    float3 origin;
+    // 퐁 공식을 유지하면서 늘어짐만 추가하는 트릭
+    float NdotH = max(dot(N, H), 0.0);
+    // 시선이 낮아질수록(멀리 볼수록) 하이라이트를 강제로 옆으로 퍼뜨림
+    float stretching = 1.0 / (max(dot(N, V), 0.0) + 0.1);
+    float spec = pow(NdotH, shininess / stretching); // 거듭제곱 지수를 낮춰서 퍼뜨림
     
-    // Generate a ray for a camera pixel corresponding to an index from the dispatched 2D grid.
-    GenerateCameraRay(DispatchRaysIndex().xy, origin, rayDir);
-
-    // Trace the ray.
-    // Set the ray's extents.
-    RayDesc ray;
-    ray.Origin = origin;
-    
-    //must normalize
-    ray.Direction = rayDir;
-    // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
-    // TMin should be kept small to prevent missing geometry at close contact areas.
-    ray.TMin = 0.001;
-    ray.TMax = 10000.0;
-    
-    RayPayload payload = { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 , 0, 0, 0, 0};
-    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
-    float reflectRate = payload.RelectRate;
-
-    ray.Origin = payload.ReflectRayStart;
-    ray.Direction = payload.ReflectRaydir;
-    RayPayload rpayload = { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 , 0, 0, 0,0};
-    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, rpayload);
-    float4 reflectColor = rpayload.color;
-    
-    // Write the raytraced color to the output texture.
-    RenderTarget[DispatchRaysIndex().xy] = (1 - reflectRate) * payload.color + (reflectRate) * reflectColor;
-    DepthStecil[DispatchRaysIndex().xy].r = payload.depth;
-}
-
-//PBR Functions
-float Dfunction(float3 N, float3 H, float a)
-{
     float a2 = a * a;
-    float NdotH = max(dot(N, H), 0);
-    float NdotH2 = NdotH * NdotH;
+    //float NdotH = max(dot(N, H), 0);
+    //float NdotH2 = NdotH * NdotH;
+    float NdotH2 = spec * spec;
     float nom = a2;
     float denom = NdotH2 * (a2 - 1.0) + 1.0;
     denom = 3.141592 * denom * denom;
@@ -262,11 +289,21 @@ float K_IBL(float Roughness)
     return Roughness * Roughness / 2;
 }
 
-float3 BRDF_cookToorrance(float3 Pos, float3 Wi, float3 ViewDir,
+float3 BRDF_cookToorrance_Direct(float3 Pos, float3 Wi, float3 ViewDir,
     float3 N, float Roughness, float3 Frenel)
 {
     float3 Half = normalize(Wi + ViewDir);
-    float D = Dfunction(N, Half, Roughness);
+    float D = Dfunction(N, Half, Roughness, ViewDir, 1 - Roughness);
+    float G = Gfunction(N, ViewDir, Wi, K_Direct(Roughness));
+    float denom = 4 * max(dot(ViewDir, N), 0.0) * max(dot(Wi, N), 0.0) + 1e-5;
+    return D * Frenel * G / denom;
+}
+
+float3 BRDF_cookToorrance_IBL(float3 Pos, float3 Wi, float3 ViewDir,
+    float3 N, float Roughness, float3 Frenel)
+{
+    float3 Half = normalize(Wi + ViewDir);
+    float D = Dfunction(N, Half, Roughness, ViewDir, 1 - Roughness);
     float G = Gfunction(N, ViewDir, Wi, K_IBL(Roughness));
     float denom = 4 * max(dot(ViewDir, N), 0.0) * max(dot(Wi, N), 0.0) + 1e-5;
     return D * Frenel * G / denom;
@@ -275,6 +312,32 @@ float3 BRDF_cookToorrance(float3 Pos, float3 Wi, float3 ViewDir,
 float3 BRDF_lambert(float3 color)
 {
     return color / 3.141592f;
+}
+
+float4 PBRonOneLightRay(float3 invviewDir, float3 wi, float3 normalW, float3 Frenel0, float Roughness, float3 MatColor, float3 LightColor, float3 hitpos)
+{
+    float3 H = normalize(invviewDir + wi);
+    float3 radiance = LightColor;
+        // Cook-Torrance BRDF
+    float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
+        // scale light by NdotL
+    float NdotL = max(dot(normalW, wi), 0.0);
+        // add to outgoing radiance Lo
+    float pbrRough = max(Roughness, 0.02f);
+    return float4((BRDF_lambert(MatColor) + BRDF_cookToorrance_Direct(hitpos, wi, invviewDir, normalW, pbrRough, F)) * radiance * NdotL, 1);
+}
+
+float4 PBRonOneLightRay_IBL(float3 invviewDir, float3 wi, float3 normalW, float3 Frenel0, float Roughness, float3 MatColor, float3 LightColor, float3 hitpos)
+{
+    float3 H = normalize(invviewDir + wi);
+    float3 radiance = LightColor;
+        // Cook-Torrance BRDF
+    float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
+        // scale light by NdotL
+    float NdotL = max(dot(normalW, wi), 0.0);
+        // add to outgoing radiance Lo
+    float pbrRough = max(Roughness, 0.02f);
+    return float4((BRDF_lambert(MatColor) + BRDF_cookToorrance_IBL(hitpos, wi, invviewDir, normalW, pbrRough, F)) * radiance * NdotL, 1);
 }
 
 // 일단 함수를 만들어 놓긴 했는데 텍스쳐가 벽목도 아니며,
@@ -288,6 +351,63 @@ int GetSampleLevel(float Distance, float3 Normal)
     //float dist = min(pow(Distance / far, 1), 0);
     int SampleLevel = Distance / 10;
     return SampleLevel;
+}
+
+float CalculateMipFromDistance(float3 worldPos, float3 cameraPos, float3 normal, float fov)
+{
+    float dist = distance(worldPos, cameraPos);
+
+    // 1. 거리에 따른 픽셀 크기 근사 (View Plane에서의 크기)
+    // 거리가 2배 멀어지면 화면에 투영되는 텍셀 크기도 비례해서 커짐
+    float pixelSizeAtDist = dist * tan(fov * 0.5) / (900 * 0.5);
+
+    // 2. 표면 기울기(Normal)에 따른 보정
+    // 시선 방향과 법선 사이의 각도가 클수록(비스듬할수록) 더 높은 밉맵 필요
+    float3 viewDir = normalize(cameraPos - worldPos);
+    float cosTheta = max(dot(normal, viewDir), 0.0001);
+
+    // 3. 밉 레벨 공식: log2(거리 기반 스케일)
+    // 실제 구현 시에는 텍스처 해상도와 정규화된 UV 단위를 고려한 상수가 필요함
+    float lod = log2(pixelSizeAtDist * 1024 / cosTheta) - 4;
+
+    return max(0.0, lod);
+}
+
+[shader("raygeneration")]
+void MyRaygenShader()
+{
+    float3 rayDir;
+    float3 origin;
+    
+    // Generate a ray for a camera pixel corresponding to an index from the dispatched 2D grid.
+    GenerateCameraRay(DispatchRaysIndex().xy, origin, rayDir);
+
+    // Trace the ray.
+    // Set the ray's extents.
+    RayDesc ray;
+    ray.Origin = origin;
+    
+    //must normalize
+    ray.Direction = rayDir;
+    // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
+    // TMin should be kept small to prevent missing geometry at close contact areas.
+    ray.TMin = 0.001;
+    ray.TMax = 10000.0;
+    
+    RayPayload payload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
+    
+    float3 color = payload.color.xyz;
+    float exposure = 1; // 1.0보다 크면 더 밝음
+    float3 postcolor = 1.0 - exp(-color * exposure); // exponential tone mapping
+    postcolor = postcolor / (postcolor + float3(0.5f, 0.5f, 0.5f)); // HDR tonemapping
+    postcolor = pow(postcolor, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2)); // gamma correct
+    
+    postcolor = payload.isCollide_Light * color + (1 - payload.isCollide_Light) * postcolor;
+    
+    // Write the raytraced color to the output texture.
+    RenderTarget[DispatchRaysIndex().xy] = float4(postcolor, 1);
+    DepthStecil[DispatchRaysIndex().xy].r = payload.depth;
 }
 
 [shader("closesthit")]
@@ -352,10 +472,15 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     }
     
     //Get Sample Level
-    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
+    
+    float3 ViewDir = (hitPosition - g_sceneCB.cameraPosition.xyz);
     float Distance = length(ViewDir);
+    ViewDir = normalize(ViewDir);
+    float3 invViewDir = -ViewDir;
     float depth = min(Distance / 1000.0f, 1.0f);
-    int SampleLevel = 0;//GetSampleLevel(Distance, Normal);
+    float SampleLevel = CalculateMipFromDistance(hitPosition, g_sceneCB.cameraPosition.xyz, Normal, 3.141592 / 3.0);
+    float SampleInterploate = SampleLevel - floor(SampleLevel);
+    SampleLevel = floor(SampleLevel);
     
      //Get Material & Tiling
     stMaterial material;
@@ -363,24 +488,29 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     hitUV.x = material.TilingX * (hitUV.x + material.TilingOffsetX);
     hitUV.y = material.TilingY * (hitUV.y + material.TilingOffsetY);
     hitUV -= floor(hitUV);
-    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) * material.baseColor;
-    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel);
+    float3 Color = ((1.0 - SampleInterploate) * MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) 
+        + SampleInterploate * MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1)) * material.baseColor;
+    float3 TBNnormal = (1.0 - SampleInterploate) * MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) 
+        + SampleInterploate * MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1);
     TBNnormal = TBNnormal.xyz;
     TBNnormal = 2.0 * (TBNnormal - 0.5);
-    float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
-    float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
+    float AmbientOculusion = (1.0 - SampleInterploate) * MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r
+        + SampleInterploate * MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1).r;
+    float Metalic = (1 - SampleInterploate) * MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r
+        + SampleInterploate * MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1).r;
     float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
     
     //Real Normal (with NormalMap)
     float3x3 invTBN = 0;
     float3 realNormal = 0;
     {
-        invTBN = /*transpose*/(float3x3(Tangent, Bitangent, Normal));
+        invTBN = transpose(float3x3(Tangent, Bitangent, Normal));
         realNormal = normalize(mul(invTBN, TBNnormal));
     }
     
     //PBR Lighting Caculation Prepare
-    float3 Frenel0 = float3(0.02, 0.02, 0.02);
+    float fValue = (1.0f - 0.02f) * Metalic + 0.02f;
+    float3 Frenel0 = float3(fValue, fValue, fValue);
     Frenel0 = lerp(Frenel0, Color, Metalic);
     float3 albedo = pow(Color, float3(2.2, 2.2, 2.2));
     const float CalculationCount = 1;
@@ -388,11 +518,13 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float dW = 1.0 / CalculationCount;
     float3 Lo = float3(0.0, 0, 0);
     float3 diffuseColor = 0;
+    
     //Lighting Calculation
-    //direction Light Calculation
+    float ShadowRate = 1.0f;
+    float RayCount = 0;
     {
+        //direction Light Calculation
         // shadowRay
-        float ShadowRate = 1.0f;
         ShadowRate = 0.0f;
         RayDesc ray;
         ray.Origin = hitPosition;
@@ -400,39 +532,84 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         ray.Direction = normalize(vec);
         ray.TMin = 0.001;
         ray.TMax = 10000.0f; /*length(vec);*/
-        payload.isCollide_Light = 0;
-        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, payload);
-        ShadowRate = payload.isCollide_Light;
-        
+        RayPayload LightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+        LightPayload.CalculationCount = payload.CalculationCount;
+        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, LightPayload);
+        ShadowRate = LightPayload.isCollide_Light;
         float3 wi = normalize(g_sceneCB.DirLight_invDirection);
-        //float3 reflectV = reflect(wi, realNormal);
-        float3 H = normalize(ViewDir + wi);
-        float3 radiance = g_sceneCB.DirLight_color;
-        // Cook-Torrance BRDF
+        float3 H = normalize(invViewDir + wi);
         float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
-        // scale light by NdotL
-        float NdotL = max(dot(realNormal, wi), 0.0);
-        // add to outgoing radiance Lo
-        Lo += ShadowRate * dW * (BRDF_lambert(Color.xyz) + BRDF_cookToorrance(hitPosition, wi, ViewDir, realNormal, Roughness, F)) * radiance * NdotL;
+        float pbrRough = max(Roughness, 0.02f);
+        float3 Result = PBRonOneLightRay(invViewDir, wi, realNormal, Frenel0, pbrRough, Color.xyz, g_sceneCB.DirLight_color, hitPosition);
+        // 이건 현실적인 렌더링은 아니다.
+        // 하지만 퐁 스페큘러를 추가하는 편이 더 보기가 좋더라
+#ifdef ADD_PONG_SPECULAR
+        float3 reflectDir = reflect(normalize(-g_sceneCB.DirLight_invDirection), realNormal);
+        float specular = pow(saturate(dot(invViewDir, reflectDir)), 10.0f - 10 * pbrRough); // dot half vector & normal
+        float3 specularColor = g_sceneCB.DirLight_color.xyz * specular * 0.25f;
+        Result = saturate(Result + specularColor * ShadowRate);
+#endif
+        Lo += ShadowRate * Result;
+        payload.CalculationCount += 1;
+        RayCount += 1;
+        
+        //Chunck Static Light
+        ChunckLightData cld = ChunckStaticLightArr[GetChunkIndexFromPosition(hitPosition)];
+        int AdditionLightCount = cld.lights[0].MaxLightCount;
+        for (int i = 0; i < AdditionLightCount; ++i)
+        {
+            Light l = cld.lights[i];
+            float3 LightVector = hitPosition - l.pos;
+            float Lightlen = length(LightVector);
+            float rate = max(1 - (Lightlen / l.range), 0);
+            LightVector = normalize(LightVector);
+            bool b = (l.lightType == 0 && (dot(LightVector, l.dir.xyz) > cos(0.5 * 3.141592 * l.spot_angle / 180) && rate > 0));
+            b = b || (l.lightType == 2 && rate > 0);
+
+            if (b) // SpotLight
+            {
+                payload.CalculationCount += 1;
+                ShadowRate = 0.0f;
+                RayDesc ray;
+                ray.Origin = hitPosition;
+                ray.Direction = -LightVector;
+                ray.TMin = 0.001;
+                ray.TMax = Lightlen;
+                RayPayload ShadowLightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, ShadowLightPayload);
+                ShadowRate = ShadowLightPayload.isCollide_Light;
+                wi = -LightVector;
+                float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
+                Lo += ShadowRate * PBRonOneLightRay(invViewDir, wi, realNormal, Frenel0, Roughness, Color.xyz, Radiance, hitPosition);
+                RayCount += 1;
+            }
+        }
+        
+        float Reflectrate = min(length(Lo), 1);
+        // Reflection
+        if (MAX_TraceRayCount > payload.CalculationCount)
+        {
+            wi = reflect(ViewDir, realNormal);
+            ray.Origin = hitPosition;
+            ray.Direction = wi;
+            ray.TMin = 0.001;
+            ray.TMax = 2000.0f * pbrRough; /*length(vec);*/
+            RayPayload rpayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+            rpayload.CalculationCount = payload.CalculationCount;
+            TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, rpayload);
+            float3 reflectColor = rpayload.color.xyz;
+            Lo += Reflectrate * PBRonOneLightRay_IBL(invViewDir, wi, realNormal, Frenel0, pbrRough, Color.xyz, reflectColor, hitPosition);
+            payload.CalculationCount = rpayload.CalculationCount;
+            RayCount += 1;
+        }
     }
+    //Lo /= RayCount;
     
-    // PBR Post Process
     float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;
-    float3 color = ambient + Lo;
-    float exposure = 1; // 1.0보다 크면 더 밝음
-    color = 1.0 - exp(-color * exposure); // exponential tone mapping
-    color = color / (color + float3(0.5f, 0.5f, 0.5f)); // HDR tonemapping
-    color = pow(color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2)); // gamma correct
-    
-    //reflect
-    payload.ReflectRayStart = hitPosition;
-    float3 raydir = WorldRayDirection();
-    float3 reflectNormal = ((1.0f - depth) * realNormal + depth * Normal);
-    payload.ReflectRaydir = normalize(reflect(raydir, reflectNormal));
-    payload.RelectRate = 0.5f * material.smoothness * (1.0f - depth);
-    payload.color = /*float4(SampleLevel * 0.1f, SampleLevel * 0.1f, SampleLevel * 0.1f, 1.0f);*/ float4(color, 1);
+    payload.color = float4(Lo + ambient, 1);
     payload.depth = depth;
     payload.stencil = 0.0f;
+    payload.isCollide_Light = 0;
 }
 
 [shader("closesthit")]
@@ -497,10 +674,11 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     }
     
     //Get Sample Level
-    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
+    float3 ViewDir = normalize(hitPosition - g_sceneCB.cameraPosition.xyz);
+    float3 invViewDir = -ViewDir;
     float Distance = length(ViewDir);
-    float depth = max(Distance / 1000.0f, 1.0f);
-    int SampleLevel = 0; //GetSampleLevel(Distance, Normal);
+    float depth = min(Distance / 1000.0f, 1.0f);
+    float SampleLevel = CalculateMipFromDistance(hitPosition, g_sceneCB.cameraPosition.xyz, Normal, 3.141592 / 3.0);
     
      //Get Material & Tiling
     stMaterial material;
@@ -534,11 +712,12 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float3 Lo = float3(0.0, 0, 0);
     float3 diffuseColor = 0;
     
-    //Lighting Calculation
-    //direction Light Calculation
+      //Lighting Calculation
+    float ShadowRate = 1.0f;
+    float RayCount = 0;
     {
+       //direction Light Calculation
         // shadowRay
-        float ShadowRate = 1.0f;
         ShadowRate = 0.0f;
         RayDesc ray;
         ray.Origin = hitPosition;
@@ -546,37 +725,84 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         ray.Direction = normalize(vec);
         ray.TMin = 0.001;
         ray.TMax = 10000.0f; /*length(vec);*/
-        payload.isCollide_Light = 0;
-        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, payload);
-        ShadowRate = payload.isCollide_Light;
-        
+        RayPayload LightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+        LightPayload.CalculationCount = payload.CalculationCount;
+        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, LightPayload);
+        ShadowRate = LightPayload.isCollide_Light;
         float3 wi = normalize(g_sceneCB.DirLight_invDirection);
-        float3 reflectV = reflect(wi, realNormal);
-        float3 H = normalize(ViewDir + wi);
-        float3 radiance = g_sceneCB.DirLight_color;
-        // Cook-Torrance BRDF
+        float3 H = normalize(invViewDir + wi);
         float3 F = Ffunction(max(dot(H, wi), 0), Frenel0);
-        // scale light by NdotL
-        float NdotL = max(dot(realNormal, wi), 0.0);
-        // add to outgoing radiance Lo
-        Lo += ShadowRate * dW * (BRDF_lambert(Color.xyz) + BRDF_cookToorrance(hitPosition, wi, ViewDir, realNormal, Roughness, F)) * radiance * NdotL;
+        float pbrRough = max(Roughness, 0.02f);
+        float3 Result = PBRonOneLightRay(invViewDir, wi, realNormal, Frenel0, pbrRough, Color.xyz, g_sceneCB.DirLight_color, hitPosition);
+        // 이건 현실적인 렌더링은 아니다.
+        // 하지만 퐁 스페큘러를 추가하는 편이 더 보기가 좋더라
+#ifdef ADD_PONG_SPECULAR
+        float3 reflectDir = reflect(normalize(-g_sceneCB.DirLight_invDirection), realNormal);
+        float specular = pow(saturate(dot(invViewDir, reflectDir)), 10.0f - 10 * pbrRough); // dot half vector & normal
+        float3 specularColor = g_sceneCB.DirLight_color.xyz * specular * 0.25f;
+        Result = saturate(Result + specularColor * ShadowRate);
+#endif
+        Lo += ShadowRate * Result;
+        payload.CalculationCount += 1;
+        RayCount += 1;
+        
+        //Chunck Static Light
+        ChunckLightData cld = ChunckStaticLightArr[GetChunkIndexFromPosition(hitPosition)];
+        int AdditionLightCount = cld.lights[0].MaxLightCount;
+        for (int i = 0; i < AdditionLightCount; ++i)
+        {
+            Light l = cld.lights[i];
+            float3 LightVector = hitPosition - l.pos;
+            float Lightlen = length(LightVector);
+            float rate = max(1 - (Lightlen / l.range), 0);
+            LightVector = normalize(LightVector);
+            bool b = (l.lightType == 0 && (dot(LightVector, l.dir.xyz) > cos(0.5 * 3.141592 * l.spot_angle / 180) && rate > 0));
+            b = b || (l.lightType == 2 && rate > 0);
+
+            if (b) // SpotLight
+            {
+                payload.CalculationCount += 1;
+                ShadowRate = 0.0f;
+                RayDesc ray;
+                ray.Origin = hitPosition;
+                ray.Direction = -LightVector;
+                ray.TMin = 0.001;
+                ray.TMax = Lightlen;
+                RayPayload ShadowLightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, ShadowLightPayload);
+                ShadowRate = ShadowLightPayload.isCollide_Light;
+                wi = -LightVector;
+                float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
+                Lo += ShadowRate * PBRonOneLightRay(invViewDir, wi, realNormal, Frenel0, Roughness, Color.xyz, Radiance, hitPosition);
+                RayCount += 1;
+            }
+        }
+        
+        float Reflectrate = min(length(Lo), 1);
+        // Reflection
+        if (MAX_TraceRayCount > payload.CalculationCount)
+        {
+            wi = reflect(ViewDir, realNormal);
+            ray.Origin = hitPosition;
+            ray.Direction = wi;
+            ray.TMin = 0.001;
+            ray.TMax = 2000.0f * pbrRough; /*length(vec);*/
+            RayPayload rpayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
+            rpayload.CalculationCount = payload.CalculationCount;
+            TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, rpayload);
+            float3 reflectColor = rpayload.color.xyz;
+            Lo += Reflectrate * PBRonOneLightRay_IBL(invViewDir, wi, realNormal, Frenel0, pbrRough, Color.xyz, reflectColor, hitPosition);
+            payload.CalculationCount = rpayload.CalculationCount;
+            RayCount += 1;
+        }
     }
-    // PBR Post Process
-    float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;
-    float3 color = ambient + Lo;
-    float exposure = 1; // 1.0보다 크면 더 밝음
-    color = 1.0 - exp(-color * exposure); // exponential tone mapping
-    color = color / (color + float3(0.5f, 0.5f, 0.5f)); // HDR tonemapping
-    color = pow(color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2)); // gamma correct
+    Lo /= RayCount;
     
-    //reflect
-    payload.ReflectRayStart = hitPosition;
-    float3 raydir = WorldRayDirection();
-    payload.ReflectRaydir = normalize(reflect(raydir, realNormal));
-    payload.RelectRate = 0.5f * material.smoothness * (1-depth);
-    payload.color = float4(color, 1);
+    float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;
+    payload.color = float4(Lo + ambient, 1);
     payload.depth = depth;
     payload.stencil = 0.0f;
+    payload.isCollide_Light = 0;
 }
 
 [shader("miss")]
@@ -585,7 +811,6 @@ void MyMissShader(inout RayPayload payload)
     float3 raydir = normalize(WorldRayDirection());
     payload.color = SkyBoxCubeMap.SampleLevel(StaticSampler, raydir, 0);
     payload.color.w = 1;
-    payload.ReflectRaydir = raydir;
     payload.isCollide_Light = 1.0f;
     payload.depth = 1.0f;
     payload.stencil = 0.0f;

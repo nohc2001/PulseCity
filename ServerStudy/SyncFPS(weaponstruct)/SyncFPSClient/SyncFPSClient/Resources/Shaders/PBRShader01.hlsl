@@ -142,9 +142,7 @@ struct VS_OUTPUT
 VS_OUTPUT VSRenderShadow(VS_INPUT input)
 {
     VS_OUTPUT output;
-    output.positionW = mul(float4(input.position, 1.0f), gWorld);
-    output.position = mul(output.positionW, gView);
-    
+    output.position = mul(mul(float4(input.position, 1.0f), gWorld), gView);
     return (output);
 }
 
@@ -268,8 +266,6 @@ float4 PBRPS(VS_OUTPUT input)
 
         // add to outgoing radiance Lo
         Lo += dW * (BRDF_cookToorrance(input.positionW.xyz, wi, input.ViewDir.xyz, normalW, Roughness, F)) * radiance * NdotL;
-        
-        
     }
     //diffuseColor = saturate(diffuseColor);
     float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;

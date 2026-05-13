@@ -25,6 +25,7 @@ VS_SKYBOX_CUBEMAP_OUTPUT VSSkyBox(VS_SKYBOX_CUBEMAP_INPUT input)
 
     output.position = mul(mul(float4(input.position, 1.0f), gWorld), gView);
     output.positionL = input.position;
+    output.position.z = 0.99999f * output.position.w;
 
     return (output);
 }
@@ -34,6 +35,6 @@ SamplerState StaticSampler : register(s0);
 
 float4 PSSkyBox(VS_SKYBOX_CUBEMAP_OUTPUT input) : SV_TARGET
 {
-    float4 cColor = gtxtSkyCubeTexture.Sample(StaticSampler, input.positionL);
+    float4 cColor = gtxtSkyCubeTexture.SampleLevel(StaticSampler, input.positionL, 0);
     return (cColor);
 }

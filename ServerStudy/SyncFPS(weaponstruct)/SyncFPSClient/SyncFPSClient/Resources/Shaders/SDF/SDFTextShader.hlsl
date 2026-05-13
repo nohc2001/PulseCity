@@ -48,7 +48,7 @@ VS_OUTPUT VSMain(VS_INPUT input, uint nInstanceID : SV_InstanceID)
     SDFInstance ins = sdfInstances[nInstanceID];
     VS_OUTPUT output;
     output.color = ins.Color;
-    float2 screenSize = float2(ScreenWidth, ScreenHeight);
+    float2 screenSize = float2(ScreenWidth*0.5, ScreenHeight*0.5);
     float4 rt = ins.rect;
     float width = rt.z - rt.x;
     width *= 0.5f;
@@ -98,7 +98,7 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
     }
     else
     {
-        discard;
-        return float4(0, 0, 0, 1);
+        //discard;
+        return float4(0, 0, 0, 0);
     }
 }

@@ -558,6 +558,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	void GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time);
 
 	virtual void Render(matrix parent = XMMatrixIdentity());
+	void RenderShadow(matrix parent = XMMatrixIdentity());
 	virtual void PushRenderBatch(matrix parent = XMMatrixIdentity());
 	void ModifyVertexs(matrix parent = XMMatrixIdentity());
 	
@@ -646,6 +647,16 @@ struct BulletRay {
 	void Render();
 };
 
+enum ItemType {
+	_NULL = 0, // 아이템이 아님.
+	_Consumable = 1, // 소비아이템
+	_Weapon = 2, // 무기
+	_Equipment = 3, // 장비
+	_Material = 4, // 다른 아이템을 만드는 재료
+	_Quest = 5, // 퀘스트에 쓰일 특별한 아이템. 거래 불가.
+	_Extra = 5, // 기타 아이템.
+};
+
 /*
 * 설명 : 아이템 정보
 * Sentinal Value :
@@ -655,19 +666,21 @@ struct Item
 {
 	// 아이템 id
 	int id;
+	// 아이템의 종류
+	ItemType itemtype;
 	// 아이템 색상
 	vec4 color;
-	// 인벤토리에 나타날 메쉬
-	Mesh* MeshInInventory;
-	// Mesh를 그릴때 입히는 텍스쳐
+	// 인벤토리에 나타날 메쉬/모델
+	Shape ShapeInInventory;
+	// Mesh를 그릴때 입히는 텍스쳐 - 모델이면 없음.
 	GPUResource* tex;
+	// Mesh를 그릴때 입히는 텍스쳐
+	GPUResource* icon;
 	// 아이템 설명
 	const wchar_t* description;
 
-	Item(int i, vec4 c, Mesh* m, GPUResource* t, const wchar_t* d) :
-		id{ i }, color{ c }, MeshInInventory{ m }, tex{ t }, description{
-		d
-		}
+	Item(int i, ItemType type, vec4 c, Shape s, GPUResource* t, GPUResource* icontex, const wchar_t* d) :
+		id{ i }, itemtype{type}, color { c }, ShapeInInventory{ s }, tex{ t }, icon{ icontex }, description{ d }
 	{
 
 	}
@@ -683,15 +696,52 @@ enum LightType {
 };
 
 struct Light {
-	matrix transform;
-	LightType lightType;
-	float spot_angle;
-	float range;
-	float intencity;
-	void* data;
+	// 라이트의 위치
+	union {
+		vec4 pos;
+		struct {
+			float posx;
+			float posy;
+			float posz;
+			int MaxLightCount;
+		};
+	};
 
+	// 라이트의 방향
+	vec4 dir;
+
+	// 라이트의 종류
+	LightType lightType;
+
+	// 스포트 라이트의 경우, 얼마나 넓게 퍼질것이냐를 결정함.
+	float spot_angle;
+
+	// 라이트가 반영되는 거리를 나타냄
+	float range;
+
+	// 라이트가 얼마나 강한지
+	float intencity;
+
+	// 빛의 색깔
+	vec4 LightColor;
+
+	Light(){}
+	~Light(){}
+
+	// 초기화함수
 	void GenerateLight();
+	BoundingOrientedBox GetOBB();
 };
+
+// 반 페이지의 사이즈. 최대 32개의 라이트 수용 가능.
+struct ChunckLightData {
+	Light lights[32];
+};
+// 한 청크당 2048 바이트의 GPU 리소스 할당.
+// 항구맵 - 1.5km * 2km * height2 chuck = 5MB 가량을 소모.
+// Map마다 GPUResource가 존재.
+// 전체 맵의 AABB에 따라 인덱스를 구성함.
+
 
 /*
 * 설명 : 계층구조를 가지는 오브젝트
@@ -755,6 +805,12 @@ struct GameChunk {
 	vecset<StaticGameObject*> Static_gameobjects;
 	vecset<DynamicGameObject*> Dynamic_gameobjects;
 	vecset<SkinMeshGameObject*> SkinMesh_gameobjects;
+	
+	// 라이팅=
+	vector<Light*> Lights; // 해당 청크에 범위가 걸치는 모든 라이팅
+
+	int StaticLightCount = 0; // 청크에 참조된 모든 라이팅의 개수
+	GPUResource GameChunckRefLightArr; // 청크에 참조된 모든 라이팅을 Structured Buffer로 모아 놓은 것.
 
 	ChunkIndex cindex;
 	BoundingBox AABB;
@@ -798,6 +854,7 @@ struct GameMap {
 	vector<Model*> models;
 	vector<StaticGameObject*> MapObjects;
 	vec4 AABB[2] = { 0, 0 };
+	int ZoneID = 0;
 	void ExtendMapAABB(BoundingOrientedBox obb);
 
 	int StartShapeIndex = 0;
@@ -831,7 +888,7 @@ struct GameMap {
 	unsigned int TextureTableStart = 0;
 	unsigned int MaterialTableStart = 0;
 
-	void LoadMap(const char* MapName);
+	void LoadMap(const char* MapName, int ZoneID);
 
 	void Release();
 };
@@ -1038,8 +1095,8 @@ public:
 	//STC 현재 무기 타입
 	STCDef(int, m_currentWeaponType);// = 0;
 	//STC 인벤토리 데이터
-	static constexpr int maxItem = 36;
-	STCDefArr(ItemStack, Inventory, maxItem);
+	//static constexpr int maxItem = 36;
+	//STCDefArr(ItemStack, Inventory, maxItem);
 	//STC 현재 들고 있는 무기
 	Weapon weapon;
 
@@ -1142,9 +1199,9 @@ public:
 		float HealSkillCooldownFlow = 0.0f;
 		//STC 현재 무기 타입?
 		int m_currentWeaponType = 0;
-		//STC 플레이어의 인벤토리 정보
-		static constexpr int maxItem = 36;
-		ItemStack Inventory[maxItem];
+		////STC 플레이어의 인벤토리 정보
+		//static constexpr int maxItem = 36;
+		//ItemStack Inventory[maxItem];
 		//STC 들고있는 무기
 		Weapon weapon;
 	};
@@ -1253,56 +1310,105 @@ enum DXUI_TYPE {
 	DXUI_Text = 3,
 	DXUI_Slider = 4,
 	DXUI_Window = 5,
+	DXUI_Slot = 6,
 };
 
-struct DXUI {
+struct DXUI {	
 	DXUI_TYPE type = DXUI_TYPE::DXUI_NULL;
 	int ParameterData_Capacity = 0;
+
+	// 어디에 있느냐에 따라 상대 좌표를 사용.
+	// 상대좌표는 윈도우의 위치에 따라 달라지며, game.CurrentUICenter의 좌표만큼 이동한 좌표가 된다.
+	// 윈도우 loc의 중심점을 더하면 된다.
 	vec4 location = 0;
+	
 	void* pParamterData = nullptr;
 	bool isFocus = false;
 	bool enable = false;
+	float depth = 0;
 
 	void(*RenderFunc)(DXUI*) = nullptr;
 	void(*UpdateFunc)(DXUI*, float) = nullptr;
-	void(*EventFunc)(DXUI*, DXEvent) = nullptr;
+	void(*EventFunc)(DXUI*) = nullptr;
+
+	DXUI(DXUI_TYPE t, int PCapacity, vec4 loc, float d, void* pPData = nullptr);
+	void SetFunctions(void(*rf)(DXUI*), void(*uf)(DXUI*, float), void(*ef)(DXUI*)) {
+		RenderFunc = rf;
+		UpdateFunc = uf;
+		EventFunc = ef;
+	}
 };
 
 struct DXBtnParam {
 	// 눌렀을때의 반응을 위한 변수
 	float flow;
 	float maxtime;
+	int Base_UITextureIndex = 0;
 
 	// 버튼에 쓰여져 있는 텍스트
 	wchar_t text[64] = {};
 
 	// 추가 변수
-	float addtionalParams[16];
+	union {
+		float addtionalParams[16];
+		void* addtionalPtr[8];
+		int addtionalParams_int[16];
+	};
+	
+
+	void Set(float f, float max, int texid, const wchar_t* uitext) {
+		flow = f;
+		maxtime = max;
+		Base_UITextureIndex = texid;
+		wcscpy_s(text, 64, uitext);
+		ZeroMemory(addtionalParams, sizeof(float) * 16);
+	}
 };
 
 struct DXEditParam {
 	// 눌렀을때의 반응을 위한 변수
 	float flow;
 	float maxtime;
+	int Base_UITextureIndex = 0;
+	// 무엇을 리턴받을지 결정하는 변수 / 0 - 문자 / 1 - 정수 / 2 - 실수
+	int ReturnMode;
 
 	// 아무것도 쓰여져 있지 않을때 보여줄 텍스트
 	wchar_t text[64] = {};
 
 	// 쓸 텍스트
 	wstring wstr;
-
-	// 무엇을 리턴받을지 결정하는 변수 / 0 - 문자 / 1 - 정수 / 2 - 실수
-	int ReturnMode;
+	int editCursor = 0;
 
 	// 추가 변수
-	float addtionalParams[16];
+	union {
+		float addtionalParams[16];
+		void* addtionalPtr[8];
+		int addtionalParams_int[16];
+	};
+
+	void Set(float f, float max, int rtmode, int texid, const wchar_t* cleartext) {
+		ZeroMemory(this, sizeof(DXEditParam));
+		flow = f;
+		maxtime = max;
+		ReturnMode = rtmode;
+		Base_UITextureIndex = texid;
+		wcscpy_s(text, 64, cleartext);
+		wstr.reserve(64);
+		wstr.clear();
+	}
 };
 
 struct DXSliderParam {
 	// 슬라이더 변수
+	// 최소값
+	float min = 0;
+	// 최대값
 	float max = 1;
+	// 현재 비율
 	float setter = 0;
-
+	//중심점 텍스쳐
+	int Base_UITextureIndex;
 	// 실시간으로 값이 변경될 주소
 	void* obj = 0;
 
@@ -1312,57 +1418,183 @@ struct DXSliderParam {
 	// 슬라이더가 가로방향인지의 여부
 	bool horizontal = true;
 
+	// 크고작은 방향이 뒤집어졌을 때 (보통은 오른쪽과 위가 +)
+	bool inverse_direction = false;
+	
+	// 슬라이더의 현재 값을 같이 보여주는 여부
+	char ShowValueMode = 0; // f : front, b : back, \0 : null, q : present-front, p : present-back
+
+	//중심점을 기준으로 하는 슬라이더 현재 값 위치를 표현하는 영역
+	vec4 NotchLoc;
+
 	// 추가 변수
-	float addtionalParams[16];
+	union {
+		float addtionalParams[16];
+		void* addtionalPtr[8];
+		int addtionalParams_int[16];
+	};
+
+	void Set(bool ishori, char valuemode, bool inv_dir, float minv, float maxv, char showValueMode, void* object, int Notch_texid, vec4 notchLoc) {
+		ZeroMemory(this, sizeof(DXSliderParam));
+		horizontal = ishori;
+		mod = valuemode;
+		inverse_direction = inv_dir;
+		min = minv;
+		max = maxv;
+		if (object == nullptr) {
+			obj = new float;
+		}
+		else {
+			obj = object;
+		}
+		ShowValueMode = showValueMode;
+		Base_UITextureIndex = Notch_texid;
+		NotchLoc = notchLoc;
+	}
+};
+
+enum SlotKind {
+	_Item = 0,
+	_Skill = 1,
+};
+
+struct SlotData {
+	int objid = 0;
+	int itemCnt = 0;
+	DXUI* selectedSlot = nullptr;
+};
+
+// 슬롯의 작동 방식
+/*
+* 1. 왼쪽 클릭
+*		- 아무것도 안잡았을때 : 모두 집기
+*		- 같은 종류의 아이템을 가진 슬롯에 놓는 경우 : 아이템 수량 합치기
+*		- 놓아야 할 슬롯에 이미 다른 아이템이 있을 경우 : 기존에 슬롯에 있던 아이템 다시 잡는다.
+*			- 하지만 지금 기존 슬롯의 일부만 잡고 있을 경우 : 아무 동작도 안한다. (마크와 다른점.)
+* 2. 오른쪽 클릭
+*		- 아무것도 안집었을때 : 절반만 집기
+*		- 이미 뭔가를 집었을때, 빈 슬롯에 오른쪽 클릭 : 하나씩 놓기
+*		- 같은 종류의 아이템을 가진 슬롯에 놓는 경우 : 아이템 수량을 하나씩 전달
+*		- 다른 종류의 아이템을 가진 슬롯에 놓는 경우 : swap
+*			- 하지만 지금 기존 슬롯의 일부만 잡고 있을 경우 : 아무 동작도 안한다. (마크와 다른점.)
+* 3. 휠 : 아이템 수량 조절
+* 
+* 집기는 서버와 통신을 하지 않는다.
+* 놓기만 서버와 통신을 한다.
+* 놓기에는 
+* 1. 아이템 수량 합치기
+* 2. 아이템 수량 하나씩 전달
+* 2. 기존에 슬롯에 있던 아이템과 swap
+* 3. 빈 공간에 아이템 전체 놓기
+* 4. 빈 공간에 아이템 하나씩 놓기
+* 
+* 작동방식은 마인크래프트의 슬롯 작동 방식을 가져왔다.
+* 기본적으로 클라이언트에서 상태를 바꾸고, 서버에서 주기적으로 검증을 해주어야 한다.
+*/
+
+struct DXSlotParam {
+	float flow;
+	float maxtime;
+	SlotKind slotObType;
+	int Base_UITextureIndex = 0; // 렌더 텍스쳐
+	int objid; // 슬롯에 저장된 어떤 것을 가리키는 id.
+	int itemCount = 0; // 슬롯에 아이템이 저장되었을 경우, 그 아이템의 개수
+
+	// 추가 변수
+	union {
+		float addtionalParams[16];
+		void* addtionalPtr[8];
+		int addtionalParams_int[16];
+	};
+
+	void Set(float f, float m, SlotKind type, int texid) {
+		flow = f;
+		maxtime = m;
+		slotObType = type;
+		Base_UITextureIndex = texid;
+	}
 };
 
 struct DXPage {
-	vector<DXUI> uiArr;
-
-	void Render() {
-		for (int i = 0; i < uiArr.size(); ++i) {
-			DXUI& ui = uiArr[i];
-			if (ui.RenderFunc) ui.RenderFunc(&ui);
-		}
+	vec4 location;
+	vec4 BackGroundColor = vec4(0, 0, 0, 0.5f);
+	
+	float depth_min = 0;
+	float depth_max = 0;
+	int depthlevel_Count = 0;
+	float GetDepth(int level) {
+		float rate = (float)level / (float)depthlevel_Count;
+		rate = clamp<float>(rate, 0, 1);
+		return depth_min + (depth_max - depth_min) * rate;
 	}
+	void AlignUIDepth();
+
+	vector<DXUI*> temp_WindowArr;
+	vector<vec4> temp_LocStack;
+	vector<DXUI*> uiArr;
+
+	void Render();
 
 	void Update(float deltaTime) {
 		for (int i = 0; i < uiArr.size(); ++i) {
-			DXUI& ui = uiArr[i];
-			if (ui.UpdateFunc) ui.UpdateFunc(&ui, deltaTime);
+			DXUI* ui = uiArr[i];
+			if (ui->enable == false) continue;
+			if (ui->UpdateFunc) ui->UpdateFunc(ui, deltaTime);
 		}
 	}
 
-	void Event(DXEvent evt) {
+	void Event() {
 		for (int i = 0; i < uiArr.size(); ++i) {
-			DXUI& ui = uiArr[i];
-			if (ui.EventFunc) ui.EventFunc(&ui, evt);
+			DXUI* ui = uiArr[i];
+			if (ui->enable == false) continue;
+			if (ui->EventFunc) ui->EventFunc(ui);
 		}
 	}
+
+	DXUI* GetSlotUIFromPos(vec4 pos);
 };
 
 struct DXWindowParam {
-	vector<DXPage*> page_stack;
+	vector<DXPage*> page_stack; // PageStack 개수가 0이면 윈도우가 닫힘.
+	vector<DXPage*> page_table;
+	DXUI* origin = nullptr;
+	bool Focus_Move = false;
+	int WindowImageIndex = 0;
+	vec4 MovePivot = 0;
+	chrono::system_clock::time_point LastFocusedTime;
 
-	void Render() {
-		for (int i = 0; i < page_stack.size(); ++i) {
-			DXPage* page = page_stack[i];
-			page->Render();
-		}
+	float depth_min = 0;
+	float depth_max = 0;
+	int depthlevel_Count = 0;
+	float GetDepth(int level) {
+		float rate = (float)level / (float)depthlevel_Count;
+		rate = clamp<float>(rate, 0, 1);
+		return depth_min + (depth_max - depth_min) * rate;
+	}
+	void AlignUIDepth();
+
+	// 추가 변수
+	union {
+		float addtionalParams[16];
+		void* addtionalPtr[8];
+		int addtionalParams_int[16];
+	};
+
+	DXWindowParam(){}
+	~DXWindowParam(){}
+
+	// 윈도우 내부의 UI들의 loc의 좌표는 상대좌표로 기본 렌더링 좌표와 아얘다르다.
+	void NormalizeCoordToWindowCoord_vec4(vec4& loc);
+
+	void Set(DXUI* o, int texid) {
+		ZeroMemory(this, sizeof(DXWindowParam));
+		origin = o;
+		WindowImageIndex = texid;
 	}
 
-	void Update(float deltaTime) {
-		for (int i = 0; i < page_stack.size(); ++i) {
-			DXPage* page = page_stack[i];
-			page->Update(deltaTime);
-		}
-	}
-
-	void Event(DXEvent evt) {
-		// 마지막 페이지만을 대상으로 UI의 Event 를 처리한다.
-		DXPage* page = page_stack[page_stack.size()-1];
-		page->Event(evt);
-	}
+	//pos는 window의 중심점을 0, 0 으로 하는 상대좌표이다.
+	// 해당 상대 좌표를 기준으로 슬롯을 조회한다.
+	DXUI* GetSlotUIFromPos(vec4 pos);
 };
 
 #pragma endregion

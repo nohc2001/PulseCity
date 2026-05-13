@@ -59,7 +59,7 @@ bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, c
 		int postHight = 0;
 		if (present_StartX + width >= MaxWidth) {
 			if (present_StartY + height >= MaxHeight) {
-				return false;
+				goto SDFPAGEDATA_RELEASE;
 			}
 			postSX = 0;
 			postSY = present_StartY + present_height;
@@ -93,16 +93,21 @@ bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, c
 		}
 
 		if (present_StartY + height >= MaxHeight) {
-			return false;
+			goto SDFPAGEDATA_RELEASE;
 		}
 
+		// 데이터가 없으면 만들어야 한다.
+		if (data == nullptr) {
+			data = new ui8[MaxHeight * MaxWidth];
+		}
+		
 		sdftextSec->pageindex = pageindex;
 		if (copybuffer != nullptr) {
 			for (int iy = sdftextSec->sy; iy < sdftextSec->sy + sdftextSec->height;++iy) {
 				for (int ix = sdftextSec->sx; ix < sdftextSec->sx + sdftextSec->width;++ix) {
 					int iix = ix - sdftextSec->sx;
 					int iiy = iy - sdftextSec->sy;
-					data[iy][ix] = copybuffer[width * iiy + iix];
+					data[iy * MaxWidth + ix] = copybuffer[width * iiy + iix];
 				}
 			}
 		}
@@ -112,6 +117,15 @@ bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, c
 		return true;
 	}
 	return true; // 이미 텍스쳐 영역이 있을 경우
+
+SDFPAGEDATA_RELEASE:
+	// 더이상 데이터가 쌓일 수 없는 경우. 힙할당을 해제한다.
+	if (UploadTextureBuffer.resource != nullptr) {
+		UploadTextureBuffer.Release();
+		UploadTextureBuffer.resource = nullptr;
+	}
+	delete[] data;
+	return false;
 }
 
 void SDFTextPageTextureBuffer::BakeSDF() {
@@ -321,44 +335,38 @@ void GPUResource::CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Fo
 			}
 			cfilename[len] = 0;
 
-			// raw image data load
-			BYTE* pImageData = stbi_load(cfilename, &TexWidth, &TexHeight, &nrChannels, 4);
-			if (pImageData == nullptr) {
-                std::wstringstream ss;
-                ss << L"ERROR : Texture source image load failed - " << filename << L"\n";
-                OutputDebugStringW(ss.str().c_str());
-				return;
-			}
+			//// raw image data load
+			//BYTE* pImageData = stbi_load(cfilename, &TexWidth, &TexHeight, &nrChannels, 4);
 
-			// create bmp image file to convert dds
-			char BMPFile[512] = {};
-			strcpy_s(BMPFile, cfilename);
-			strcpy_s(&BMPFile[len - 3], 4, "bmp");
-			imgform::PixelImageObject pio;
-			pio.data = (imgform::RGBA_pixel*)pImageData;
-			pio.width = TexWidth;
-			pio.height = TexHeight;
-			pio.rawDataToBMP(BMPFile);
+			//// create bmp image file to convert dds
+			//char BMPFile[512] = {};
+			//strcpy_s(BMPFile, cfilename);
+			//strcpy_s(&BMPFile[len - 3], 4, "bmp");
+			//imgform::PixelImageObject pio;
+			//pio.data = (imgform::RGBA_pixel*)pImageData;
+			//pio.width = TexWidth;
+			//pio.height = TexHeight;
+			//pio.rawDataToBMP(BMPFile);
 
-			//raw image data free
-			stbi_image_free(pImageData);
+			////raw image data free
+			//stbi_image_free(pImageData);
 
 			// block compression format identify
 			switch (Format) {
 			case DXGI_FORMAT_BC1_UNORM:
-				gd.bmpTodds(mipmapLevel, "BC1_UNORM", BMPFile);
+				gd.bmpTodds(mipmapLevel, "BC1_UNORM", cfilename);
 				break;
 			case DXGI_FORMAT_BC2_UNORM:
-				gd.bmpTodds(mipmapLevel, "BC2_UNORM", BMPFile);
+				gd.bmpTodds(mipmapLevel, "BC2_UNORM", cfilename);
 				break;
 			case DXGI_FORMAT_BC3_UNORM:
-				gd.bmpTodds(mipmapLevel, "BC3_UNORM", BMPFile);
+				gd.bmpTodds(mipmapLevel, "BC3_UNORM", cfilename);
 				break;
 			case DXGI_FORMAT_BC7_UNORM: // normal map compression.
-				gd.bmpTodds(mipmapLevel, "BC7_UNORM", BMPFile);
+				gd.bmpTodds(mipmapLevel, "BC7_UNORM", cfilename);
 				break;
 			default:
-				gd.bmpTodds(mipmapLevel, "BC1_UNORM", BMPFile);
+				gd.bmpTodds(mipmapLevel, "BC1_UNORM", cfilename);
 				break;
 			}
 
@@ -371,7 +379,7 @@ void GPUResource::CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Fo
 
 			//delete original file, bmp file
 			//DeleteFileW(filename);
-			DeleteFileA(BMPFile);
+			//DeleteFileA(BMPFile);
 
 			goto TEXTURE_LOAD_START;
 		}
@@ -385,6 +393,8 @@ TEXTURE_LOAD_START:
 	std::unique_ptr<uint8_t[]> ddsData;
 	std::vector<D3D12_SUBRESOURCE_DATA> subresources;
 	texture = CreateTextureResourceFromDDSFile(gd.pDevice, gd.gpucmd, DDSName, &uploadbuff, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	GPUResource::TextureLoadedUploadBuffers.push_back(uploadbuff);
+
 	if (texture == nullptr) {
         std::wstringstream ss;
         ss << L"ERROR : CreateTextureResourceFromDDSFile failed - " << DDSName << L"\n";
@@ -400,7 +410,7 @@ TEXTURE_LOAD_START:
 	SRVDesc.Format = Format;
 	SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	SRVDesc.Texture2D.MipLevels = mipmapLevel-1;
+	SRVDesc.Texture2D.MipLevels = -1;
 	SRVDesc.Texture2D.MostDetailedMip = 0;
 	SRVDesc.Texture2D.PlaneSlice = 0;
 	SRVDesc.Texture2D.ResourceMinLODClamp = 0.0f;
@@ -1695,12 +1705,11 @@ UINT64 GlobalDevice::GetRequiredIntermediateSize(ID3D12Resource* pDestinationRes
 
 void GlobalDevice::bmpTodds(int mipmap_level, const char* Format, const char* filename)
 {
-	string cmd = "D3DTexConv\\texconv.exe -m ";
-	cmd += to_string(mipmap_level);
-	cmd += " -f ";
+	string cmd = "D3DTexConv\\texconv.exe -m 0 -f "; // 최대 밉맵
 	cmd += Format;
-	cmd += " ";
+	cmd += " -alpha ";
 	cmd += filename;
+	cmd += " > output_log.txt 2>&1"; // 오류코드 발생
 	int result = system(cmd.c_str());
 	cout << result << endl;
 }
@@ -2058,6 +2067,7 @@ bool GlobalDevice::PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuf
 	return b;
 }
 
+//memory cost : 12 * SDFTextCount + (120+8+16..) * SDFPageCount
 void GlobalDevice::GetBakedSDFs() {
 	wifstream ifs{ L"Resources/SDF/commonTextMeta.txt" };
 	ifs.imbue(locale(""));
@@ -2363,58 +2373,62 @@ void RayTracingDevice::CreateCameraCB()
 	ElementSize = ((ElementSize + 255) & ~255);
 	const D3D12_RESOURCE_DESC constantBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(ElementSize);
 
-	ThrowIfFailed(dxrDevice->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&constantBufferDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&CameraCB)));
+	for (int i = 0; i < 9; ++i) {
+		ThrowIfFailed(dxrDevice->CreateCommittedResource(
+			&uploadHeapProperties,
+			D3D12_HEAP_FLAG_NONE,
+			&constantBufferDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&CameraCB[i])));
 
-	// Map the constant buffer and cache its heap pointers.
-	// We don't unmap this until the app closes. Keeping buffer mapped for the lifetime of the resource is okay.
-	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-	ThrowIfFailed(CameraCB->Map(0, nullptr, reinterpret_cast<void**>(&MappedCB)));
+		// Map the constant buffer and cache its heap pointers.
+		// We don't unmap this until the app closes. Keeping buffer mapped for the lifetime of the resource is okay.
+		CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+		ThrowIfFailed(CameraCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&MappedCB[i])));
 
-	gd.raytracing.m_eye = vec4(0.0f, 2.0f, -5.0f, 1.0f);
-	gd.raytracing.m_at = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-	XMVECTOR right = { 1.0f, 0.0f, 0.0f, 0.0f };
+		gd.raytracing.m_eye = vec4(0.0f, 2.0f, -5.0f, 1.0f);
+		gd.raytracing.m_at = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+		XMVECTOR right = { 1.0f, 0.0f, 0.0f, 0.0f };
 
-	XMVECTOR direction = XMVector4Normalize(gd.raytracing.m_at - gd.raytracing.m_eye);
-	gd.raytracing.m_up = XMVector3Normalize(XMVector3Cross(direction, right));
+		XMVECTOR direction = XMVector4Normalize(gd.raytracing.m_at - gd.raytracing.m_eye);
+		gd.raytracing.m_up = XMVector3Normalize(XMVector3Cross(direction, right));
 
-	// Rotate camera around Y axis.
-	XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(45.0f));
-	gd.raytracing.m_eye = XMVector3Transform(gd.raytracing.m_eye, rotate);
-	gd.raytracing.m_up = XMVector3Transform(gd.raytracing.m_up, rotate);
+		// Rotate camera around Y axis.
+		XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(45.0f));
+		gd.raytracing.m_eye = XMVector3Transform(gd.raytracing.m_eye, rotate);
+		gd.raytracing.m_up = XMVector3Transform(gd.raytracing.m_up, rotate);
 
-	MappedCB->cameraPosition = m_eye;
-	float fovAngleY = 45.0f;
-	XMMATRIX view = XMMatrixLookAtLH(gd.raytracing.m_eye, gd.raytracing.m_at, gd.raytracing.m_up);
-	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 125.0f);
-	XMMATRIX viewProj = view * proj;
+		MappedCB[i]->cameraPosition = m_eye;
+		float fovAngleY = 45.0f;
+		XMMATRIX view = XMMatrixLookAtLH(gd.raytracing.m_eye, gd.raytracing.m_at, gd.raytracing.m_up);
+		float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
+		XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 125.0f);
+		XMMATRIX viewProj = view * proj;
 
-	MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
-	//MappedCB->lightPosition = vec4(0.0f, 1.8f, -3.0f, 0.0f);
-	MappedCB->DirLight_color = XMFLOAT3(1.0f, 1.0f, 1.0f);
-	MappedCB->DirLight_intencity = 1.0f;
-	vec4 dir = vec4(1, 1, 1, 0);
-	dir /= dir.len3;
-	MappedCB->DirLight_invDirection = dir.f3;
+		MappedCB[i]->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
+		//MappedCB->lightPosition = vec4(0.0f, 1.8f, -3.0f, 0.0f);
+		MappedCB[i]->DirLight_color = XMFLOAT3(1.0f, 1.0f, 1.0f);
+		MappedCB[i]->DirLight_intencity = 1.0f;
+		vec4 dir = vec4(1, 1, 1, 0);
+		dir /= dir.len3;
+		MappedCB[i]->DirLight_invDirection = dir.f3;
+	}
 }
 
 void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up)
 {
 	vec4 at = CameraPos + look;
 
-	gd.raytracing.MappedCB->cameraPosition = CameraPos;
 	float fovAngleY = 60.0f;
 	XMMATRIX view = XMMatrixLookAtLH(CameraPos, at, up);
 	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
 	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 1000.0f);
 	XMMATRIX viewProj = view * proj;
-	gd.raytracing.MappedCB->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
+	for (int i = 0; i < 9; ++i) {
+		gd.raytracing.MappedCB[i]->cameraPosition = CameraPos;
+		gd.raytracing.MappedCB[i]->projectionToWorld = XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj));
+	}
 }
 
 #pragma endregion
@@ -4699,6 +4713,88 @@ void BumpSkinMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList)
 
 #pragma region ModelCode
 
+void ModelNode::SkinMeshShadowRender(void* model, GPUCmd& cmd, const matrix& parentMat, void* pGameobject)
+{
+	Model* pModel = (Model*)model;
+	XMMATRIX sav;
+	GameObject* obj = (GameObject*)pGameobject;
+	if (obj == nullptr) sav = XMMatrixMultiply(transform, parentMat);
+	else {
+		int nodeindex = ((byte8*)this - (byte8*)pModel->Nodes) / sizeof(ModelNode);
+		if (obj->transforms_innerModel == nullptr) {
+			sav = XMMatrixMultiply(transform, parentMat);
+		}
+		else {
+			sav = XMMatrixMultiply(obj->transforms_innerModel[nodeindex], parentMat);
+		}
+	}
+
+	if (numMesh != 0 && Meshes != nullptr) {
+		//skin mesh
+		SkinMeshGameObject* smgo = (SkinMeshGameObject*)pGameobject;
+		for (int i = 0; i < numMesh; ++i) {
+			if (pModel->mMeshes[Meshes[i]]->type == Mesh::MeshType::_SkinedBumpMesh) {
+				using PBRRPI = PBRShader1::RootParamId;
+				BumpSkinMesh* bmesh = (BumpSkinMesh*)((BumpSkinMesh*)pModel->mMeshes[Meshes[i]]);
+
+				if constexpr (gd.PlayAnimationByGPU == false) {
+					//copying
+					int skindex = Mesh_SkinMeshindex[i];
+					int boneNum = pModel->mBumpSkinMeshs[skindex]->MatrixCount;
+					UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_COPY_DEST);
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_COPY_SOURCE);
+					gd.gpucmd->CopyBufferRegion(smgo->BoneToWorldMatrixCB_Default[skindex].resource, 0, smgo->BoneToWorldMatrixCB[skindex].resource, 0, ncbElementBytes);
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_GENERIC_READ);
+
+					//Set Offset
+					DescHandle OffsetMatrixCBVHandle;
+					gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);
+					gd.pDevice->CopyDescriptorsSimple(1, OffsetMatrixCBVHandle.hcpu, bmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+					cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshOffsetMatrix, OffsetMatrixCBVHandle.hgpu);
+
+					//Set ToWorld
+					DescHandle ToWorldMatrixCBVHandle;
+					gd.ShaderVisibleDescPool.DynamicAlloc(&ToWorldMatrixCBVHandle, 1);
+					gd.pDevice->CopyDescriptorsSimple(1, ToWorldMatrixCBVHandle.hcpu, smgo->BoneToWorldMatrixCB_Default[Mesh_SkinMeshindex[i]].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+					cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
+
+					for (int k = 0; k < bmesh->subMeshNum; ++k) {
+						pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
+					}
+				}
+				else {
+					//Set Offset
+					if (true) {
+						//Set Offset
+						DescHandle OffsetMatrixCBVHandle;
+						gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);
+						gd.pDevice->CopyDescriptorsSimple(1, OffsetMatrixCBVHandle.hcpu, bmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshOffsetMatrix, OffsetMatrixCBVHandle.hgpu);
+
+						//Set ToWorld
+						DescHandle ToWorldMatrixCBVHandle;
+						gd.ShaderVisibleDescPool.DynamicAlloc(&ToWorldMatrixCBVHandle, 1);
+						gd.pDevice->CopyDescriptorsSimple(1, ToWorldMatrixCBVHandle.hcpu, smgo->BoneToWorldMatrixCB_Default[Mesh_SkinMeshindex[i]].descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_SkinMeshToWorldMatrix, ToWorldMatrixCBVHandle.hgpu);
+
+						for (int k = 0; k < bmesh->subMeshNum; ++k) {
+							pModel->mMeshes[Meshes[i]]->Render(cmd, 1, k);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (numChildren != 0 && Childrens != nullptr) {
+		for (int i = 0; i < numChildren; ++i) {
+			Childrens[i]->SkinMeshShadowRender(model, cmd, sav, pGameobject);
+		}
+	}
+}
+
 void ModelNode::PushRenderBatch(void* model, const matrix& parentMat, void* pGameobject)
 {
 	Model* pModel = (Model*)model;
@@ -5605,21 +5701,15 @@ void Material::SetDescTable()
 			hOriginDesc = hDesc;
 
 			GPUResource* diffuseTex = &game.DefaultTex;
-			if (ti.Diffuse >= 0 && ti.Diffuse < game.TextureTable.size()) diffuseTex = game.TextureTable[ti.Diffuse];
+			if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
 			GPUResource* normalTex = &game.DefaultNoramlTex;
-			if (ti.Normal >= 0 && ti.Normal < game.TextureTable.size()) normalTex = game.TextureTable[ti.Normal];
+			if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
 			GPUResource* ambientTex = &game.DefaultTex;
-			if (ti.AmbientOcculsion >= 0 && ti.AmbientOcculsion < game.TextureTable.size()) ambientTex = game.TextureTable[ti.AmbientOcculsion];
+			if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
 			GPUResource* MetalicTex = &game.DefaultAmbientTex;
-			if (ti.Metalic >= 0 && ti.Metalic < game.TextureTable.size()) MetalicTex = game.TextureTable[ti.Metalic];
+			if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
 			GPUResource* roughnessTex = &game.DefaultAmbientTex;
-			if (ti.Roughness >= 0 && ti.Roughness < game.TextureTable.size()) roughnessTex = game.TextureTable[ti.Roughness];
-
-			if (diffuseTex == nullptr || diffuseTex->resource == nullptr) diffuseTex = &game.DefaultTex;
-			if (normalTex == nullptr || normalTex->resource == nullptr) normalTex = &game.DefaultNoramlTex;
-			if (ambientTex == nullptr || ambientTex->resource == nullptr) ambientTex = &game.DefaultTex;
-			if (MetalicTex == nullptr || MetalicTex->resource == nullptr) MetalicTex = &game.DefaultAmbientTex;
-			if (roughnessTex == nullptr || roughnessTex->resource == nullptr) roughnessTex = &game.DefaultAmbientTex;
+			if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
 
 			const int inc = gd.CBVSRVUAVSize;
 			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -6315,15 +6405,15 @@ void OnlyColorShader::Add_RegisterShaderCommand(GPUCmd & cmd, ShaderType reg) {
 #pragma endregion
 
 #pragma region ScreenShaderCode
-ScreenCharactorShader::ScreenCharactorShader()
+ScreenShader::ScreenShader()
 {
 }
 
-ScreenCharactorShader::~ScreenCharactorShader()
+ScreenShader::~ScreenShader()
 {
 }
 
-void ScreenCharactorShader::InitShader()
+void ScreenShader::InitShader()
 {
 	CreateRootSignature();
 	CreatePipelineState();
@@ -6331,7 +6421,7 @@ void ScreenCharactorShader::InitShader()
 	CreatePipelineState_SDF();
 
 	UINT ncbElementBytes = (((sizeof(SDFInstance) * MaxInstance) + 255) & ~255); //256의 배수
-	SDFInstance_StructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	SDFInstance_StructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1); // 1MB
 	
 	gd.ShaderVisibleDescPool.ImmortalAlloc(&SDFInstance_SRV, 1);
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
@@ -6345,7 +6435,7 @@ void ScreenCharactorShader::InitShader()
 	gd.pDevice->CreateShaderResourceView(SDFInstance_StructuredBuffer.resource, &srvDesc, SDFInstance_SRV.hCreation.hcpu);
 }
 
-void ScreenCharactorShader::CreateRootSignature()
+void ScreenShader::CreateRootSignature()
 {
 	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
 
@@ -6353,7 +6443,7 @@ void ScreenCharactorShader::CreateRootSignature()
 
 	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	rootParam[0].Constants.Num32BitValues = 11; // rect(4) + mulcolor(4) + screenWidht, screenHeight, depth
+	rootParam[0].Constants.Num32BitValues = 12; // screenWidht, screenHeight, depth, lineWid, rect(4) + mulcolor(4)
 	rootParam[0].Constants.ShaderRegister = 0; // b0
 	rootParam[0].Constants.RegisterSpace = 0;
 
@@ -6413,8 +6503,7 @@ void ScreenCharactorShader::CreateRootSignature()
 	if (pd3dErrorBlob) pd3dErrorBlob->Release();
 	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
 }
-
-void ScreenCharactorShader::CreatePipelineState()
+void ScreenShader::CreatePipelineState()
 {
 	D3D12_SHADER_BYTECODE NULLCODE;
 	NULLCODE.BytecodeLength = 0;
@@ -6541,7 +6630,7 @@ void ScreenCharactorShader::CreatePipelineState()
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
 
-void ScreenCharactorShader::CreateRootSignature_SDF() {
+void ScreenShader::CreateRootSignature_SDF() {
 	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
 
 	D3D12_ROOT_PARAMETER1 rootParam[RootParamId::Normal_RootParamCapacity] = {};
@@ -6602,7 +6691,7 @@ void ScreenCharactorShader::CreateRootSignature_SDF() {
 	if (pd3dErrorBlob) pd3dErrorBlob->Release();
 	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
 }
-void ScreenCharactorShader::CreatePipelineState_SDF() {
+void ScreenShader::CreatePipelineState_SDF() {
 	D3D12_SHADER_BYTECODE NULLCODE;
 	NULLCODE.BytecodeLength = 0;
 	NULLCODE.pShaderBytecode = nullptr;
@@ -6701,7 +6790,7 @@ void ScreenCharactorShader::CreatePipelineState_SDF() {
 	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
 	//Output Merger - DepthStencil - depth
 	depthStencilDesc.DepthEnable = TRUE;
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;//D3D12_DEPTH_WRITE_MASK_ALL;
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
 	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
 	//Output Merger - DepthStencil - stencil
@@ -6728,13 +6817,13 @@ void ScreenCharactorShader::CreatePipelineState_SDF() {
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
 
-void ScreenCharactorShader::Release()
+void ScreenShader::Release()
 {
 	if (pPipelineState) pPipelineState->Release();
 	if (pRootSignature) pRootSignature->Release();
 }
 
-void ScreenCharactorShader::SetTextureCommand(GPUResource* texture)
+void ScreenShader::SetTextureCommand(GPUResource* texture)
 {
 	DescHandle descH;
 	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 1);
@@ -6745,7 +6834,7 @@ void ScreenCharactorShader::SetTextureCommand(GPUResource* texture)
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, descH.hgpu);
 }
 
-void ScreenCharactorShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
+void ScreenShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
 	if (reg == ShaderType::SDF) {
 		cmd->SetGraphicsRootSignature(pRootSignature_SDF);
 		cmd->SetPipelineState(pPipelineState_SDF);
@@ -6756,11 +6845,11 @@ void ScreenCharactorShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType re
 	}
 }
 
-void ScreenCharactorShader::RenderAllSDFTexts() {
-	game.MyScreenCharactorShader->SDFInstance_StructuredBuffer.resource->Unmap(0, nullptr);
+void ScreenShader::RenderAllSDFTexts() {
+	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Unmap(0, nullptr);
 
-	using SCSRP = ScreenCharactorShader::RootParamId;
-	gd.gpucmd.SetShader(game.MyScreenCharactorShader, ShaderType::SDF);
+	using SCSRP = ScreenShader::RootParamId;
+	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::SDF);
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	vec4 wh = vec4(gd.ClientFrameWidth, gd.ClientFrameHeight, 0, 0);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(SCSRP::Const_BasicInfo, 2, &wh, 0);
@@ -6788,6 +6877,7 @@ void PBRShader1::InitShader()
 	CreateRootSignature_withShadow();
 	CreateRootSignature_SkinedMesh();
 	CreateRootSignature_Instancing_withShadow();
+	CreateRootSignature_SkinMesh_RenderShadowMap();
 
 	CreatePipelineState();
 	CreatePipelineState_withShadow();
@@ -6796,6 +6886,7 @@ void PBRShader1::InitShader()
 	CreatePipelineState_InnerMirror();
 	CreatePipelineState_SkinedMesh();
 	CreatePipelineState_Instancing_withShadow();
+	CreatePipelineState_SkinMesh_RenderShadowMap();
 }
 
 void PBRShader1::CreateRootSignature()
@@ -6874,20 +6965,34 @@ void PBRShader1::CreateRootSignature_withShadow()
 		RootParam1::Const32s(GRegID('b', 1), 16, D3D12_SHADER_VISIBILITY_VERTEX);
 	rootParam[RootParamId::CBV_StaticLight] =
 		RootParam1::CBV(GRegID('b', 2), D3D12_SHADER_VISIBILITY_PIXEL, D3D12_ROOT_DESCRIPTOR_FLAG_NONE);
+	
 	RootParam1 DescTable1;
 	DescTable1.PushDescRange(GRegID('t', 0), "SRV", 5, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
 	DescTable1.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParam[RootParamId::SRVTable_MaterialTextures] = DescTable1;
+
 	RootParam1 DescTable2;
 	DescTable2.PushDescRange(GRegID('b', 3), "CBV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
 	DescTable2.DescTable(D3D12_SHADER_VISIBILITY_ALL);
 	rootParam[RootParamId::CBVTable_Material] = DescTable2;
+
+	//direction Light ShadowMap (t5 ~ t8)
 	RootParam1 DescTable3;
-	//direction Light ShadowMap
-	DescTable3.PushDescRange(GRegID('t', 5), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable3.PushDescRange(GRegID('t', 5), "SRV", 3, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
 	DescTable3.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParam[RootParamId::SRVTable_ShadowMap] = DescTable3;
-	//PointLight/SpotLight ShadowMap
+
+	//Environment Map
+	RootParam1 DescTable4;
+	DescTable4.PushDescRange(GRegID('t', 9), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable4.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParam[RootParamId::SRVTable_EnvionmentMap] = DescTable4;
+
+	//Chunck Light Structured Buffer
+	RootParam1 DescTable5;
+	DescTable5.PushDescRange(GRegID('t', 10), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable5.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParam[RootParamId::SRVTable_Chunck_StaticLightStructuredBuffer] = DescTable5;
 
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
@@ -6969,11 +7074,22 @@ void PBRShader1::CreateRootSignature_SkinedMesh()
 
 	RootParam1 DescTableShadowMaps;
 	//direction Light ShadowMap
-	DescTableShadowMaps.PushDescRange(GRegID('t', 5), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE);
+	DescTableShadowMaps.PushDescRange(GRegID('t', 5), "SRV", 3, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE);
 	DescTableShadowMaps.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParam[RootParamId::SRVTable_SkinMeshShadowMaps] = DescTableShadowMaps;
 	//PointLight/SpotLight ShadowMap
 
+	//Environment Map
+	RootParam1 DescTable4;
+	DescTable4.PushDescRange(GRegID('t', 9), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable4.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParam[RootParamId::SRVTable_SKinMeshEnvironmentMap] = DescTable4;
+
+	//Chunck Light Structured Buffer
+	RootParam1 DescTable5;
+	DescTable5.PushDescRange(GRegID('t', 10), "SRV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTable5.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParam[RootParamId::SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer] = DescTable5;
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
@@ -7089,6 +7205,69 @@ void PBRShader1::CreateRootSignature_Instancing_withShadow()
 	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
 		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
 			**)&pRootSignature_Instancing_withShadow);
+	if (pd3dErrorBlob) pd3dErrorBlob->Release();
+	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
+}
+
+void PBRShader1::CreateRootSignature_SkinMesh_RenderShadowMap()
+{
+	D3D12_ROOT_SIGNATURE_DESC1 rootSigDesc1;
+
+	D3D12_ROOT_PARAMETER1 rootParam[3] = {};
+
+	rootParam[RootParamId::Const_Camera] =
+		RootParam1::Const32s(GRegID('b', 0), 20, D3D12_SHADER_VISIBILITY_ALL);
+
+	RootParam1 DescTableOffsetMatrix;
+	DescTableOffsetMatrix.PushDescRange(GRegID('b', 1), "CBV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	DescTableOffsetMatrix.DescTable(D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParam[RootParamId::CBVTable_SkinMeshOffsetMatrix] = DescTableOffsetMatrix;
+
+	RootParam1 DescTableToWorldMatrix;
+	DescTableToWorldMatrix.PushDescRange(GRegID('b', 2), "CBV", 1, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE);
+	DescTableToWorldMatrix.DescTable(D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParam[RootParamId::CBVTable_SkinMeshToWorldMatrix] = DescTableToWorldMatrix;
+
+
+	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS*/;
+
+		/// default sampler
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	// sampler register index.
+	sampler.ShaderRegister = 0;
+	// setting
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler.MipLODBias = 0.0f;
+	sampler.MaxAnisotropy = 16;
+	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NONE;
+	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+	sampler.MinLOD = 0;
+	sampler.MaxLOD = 20;
+	sampler.RegisterSpace = 0;
+	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+	rootSigDesc1.NumParameters = 3;
+	rootSigDesc1.pParameters = rootParam;
+	rootSigDesc1.NumStaticSamplers = 1; // question002 : what is static samplers?
+	rootSigDesc1.pStaticSamplers = &sampler;
+	rootSigDesc1.Flags = d3dRootSignatureFlags;
+
+	ID3DBlob* pd3dSignatureBlob = NULL;
+	ID3DBlob* pd3dErrorBlob = NULL;
+	D3D12_VERSIONED_ROOT_SIGNATURE_DESC versioned_rootSigDesc;
+	versioned_rootSigDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+	versioned_rootSigDesc.Desc_1_1 = rootSigDesc1;
+	D3D12SerializeVersionedRootSignature(&versioned_rootSigDesc, &pd3dSignatureBlob, &pd3dErrorBlob);
+	gd.pDevice->CreateRootSignature(0, pd3dSignatureBlob->GetBufferPointer(),
+		pd3dSignatureBlob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void
+			**)&pRootSignature_SkinMesh_RenderShadow);
 	if (pd3dErrorBlob) pd3dErrorBlob->Release();
 	if (pd3dSignatureBlob) pd3dSignatureBlob->Release();
 }
@@ -7448,6 +7627,141 @@ void PBRShader1::CreatePipelineState_RenderShadowMap()
 
 	gd.pDevice->CreateGraphicsPipelineState(&gPipelineStateDesc,
 		__uuidof(ID3D12PipelineState), (void**)&pPipelineState_RenderShadowMap);
+	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
+	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
+}
+
+void PBRShader1::CreatePipelineState_SkinMesh_RenderShadowMap()
+{
+	D3D12_SHADER_BYTECODE NULLCODE;
+	NULLCODE.BytecodeLength = 0;
+	NULLCODE.pShaderBytecode = nullptr;
+
+	ID3DBlob* pd3dVertexShaderBlob = NULL, * pd3dPixelShaderBlob = NULL;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC gPipelineStateDesc;
+	ZeroMemory(&gPipelineStateDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+
+	gPipelineStateDesc.pRootSignature = pRootSignature_SkinMesh_RenderShadow;
+	gPipelineStateDesc.NodeMask = 0;
+
+	//Input Asm
+	gPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	constexpr int inputElementCount = 13;
+	D3D12_INPUT_ELEMENT_DESC inputElementDesc[inputElementCount] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // pos vec3
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},// uv vec2
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // normal vec3
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		// float3 tangent
+		{ "EXTRA", 0, DXGI_FORMAT_R32_FLOAT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		// float3 extra
+		{ "BONEINDEX", 0, DXGI_FORMAT_R32_UINT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex0;
+		{ "BONEWEIGHT", 0, DXGI_FORMAT_R32_FLOAT, 1, 4, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // float boneweight0;
+		{ "BONEINDEX", 1, DXGI_FORMAT_R32_UINT, 1, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex1;
+		{ "BONEWEIGHT", 1, DXGI_FORMAT_R32_FLOAT, 1, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // float boneweight1;
+		{ "BONEINDEX", 2, DXGI_FORMAT_R32_UINT, 1, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex2;
+		{ "BONEWEIGHT", 2, DXGI_FORMAT_R32_FLOAT, 1, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },  // float boneweight2;
+		{ "BONEINDEX", 3, DXGI_FORMAT_R32_UINT, 1, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // uint boneindex3;
+		{ "BONEWEIGHT", 3, DXGI_FORMAT_R32_FLOAT, 1, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }, // float boneweight3;
+	};
+	gPipelineStateDesc.InputLayout.NumElements = inputElementCount;
+	gPipelineStateDesc.InputLayout.pInputElementDescs = inputElementDesc;
+
+	//Vertex Shader
+	gPipelineStateDesc.VS = Shader::GetShaderByteCode(L"Resources/Shaders/PBRShader01_SkinMeshwithShadow.hlsl", "VSMain_RenderShadow", "vs_5_1", &pd3dVertexShaderBlob);
+
+	//Hull Shader
+	//gPipelineStateDesc.HS = NULLCODE;
+
+	//Tessellation
+
+	//Domain Shader
+	//gPipelineStateDesc.DS = NULLCODE;
+
+	//Geometry Shader
+	//gPipelineStateDesc.GS = NULLCODE;
+
+	//Stream Output
+	//gPipelineStateDesc.StreamOutput
+
+	//Rasterazer
+	gPipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	gPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	gPipelineStateDesc.RasterizerState.FrontCounterClockwise = FALSE; // front = clock wise
+	//Rasterazer-depth
+	gPipelineStateDesc.RasterizerState.DepthBias = 0; // Depth = Depth + DepthBias (pixel space?)
+	// Depth = DepthBias * 2^k + SlopeScaledDepthBias * MaxDepthSlope
+
+
+	gPipelineStateDesc.RasterizerState.DepthBiasClamp = 0; // maximun of depth bias
+
+	gPipelineStateDesc.RasterizerState.SlopeScaledDepthBias = 0;
+	// in gpu, according to slope of mesh, calculate dynamic bias.
+
+	gPipelineStateDesc.RasterizerState.DepthClipEnable = TRUE; // if depth > 1, cliping vertex.
+	//Rasterazer-MSAA
+	gPipelineStateDesc.RasterizerState.MultisampleEnable = TRUE;
+	gPipelineStateDesc.RasterizerState.AntialiasedLineEnable = TRUE;
+	gPipelineStateDesc.RasterizerState.ForcedSampleCount = 0; // sample count of UAV rendering // question 003 : what is UAV rendering?
+	//Rasterazer - Conservative Rendering On/Off - (bosujuk rendering)
+	gPipelineStateDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+	//Pixel Shader
+	gPipelineStateDesc.PS = NULLCODE;
+
+	//Output Merger
+	//Output Merger-Blend
+	D3D12_BLEND_DESC d3dBlendDesc;
+	::ZeroMemory(&d3dBlendDesc, sizeof(D3D12_BLEND_DESC));
+	d3dBlendDesc.AlphaToCoverageEnable = FALSE;
+	d3dBlendDesc.IndependentBlendEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
+	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
+	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	d3dBlendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+	d3dBlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	gPipelineStateDesc.BlendState = d3dBlendDesc;
+	//Output Merger - MSAA
+	gPipelineStateDesc.SampleDesc.Count = (gd.m_bMsaa4xEnable) ? 4 : 1;
+	gPipelineStateDesc.SampleDesc.Quality = (gd.m_bMsaa4xEnable) ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+	gPipelineStateDesc.SampleMask = 0xFFFFFFFF; // pass every sampling.
+	//Output Merger - DepthStencil
+	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
+	//Output Merger - DepthStencil - depth
+	depthStencilDesc.DepthEnable = TRUE;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
+	//Output Merger - DepthStencil - stencil
+	depthStencilDesc.StencilEnable = FALSE;
+	depthStencilDesc.StencilReadMask = 0x00;
+	depthStencilDesc.StencilWriteMask = 0x00;
+	depthStencilDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_NEVER;
+	depthStencilDesc.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthStencilDesc.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_NEVER;
+	gPipelineStateDesc.DepthStencilState = depthStencilDesc;
+	//Output Merger - RenderTagets / DepthStencil Buffer
+	//gPipelineStateDesc.NumRenderTargets = 1;
+	//gPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	//gPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	gPipelineStateDesc.NumRenderTargets = 0;
+	gPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+	gPipelineStateDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	gPipelineStateDesc.SampleDesc.Count = 1;
+
+	gd.pDevice->CreateGraphicsPipelineState(&gPipelineStateDesc,
+		__uuidof(ID3D12PipelineState), (void**)&pPipelineState_SkinMesh_RenderShadow);
 	if (pd3dVertexShaderBlob) pd3dVertexShaderBlob->Release();
 	if (pd3dPixelShaderBlob) pd3dPixelShaderBlob->Release();
 }
@@ -7995,6 +8309,10 @@ void PBRShader1::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg)
 	case ShaderType::InstancingWithShadow:
 		cmd->SetPipelineState(pPipelineState_Instancing_withShadow);
 		cmd->SetGraphicsRootSignature(pRootSignature_Instancing_withShadow);
+		return;
+	case ShaderType::SkinMeshRenderShadowMap:
+		cmd->SetPipelineState(pPipelineState_SkinMesh_RenderShadow);
+		cmd->SetGraphicsRootSignature(pRootSignature_SkinMesh_RenderShadow);
 		return;
 	}
 }
@@ -8878,11 +9196,15 @@ void RayTracingShader::CreateGlobalRootSignature()
 	srvStructuredBuffer_Material.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5); // t5
 	CD3DX12_DESCRIPTOR_RANGE ranges3[1] = { srvStructuredBuffer_Material };
 
+	CD3DX12_DESCRIPTOR_RANGE srvChunckStaticLightArr;
+	srvChunckStaticLightArr.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6); // t6
+	CD3DX12_DESCRIPTOR_RANGE ranges5[1] = { srvChunckStaticLightArr };
+
 	CD3DX12_DESCRIPTOR_RANGE srvTextureArr;
-	srvTextureArr.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, gd.ShaderVisibleDescPool.TextureSRVCap, 6); // t5
+	srvTextureArr.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, gd.ShaderVisibleDescPool.TextureSRVCap, 7); // t7
 	CD3DX12_DESCRIPTOR_RANGE ranges4[1] = { srvTextureArr };
 
-	constexpr int ParamCount = 9;
+	constexpr int ParamCount = 10;
 	CD3DX12_ROOT_PARAMETER rootParameters[ParamCount];
 	rootParameters[0].InitAsDescriptorTable(1, &RT_UAVDescriptor); // RT OutputView u0
 	rootParameters[1].InitAsDescriptorTable(1, &DS_UAVDescriptor2); // DS OutputView u1
@@ -8892,7 +9214,8 @@ void RayTracingShader::CreateGlobalRootSignature()
 	rootParameters[5].InitAsDescriptorTable(1, ranges1); // SkyBoxCubeMap
 	rootParameters[6].InitAsDescriptorTable(1, ranges2); // SkinMeshVertex
 	rootParameters[7].InitAsDescriptorTable(1, ranges3); // srvStructuredBuffer_Material
-	rootParameters[8].InitAsDescriptorTable(1, ranges4); // srvTextureArr
+	rootParameters[8].InitAsDescriptorTable(1, ranges5); // srvChunckStaticLightArr
+	rootParameters[9].InitAsDescriptorTable(1, ranges4); // srvTextureArr
 
 	/// default sampler
 	D3D12_STATIC_SAMPLER_DESC sampler = {};
@@ -8983,7 +9306,7 @@ void RayTracingShader::CreatePipelineState()
 
 	// 3. Shader config
 	CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT* shaderConfig = raytracingPipeline.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-	UINT payloadSize = 16 * sizeof(float);   // float4 color + float ShadowHit + padding + depth, stecil, extra2
+	UINT payloadSize = 8 * sizeof(float);   // float4 color + float ShadowHit + padding + depth, stecil, extra2
 	UINT attributeSize = 2 * sizeof(float); // float2 barycentrics
 	shaderConfig->Config(payloadSize, attributeSize);
 
@@ -9008,7 +9331,7 @@ void RayTracingShader::CreatePipelineState()
 
 	// Pipeline config
 	CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT* pipelineConfig = raytracingPipeline.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-	UINT maxRecursionDepth = 2; // ~ primary rays only. (for shadow)
+	UINT maxRecursionDepth = 10; // ~ primary rays only. (for shadow)
 	pipelineConfig->Config(maxRecursionDepth);
 
 #if _DEBUG

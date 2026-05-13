@@ -159,13 +159,13 @@ void GameObject::Render(matrix parent)
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
 			if (material[i] < 0 || material[i] >= game.MaterialTable.size()) continue;
 			Material* Mat = game.MaterialTable[material[i]];
-			if (Mat == nullptr) continue;
-			if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
-				Mat->SetDescTable();
-			}
-			if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
-				continue;
-			}
+			//if (Mat == nullptr) continue;
+			//if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
+			//	Mat->SetDescTable();
+			//}
+			//if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
+			//	continue;
+			//}
 			using PBRRPI = PBRShader1::RootParamId;
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, Mat->CB_Resource.descindex.hRender.hgpu);
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, Mat->TextureSRVTableIndex.hRender.hgpu);
@@ -666,7 +666,7 @@ void DynamicGameObject::InitialChunkSetting()
 	if (chunkAllocIndexs == nullptr) {
 		BoundingOrientedBox obb = GetOBB();
 		vec4 ext = obb.Extents;
-		float len = ext.len3 / game.chunck_divide_Width;
+		float len = ext.len3 / Zone::chunck_divide_Width;
 		chunkAllocIndexsCapacity = powf(2 * ceilf(len * 0.5f), 3);
 		chunkAllocIndexs = new int[chunkAllocIndexsCapacity];
 	}
@@ -699,7 +699,7 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q)
 	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
 		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
 			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				GameChunk* gc = game.chunck[ChunkIndex(ix, iy, iz)];
+				GameChunk* gc = game.Current_Zone->chunck[ChunkIndex(ix, iy, iz)];
 				gc->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
 				up += 1;
 			}
@@ -713,7 +713,7 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q)
 	worldMat.pos.w = 1;
 
 	// Æ÷ÇÔ Ã»Å© Å½»ö
-	IncludeChunks = game.GetChunks_Include_OBB(GetOBB());
+	IncludeChunks = game.Current_Zone->GetChunks_Include_OBB(GetOBB());
 
 	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
 	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
@@ -722,13 +722,13 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q)
 	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
 		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
 			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				auto c = game.chunck.find(ChunkIndex(ix, iy, iz));
+				auto c = game.Current_Zone->chunck.find(ChunkIndex(ix, iy, iz));
 				GameChunk* gc;
-				if (c == game.chunck.end()) {
+				if (c == game.Current_Zone->chunck.end()) {
 					// new game chunk
 					gc = new GameChunk();
 					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-					game.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+					game.Current_Zone->chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
 				}
 				else gc = c->second;
 				int allocN = gc->Dynamic_gameobjects.Alloc();
@@ -749,7 +749,7 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afte
 	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
 		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
 			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				game.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+				game.Current_Zone->chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
 				up += 1;
 			}
 		}
@@ -770,13 +770,13 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afte
 	for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
 		for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
 			for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-				auto c = game.chunck.find(ChunkIndex(ix, iy, iz));
+				auto c = game.Current_Zone->chunck.find(ChunkIndex(ix, iy, iz));
 				GameChunk* gc;
-				if (c == game.chunck.end()) {
+				if (c == game.Current_Zone->chunck.end()) {
 					// new game chunk
 					gc = new GameChunk();
 					gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
-					game.chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
+					game.Current_Zone->chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
 				}
 				else gc = c->second;
 				int allocN = gc->Dynamic_gameobjects.Alloc();
@@ -810,7 +810,7 @@ void DynamicGameObject::Release() {
 		for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
 			for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
 				for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-					game.chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+					game.Current_Zone->chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
 					up += 1;
 				}
 			}
@@ -1089,7 +1089,7 @@ void DynamicGameObject::Update(float delatTime)
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
 	BoundingOrientedBox beforeobb = GetOBB();
-	GameObjectIncludeChunks goic_before = game.GetChunks_Include_OBB(beforeobb);
+	GameObjectIncludeChunks goic_before = game.Current_Zone->GetChunks_Include_OBB(beforeobb);
 	float pow = deltaTime * 10;
 	vec4 flowScale, flowRot, flowPos;
 	XMMatrixDecompose((XMVECTOR*)&flowScale, (XMVECTOR*)&flowRot, (XMVECTOR*)&flowPos, worldMat);
@@ -1101,7 +1101,7 @@ void DynamicGameObject::PositionInterpolation(float deltaTime)
 	matrix temp = worldMat;
 	worldMat = mat;
 	BoundingOrientedBox afterobb = GetOBB();
-	GameObjectIncludeChunks goic_after = game.GetChunks_Include_OBB(afterobb);
+	GameObjectIncludeChunks goic_after = game.Current_Zone->GetChunks_Include_OBB(afterobb);
 	if (goic_before != goic_after) {
 		worldMat = temp;
 		MoveChunck(mat, goic_before, goic_after);
@@ -1130,8 +1130,8 @@ void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectInclu
 		}
 
 		// ¾È ÈÄ¡´Â ºÎºÐÀº Free ÇÑ´Ù.
-		auto f = game.chunck.find(ci);
-		if (f != game.chunck.end()) {
+		auto f = game.Current_Zone->chunck.find(ci);
+		if (f != game.Current_Zone->chunck.end()) {
 #ifdef ChunckDEBUG
 			dbgbreak(f->second->Dynamic_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
 #endif
@@ -1158,13 +1158,13 @@ void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectInclu
 			continue;
 		}
 
-		auto c = game.chunck.find(ci);
+		auto c = game.Current_Zone->chunck.find(ci);
 		GameChunk* gc;
-		if (c == game.chunck.end()) {
+		if (c == game.Current_Zone->chunck.end()) {
 			// new game chunk
 			gc = new GameChunk();
 			gc->SetChunkIndex(ci);
-			game.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+			game.Current_Zone->chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
 		}
 		else gc = c->second;
 		int allocN = gc->Dynamic_gameobjects.Alloc();
@@ -1794,7 +1794,29 @@ void SkinMeshGameObject::Update(float delatTime)
 }
 
 void SkinMeshGameObject::Render(matrix parent) {
-	
+	if (BoneToWorldMatrixCB.size() == 0) {
+		return;
+	}
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	BoundingOrientedBox obb_local, obb;
+	bool b;
+	matrix world = GetWorld();
+	world *= parent;
+
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) obb_local = mesh->GetOBB();
+	else if (model != nullptr) obb_local = model->GetOBB();
+	else return;
+
+	if (mesh == nullptr) {
+		model->Render<true>(gd.gpucmd, world, this);
+	}
+}
+
+void SkinMeshGameObject::RenderShadow(matrix parent)
+{
 	if (BoneToWorldMatrixCB.size() == 0) {
 		return;
 	}
@@ -1939,7 +1961,7 @@ void SkinMeshGameObject::ModifyLocalToWorld() {
 	if (model == nullptr) return;
 	matrix rootworld = worldMat;
 	rootworld.transpose();
-	for (int i = 0;i < model->mNumSkinMesh;++i) {
+	for (int i = 0; i < model->mNumSkinMesh; ++i) {
 		using HBLTWSRPI = HBoneLocalToWorldShader::RootParamId;
 		//gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 		gd.CScmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
@@ -1955,7 +1977,7 @@ void SkinMeshGameObject::ModifyLocalToWorld() {
 
 		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_LocalMatrixs.hcpu, NodeLocalMatrixs_SRVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_TPOSLocalTr.hcpu, NodeTposMatrixs_SRVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_toParent.hcpu, 
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_toParent.hcpu,
 			NodeToParentSRVIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_NodeToBoneIndex.hcpu, NodeToBone_SRVDescIndex[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_UAVTable_Out_ToWorldMatrix.hcpu, BoneToWorldMatrix_UAVDescIndex[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -2063,18 +2085,18 @@ void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
 			transforms_innerModel[i].Id();
 		}
 
-		gd.AverageSecPer60Start(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
+		//gd.AverageSecPer60Start(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
 		GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[PlayingAnimationIndex[0]], transforms_innerModel, AnimationFlowTime[0]);
-		gd.AverageSecPer60End(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
+		//gd.AverageSecPer60End(Update_Monster_Animation_GetBoneLocalMatrixAtTime);
 
 		for (int i = 0; i < pModel->nodeCount; ++i) {
 			transforms_innerModel[i] *= pModel->DefaultNodelocalTr[i];
 		}
 		transforms_innerModel[0] = worldMat;
 
-		gd.AverageSecPer60Start(Update_Monster_Animation_SetRootMatrixs);
+		//gd.AverageSecPer60Start(Update_Monster_Animation_SetRootMatrixs);
 		SetRootMatrixs();
-		gd.AverageSecPer60End(Update_Monster_Animation_SetRootMatrixs);
+		//gd.AverageSecPer60End(Update_Monster_Animation_SetRootMatrixs);
 	}
 }
 
@@ -2109,8 +2131,8 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 		}
 
 		// ¾È ÈÄ¡´Â ºÎºÐÀº Free ÇÑ´Ù.
-		auto f = game.chunck.find(ci);
-		if (f != game.chunck.end()) {
+		auto f = game.Current_Zone->chunck.find(ci);
+		if (f != game.Current_Zone->chunck.end()) {
 #ifdef ChunckDEBUG 
 			dbgbreak(f->second->SkinMesh_gameobjects.isnull(chunkAllocIndexs[ci.extra]));
 			cout << "ci(" << ci.x << ", " << ci.y << ", " << ci.z << ") : " << chunkAllocIndexs[ci.extra] << "\t";
@@ -2156,13 +2178,13 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 			continue;
 		}
 
-		auto c = game.chunck.find(ci);
+		auto c = game.Current_Zone->chunck.find(ci);
 		GameChunk* gc;
-		if (c == game.chunck.end()) {
+		if (c == game.Current_Zone->chunck.end()) {
 			// new game chunk
 			gc = new GameChunk();
 			gc->SetChunkIndex(ci);
-			game.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+			game.Current_Zone->chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
 		}
 		else gc = c->second;
 		int allocN = gc->SkinMesh_gameobjects.Alloc();
@@ -2329,12 +2351,12 @@ void Monster::Update(float deltaTime)
 		game.NpcHPBars[this->HPBarIndex] = hpBarWorldMat;
 	}
 
-	gd.AverageSecPer60Start(Update_Monster_Animation);
+	//gd.AverageSecPer60Start(Update_Monster_Animation);
 	AnimationUpdate(deltaTime);
 	//if (AnimationFlowTime < 1) {
 	//	AnimationUpdate(deltaTime);
 	//}
-	gd.AverageSecPer60End(Update_Monster_Animation);
+	//gd.AverageSecPer60End(Update_Monster_Animation);
 
 }
 
@@ -2460,7 +2482,7 @@ Player::Player() : HP{ 100 } {
 	HealSkillCooldown = 10.0f;
 	HealSkillCooldownFlow = 0;
 	m_currentWeaponType = (int)WeaponType::Sniper;
-	ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
+	//ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
 
 	DeltaMousePos = 0;
 	GunModel = nullptr;
@@ -2895,7 +2917,8 @@ void Player::Render_AfterDepthClear()
 			if (pTargetModel) {
 				gunmat *= viewmat;
 
-				if (Game::renderViewPort == &game.MyDirLight.viewport) {
+				// fix?? ??ì½”ë“œ???˜ë„ê°€ ë­ì???
+				if (Game::renderViewPort == &game.MyDirLight[0].viewport) {
 					pTargetModel->Render(gd.gpucmd, gunmat);
 					return;
 				}
@@ -3118,8 +3141,9 @@ void Player::RecvSTC_SyncObj(char* data) {
 	HealSkillCooldown = stcsod.HealSkillCooldown;
 	HealSkillCooldownFlow = stcsod.HealSkillCooldownFlow;
 	m_currentWeaponType = stcsod.m_currentWeaponType;
-	memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));
-	offset += sizeof(STC_SyncObjData);
+
+	//memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));
+	//offset += sizeof(STC_SyncObjData);
 
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
@@ -3283,9 +3307,11 @@ void GameMap::GetLastDescIndexs()
 	LastDesc_Instancing = gd.ShaderVisibleDescPool.InstancingSRVSiz - 1;
 }
 
-void GameMap::LoadMap(const char* MapName)
+void GameMap::LoadMap(const char* MapName, int ZoneID)
 {
 	GameMap* map = this;
+	map->ZoneID = ZoneID;
+	Zone* zone = game.ZoneTable[map->ZoneID];
 	StartShapeIndex = Shape::ShapeTable.size();
 	map->GetStartDescIndexs();
 
@@ -3728,12 +3754,16 @@ void GameMap::LoadMap(const char* MapName)
 
 			Light* lptr = new Light();
 			lptr->lightType = lt;
-			lptr->transform = go->worldMat;
+			lptr->pos = go->worldMat.pos;
+			lptr->dir = go->worldMat.look;
+			
 			ifs.read((char*)&lptr->range, sizeof(float));
 			ifs.read((char*)&lptr->intencity, sizeof(float));
 			ifs.read((char*)&lptr->spot_angle, sizeof(float));
+			ifs.read((char*)&lptr->LightColor, sizeof(vec4));
+
 			lptr->GenerateLight();
-			game.PushLight(lptr);
+			zone->LightTable.push_back(lptr);
 		}
 
 		if (Mod != 'm') { // is not model
@@ -3819,11 +3849,59 @@ void Light::GenerateLight()
 {
 }
 
+BoundingOrientedBox Light::GetOBB() {
+	constexpr float sqrt2 = 1.414213562f;
+	vec4 extents = range * sqrt2;
+	return BoundingOrientedBox(pos.f3, extents.f3, vec4(0, 0, 0, 1));
+}
+
 BoundingBox ChunkIndex::GetAABB() {
 	BoundingBox AABB;
-	float halfW = game.chunck_divide_Width * 0.5f;
-	AABB.Center = XMFLOAT3(game.chunck_divide_Width * x + halfW, game.chunck_divide_Width * y + halfW, game.chunck_divide_Width * z + halfW);
+	float halfW = Zone::chunck_divide_Width * 0.5f;
+	AABB.Center = XMFLOAT3(Zone::chunck_divide_Width * x + halfW, Zone::chunck_divide_Width * y + halfW, Zone::chunck_divide_Width * z + halfW);
 	AABB.Extents = XMFLOAT3(halfW, halfW, halfW);
 	return AABB;
 }
 
+DXUI::DXUI(DXUI_TYPE t, int PCapacity, vec4 loc, float d, void* pPData)
+{
+	enable = true;
+	type = t;
+	ParameterData_Capacity = PCapacity;
+	location = loc;
+	if (pPData) {
+		pParamterData = new char[ParameterData_Capacity];
+	}
+	else {
+		pParamterData = pPData;
+	}
+	depth = d;
+}
+
+void DXWindowParam::NormalizeCoordToWindowCoord_vec4(vec4& loc)
+{
+	float W = origin->location.z - origin->location.x;
+	float H = origin->location.w - origin->location.y;
+	loc -= 0.5f;
+	loc * 2.0f;
+	loc.x *= W;
+	loc.z *= W;
+	loc.y *= -H;
+	loc.w *= -H;
+	swap(loc.y, loc.w);
+}
+
+DXUI* DXWindowParam::GetSlotUIFromPos(vec4 pos) {
+	if (page_stack.size() == 0) return nullptr;
+	DXPage* lastPage = page_stack[page_stack.size() - 1];
+	return lastPage->GetSlotUIFromPos(pos);
+}
+
+void DXWindowParam::AlignUIDepth() {
+	depthlevel_Count = page_stack.size();
+	for (int i = 0; i < depthlevel_Count; ++i) {
+		page_stack[i]->depth_min = GetDepth(i);
+		page_stack[i]->depth_max = GetDepth(i + 1);
+		page_stack[i]->AlignUIDepth();
+	}
+}

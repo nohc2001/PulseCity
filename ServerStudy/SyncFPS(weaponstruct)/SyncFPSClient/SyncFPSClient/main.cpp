@@ -7,6 +7,7 @@
 #include "GameObject.h"
 #include "Utill_Wave.h"
 
+vector<ID3D12Resource*> GPUResource::TextureLoadedUploadBuffers;
 extern GlobalDevice gd;
 extern Game game;
 Client client;
@@ -27,7 +28,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	freopen_s(&_fpStdOut, "CONOUT$", "w", stdout);
 	freopen_s(&_fpStdErr, "CONOUT$", "w", stderr);
 	SetConsoleTitleA("SyncFPSClient Console");
-	// �������� �ѱ۷� ǥ�õǵ��� �Ѵ�.
+
+	// 오류등이 한글로 표시되도록 한다.
 	wcout.imbue(locale("korean"));
 	//WSA �ʱ�ȭ
 	WSADATA wsa;
@@ -38,10 +40,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	PrintOffset();
 
 	//Audio Init
-	wave_master_channel.Init(23);
-	WaveDataStruct wd = CreateWaveFromFile(L"Resources/Sound/Soundtrack002.wav");
-	WaveChannel* channel0 = NewChannel();
-	channel0->pushWave(wd);
+	//wave_master_channel.Init(23);
+	//WaveDataStruct wd = CreateWaveFromFile(L"Resources/Sound/Soundtrack002.wav");
+	//WaveChannel* channel0 = NewChannel();
+	//channel0->pushWave(wd);
 
 	gd.Factory_Adaptor_Output_Init();
 	
@@ -173,293 +175,356 @@ RECT rt;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	HDC hdc;
-
+	game.evt.hWnd = hWnd;
+	game.evt.uMsg = uMsg;
+	game.evt.wParam = wParam;
+	game.evt.lParam = lParam;
 	//game.Event(WinEvent(hWnd, uMsg, wParam, lParam));
 
+	//Common Event
 	switch (uMsg) {
 		//(14 line) outer code start : microsoft copilot. - FPS Camera Movement
-	case WM_INPUT:
-	{
-		UINT dwSize;
-		GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
-		if (dwSize > 4096) break;
-		BYTE* lpb = gd.InputTempBuffer;
-		if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, lpb, &dwSize, sizeof(RAWINPUTHEADER)) == dwSize)
-		{
-			RAWINPUT* raw = (RAWINPUT*)lpb;
-			if (raw->header.dwType == RIM_TYPEMOUSE)
-			{
-				int deltaX = raw->data.mouse.lLastX;
-				int deltaY = raw->data.mouse.lLastY;
-
-				//outer code end - FPS Camera Movement
-
-				game.AddMouseInput(deltaX, deltaY);
-			}
-		}
-		break;
-	}
 	case WM_CREATE:
 		GetClientRect(hWnd, &rt);
 		break;
 	case WM_KEYDOWN:
-		switch (wParam) {
-		case 'W':
-		{
-			if ((game.pKeyBuffer['W'] & 0xF0) == false) {
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = 'W';
-				header.isdown = true;
-				client.send((char*) & header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
+		game.CurrentKeyDown = wParam;
+		//GetKeyboardState(game.pKeyBuffer);
 		break;
-		case 'A':
-		{
-			if ((game.pKeyBuffer['A'] & 0xF0) == false) {
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = 'A';
-				header.isdown = true;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
-		break;
-		case 'S':
-		{
-			if ((game.pKeyBuffer['S'] & 0xF0) == false) {
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = 'S';
-				header.isdown = true;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
-		break;
-		case 'D':
-		{
-			if ((game.pKeyBuffer['D'] & 0xF0) == false) {
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = 'D';
-				header.isdown = true;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
-		break;
-		case 'Q':
-		{
-			if ((game.pKeyBuffer['Q'] & 0xF0) == false) {
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = 'Q';
-				header.isdown = true;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
-		break;
-
-		case VK_SPACE:
-		{
-			if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = VK_SPACE;
-				header.isdown = true;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
-		break;
-		case 'E':
-		{
-			game.isInventoryOpen = !game.isInventoryOpen;
-		}
-		break;
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		{
-			if (!(lParam & (1 << 30))) {
-				if (game.player) {
-					switch (wParam) {
-					case '1': game.player->m_currentWeaponType = (int)WeaponType::MachineGun; break;
-					case '2': game.player->m_currentWeaponType = (int)WeaponType::Sniper; break;
-					case '3': game.player->m_currentWeaponType = (int)WeaponType::Shotgun; break;
-					case '4': game.player->m_currentWeaponType = (int)WeaponType::Rifle; break;
-					case '5': game.player->m_currentWeaponType = (int)WeaponType::Pistol; break;
-					}
-				}
-
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = (char)wParam;
-				header.isdown = true;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-		}
-		break;
-		case VK_F9:
-		{
-			BOOL bFullScreenState = FALSE;
-			gd.pSwapChain->GetFullscreenState(&bFullScreenState, NULL);
-			gd.SetFullScreenMode(!bFullScreenState);
-			break;
-		}
-		case VK_F8:
-		{
-			gd.isRaytracingRender = !gd.isRaytracingRender;
-			break;
-		}
-		case VK_F5:
-		{
-			game.bFirstPersonVision = !game.bFirstPersonVision;
-			break;
-		}
-		case VK_F1:
-		{
-			__debugbreak();
-			break;
-		}
-		case VK_ESCAPE:
-		{
-			PostQuitMessage(0);
-			break;
-		}
-		break;
-		}
-		GetKeyboardState(game.pKeyBuffer);
-		break;
-	case WM_KEYUP:
-		switch (wParam) {
-		case 'W':
-		{
-			CTS_KeyInput_Header header;
-			header.size = sizeof(CTS_KeyInput_Header);
-			header.st = CTS_Protocol::KeyInput;
-			header.Key = 'W';
-			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-		}
-		break;
-		case 'A':
-		{
-			CTS_KeyInput_Header header;
-			header.size = sizeof(CTS_KeyInput_Header);
-			header.st = CTS_Protocol::KeyInput;
-			header.Key = 'A';
-			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-		}
-		break;
-		case 'S':
-		{
-			CTS_KeyInput_Header header;
-			header.size = sizeof(CTS_KeyInput_Header);
-			header.st = CTS_Protocol::KeyInput;
-			header.Key = 'S';
-			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-		}
-		break;
-		case 'D':
-		{
-			CTS_KeyInput_Header header;
-			header.size = sizeof(CTS_KeyInput_Header);
-			header.st = CTS_Protocol::KeyInput;
-			header.Key = 'D';
-			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-		}
-		break;
-		case 'Q':
-		{
-			CTS_KeyInput_Header header;
-			header.size = sizeof(CTS_KeyInput_Header);
-			header.st = CTS_Protocol::KeyInput;
-			header.Key = 'Q';
-			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-		}
-		break;
-		case VK_SPACE:
-		{
-			CTS_KeyInput_Header header;
-			header.size = sizeof(CTS_KeyInput_Header);
-			header.st = CTS_Protocol::KeyInput;
-			header.Key = VK_SPACE;
-			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-		}
-		break;
-		}
-		GetKeyboardState(game.pKeyBuffer);
+	case WM_MOUSEMOVE:
+		game.CurrentCursorPos.x = (float)LOWORD(lParam) - 0.5 * (float)gd.ClientFrameWidth;
+		game.CurrentCursorPos.y = -1.0f * ((float)HIWORD(lParam) - 0.5 * (float)gd.ClientFrameHeight);
+		//game.WindowNormalizeCoordToDirectXRenderCoord_vec4(game.CurrentCursorPos, gd.ClientFrameWidth, gd.ClientFrameHeight);
 		break;
 	case WM_LBUTTONDOWN:
-	{
-		CTS_KeyInput_Header header;
-		header.size = sizeof(CTS_KeyInput_Header);
-		header.st = CTS_Protocol::KeyInput;
-		header.Key = InputID::MouseLbutton;
-		header.isdown = true;
-		client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-	}
-	break;
+		game.LBtnDown = true;
+		break;
 	case WM_LBUTTONUP:
-	{
-		CTS_KeyInput_Header header;
-		header.size = sizeof(CTS_KeyInput_Header);
-		header.st = CTS_Protocol::KeyInput;
-		header.Key = InputID::MouseLbutton;
-		header.isdown = false;
-		client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-	}
-	break;
+		game.LBtnDown = false;
+		break;
 	case WM_RBUTTONDOWN:
-	{
-		CTS_KeyInput_Header header;
-		header.size = sizeof(CTS_KeyInput_Header);
-		header.st = CTS_Protocol::KeyInput;
-		header.Key = InputID::MouseRbutton;
-		header.isdown = true;
-		client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-	}
-	break;
+		game.RBtnDown = true;
+		break;
 	case WM_RBUTTONUP:
-	{
-		CTS_KeyInput_Header header;
-		header.size = sizeof(CTS_KeyInput_Header);
-		header.st = CTS_Protocol::KeyInput;
-		header.Key = InputID::MouseRbutton;
-		header.isdown = false;
-		client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-	}
+		game.RBtnDown = false;
+		break;
+	case WM_CHAR:
+		game.CurrentCompleteCharactor = wParam;
 	break;
 	case WM_DESTROY:
 	{
-		//ClientSocket->Send(nullptr, 0); // exit signal?
-
 		while (true) {
 			int result = client.recv(client.rBuf, client.rbufMax);
 			if (result <= 0) {
 				break;
 			}
 		}
-
 		gd.Release();
 		PostQuitMessage(0);
 	}
 
 	break;
+	}
+
+	//Game Mode input Event
+	if (game.mainPageStack.size() == 0) {
+		switch (uMsg) {
+			//(14 line) outer code start : microsoft copilot. - FPS Camera Movement
+		case WM_INPUT:
+		{
+			UINT dwSize;
+			GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
+			if (dwSize > 4096) break;
+			BYTE* lpb = gd.InputTempBuffer;
+			if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, lpb, &dwSize, sizeof(RAWINPUTHEADER)) == dwSize)
+			{
+				RAWINPUT* raw = (RAWINPUT*)lpb;
+				if (raw->header.dwType == RIM_TYPEMOUSE)
+				{
+					int deltaX = raw->data.mouse.lLastX;
+					int deltaY = raw->data.mouse.lLastY;
+
+					//outer code end - FPS Camera Movement
+					game.AddMouseInput(deltaX, deltaY);
+				}
+			}
+			break;
+		}
+		case WM_KEYDOWN:
+			switch (wParam) {
+			case 'W':
+			{
+				if ((game.pKeyBuffer['W'] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = 'W';
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case 'A':
+			{
+				if ((game.pKeyBuffer['A'] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = 'A';
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case 'S':
+			{
+				if ((game.pKeyBuffer['S'] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = 'S';
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case 'D':
+			{
+				if ((game.pKeyBuffer['D'] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = 'D';
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case 'Q':
+			{
+				if ((game.pKeyBuffer['Q'] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = 'Q';
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+
+			case VK_SPACE:
+			{
+				if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = VK_SPACE;
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case 'E':
+			{
+				game.isInventoryOpen = !game.isInventoryOpen;
+			}
+			break;
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			{
+				if (!(lParam & (1 << 30))) {
+					if (game.player) {
+						switch (wParam) {
+						case '1': game.player->m_currentWeaponType = (int)WeaponType::MachineGun; break;
+						case '2': game.player->m_currentWeaponType = (int)WeaponType::Sniper; break;
+						case '3': game.player->m_currentWeaponType = (int)WeaponType::Shotgun; break;
+						case '4': game.player->m_currentWeaponType = (int)WeaponType::Rifle; break;
+						case '5': game.player->m_currentWeaponType = (int)WeaponType::Pistol; break;
+						}
+					}
+
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = (char)wParam;
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case VK_F9:
+			{
+				BOOL bFullScreenState = FALSE;
+				gd.pSwapChain->GetFullscreenState(&bFullScreenState, NULL);
+				gd.SetFullScreenMode(!bFullScreenState);
+				break;
+			}
+			case VK_F8:
+			{
+				gd.isRaytracingRender = !gd.isRaytracingRender;
+				break;
+			}
+			case VK_F5:
+			{
+				game.bFirstPersonVision = !game.bFirstPersonVision;
+				break;
+			}
+			case VK_F1:
+			{
+				__debugbreak();
+				break;
+			}
+			case VK_ESCAPE:
+			{
+				PostQuitMessage(0);
+				break;
+			}
+			break;
+			case 'O':
+			{
+				game.mainPageStack.push_back(game.UIPageTable[0]);
+			}
+			break;
+			}
+			GetKeyboardState(game.pKeyBuffer);
+			break;
+		case WM_KEYUP:
+			switch (wParam) {
+			case 'W':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'W';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case 'A':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'A';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case 'S':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'S';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case 'D':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'D';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case 'Q':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'Q';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case VK_SPACE:
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = VK_SPACE;
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			}
+			GetKeyboardState(game.pKeyBuffer);
+			break;
+		case WM_LBUTTONDOWN:
+		{
+			CTS_KeyInput_Header header;
+			header.size = sizeof(CTS_KeyInput_Header);
+			header.st = CTS_Protocol::KeyInput;
+			header.Key = InputID::MouseLbutton;
+			header.isdown = true;
+			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+		}
+		break;
+		case WM_LBUTTONUP:
+		{
+			CTS_KeyInput_Header header;
+			header.size = sizeof(CTS_KeyInput_Header);
+			header.st = CTS_Protocol::KeyInput;
+			header.Key = InputID::MouseLbutton;
+			header.isdown = false;
+			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+		}
+		break;
+		case WM_RBUTTONDOWN:
+		{
+			CTS_KeyInput_Header header;
+			header.size = sizeof(CTS_KeyInput_Header);
+			header.st = CTS_Protocol::KeyInput;
+			header.Key = InputID::MouseRbutton;
+			header.isdown = true;
+			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+		}
+		break;
+		case WM_RBUTTONUP:
+		{
+			CTS_KeyInput_Header header;
+			header.size = sizeof(CTS_KeyInput_Header);
+			header.st = CTS_Protocol::KeyInput;
+			header.Key = InputID::MouseRbutton;
+			header.isdown = false;
+			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+		}
+		break;
+		}
+	}
+	else {
+		// UI Page Event
+		switch (uMsg) {
+		case WM_KEYDOWN:
+		{
+			switch (wParam) {
+			case 'P':
+			{
+				if (game.mainPageStack.size() >= 1) {
+					game.mainPageStack.pop_back();
+				}
+			}
+			break;
+			}
+			GetKeyboardState(game.pKeyBuffer);
+			break;
+		}
+		case WM_KEYUP:
+			GetKeyboardState(game.pKeyBuffer);
+			break;
+		}
+
+		if (game.mainPageStack.size() >= 1) {
+			game.CurrentPageStack = &game.mainPageStack;
+			game.mainPageStack[game.mainPageStack.size() - 1]->Event();
+		}
 	}
 
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -489,7 +554,6 @@ void PrintOffset() {
 	//	dbglog1(L"class GameObject.Destpos%d\n", n);
 	//	n = (char*)&temp - (char*)&temp.rmod;
 	//	dbglog1(L"class GameObject.rmod%d\n", n);
-
 	//}
 	//dbglog1(L"-----------------------------------%d\n\n", rand());
 	//{

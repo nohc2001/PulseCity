@@ -1,10 +1,11 @@
 cbuffer LocationInfo : register(b0)
 {
-    float4 rect;
-    float4 color;
     float ScreenWidth;
     float ScreenHeight;
     float depth;
+    float LineWidth;
+    float4 rect;
+    float4 color;
     //uint cbuf1[4]; //= { 0, 2, 2, 0};
     //uint cbuf2[4]; //= { 1, 1, 3, 3};
     //float cbuf3[4]; //= { 0, 1, 1, 0};
@@ -38,31 +39,37 @@ float Sigmoid(float x)
 VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
-    output.color = input.color;
-    float2 screenSize = float2(ScreenWidth, ScreenHeight);
+    output.color = color;
+    
+    float2 ndir = normalize(rect.zw - rect.xy);
+    float2 upndir = ndir.yx;
+    upndir.x *= -1;
+    float halfwidth = LineWidth * 0.5f;
+    
+    float2 screenSize = float2(ScreenWidth * 0.5f, ScreenHeight * 0.5f);
     float4 rt = rect;
     if (input.vertexId == 0)
     {
-        output.uv = float2(0, 0);
-        float2 ndcPos = (float2(rt.x, rt.y) / screenSize);
+        output.uv = float2(0, 1);
+        float2 ndcPos = ((rt.xy - halfwidth * upndir) / screenSize);
         output.position = float4(ndcPos, depth, 1.0);
     }
     else if (input.vertexId == 1)
     {
-        output.uv = float2(1, 0);
-        float2 ndcPos = (float2(rt.z, rt.y) / screenSize);
+        output.uv = float2(1, 1);
+        float2 ndcPos = ((rt.zw - halfwidth * upndir) / screenSize);
         output.position = float4(ndcPos, depth, 1.0);
     }
     else if (input.vertexId == 2)
     {
-        output.uv = float2(1, 1);
-        float2 ndcPos = (float2(rt.z, rt.w) / screenSize);
+        output.uv = float2(1, 0);
+        float2 ndcPos = ((rt.zw + halfwidth * upndir) / screenSize);
         output.position = float4(ndcPos, depth, 1.0);
     }
     else if (input.vertexId == 3)
     {
-        output.uv = float2(0, 1);
-        float2 ndcPos = (float2(rt.x, rt.w) / screenSize);
+        output.uv = float2(0, 0);
+        float2 ndcPos = ((rt.xy + halfwidth * upndir) / screenSize);
         output.position = float4(ndcPos, depth, 1.0);
     }
     return output;
@@ -70,9 +77,7 @@ VS_OUTPUT VSMain(VS_INPUT input)
 
  //«»ºø ºŒ¿Ã¥ı∏¶ ¡§¿««—¥Ÿ.
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
-{   
-    float4 diffuseTexColor = color * texDiffuse.Sample(StaticSampler, input.uv);
-    //if (diffuseTexColor.a == 0)
-    //    discard;
-    return diffuseTexColor;
+{
+    float4 r = color * texDiffuse.Sample(StaticSampler, input.uv);
+    return r;
 }

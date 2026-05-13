@@ -65,9 +65,9 @@ MaxHeatGauge 280 4
 HealSkillCooldown 284 4
 HealSkillCooldownFlow 288 4
 m_currentWeaponType 292 4
-Inventory 296 288
-weapon 584 48
-ZoneMoveCooldown 632 4
+Inventory 296 392
+weapon 688 48
+ZoneMoveCooldown 736 4
 Monster
 14
 tag 20 4

@@ -1,3 +1,5 @@
+#define NO_CONVOLUTION
+
 cbuffer cbBlurInfo : register(b0)
 {
     float ScreenWidth;
@@ -93,6 +95,12 @@ void CSMain(int3 n3DispatchThreadID : SV_DispatchThreadID)
     }
     
     GroupMemoryBarrierWithGroupSync();
+    
+    #ifdef NO_CONVOLUTION
+    int pindex = 12 * (perY + 3) + (perX + 3);
+    BlurTexture[int2(x, y)] = sharedColors[pindex];
+    gtxtInput0[int2(x, y)] = sharedColors[pindex];
+    #endif
     
     if (isin)
     {

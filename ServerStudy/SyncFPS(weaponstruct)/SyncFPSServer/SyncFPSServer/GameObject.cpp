@@ -1608,6 +1608,8 @@ void GameMap::LoadMap(const char* MapName)
 			ifs.read((char*)&f, sizeof(float));
 			ifs.read((char*)&f, sizeof(float));
 			ifs.read((char*)&f, sizeof(float));
+			vec4 LightColor;
+			ifs.read((char*)&LightColor, sizeof(vec4));
 		}
 
 		if (Mod != 'm') {
@@ -2333,13 +2335,12 @@ void Player::OnCollision(GameObject* other)
 	float belowDist = 0;
 	BoundingOrientedBox otherOBB = other->GetOBB();
 
-	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
+	BoundingOrientedBox bottomObb = GetOBB();
+	bottomObb.Center.y += tickLVelocity.y;
 
-	if (belowhit) {
+	if (bottomObb.Intersects(otherOBB)) {
 		LVelocity.y = 0;
-		if (belowDist < GetOBB().Extents.y + 1.0f) {
-			isGround = true;
-		}
+		isGround = true;
 	}
 }
 
@@ -2349,14 +2350,21 @@ void Player::OnStaticCollision(BoundingOrientedBox obb)
 	float belowDist = 0;
 	BoundingOrientedBox otherOBB = obb;
 
-	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
+	BoundingOrientedBox bottomObb = GetOBB();
+	bottomObb.Center.y += tickLVelocity.y;
 
+	if (bottomObb.Intersects(otherOBB)) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+
+	/*bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
 	if (belowhit){
 		LVelocity.y = 0;
 		if(belowDist < GetOBB().Extents.y + 1.0f) {
 			isGround = true;
 		}
-	}
+	}*/
 }
 
 BoundingOrientedBox Player::GetOBB()
@@ -2437,7 +2445,7 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	static_data.HealSkillCooldown = HealSkillCooldown;
 	static_data.HealSkillCooldownFlow = HealSkillCooldownFlow;
 	static_data.m_currentWeaponType = m_currentWeaponType;
-	memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);
+	/*memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);*/
 	static_data.weapon = weapon;
 	offset += sizeof(STC_SyncObjData);
 
@@ -2702,31 +2710,28 @@ void Monster::OnCollision(GameObject* other)
 	collideCount += 1;
 	float belowDist = 0;
 	BoundingOrientedBox otherOBB = other->GetOBB();
-	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
-	if (belowhit) {
+
+	BoundingOrientedBox bottomObb = GetOBB();
+	bottomObb.Center.y += tickLVelocity.y;
+
+	if (bottomObb.Intersects(otherOBB)) {
 		LVelocity.y = 0;
-		if (belowDist < GetOBB().Extents.y + 1.0f) {
-			isGround = true;
-		}
+		isGround = true;
 	}
 }
 
 void Monster::OnStaticCollision(BoundingOrientedBox obb)
 {
-	static int sc = 0;
-	if (sc < 3) {
-		printf("[Monster::OnStaticCollision] called!\n");
-		sc++;
-	}
 	collideCount += 1;
 	float belowDist = 0;
 	BoundingOrientedBox otherOBB = obb;
-	bool belowhit = otherOBB.Intersects(worldMat.pos, vec4(0, -1, 0, 0), belowDist);
-	if (belowhit) {
+
+	BoundingOrientedBox bottomObb = GetOBB();
+	bottomObb.Center.y += tickLVelocity.y;
+
+	if (bottomObb.Intersects(otherOBB)) {
 		LVelocity.y = 0;
-		if (belowDist < GetOBB().Extents.y + 1.0f) {
-			isGround = true;
-		}
+		isGround = true;
 	}
 }
 
@@ -3177,11 +3182,109 @@ void World::Init() {
 
 	// ���� �� �ε�
 	{
+		HumanoidAnimation animIdle;
+		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animIdle); // Idle
+
+		HumanoidAnimation animWalk;
+		animWalk.LoadHumanoidAnimation("Resources/Animation/Walk.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animWalk); // Walk
+
+		HumanoidAnimation animRun;
+		animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animRun);  // Run
+
+		HumanoidAnimation animAim;
+		animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animAim);  // 3: Aim
+
+		HumanoidAnimation animShoot;
+		animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
+
+		Model* PlayerModel = new Model();
+		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
+		int playerMesh_index = Shape::AddModel("Player", PlayerModel);
+
+		Model* MonsterModel = new Model();
+		MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
+		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
+
+		Mesh* portalMesh = new Mesh();
+		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
+		Shape::AddMesh("Portal", portalMesh);
+
+		//Item ����
+		{
+			int globalitem_index = 0;
+			Shape BlackShape;
+			BlackShape.FlagPtr = 0;
+			ItemTable.push_back(Item(globalitem_index, ItemType::_NULL, L"")); // blank space in inventory.
+			globalitem_index += 1;
+
+			auto AddItemFunc = [&](int id, ItemType t, const char* ItemName, const char* modelfilepath, const wchar_t* ItemIconPath, const wchar_t* ItemDescription) {
+				/*Model* ItemModel = new Model();
+				ItemModel->LoadModelFile2(modelfilepath);
+				int Item_shapeindex = Shape::AddModel(ItemName, ItemModel);
+				GPUResource* ItemIcon = new GPUResource();
+				ItemIcon->CreateTexture_fromFile(ItemIconPath, game.basicTexFormat, game.basicTexMip, false);*/
+				ItemTable.push_back(Item(globalitem_index, t, ItemDescription));
+				};
+
+			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
+				"Resources/Model/ItemModel/BioFix.model",
+				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",
+				L"[���̿��Ƚ�] : ��ü ������ ����ϴ� ������ �Ƿ� �ֻ��! \n HP+20");
+			globalitem_index += 1;
+
+			AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
+				"Resources/Model/ItemModel/Tier4Gear.model",
+				L"Resources/UI/ItemIcons/ItemIcon_Tear4Gear.png",
+				L"[Ƽ��4 ��ǰ] : Ƽ�� 4 ���� ���ۿ� ���Ǵ� �ֿ����. ���� ������ ���⳪ ������ �����ϴµ� ������ �ȴ�.");
+			globalitem_index += 1;
+
+			AddItemFunc(globalitem_index, ItemType::_Weapon, "Sniper_IronSight",
+				"Resources/Model/sniper.model",
+				L"Resources/UI/ItemIcons/ItemIcon_IronSight.png",
+				L"[�������� - ���̾����Ʈ] : ���� ������� ����� �޸��� ���� ���� ��ź ���ݼ���.");
+			globalitem_index += 1;
+
+			// ������ �� �ε�
+			AddItemFunc(globalitem_index, ItemType::_Weapon, "Rifle_StreetSweeper",
+				"Resources/Model/Rifle.model",
+				L"Resources/UI/ItemIcons/ItemIcon_StreetSweeper.png",
+				L"[���ݼ��� - ��Ʈ��Ʈ������] : �Ѷ� �Ÿ��� ������ȴ� Ŭ���� ���ݼ���. ������ ���� ���� ���̴�.");
+			globalitem_index += 1;
+
+			// ���� �� �ε�
+			AddItemFunc(globalitem_index, ItemType::_Weapon, "Pistol_DoubleTroble",
+				"Resources/Model/pistol.model",
+				L"Resources/UI/ItemIcons/ItemIcon_DoubleTroble.png",
+				L"[�ֱ��� - ����Ʈ����] : ������ ������ �� ��� ��ƺ��̴� ������ �ֱ���.");
+			globalitem_index += 1;
+
+			// ���� �� �ε�
+			AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
+				"Resources/Model/shootgun.model",
+				L"Resources/UI/ItemIcons/ItemIcon_SlagShot.png",
+				L"[���� - �����׽�] : ���� ��⸦ ��� ���� ��ĥ�� ����� ��. ���� ���̶� ���ɵ� �״��� ���� �ʴ�.");
+			globalitem_index += 1;
+
+			// �ӽŰ�(�̴ϰ�) �� �ε�
+			AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
+				"Resources/Model/minigun.model",
+				L"Resources/UI/ItemIcons/ItemIcon_Ratler.png",
+				L"[�ӽŰ� - ��Ʋ��] : ���� ��ǰ�� �����Ÿ��� �Ҹ����� ���� �̸�. ���� ����������� �� �� ����.");
+			globalitem_index += 1;
+		}
+	}
+
+	/*
+	{
 		ItemTable.push_back(Item(0));
 		ItemTable.push_back(Item(1));
 		ItemTable.push_back(Item(2));
 		ItemTable.push_back(Item(3));
-
 		HumanoidAnimation animIdle;
 		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
 		HumanoidAnimationTable.push_back(animIdle); // Idle
@@ -3255,6 +3358,7 @@ void World::Init() {
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
 		Shape::AddMesh("Portal", portalMesh);
 	}
+	*/
 
 	cout << "Game Init end" << endl;
 	cout << "=== Shape Index Check ===" << endl;
@@ -3398,7 +3502,7 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = data.dstZoneId;
-	int objindex = zones[data.dstZoneId].AddPlayer(clientIndex, p, data.spawnPos);
+	int objindex = zones[data.dstZoneId].AddPlayer(clientIndex, p, data.spawnPos, false);
 	clients[clientIndex].objindex = objindex;
 	return true;
 }

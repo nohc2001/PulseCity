@@ -204,7 +204,8 @@ union CTS_Protocol {
 		SyncRotation = 1,
 		ClientHello = 2,
 		TransferConnect = 3,
-		ServerPlayerTransfer = 4
+		ServerPlayerTransfer = 4,
+		ChangeInventoryItemSlot = 5,
 	};
 	short n;
 	char two_byte[2];
@@ -262,6 +263,22 @@ struct CTS_ServerPlayerTransfer_Header {
 	CTS_Protocol st = CTS_Protocol::ServerPlayerTransfer;
 	PlayerTransferData data;
 };
+
+enum _ChangeInventoryItemSlot_Type {
+	CIIT_ItemCountCombine, // 같은 종류의 아이템 슬롯에 개수를 늘어나게 한다.
+	CIIT_Swap, // 다른 종류의 아이템 슬롯과 스왑
+	CIIT_ItemMoveToBlankSlot, // 빈 공간에 아이템 위치 바꾸기
+};
+
+struct CTS_ChangeInventoryItemSlot_Header {
+	unsigned int size = 22;
+	CTS_Protocol st = CTS_Protocol::ChangeInventoryItemSlot;
+	int destIndex;
+	int srcIndex;
+	_ChangeInventoryItemSlot_Type ciitType;
+	int srcCount;
+};
+
 
 #pragma pack(pop)
 #pragma endregion

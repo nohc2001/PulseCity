@@ -1396,7 +1396,7 @@ struct GlobalDevice {
 	//vector<wchar_t> addTextureStack;
 	vector<wchar_t> addSDFTextureStack;
 
-	static constexpr bool isTextBake = true;
+	static constexpr bool isTextBake = false;
 	static constexpr bool isTextBake_OnlyMeta = false;
 	vector<SDFTextPageTextureBuffer*> SDFTextureArr;
 	bool PushSDFText(wchar_t c, ui16 width, ui16 height, char* copybuffer);

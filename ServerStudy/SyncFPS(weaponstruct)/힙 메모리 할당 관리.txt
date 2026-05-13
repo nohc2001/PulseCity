@@ -1,0 +1,35 @@
+힙 메모리 할당 관리
+진단도구에 뜨는 메모리는 GPU 메모리도 같이 나오는 거임.
+LOD 필요.
+
+디버그 모드에서 해보셈.
+>> 100 Mb 힙인데 400MB가 잡힘. 
+	1. 코드, 데이터, 스택중 하나가 많이 잡아먹음 - 근데 이거 400Mb는 말이 안됨.
+	2. DirectX12 BackgroundThread가 많이 잡아먹음 - 이게 확실함.
+	-> 그래서 정확한 비교는 프로파일러로 잡아야 함.
+이 함수 호출 이전에 100MB
+60MB 의 상당수(49MB)는 TTF Curve를 만드는데 사용된다.
+
+gd.GetBakedSDFs(); -> 100MB
+모든 셰이더 Init. -> 230MB
+	shaderRecord 33MB
+	???? 100Mb 추가 할당이 됨.
+
+gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.jpg", game.basicTexFormat, game.basicTexMip, true); -> 1.2 GB
+Texture 도 CPU Memeory를 잡는것 같음. 늘어남.
+
+InitParticlePool(*effect.Pool, effect.Count);-> 1.4GB
+PlayerModel->LoadModelFile2("Resources/Model/Remy.model"); -> 3.3GB
+MonsterModel->LoadModelFile2("Resources/Model/Exo.model"); -> 3.4GB
+AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
+	"Resources/Model/ItemModel/Tier4Gear.model",
+	L"Resources/UI/ItemIcons/ItemIcon_Tier4Gear.png",
+	L"[티어4 부품] : 티어 4 도구 제작에 사용되는 주요재료. 많이 모으면 무기나 도구를 제작하는데 도움이 된다.");
+
+globalitem_index += 1; -> 3.7GB
+AddItem 끝나니 4.5GB
+다만 모두 끝나도 시스템 메모리 힙은 별로 안늘어남.
+근데 그래픽 메모리가 엄청 많이 잡힌다.
+Init 만으로. 글로벌 모델들도 데시메이트 할 필요가 있어 보인다. -> 이게 진단.
+-> 정말로 버택스, 인덱스의 개수가 많은 것인가?
+그것도 확인해봐야 할것 같다.

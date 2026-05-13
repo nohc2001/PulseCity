@@ -1,0 +1,7 @@
+아이템 아이콘은 기본적으로 256x256의 png 파일로 구성되어야 한다. (투명도를 반영하기 위해서)
+
+아이템 Credit : 
+
+BioFix : "Medical Syringe" (https://skfb.ly/oBsLz) by Tadeas Kribek is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+ItemIcon_Tier4Gear : https://www.cgtrader.com/items/6542497/download-page

@@ -247,7 +247,7 @@ float4 PBRPS(VS_OUTPUT input)
     float3 albedo = pow(Color, float3(2.2, 2.2, 2.2));
     float3x3 TBN = float3x3(input.T, input.B, input.N);
     float3x3 invTBN = transpose(TBN);
-    float3 normalW = normalize(mul(TBNnormal, invTBN));
+    float3 normalW = normalize(mul(TBN, TBNnormal));
     //normalW = input.normalW;
     
     //PBR operation
@@ -342,86 +342,6 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
-float4 OuterPBR(VS_OUTPUT input)
-{
-    float3 Color = baseColor * PBR_Tex[0].Sample(StaticSampler, input.uv);
-    
-    float AmbientOculusion = PBR_Tex[2].Sample(StaticSampler, input.uv).r;
-    float Metalic = metalicFactor * PBR_Tex[3].Sample(StaticSampler, input.uv).r;
-    float Roughness = PBR_Tex[4].Sample(StaticSampler, input.uv).r;
-    
-    float3 TBNnormal = PBR_Tex[1].Sample(StaticSampler, input.uv);
-    TBNnormal = TBNnormal.xyz;
-    TBNnormal = 2.0 * (TBNnormal - 0.5);
-    float3x3 invTBN = transpose(float3x3(input.T, input.B, input.N));
-    float3 normalW = normalize(mul(TBNnormal, invTBN));
-
-    float3 N = normalW;
-    float3 V = input.ViewDir;
-    float3 color = float3(0, 0, 0);
-    
-    //for (int i = 0; i < 8; ++i)
-    //{
-    //    PointLight p = pointLightArr[i];
-    //    float3 L = normalize(p.LightPos - input.positionW.xyz);
-    //    float3 H = normalize(V + L);
-    //    float3 F0 = float3(0.04, 0.04, 0.04); // default for dielectrics
-    //    F0 = lerp(F0, Color, Metalic);
-    //    // Cook-Torrance BRDF
-    //    float NDF = DistributionGGX(N, H, Roughness);
-    //    float G = GeometrySmith(N, V, L, Roughness);
-    //    float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-    //    float3 numerator = NDF * G * F;
-    //    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
-    //    float3 specular = numerator / denominator;
-    //    float3 kS = F;
-    //    float3 kD = 1.0 - kS;
-    //    kD *= 1.0 - Metalic;
-    //    float NdotL = max(dot(N, L), 0.0);
-    //    float3 irradiance = p.LightColor * NdotL;
-    //    float3 diffuse = kD * Color / 3.141592f;
-    //    color += (diffuse + specular) * irradiance;
-    //}
-    
-    //directional Light
-    {
-        DirectionLight p = dirLight;
-        float3 L = normalize(-p.gLightDirection);
-        float3 H = normalize(V + L);
-
-        float3 F0 = float3(0.04, 0.04, 0.04); // default for dielectrics
-        F0 = lerp(F0, Color, Metalic);
-
-        // Cook-Torrance BRDF
-        float NDF = DistributionGGX(N, H, Roughness);
-        float G = GeometrySmith(N, V, L, Roughness);
-        float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        float3 numerator = NDF * G * F;
-        float denominator = 8.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
-        float3 specular = numerator / denominator;
-
-        float3 kS = F;
-        float3 kD = 1.0 - kS;
-        kD *= 1.0 - Metalic;
-
-        float NdotL = max(dot(N, L), 0.0);
-        float3 irradiance = float4(1, 1, 1, 1) * NdotL;
-
-        float3 diffuse = kD * Color / 3.141592f;
-        color += (diffuse + specular) * irradiance;
-    }
-    
-    // Apply ambient occlusion
-    color = color * AmbientOculusion;
-
-    // Gamma correction
-    color = pow(color, 1.0 / 2.2);
-    color = color * 0.9 + Color * 0.1;
-    
-    return float4(color, 1.0);
-}
-
 #define SHADOW_DEPTH_BIAS 0.00005
 
  //ÇÈ¼¿ ¼ÎÀÌ´õ¸¦ Á¤ÀÇÇÑ´Ù.
@@ -449,7 +369,7 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
         float vLightSpaceDepth = vLightSpacePos.z - SHADOW_DEPTH_BIAS;
 
         // Find sub-pixel weights.
-        float2 vShadowMapDims = float2(4096, 4096); // need to keep in sync with .cpp file
+        const float2 vShadowMapDims = float2(4096, 4096); // need to keep in sync with .cpp file
         float4 vSubPixelCoords = float4(1.0f, 1.0f, 1.0f, 1.0f);
         vSubPixelCoords.xy = frac(vShadowMapDims * vShadowTexCoord);
         vSubPixelCoords.zw = 1.0f - vSubPixelCoords.xy;
@@ -628,7 +548,7 @@ float4 TessTerrainPSMain(DomainOut input) : SV_TARGET
     //float depth = LightShadowMap.Sample(StaticSampler, vShadowTexCoord).r;
     if (distance(Camera_Position.xyz, input.positionW) > 200)
     {
-        return OuterPBR(vsout);
+        return PBRPS(vsout);
     }
     else
     {
@@ -665,7 +585,7 @@ float4 TessTerrainPSMain(DomainOut input) : SV_TARGET
         float f = 0.25 * (vShadowTests.x + vShadowTests.y + vShadowTests.z + vShadowTests.w);
         //dot(vBilinearWeights, vShadowTests);
         
-        float4 Color = OuterPBR(vsout);
+        float4 Color = PBRPS(vsout);
         if (f <= 0.001 /*abs(vShadowDepths - vLightSpaceDepth) > SHADOW_DEPTH_BIAS*/)
         {
             //PBR_Tex[0].Sample(StaticSampler, input.uv);

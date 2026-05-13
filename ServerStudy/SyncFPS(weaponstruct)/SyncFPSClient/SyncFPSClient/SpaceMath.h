@@ -209,6 +209,32 @@ struct vec4 {
 	}
 	XMVECTOR ortho() const { return XMVector3Orthogonal(v4); }
 
+	// direction vector querternion
+	// AI Code Start <Gemini>
+	static XMVECTOR DirectionToQuaternion(const vec4& forward)
+	{
+		// 1. 방향 벡터 정규화
+		vec4 forward2 = XMVector3Normalize(forward);
+
+		// 2. 임시 Up 벡터 설정 (방향 벡터가 수직 위/아래일 경우를 대비해 예외처리 필요)
+		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+		float dot = XMVectorGetX(XMVector3Dot(forward2, up));
+
+		// 만약 방향 벡터가 Up 벡터와 거의 평행하다면, 다른 Up 벡터를 사용
+		if (fabs(dot) > 0.99f) {
+			up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+		}
+
+		// 3. LookAt 행렬 생성 (위치는 0, 0, 0으로 설정)
+		XMMATRIX lookAt = XMMatrixLookToLH(XMVectorZero(), forward2, up);
+
+		// 4. View 행렬의 역행렬(World 행렬)에서 회전 성분만 쿼터니언으로 추출
+		// LookToLH는 View 행렬을 반환하므로, 객체의 방향을 구하려면 역행렬이 필요합니다.
+		XMMATRIX worldRotation = XMMatrixInverse(nullptr, lookAt);
+		return XMQuaternionRotationMatrix(worldRotation);
+	}
+	// AI Code End <Gemini>
+
 	// LERP 
 	static __forceinline vec4 QSimpleLerp(const vec4& q1, const vec4& q2, float t) {
 		vec4 result;

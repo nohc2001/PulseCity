@@ -4,8 +4,6 @@
 //
 #pragma once
 
-
-
 #define _CRT_SECURE_NO_WARNINGS
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 
@@ -399,6 +397,16 @@ union GameObjectType {
 #define AddClientOffset(a, b, c) GameObjectType::GetClientOffset.insert(std::pair<type_offset_pair, short>(type_offset_pair( \
 	a, b), c));
 
+enum ItemType {
+	_NULL = 0, // 아이템이 아님.
+	_Consumable = 1, // 소비아이템
+	_Weapon = 2, // 무기
+	_Equipment = 3, // 장비
+	_Material = 4, // 다른 아이템을 만드는 재료
+	_Quest = 5, // 퀘스트에 쓰일 특별한 아이템. 거래 불가.
+	_Extra = 5, // 기타 아이템.
+};
+
 /*
 * 설명 : Item의 데이터
 */
@@ -406,11 +414,18 @@ struct Item
 {
 	// server, client
 	int id;
+
+	// 아이템의 타입
+	ItemType type;
+
+	// 아이템 설명
+	const wchar_t* description;
+
 	// only client
 	//vec4 color;
 	//Mesh* MeshInInventory;
 
-	Item(int i) : id{ i } {}
+	Item(int i, ItemType t, const wchar_t* desc) : id{ i }, type{ t }, description{ desc } {}
 };
 
 typedef int ItemID;
