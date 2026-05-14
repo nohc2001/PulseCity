@@ -1665,6 +1665,23 @@ void SkinMeshGameObject::GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matr
 	}
 }
 
+void SkinMeshGameObject::RaytracingUpdateTransform() {
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (model && gd.isSupportRaytracing) {
+		if (RaytracingWorldMatInput_Model != nullptr) {
+			matrix Id;
+			Id.Id();
+			for (int i = 0; i < model->nodeCount; ++i) {
+				if (RaytracingWorldMatInput_Model[i]) {
+					memcpy(RaytracingWorldMatInput_Model[i], &Id, sizeof(float) * 12);
+				}
+			}
+		}
+	}	
+}
+
 void SkinMeshGameObject::SetShape(Shape _shape)
 {
 	static LocalRootSigData tempLRSSaver[1024] = {};

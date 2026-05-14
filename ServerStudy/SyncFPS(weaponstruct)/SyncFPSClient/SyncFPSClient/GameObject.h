@@ -556,6 +556,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	void SetRootMatrixs();
 
 	void GetBoneLocalMatrixAtTime(HumanoidAnimation* hanim, matrix* out, float time);
+	virtual void RaytracingUpdateTransform();
 
 	virtual void Render(matrix parent = XMMatrixIdentity());
 	void RenderShadow(matrix parent = XMMatrixIdentity());

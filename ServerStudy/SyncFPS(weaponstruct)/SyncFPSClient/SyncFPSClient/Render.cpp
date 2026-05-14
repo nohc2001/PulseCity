@@ -9576,6 +9576,7 @@ void RayTracingShader::BuildShaderTable()
 
 void RayTracingShader::SkinMeshModify()
 {
+	static int cnt = 0;
 	RebuildBLASBuffer.clear();
 	HRESULT hResult = gd.CScmd.Reset();
 	
@@ -9607,11 +9608,17 @@ void RayTracingShader::SkinMeshModify()
 	}
 
 	gd.raytracing.UsingScratchSize = 0;
+	cnt += 1;
 	for (int i = 0; i < RebuildBLASBuffer.size(); ++i) {
 		SkinMeshGameObject* smgo = (SkinMeshGameObject*)RebuildBLASBuffer[i];
 		Model* model = smgo->shape.GetModel();
 		for (int k = 0; k < model->mNumSkinMesh; ++k) {
 			smgo->modifyMeshes[k].UAV_BLAS_Refit();
+
+			// 스킨 메쉬들은 지 혼자 위치를 바꾸기 때문에
+			// TLAS Instance의 Matrix는 Identity임.
+			
+			if((cnt & 15) == 0) smgo->RaytracingUpdateTransform();
 		}
 	}
 	gd.gpucmd.Close(true);
