@@ -2146,6 +2146,11 @@ void Player::ApplyJob(PlayerJob job)
 	MaxHP -= m_tempMaxHpBonus;
 	if (MaxHP <= 0.0f) MaxHP = 100.0f;
 	if (HP > MaxHP) HP = MaxHP;
+
+	MaxHP = jobData.MaxHP;
+	Attack = jobData.Attack;
+	Defense = jobData.Defense;
+
 	m_tempMaxHpBonus = 0.0f;
 	m_tempMaxHpTimer = 0.0f;
 	m_iceBlockTimer = 0.0f;
@@ -2155,6 +2160,9 @@ void Player::ApplyJob(PlayerJob job)
 		SkillCooldown[i] = jobData.skills[i].cooldown;
 		SkillCooldownFlow[i] = 0.0f;
 	}
+
+	cout << "Applied job: " << endl
+	<< "MaxHP: " << jobData.MaxHP << "Attack" << jobData.Attack << "Defense : " << jobData.Defense << endl;
 }
 
 void Player::SyncJobState(Zone* zones)
@@ -2173,6 +2181,10 @@ void Player::SyncJobState(Zone* zones)
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
 	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxHP);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Attack);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Defense);
 	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldown)>(gameworld.clients[clientIndex].PersonalSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldown);
 	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(gameworld.clients[clientIndex].PersonalSDS,
@@ -2539,6 +2551,8 @@ void Player::TakeDamage(float damage)
 
 		Respawn();
 	}
+
+	cout << "player's defense" << defense << " final damage is " << damage << " remain hp: " << HP << endl;
 }
 
 void Player::OnCollisionRayWithBullet(GameObject* shooter, float damage)
@@ -2897,6 +2911,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 		Player* p = (Player*)shooter;
 		damage = p->Attack;
+		cout << "Player Attack: " << damage << endl;
 	}
 
 	// Monster Reduce Damage With Defense
