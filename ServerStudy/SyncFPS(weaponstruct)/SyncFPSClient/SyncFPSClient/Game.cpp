@@ -1,4 +1,4 @@
-ï»¿#include "stdafx.h"
+#include "stdafx.h"
 #include "main.h"
 #include "Render.h"
 #include "Game.h"
@@ -24,7 +24,7 @@ extern GlobalDevice gd;
 Game game;
 
 namespace {
-	//Collect Preload Object From Static Object
+	// StaticGameObjects¿¡ µî·ÏµÈ Mesh/ModelÀ» Auto LOD ÇÁ¸®·Îµå ´ë»óÀ¸·Î ¼öÁıÇÑ´Ù.
 	void PrebuildStaticObjectAutoLOD()
 	{
 		AutoLOD_ResetPreloadQueue();
@@ -54,7 +54,7 @@ vector<MemberInfo> GameObjectType::Server_STCMembers[GameObjectType::ObjectTypeC
 vector<MemberInfo> GameObjectType::Client_STCMembers[GameObjectType::ObjectTypeCount];
 unordered_map<int, SyncWay> GameObjectType::STC_OffsetMap[GameObjectType::ObjectTypeCount];
 
-// ï¿½ï¿½Å©ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì¸ï¿½ï¿½ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ® ï¿½Ì¸ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½.
+// ½ÌÅ©µÇ´Â º¯¼öÀÇ ¼­¹öÀÌ¸§°ú Å¬¶óÀÌ¾ğÆ® ÀÌ¸§ÀÌ ´Ù¸¥ °æ¿ì ¿¬°áÀ» À§ÇØ »ç¿ë.
 void GameObjectType::LinkOffsetByName(short type, const char* ServerVarName, const char* ClientVarName) {
 	for (int k = 0;k < Server_STCMembers[type].size();++k) {
 		MemberInfo& minfo = Server_STCMembers[type][k];
@@ -101,7 +101,7 @@ void GameObjectType::STATICINIT() {
 	vptr[GameObjectType::_Monster] = GetVptr<Monster>();
 	vptr[GameObjectType::_Portal] = GetVptr<Portal>();
 
-	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ş´Â´ï¿½.
+	//¼­¹öÀÇ ¿ÀÇÁ¼ÂÀ» ¹Ş´Â´Ù.
 	ifstream ifs{ "STC_GameObjectOffsets.txt" };
 	for (int k = 0;k < ObjectTypeCount;++k) {
 		string currentType;
@@ -120,7 +120,7 @@ void GameObjectType::STATICINIT() {
 		}
 	}
 
-	// Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ş´Â´ï¿½.
+	// Å¬¶óÀÌ¾ğÆ®ÀÇ ¿ÀÇÁ¼ÂÀ» ¹Ş´Â´Ù.
 	GameObject::STATICINIT();
 	StaticGameObject::STATICINIT();
 	DynamicGameObject::STATICINIT();
@@ -129,7 +129,7 @@ void GameObjectType::STATICINIT() {
 	Monster::STATICINIT();
 	Portal::STATICINIT();
 
-	//ï¿½Ì¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å©ï¿½Ñ´ï¿½.
+	//ÀÌ¸§ÀÌ °°Àº °Í ³¢¸® ¸µÅ©ÇÑ´Ù.
 	for (int i = 0;i < ObjectTypeCount;++i) {
 		for (int k = 0;k < Server_STCMembers[i].size();++k) {
 			MemberInfo minfo = Server_STCMembers[i][k];
@@ -158,7 +158,7 @@ void GameObjectType::STATICINIT() {
 void Game::SetLight()
 {
 	LightCBData = new LightCB_DATA();
-	UINT ncbElementBytes = ((sizeof(LightCB_DATA) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
+	UINT ncbElementBytes = ((sizeof(LightCB_DATA) + 255) & ~255); //256ÀÇ ¹è¼ö
 	LightCBResource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 	LightCBResource.resource->Map(0, NULL, (void**)&LightCBData);
 	LightCBData->dirlight.gLightColor = { 0.5f, 0.5f, 0 };
@@ -178,7 +178,7 @@ void Game::SetLight()
 
 	for (int k = 0; k < 9; ++k) {
 		//LightCBData_withShadow = new LightCB_DATA_withShadow();
-		ncbElementBytes = ((sizeof(LightCB_DATA_withShadow) + 255) & ~255); //256??ë°°ï¿½
+		ncbElementBytes = ((sizeof(LightCB_DATA_withShadow) + 255) & ~255); // 256ÀÇ ¹è¼ö
 		LightCB_withShadowResource[k] = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		LightCB_withShadowResource[k].resource->Map(0, NULL, (void**)&LightCBData_withShadow[k]);
 		LightCBData_withShadow[k]->dirlight.gLightColor = {1, 1, 1};
@@ -268,6 +268,7 @@ void Zone::PushGameObject(GameObject* go)
 	}*/
 
 	if (GameObject::IsType<Portal>(go)) {
+		// static game object
 		StaticGameObject* sgo = (StaticGameObject*)go;
 		GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(sgo->GetOBB());
 		int xmax = chunkIds.xmin + chunkIds.xlen;
@@ -279,6 +280,7 @@ void Zone::PushGameObject(GameObject* go)
 					auto c = chunck.find(ChunkIndex(ix, iy, iz));
 					GameChunk* gc;
 					if (c == chunck.end()) {
+						// new game chunk
 						gc = new GameChunk();
 						gc->SetChunkIndex(ChunkIndex(ix, iy, iz));
 						chunck.insert(pair<ChunkIndex, GameChunk*>(ChunkIndex(ix, iy, iz), gc));
@@ -909,8 +911,8 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 		init[i].FrameCount = 36;
 	}
 
-	
-	pool.Buffer = gd.CreateCommitedGPUBuffer(                 
+
+	pool.Buffer = gd.CreateCommitedGPUBuffer(
 		D3D12_HEAP_TYPE_DEFAULT,
 		D3D12_RESOURCE_STATE_COMMON,
 		D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -921,7 +923,7 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
 	);
 
-	
+
 	GPUResource upload = gd.CreateCommitedGPUBuffer(
 		D3D12_HEAP_TYPE_UPLOAD,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
@@ -950,7 +952,7 @@ void Game::Init()
 	{
 		Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
 		game.ZoneTable.push_back(Zone_ThePort);
-		
+
 		Zone* Zone_OfficeDungeon_1floor = new Zone(1, "OfficeDungeon_1floor", 1, 0);
 		game.ZoneTable.push_back(Zone_OfficeDungeon_1floor);
 
@@ -958,22 +960,21 @@ void Game::Init()
 	}
 	Current_Zone = game.ZoneTable[0];
 
-	// 2. DirLightï¿½ï¿½ ï¿½Ê±ï¿½È­ï¿½Ñ´ï¿½.
+	// 2. DirLight¸¦ ÃÊ±âÈ­ÇÑ´Ù.
 	InitDirLightGPURes();
 
-	// ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½Å©ï¿½ï¿½ ï¿½Ø½ï¿½Æ®ï¿½ï¿½ SDF ï¿½Ø½ï¿½ï¿½Äµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+	// ¹Ì¸® º£ÀÌÅ©µÈ ÅØ½ºÆ®ÀÇ SDF ÅØ½ºÃÄµéÀ» °¡Á®¿Â´Ù.
 	gd.GetBakedSDFs(); // later
 
-	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, NPCHPï¿½ï¿½, Rayï¿½ï¿½ 1ï¿½ï¿½ ï¿½ë·®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	// ¾ÆÀÌÅÛ, NPCHP¹Ù, RayÀÇ 1Â÷ ¿ë·®À» ¼³Á¤ÇÑ´Ù.
 	DropedItems.reserve(4096);
 	NpcHPBars.Init(1024);
 	bulletRays.Init(1024);
 
-	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê±ï¿½È­ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ Ä¿ï¿½Çµå¸®ï¿½ï¿½Æ®ï¿½ï¿½ Resetï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Øºï¿½ ï¿½Ñ´ï¿½.
+	// ¿©·¯ ¸®¼Ò½ºµéÀ» ÃÊ±âÈ­ÇÏ±â À§ÇØ Ä¿¸Çµå¸®½ºÆ®¸¦ ResetÇØ ¸í·ÉÀ» ³ÖÀ» ÁØºñ¸¦ ÇÑ´Ù.
 	gd.gpucmd.Reset();
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-	// ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½Ê±ï¿½È­ï¿½Ñ´ï¿½.
 	{
 		MyShader = new Shader();
 		MyShader->InitShader();
@@ -1003,8 +1004,7 @@ void Game::Init()
 		MyHBoneLocalToWorldShader = new HBoneLocalToWorldShader();
 		MyHBoneLocalToWorldShader->InitShader();
 	}
-	
-	// Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½âº»ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Âµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+
 	{
 		DefaultTex.CreateTexture_fromFile(L"Resources/DefaultTexture.png", game.basicTexFormat, game.basicTexMip);
 		DefaultNoramlTex.CreateTexture_fromFile(L"Resources/GlobalTexture/DefaultNormalTexture.png", basicTexFormat, basicTexMip);
@@ -1015,7 +1015,7 @@ void Game::Init()
 		gParticleFlipbookTexture.CreateTexture_fromFile(L"Resources/fire.dds", game.basicTexFormat, game.basicTexMip, true);
 		gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.jpg", game.basicTexFormat, game.basicTexMip, true);
 
-		//ï¿½Ø½ï¿½Æ® ï¿½ï¿½Â¿ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ş½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+		//ÅØ½ºÆ® Ãâ·Â¿¡ »ç¿ëÇÒ ¸Ş½¬¸¦ °¡Á®¿Â´Ù.
 		TextMesh = new UVMesh();
 		TextMesh->CreateTextRectMesh();
 
@@ -1063,6 +1063,9 @@ void Game::Init()
 
 		gd.viewportArr[0].ProjectMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, 0.01f, 1000.0f);
 	}
+	// ¾î¶² Á¸¿¡¼­³ª °øµ¿À¸·Î »ç¿ë°¡´ÉÇÑ ±Û·Î¹ú ¿¡¼ÂµéÀ» °¡Á®¿Â´Ù.
+
+	// isAssetAddingInGlobal = true ¸é ÀÌÁ¦ ¿¡¼ÂÀÌ °ø¿ëÀ¸·Î Ãß°¡µÇ±â ½ÃÀÛÇÑ´Ù. ±× ½ÅÈ£¸¦ ÁØ´Ù.
 	isAssetAddingInGlobal = true;
 	const int syncedGlobalMaterialStart = MaterialTable.size();
 	{
@@ -1091,7 +1094,7 @@ void Game::Init()
 
 		Model* PlayerModel = new Model();
 		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
-		PlayerModel->Retargeting_Humanoid(); // ï¿½Ş¸Ó³ï¿½ï¿½Ìµï¿½ ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½
+		PlayerModel->Retargeting_Humanoid(); // ÈŞ¸Ó³ëÀÌµå ¸®Å¸°ÙÆÃ
 		int playerMesh_index = Shape::AddModel("Player", PlayerModel);
 
 		Model* MonsterModel = new Model();
@@ -1103,7 +1106,6 @@ void Game::Init()
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
 		Shape::AddMesh("Portal", portalMesh);
 
-		//Item ï¿½ï¿½ï¿½ï¿½
 		{
 			int globalitem_index = 0;
 			Shape BlackShape;
@@ -1125,35 +1127,33 @@ void Game::Init()
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
 				"Resources/Model/ItemModel/BioFix.model",
 				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",
-				L"[ï¿½ï¿½ï¿½Ì¿ï¿½ï¿½È½ï¿½] : ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ç·ï¿½ ï¿½Ö»ï¿½ï¿½! \n HP+20");
+				L"[????????] : ??u ?????? ?????? ?????? ??? ????! \n HP+20");
 			globalitem_index += 1;
 
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
 				"Resources/Model/ItemModel/Tier4Gear.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Tier4Gear.png",
-				L"[Æ¼ï¿½ï¿½4 ï¿½ï¿½Ç°] : Æ¼ï¿½ï¿½ 4 ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Û¿ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ö¿ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½â³ª ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´Âµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½È´ï¿½.");
+				L"[???4 ???] : ??? 4 ???? ????? ????? ??????. ???? ?????? ???? ?????? ??????¥ì? ?????? ???.");
 			globalitem_index += 1;
 
 			Model* Sniper_IronSight = AddItemFunc(globalitem_index, ItemType::_Weapon, "Sniper_IronSight",
 				"Resources/Model/sniper.model",
 				L"Resources/UI/ItemIcons/ItemIcon_IronSight.png",
-				L"[ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ - ï¿½ï¿½ï¿½Ì¾ï¿½ï¿½ï¿½ï¿½Æ®] : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ş¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Åº ï¿½ï¿½ï¿½İ¼ï¿½ï¿½ï¿½.");
+				L"[???????? - ?????????] : ???? ??????? ????? ????? ???? ???? ??? ???????.");
 			globalitem_index += 1;
 			game.SniperModel = Sniper_IronSight;
 
-			// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Îµï¿½
 			Model* Rifle_StreetSweeper = AddItemFunc(globalitem_index, ItemType::_Weapon, "Rifle_StreetSweeper",
 				"Resources/Model/Rifle.model",
 				L"Resources/UI/ItemIcons/ItemIcon_StreetSweeper.png",
-				L"[ï¿½ï¿½ï¿½İ¼ï¿½ï¿½ï¿½ - ï¿½ï¿½Æ®ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½] : ï¿½Ñ¶ï¿½ ï¿½Å¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È´ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½İ¼ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½.");
+				L"[??????? - ????????????] : ??? ????? ???????? ????? ???????. ?????? ???? ???? ?????.");
 			globalitem_index += 1;
 			game.RifleModel = Rifle_StreetSweeper;
 
-			// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Îµï¿½
 			Model* Pistol_DoubleTroble = AddItemFunc(globalitem_index, ItemType::_Weapon, "Pistol_DoubleTroble",
 				"Resources/Model/pistol.model",
 				L"Resources/UI/ItemIcons/ItemIcon_DoubleTroble.png",
-				L"[ï¿½Ö±ï¿½ï¿½ï¿½ - ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½] : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½Æºï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö±ï¿½ï¿½ï¿½.");
+				L"[????? - ?????????] : ?????? ?????? ?? ??? ??????? ?????? ?????.");
 			globalitem_index += 1;
 			game.PistolModel = Pistol_DoubleTroble;
 			/*game.Pistol_SlideIndices.clear();
@@ -1165,11 +1165,10 @@ void Game::Init()
 				}
 			}*/
 
-			// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Îµï¿½
 			Model* ShotGun_SlagShot = AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
 				"Resources/Model/shootgun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_SlagShot.png",
-				L"[ï¿½ï¿½ï¿½ï¿½ - ï¿½ï¿½ï¿½ï¿½ï¿½×½ï¿½] : ï¿½ï¿½ï¿½ï¿½ ï¿½î²¨ï¿½â¸¦ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¥ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì¶ï¿½ ï¿½ï¿½ï¿½Éµï¿½ ï¿½×´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´ï¿½.");
+				L"[???? - ???????] : ???? ???? ??? ???? ????? ????? ??. ???? ????? ????? ????? ???? ???.");
 			globalitem_index += 1;
 			game.ShotGunModel = ShotGun_SlagShot;
 			/*game.SG_PumpIndices.clear();
@@ -1181,11 +1180,10 @@ void Game::Init()
 				}
 			}*/
 
-			// ï¿½Ó½Å°ï¿½(ï¿½Ì´Ï°ï¿½) ï¿½ï¿½ ï¿½Îµï¿½
 			Model* MachineGun_Ratler = AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
 				"Resources/Model/minigun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Ratler.png",
-				L"[ï¿½Ó½Å°ï¿½ - ï¿½ï¿½Æ²ï¿½ï¿½] : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ç°ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ ï¿½Ò¸ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.");
+				L"[???? - ?????] : ???? ????? ????????? ??????? ???? ???. ???? ??????????? ?? ?? ????.");
 			globalitem_index += 1;
 			game.MachineGunModel = MachineGun_Ratler;
 			/*game.MG_BarrelIndices.clear();
@@ -1205,7 +1203,7 @@ void Game::Init()
 		game.GunModel = game.SniperModel;
 	}
 
-	// ï¿½Û·Î¹ï¿½ ï¿½ï¿½ï¿½Âµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½È­ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ï·ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	// ±Û·Î¹ú ¿¡¼ÂµéÀÇ °³¼ö¸¦ ¼­¹ö¿Í µ¿±âÈ­ÇÏ±â À§ÇØ ÆÄÀÏ·Î ÀúÀåÇÑ´Ù.
 	GlobalTextureCount = TextureTable.size();
 	GlobalMaterialCount = MaterialTable.size();
 	GlobalMeshCount = MeshTable.size();
@@ -1230,7 +1228,7 @@ void Game::Init()
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		ZoneTable[i]->GetImmortal_ZoneLightBuffer_SRV();
 	}
-	
+
 	UI_Init();
 
 	gd.gpucmd.Close();
@@ -1389,7 +1387,7 @@ void Game::RebuildStaticChunks()
 
 // maybe .. present zone 's nearzone's map loading
 /*
-* spec : 
+* spec :
 * 1. must load all nearzone.
 */
 void Game::LoadLinkedZoneMaps()
@@ -1527,7 +1525,6 @@ void Game::MoveZone(int zoneid) {
 	//else {
 	//	Map = new GameMap();
 	//}
-	// isAssetAddingInGlobal = false ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½(ï¿½ï¿½)ï¿½ï¿½ ï¿½ß°ï¿½ï¿½Ç±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½. ï¿½ï¿½ ï¿½ï¿½È£ï¿½ï¿½ ï¿½Ø´ï¿½.
 	//isAssetAddingInGlobal = false;
 	//Map->LoadMap(ZoneIDToMapName[zoneid]);
 	//game.StaticGameObjects.reserve(Map->MapObjects.size());
@@ -1551,19 +1548,12 @@ void Game::MoveZone(int zoneid) {
 	//	game.PushLight(game.LightTable[i]);
 	//}
 
-	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½Û·Î¹ï¿½ Assetï¿½ï¿½ï¿½ï¿½ SVDescHeapï¿½ï¿½ ï¿½Ã·ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Û¾ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
-	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Å©ï¿½â°¡ ï¿½Ê¹ï¿½ Ä¿ï¿½ï¿½ï¿½ï¿½ ï¿½È´Ù¸ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½î¶»ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½Ñ´ï¿½.
-	
-	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½Û·Î¹ï¿½ Assetï¿½ï¿½ï¿½ï¿½ SVDescHeapï¿½ï¿½ ï¿½Ã·ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Û¾ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
-	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Å©ï¿½â°¡ ï¿½Ê¹ï¿½ Ä¿ï¿½ï¿½ï¿½ï¿½ ï¿½È´Ù¸ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½î¶»ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½Ñ´ï¿½.
+
 	for (int i = 0; i < GlobalMaterialCount; ++i) {
 		Material* mat = MaterialTable[i];
 		if (isAssetAddingInGlobal == false) {
 			mat->SetDescTable();
 			RenderMaterialTable.push_back(mat);
-			// MaterialTable to DescIndex > CBResource.resource.descindex.indexï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
-			// CBResource.resource.descindex > MaterialTable ?? ï¿½Ì°ï¿½ ï¿½Ê¿ï¿½ï¿½Ñ°ï¿½? 
-			// >> ï¿½Ê¿ï¿½ï¿½ï¿½ ï¿½ï¿½È²ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Âµï¿½? ï¿½×³ï¿½ ï¿½Ì´ï¿½ï¿½ ï¿½Øµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê³ï¿½?
 		}
 	}
 
@@ -1581,7 +1571,7 @@ void Game::MoveZone(int zoneid) {
 	//	//Map = LoadedZoneMaps[zoneid];
 	//	//SetCurrentZoneStaticObjects(zoneid);
 
-	//	
+	//
 	//}
 	//RebuildStaticChunks();
 
@@ -1591,7 +1581,7 @@ void Game::MoveZone(int zoneid) {
 }
 
 void Game::InitDirLightGPURes() {
-	UINT ncbElementBytes = ((sizeof(DirLightInfo) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
+	UINT ncbElementBytes = ((sizeof(DirLightInfo) + 255) & ~255); //256ÀÇ ¹è¼ö
 	DirLightRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 	DirLightRes.resource->Map(0, NULL, (void**)&MappedDirLightData);
 
@@ -1603,7 +1593,7 @@ void Game::InitDirLightGPURes() {
 }
 
 void Game::Render() {
-	// 1. DRED È°ï¿½ï¿½È­
+	// 1. DRED È°¼ºÈ­
 	D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr);
 
 	for (int i = 0; i < 9; ++i) {
@@ -1629,7 +1619,7 @@ void Game::Render() {
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[1] = nearzone->ChunckCountY;
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[2] = nearzone->ChunckCountZ;
 
-			UINT ncbElementBytes = ((sizeof(ChunckLightData) * (nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ) + 255) & ~255); //256??ë°°ìˆ˜
+			UINT ncbElementBytes = ((sizeof(ChunckLightData) * (nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ) + 255) & ~255); // 256ÀÇ ¹è¼ö
 			nearzone->ZoneLightChuncks = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 			nearzone->ZoneLightChuncks.resource->Map(0, NULL, (void**)&nearzone->ZoneLightChuncks_Mapped);
 			ZeroMemory(nearzone->ZoneLightChuncks_Mapped, ncbElementBytes);
@@ -1651,7 +1641,6 @@ void Game::Render() {
 			}
 			nearzone->ZoneLightChuncks.resource->Unmap(0, nullptr);
 
-			//MaterialStructuredBufferSRVï¿½??ï¿½í• ?ï¿½í•˜ì§€ ?ï¿½ëŠ”?? (ê°™ï¿½? ?ï¿½ë¦¬ï¿½?ì°¨ï¿½??ï¿½ë‹¤.)
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -1665,7 +1654,7 @@ void Game::Render() {
 			nearzone->bReqireBakeLight_Raster = false;
 		}
 	}
-	
+
 
 	for (int i = 0;i < gd.addSDFTextureStack.size();++i) {
 		gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
@@ -1679,10 +1668,11 @@ void Game::Render() {
 
 	game.MyScreenShader->ClearSDFInstance();
 	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+	//2. ÇÁ·¯½ºÅÒ ¾÷µ¥ÀÌÆ®
 	gd.viewportArr[0].UpdateFrustum();
 	BoxLOD_BeginFrame();
 
-	//2.5. ï¿½Î½ï¿½ï¿½Ï½ï¿½ ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½
+	//2.5. ÀÎ½ºÅÏ½Ì ¹Ì¸® °è»ê
 	if (SceneRenderBatch) {
 		game.renderViewPort = &gd.viewportArr[0];
 		SetRenderMod(SceneRenderBatch);
@@ -1720,46 +1710,47 @@ void Game::Render() {
 	}
 	gd.addSDFTextureStack.clear();
 
-	//5. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ğ½ï¿½
+	//5. ½¦µµ¿ì ÆĞ½º
 	Render_ShadowPass();
 
+	//gd.DeviceRemoveResonDebug();
+
+	//6. ·»´õÆĞ½º ½ÃÀÛ, Ä¿¸Çµå¸®½ºÆ® ¸®¼Â
 	HRESULT hResult = gd.gpucmd.Reset();
 
-	//7. ?ï¿½ë„??ë§µì˜ STATE ï¿½?PIXEL SHADER RESOURCEï¿½?ë³€??(?ï¿½ë„??ë§µìœ¼ï¿½??ï¿½ê¸° ?ï¿½í•´??
 	for (int i = 0; i < 3; ++i) {
 		gd.gpucmd.ResBarrierTr(&game.MyDirLight[i].ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	}
 
-	//8. ï¿½ï¿½ï¿½ê·»ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ STATEï¿½ï¿½ PRESENTï¿½ï¿½ï¿½ï¿½ RENDER TARGETï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ (ï¿½ï¿½ï¿½ê·»ï¿½ï¿½Å¸ï¿½Ù¿ï¿½ ï¿½×·ï¿½ï¿½ï¿½ ï¿½Ç¼ï¿½)
+	//8. ¼­ºê·»´õÅ¸°ÙÀÇ STATE¸¦ PRESENT¿¡¼­ RENDER TARGETÀ¸·Î º¯È¯ (¼­ºê·»´õÅ¸°Ù¿¡ ±×·Á¾ß µÇ¼­)
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-	//9. ï¿½ï¿½ï¿½ï¿½Æ®/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
+	//9. ºäÆ÷Æ®/½ÃÀú·ºÆ® ¼³Á¤
 	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
 	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
 	game.renderViewPort = &gd.viewportArr[0];
 
-	//10. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½Û¸ï¿½ ï¿½ï¿½ï¿½ï¿½Å°ï¿½ï¿½ ï¿½Úµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+	//10. µª½º ½ºÅÙ½Ç ¹öÆÛ¸¦ °¡¸®Å°´Â ÇÚµéÀ» °¡Á®¿Â´Ù.
 	D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
 		gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 
-	//11. ï¿½ï¿½ï¿½ê·»ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	//11. ¼­ºê·»´õÅ¸°ÙÀ¸·Î ·»´õÅ¸°ÙÀ» ¼³Á¤
 	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE,
 		&d3dDsvCPUDescriptorHandle);
 
-	//12. ï¿½ï¿½ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½
+	//12. ·»´õÅ¸°ÙÀ» Å¬¸®¾î
 	float pfClearColor[4] = { 0, 0, 0, 1.0f };
 	gd.gpucmd->ClearRenderTargetView(gd.SubRenderTarget.rtvHandle.hcpu, pfClearColor, 0, NULL);
 
 	//render begin ----------------------------------------------------------------
 
-	// 13. ï¿½ï¿½Ä«ï¿½Ì¹Ú½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	MySkyBoxShader->RenderSkyBox();
 
-	// 14. ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½Ä«ï¿½Ì¹Ú½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Õ¿ï¿½ ï¿½Í¾ï¿½ ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ DepthStencilï¿½ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½
+	// 14. ¸ğµç ¹°Ã¼´Â ½ºÄ«ÀÌ¹Ú½ºº¸´Ù ¾Õ¿¡ ¿Í¾ß ÇÏ±â ¶§¹®¿¡ DepthStencilÀ» Å¬¸®¾î
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
-	// 15. Ä«ï¿½Ş¶ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê±ï¿½È­
+	// 15. Ä«¸Ş¶ó·Î »ç¿ëÇÒ Á¤º¸ ÃÊ±âÈ­
 	matrix view = gd.viewportArr[0].ViewMatrix;
 	view *= gd.viewportArr[0].ProjectMatrix;
 	view.transpose();
@@ -1783,9 +1774,10 @@ void Game::Render() {
 		}
 	};
 
-	// 16 ~ 17. ï¿½Í·ï¿½ï¿½ï¿½ ï¿½×¼ï¿½ï¿½ï¿½ï¿½Ì¼ï¿½ ï¿½ï¿½ï¿½ï¿½
 
-	// 18. ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	// 16 ~ 17. ÅÍ·¹ÀÎ Å×¼¿·¹ÀÌ¼Ç »ı·«
+
+	// 18. ¸ğµç °ÔÀÓ¿ÀºêÁ§Æ®µéÀ» Ãâ·ÂÇÑ´Ù.
 	dbgc[0] = 0;
 	//gd.AverageTimerStart();
 	matrix idmat;
@@ -1798,10 +1790,10 @@ void Game::Render() {
 		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 		{
 			using PRID = PBRShader1::RootParamId;
-			// 18-1. Ä«ï¿½Ş¶ï¿½ ï¿½ï¿½ï¿½ï¿½ 
+			// 18-1. Ä«¸Ş¶ó Á¤º¸
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			// 18-2. dirlight ï¿½ï¿½ï¿½ï¿½
+			// 18-2. dirlight Á¤º¸
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_Instancing_DirLightData, game.DirLightResCBV.hRender.hgpu);
 			// 18-3. Material Structured Buffer
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialPool, Material::MaterialStructuredBufferSRV.hRender.hgpu);
@@ -1816,16 +1808,15 @@ void Game::Render() {
 		SetRenderMod(false);
 	}
 	else {
-		//18-1. ï¿½×¸ï¿½ï¿½Ú¿ï¿½ ï¿½Ô²ï¿½ ï¿½ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ PBRShader Set, Root ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½âº» ï¿½ï¿½ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Set
+		//18-1. ±×¸²ÀÚ¿Í ÇÔ²² Ãâ·ÂÇÏ±â À§ÇØ PBRShader Set, Root º¯¼öÁß ±âº» °íÁ¤µÇ´Â Á¤º¸¸¦ Set
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
 		game.PresentShaderType = ShaderType::RenderWithShadow;
 		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 		{
 			using PRID = PBRShader1::RootParamId;
-			// 18-1. Ä«ï¿½Ş¶ï¿½ ï¿½ï¿½ï¿½ï¿½ 
+			// 18-1. Ä«¸Ş¶ó Á¤º¸
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			// 18-2. ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ CBV
 			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
 			// 18-3. Direction Light
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
@@ -1835,11 +1826,13 @@ void Game::Render() {
 
 		RenderTour<false>();
 
+		// 18-2. ½ºÅ² ¸Ş½¬µéÀ» Ãâ·ÂÇÏ±â À§ÇØ Shader¸¦ Set.
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
 		game.PresentShaderType = ShaderType::SkinMeshRender;
 		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 		{
 			using PRID = PBRShader1::RootParamId;
+			// 18-1. Ä«¸Ş¶ó Á¤º¸
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
 			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].descindex.hRender.hgpu);
@@ -1867,7 +1860,6 @@ void Game::Render() {
 
 	//Render Items
 	// already droped items. (non move..)
-	// Diffuse ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½. ï¿½×·ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ ï¿½ï¿½Ã¤ ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½
 	//static float itemRotate = 0;
 	//itemRotate += DeltaTime;
 	//matrix mat;
@@ -1883,7 +1875,6 @@ void Game::Render() {
 	//	}
 	//}
 
-	// 19. ï¿½ï¿½Æ¼Å¬ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	{
 		auto& effects = GetParticleEffectRuntimes();
 		for (ParticleEffectRuntime& effect : effects) {
@@ -1916,9 +1907,7 @@ void Game::Render() {
 		ParticleDraw->Render(gd.gpucmd, &gBulletTracerPool.Buffer, gBulletTracerPool.Count);
 	}
 
-	//20~21. ï¿½Å¿ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
-	//22 Ray ï¿½ï¿½ï¿½
 	{
 		gd.gpucmd.SetShader(MyOnlyColorShader);
 		view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
@@ -1931,7 +1920,6 @@ void Game::Render() {
 		}
 
 		//gc->RenderChunkDbg();
-		// ï¿½Ó½ï¿½ ï¿½ï¿½Å» ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		int portalCount = 0;
 		for (int i = 0; i < Portals.size(); ++i) {
 			if (Portals[i] == nullptr) continue;
@@ -1948,7 +1936,7 @@ void Game::Render() {
 	}
 
 
-	//23. NPC ï¿½ï¿½ï¿½ï¿½ HP ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
+	//23. NPC µéÀÇ HP ¹Ù¸¦ ºôº¸µå Ãâ·Â
 	for (int i = 0; i < game.NpcHPBars.size; ++i)
 	{
 		if (game.NpcHPBars.isAlloc(i))
@@ -1960,7 +1948,7 @@ void Game::Render() {
 		}
 	}
 
-	
+
 
 	if (game.DebugCollisions) {
 		using OCSRP = OnlyColorShader::RootParamId;
@@ -2003,19 +1991,17 @@ void Game::Render() {
 	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
 	//Command execution
-	// 24-1. ï¿½Ñ¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Depthï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Õ¼ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½
-	// 24-2. GPUï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø½ï¿½Ã³ï¿½ï¿½ ï¿½ï¿½ï¿½
 	hResult = gd.gpucmd.Close();
 	gd.gpucmd.Execute();
 	gd.gpucmd.WaitGPUComplete();
 
-	//Bluring + DepthConvolution(ï¿½Ö¸ï¿½Ş´ï¿½ ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å²ï¿½ï¿½.) (Compute Shader)
+	//Bluring + DepthConvolution(ÁÖ¸ñ¹Ş´Â ¹°Ã¼ÀÇ ¼±À» ´õ¿í ºí·¯¸µ ½ÃÅ²´Ù.) (Compute Shader)
 	hResult = gd.CScmd.Reset();
 	gd.CScmd.SetShader(MyComputeTestShader);
 	gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	float WHarr[2] = { gd.ClientFrameWidth , gd.ClientFrameHeight };
 	gd.CScmd->SetComputeRoot32BitConstants(0, 2, WHarr, 0); // screen width height
-	
+
 	//gd.SubRenderTarget.srvHandle.hRender.hgpu
 	gd.CScmd->SetComputeRootDescriptorTable(1, gd.raytracing.RTO_UAV_index.hRender.hgpu); // UAV sub RenderTarget
 	gd.CScmd->SetComputeRootDescriptorTable(2, gd.MainDS_SRV.hRender.hgpu); // SRV DS
@@ -2059,23 +2045,24 @@ void Game::Render() {
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-	//9. ï¿½ï¿½ï¿½ï¿½Æ®/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
+	//9. ºäÆ÷Æ®/½ÃÀú·ºÆ® ¼³Á¤
 	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
 	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
 	game.renderViewPort = &gd.viewportArr[0];
 
-	//10. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½Û¸ï¿½ ï¿½ï¿½ï¿½ï¿½Å°ï¿½ï¿½ ï¿½Úµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+	//10. µª½º ½ºÅÙ½Ç ¹öÆÛ¸¦ °¡¸®Å°´Â ÇÚµéÀ» °¡Á®¿Â´Ù.
 	d3dDsvCPUDescriptorHandle =
 		gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 
-	//11. ï¿½ï¿½ï¿½ê·»ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	//11. ¼­ºê·»´õÅ¸°ÙÀ¸·Î ·»´õÅ¸°ÙÀ» ¼³Á¤
 	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE,
 		&d3dDsvCPUDescriptorHandle);
 
-	// 24. UI ????? ???? DepthStencil?? Clear???. (??? UI?? ?????? ???? ??? ?? ???? ??????? ??? ????)
+	//gd.gpucmd.pCommandAllocator->Reset(); // origin : m_commandAllocators[m_backBufferIndex]->Reset()
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
+	// 25. ?¡À?????? ???? ???? ??? ?????????? ??? ?????? (ex> ???)
 	float hhpp = 0;
 	float HeatGauge = 0;
 	int kill = 0;
@@ -2093,6 +2080,9 @@ void Game::Render() {
 		SkillCooldownFlow = game.player->SkillCooldownFlow[(int)SkillSlot::Skill1];
 	}
 
+	// 26. UI ÅØ½ºÆ® ·»´õ¸µ
+	// HP
+	//maybe..1706x960
 	float Rate = gd.ClientFrameHeight / 960.0f;
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
 
@@ -2162,7 +2152,7 @@ void Game::Render_RayTracing()
 			nearZone->bReqireBakeLight_Raytracing = false;
 		}
 	}
-	
+
 	if (Material::LastMaterialStructureBufferUp < game.MaterialTable.size()) {
 		Material::InitMaterialStructuredBuffer();
 	}
@@ -2186,7 +2176,7 @@ void Game::Render_RayTracing()
 
 	commandList->SetComputeRootSignature(MyRayTracingShader->pGlobalRootSignature);
 
-	// Bind the heaps, acceleration structure and dispatch rays.    
+	// Bind the heaps, acceleration structure and dispatch rays.
 	D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
 	commandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	commandList->SetComputeRootDescriptorTable(0, gd.raytracing.RTO_UAV_index.hRender.hgpu); // sub render target, raytracing output
@@ -2201,7 +2191,6 @@ void Game::Render_RayTracing()
 	commandList->SetComputeRootDescriptorTable(7, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
 	DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
 
-	// ï¿½Ï´ï¿½ Lightï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Îµå¸¦ ï¿½Ñ´ï¿½. ï¿½ï¿½ï¿½Î°ï¿½? Æ®ï¿½ï¿½ï¿½Ì½ï¿½ ï¿½ï¿½ ï¿½Ş½ï¿½ï¿½ï¿½ ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Â°ï¿½?
 	commandList->SetComputeRootDescriptorTable(8, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu); // ZoneLightChuncks Arr
 	commandList->SetComputeRootDescriptorTable(9, texarrSRV.hRender.hgpu); // Texture Arr
 
@@ -2281,11 +2270,10 @@ void Game::Render_ShadowPass()
 {
 
 	static vector<SkinMeshGameObject*> ShadowRenderSkinMeshObjArr;
-	// 0. ?ï¿½ëŸ¬?ï¿½ï¿½???ëª¨ë‘ ?ï¿½í•¨?ï¿½ë©´??Extent.z ë°©í–¥??ï¿½?ë°©í–¥??OBBï¿½?êµ¬ì„±
 	constexpr float CascadeRange[4] = { 0.01f, 50.0f, 200.0f, 1000.0f };
 
 
-	// 2. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	// 2. ·»´õ¸µÀ» ½ÃÀÛÇÑ´Ù.
 	HRESULT hResult = gd.gpucmd.Reset();
 
 
@@ -2297,7 +2285,6 @@ void Game::Render_ShadowPass()
 		vec4 LightDirQ = vec4::DirectionToQuaternion(LightDirection);
 		LightOBB = game.MyDirLight[0].viewport.GetOBB_IncludeFrustum(viewproj, LightDirQ);
 
-		// 1. ?ï¿½ë ‰???ï¿½ì´?ï¿½ï¿½? ì´ˆê¸°??
 		constexpr int ShadowResolusion = 4096;
 		constexpr float LightDistance = 1000;
 		vec4 obj = LightOBB.Center;
@@ -2312,7 +2299,6 @@ void Game::Render_ShadowPass()
 		game.MyDirLight[i].viewport.Viewport.TopLeftY = 0.0f;
 		game.MyDirLight[i].viewport.ScissorRect = {0, 0, (long)ShadowResolusion, (long)ShadowResolusion};
 
-		// 1-1 ì¹´ë©”??ë°©í–¥ ?ï¿½í•˜ï¿½?
 
 		game.MyDirLight[i].viewport.Camera_Pos = obj - (LightDirection * LightDistance);
 		game.MyDirLight[i].viewport.Camera_Pos.w = 0;
@@ -2325,11 +2311,9 @@ void Game::Render_ShadowPass()
 		MyDirLight[i].View.mat = XMMatrixLookAtLH(MyDirLight[i].LightPos, obj, up);
 		game.MyDirLight[i].viewport.ViewMatrix = MyDirLight[i].View;
 
-		// 1-2. ?ï¿½ë„??ï¿½?1m ??ëª‡ê°œ???ï¿½ï¿½????ï¿½ì„ê±´ï¿½? ê²°ì •?ï¿½ë‹¤.
 		constexpr float rate = 1.0f / 64.0f;
 		game.MyDirLight[i].viewport.ProjectMatrix = XMMatrixOrthographicLH(MaxWidth, MaxWidth/*rate * ShadowResolusion, rate * ShadowResolusion*/, 0.1f, 4000.0f);
 
-		// 1-3. Light CB ?ï¿½ì´?ï¿½ï¿½? ì´ˆê¸°?ï¿½í•œ??
 		matrix projmat = XMMatrixTranspose(MyDirLight[i].viewport.ProjectMatrix);
 		LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->Map(0, NULL, (void**)&LightCBData_withShadow);
 		LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightProjection[i] = projmat;
@@ -2337,20 +2321,16 @@ void Game::Render_ShadowPass()
 		LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightPos[i] = MyDirLight[i].LightPos.f3;
 		LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->Unmap(0, nullptr);
 
-		// 1-4. Dir Light ?ï¿½ìš© Upload Buffer??ê°’ì„ ?ï¿½ì •?ï¿½ë‹¤.
 		MappedDirLightData->DirLightView = LightCBData_withShadow[game.Current_Zone->Asset_OffsetMul]->LightView[i];
 		MappedDirLightData->DirLightProjection = projmat;
 		MappedDirLightData->DirLightPos = MyDirLight[i].LightPos.f3;
 		MappedDirLightData->DirLightDir = LightDirection;
 		MappedDirLightData->DirLightColor = vec4(1, 1, 1, 1);
 
-		// 2-2. ë·°í¬???ï¿½ì •
 		gd.gpucmd->RSSetViewports(1, &game.MyDirLight[i].viewport.Viewport);
 		gd.gpucmd->RSSetScissorRects(1, &game.MyDirLight[i].viewport.ScissorRect);
-		// 2-3. ShadowMap??STATEï¿½?DEPTH WRITEï¿½??ï¿½ì •?ï¿½ë‹¤.
 		gd.gpucmd.ResBarrierTr(&game.MyDirLight[i].ShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-		// 2-4. ?ï¿½ë”?ï¿½ê²Ÿì„ ShadowMap?ï¿½ë¡œ Set?ï¿½ê³  Depth Stencil???ï¿½ë¦¬?ï¿½í•œ??
 		//D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
 		//	gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 		DescHandle dc = game.MyDirLight[i].ShadowMap.descindex.hRender;
@@ -2358,7 +2338,6 @@ void Game::Render_ShadowPass()
 		gd.gpucmd->ClearDepthStencilView(game.MyDirLight[i].ShadowMap.descindex.hRender.hcpu,
 			D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
 
-		// 2-5. ?ï¿½ë„??ë§µì„ ?ï¿½ë”ï¿½??ï¿½ê¸° ?ï¿½í•´ Shader ï¿½?Set?ï¿½ë‹¤.
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderShadowMap);
 		matrix xmf4x4View = game.MyDirLight[i].viewport.ViewMatrix;
 		xmf4x4View *= game.MyDirLight[i].viewport.ProjectMatrix;
@@ -2374,7 +2353,6 @@ void Game::Render_ShadowPass()
 		AutoLOD_SetModelLODRenderActive(false);
 		AutoLOD_SetModelLODRenderLevel(0);
 
-		// 2-6. ?ï¿½ì¬ ?ï¿½ë ˆ?ï¿½ì–´ê°€ ?ï¿½ì¹˜??ï¿½?ï¿½ï¿½ ì£¼ï¿½???ï¿½?ï¿½ï¿½?ï¿½ë§Œ ?ï¿½ë„???ï¿½ë”??ì°¸ì—¬.
 		ShadowRenderSkinMeshObjArr.clear();
 		game.TourID += 1;
 		GameObjectIncludeChunks goic = game.Current_Zone->GetChunks_Include_OBB(LightOBB);
@@ -2413,12 +2391,9 @@ void Game::Render_ShadowPass()
 		}
 
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRenderShadowMap);
-		// 18-1. ì¹´ë©”???ï¿½ë³´ 
 		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
 		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &gd.viewportArr[0].Camera_Pos, 16);
-		//// 18-2. ï¿½??ï¿½ë³´ CBV
 		//gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource.descindex.hRender.hgpu);
-		//// 18-3. Direction Light ???ï¿½ë„??ë§µì„ ?ï¿½ìš©.
 		//gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight[0].descindex.hRender.hgpu);
 
 		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
@@ -2529,7 +2504,6 @@ void Game::Update()
 		ClipCursor(NULL);
 	}
 
-	// ï¿½ï¿½Æ®ï¿½ï¿½Å© ï¿½ï¿½Å¶ ï¿½Ş±ï¿½
 	//gd.AverageSecPer60Start(Update_ClientRecv);
 	while (true) {
 		int result = client.recv(client.rBuf + client.rbufOffset, client.rbufMax - client.rbufOffset);
@@ -2542,23 +2516,21 @@ void Game::Update()
 		}
 		if (result == -1) {
 			if (WSAGetLastError() == WSAEWOULDBLOCK) {
-				// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ñ±ï¿½ï¿½.
+				// ¾ÆÁ÷ ÀĞÀ» ¼ö ¾ø´Ù¸é ´ÙÀ½ ·çÇÁ·Î ³Ñ±ä´Ù.
 				break;
 			}
 			else {
-				// ï¿½ï¿½Æ®ï¿½ï¿½Å© ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ß»ï¿½ï¿½Ç¾ï¿½ï¿½Å³ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È²
-				// TODO : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
+				// ³×Æ®¿öÅ© ¿À·ù°¡ ¹ß»ıµÇ¾ú°Å³ª ¼­¹ö°¡ Á×Àº »óÈ²
+				// TODO : ¼­¹ö¿ÍÀÇ ¿¬°á ²÷À»¶§ÀÇ Ã³¸®
 				break;
 			}
 		}
 		else if (result == 0) {
             OutputDebugStringA("[ClientRecv] server closed connection\n");
-			// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½.
-			// TODO : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
 			//client.DisConnectToServer();
 			break;
 		}
-		else break; // ?? ??? ???? ????? ????
+		else break; // ´õ ÀĞÀ» ÆĞÅ¶ÀÌ ¾øÀ¸¸é Á¾·á
 	}
 	//gd.AverageSecPer60End(Update_ClientRecv);
 
@@ -2597,7 +2569,7 @@ void Game::Update()
 	}
 
 	if (isPrepared) {
-		// ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ È¸ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+		// ÇÃ·¹ÀÌ¾î È¸Àü Á¤º¸ Àü¼Û
 		if (player != nullptr) {
 			//dbglog1(L"playerpos y : %f \n", player->worldMat.pos.y);
 
@@ -2626,7 +2598,6 @@ void Game::Update()
 		}
 
 		//gd.AverageSecPer60Start(Update_ChunksUpdate);
-	// chunkï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½.
 		{
 			static int _dbgCnt = 0;
 			if ((_dbgCnt++ % 120) == 0) {
@@ -2805,7 +2776,7 @@ READ_START:
 		case GameObjectType::_Monster:
 		{
 			if (header.objindex >= DynmaicGameObjects.size()) {
-				// ?? ???? ??????? ????? ??. ?????. ?????? ?????? ?????? ??o??? ???? ??? ?????ï¿½ï¿½?.
+				// ?? ???? ??????? ????? ??. ?????. ?????? ?????? ?????? ??o??? ???? ??? ?????¢¥?.
 				DynmaicGameObjects.reserve(header.objindex + 1);
 				DynmaicGameObjects.resize(header.objindex + 1);
 			}
@@ -2989,8 +2960,7 @@ READ_START:
 		if (header.server_obj_index >= 0 && game.DynmaicGameObjects.size() > header.server_obj_index) {
 			player = (Player*)DynmaicGameObjects[playerGameObjectIndex];
 			//player->Gun = game.GunMesh;
-			// 
-			 //Zone ï¿½Ìµï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ ï¿½ï¿½ï¿½ï¿½
+			//
 			if (game.isPreparedClientIndex) {
 				player->worldMat.pos = player->DestPos;
 				player->worldMat.pos.w = 1;
@@ -3051,7 +3021,6 @@ READ_START:
 		}
 		if (DynmaicGameObjects[header.obj_index] != nullptr) {
 			DynmaicGameObjects[header.obj_index]->tag[GameObjectTag::Tag_Enable] = false;
-			// delete ï¿½ï¿½ ï¿½ï¿½. Ã»Å©ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
 		}
 		currentPivot += header.size;
 		offset += header.size;
@@ -3295,7 +3264,7 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 		for (int k = 0; k < gd.FontCount; ++k) {
 			auto f = SDFTextPageTextureBuffer::SDFSectionMap.find(wc);
 			auto f2 = gd.font_data[k].glyphs.find(wc);
-			if (f != SDFTextPageTextureBuffer::SDFSectionMap.end() && 
+			if (f != SDFTextPageTextureBuffer::SDFSectionMap.end() &&
 				f2 != gd.font_data[k].glyphs.end()) {
 				textureExist = true;
 				section = f->second;
@@ -3315,7 +3284,7 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 			if (isexist == false) {
 				gd.addSDFTextureStack.push_back(wc);
 			}
-			
+
 			continue;
 		}
 
@@ -3325,6 +3294,8 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 		if (SDFRectOut) {
 			SDFRectOut[i] = textRt;
 		}
+
+		//float tConst[14] = { textRt.x, textRt.y, textRt.z, textRt.w, gd.ClientFrameWidth , gd.ClientFrameHeight, depth, 0, color.x, color.y, color.z, color.w, minD[i], maxD[i] };
 
 		SDFInstance sdfins;
 		sdfins.Color = color;
@@ -3390,7 +3361,7 @@ void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid
 	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &lineWidth, 3);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &line, 4);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &color, 8);
-	
+
 	DescHandle di;
 	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
 	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -3416,7 +3387,6 @@ void Game::UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float Li
 	game.TextMesh->Render(gd.gpucmd, 1);
 }
 
-// ï¿½ï¿½ï¿½â¼­ï¿½ï¿½ï¿½ï¿½ UIï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Úµï¿½ï¿½ï¿½.
 #pragma region UICode
 void UIRenderDefaultBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
@@ -3561,7 +3531,6 @@ void UIEventDefaultEdit(DXUI* ui) {
 
 	if (ui->isFocus) {
 		if (game.evt.uMsg == WM_CHAR) {
-			//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¸ï¿½ ï¿½ï¿½ï¿½ï¿½
 			bool b = (game.evt.wParam != VK_BACK);
 			b = b && (game.evt.wParam != VK_RETURN);
 			b = b && (game.evt.wParam != VK_LEFT);
@@ -3595,7 +3564,6 @@ void UIEventDefaultEdit(DXUI* ui) {
 				pedit->editCursor = min(pedit->editCursor + 1, pedit->wstr.size());
 			}
 			if (game.evt.wParam == VK_BACK) {
-				// ï¿½ï¿½ï¿½ï¿½ï¿½
 				if (pedit->wstr.size() >= 1 && pedit->editCursor >= 1) {
 					if (pedit->editCursor >= pedit->wstr.size()) {
 						pedit->wstr.pop_back();
@@ -4051,7 +4019,6 @@ void UIEventDefaultWindow(DXUI* ui) {
 		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
 		game.CurrentUICenter *= 0.5f;
 		game.CurrentUICenter += SaveCenter;
-		// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ UIï¿½ï¿½ Event ï¿½ï¿½ Ã³ï¿½ï¿½ï¿½Ñ´ï¿½.
 		if (pWindow->page_stack.size() >= 1) {
 			DXPage* page = pWindow->page_stack[pWindow->page_stack.size() - 1];
 			page->Event();
@@ -4109,12 +4076,11 @@ void UIInitDefaultWindow(DXUI* ui) {
 	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
 	pWindow->page_table.push_back(sample_page);
 	{
-		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Æ°
 		vec4 rateloc = vec4(0.5, 0.8, 0.7, 0.9);
 		pWindow->NormalizeCoordToWindowCoord_vec4(rateloc);
 		DXUI* SaveBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn = (DXBtnParam*)SaveBtn->pParamterData;
-		pbtn->Set(0, 1, 0, L"ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½");
+		pbtn->Set(0, 1, 0, L"???????");
 		SaveBtn->SetFunctions(UIRenderDefaultBtn, UIUpdateDefaultBtn, UIEventSaveBtn);
 		sample_page->uiArr.push_back(SaveBtn);
 	}
@@ -4187,7 +4153,6 @@ void UIUpdate_InventoryItemSlot(DXUI* ui, float deltaTime) {
 		pslot->flow = pslot->maxtime;
 	}
 	constexpr float slot_Margin = 80;
-	//ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½Ä¶ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½ï¿½ï¿½ï¿½ Y ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	float SliderY = *(float*)pslot->addtionalPtr[1];
 	float StartY = pslot->addtionalParams[0];
 	float MAXY = StartY + pslot->addtionalParams[1] * slot_Margin;
@@ -4212,7 +4177,6 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 					DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
 					srcslot->itemCount -= game.CurrentGrabSlotData.itemCnt;
 
-					//  ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½
 					CTS_ChangeInventoryItemSlot_Header header;
 					header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
 					header.st = CTS_Protocol::KeyInput;
@@ -4233,7 +4197,6 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
 						srcslot->itemCount -= 1;
 
-						//  ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½
 						CTS_ChangeInventoryItemSlot_Header header;
 						header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
 						header.st = CTS_Protocol::KeyInput;
@@ -4249,17 +4212,14 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 							game.CurrentGrabSlotData.objid = 0;
 							game.CurrentGrabSlotData.selectedSlot = nullptr;
 						}
-						// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 					}
 				}
 				else {
 					if (pslot->objid == game.CurrentGrabSlotData.objid && game.evt.uMsg == WM_LBUTTONDOWN) {
-						// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 						pslot->itemCount += game.CurrentGrabSlotData.itemCnt;
 						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
 						srcslot->itemCount -= game.CurrentGrabSlotData.itemCnt;
 
-						//  ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 						CTS_ChangeInventoryItemSlot_Header header;
 						header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
 						header.st = CTS_Protocol::KeyInput;
@@ -4274,11 +4234,9 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 						game.CurrentGrabSlotData.selectedSlot = nullptr;
 					}
 					else if (pslot->objid == game.CurrentGrabSlotData.objid && game.evt.uMsg == WM_RBUTTONDOWN) {
-						// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 						pslot->itemCount += 1;
 						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
 
-						//  ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 						CTS_ChangeInventoryItemSlot_Header header;
 						header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
 						header.st = CTS_Protocol::KeyInput;
@@ -4299,20 +4257,17 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 					else if (game.evt.uMsg == WM_LBUTTONDOWN || game.evt.uMsg == WM_RBUTTONDOWN) {
 						DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
 						if (srcslot->itemCount == game.CurrentGrabSlotData.itemCnt) {
-							// ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ - ï¿½ï¿½ï¿½ï¿½
 							int itemId = pslot->objid;
 							int itemCnt = pslot->itemCount;
 							pslot->itemCount = game.CurrentGrabSlotData.itemCnt;
 							pslot->objid = game.CurrentGrabSlotData.objid;
 
-							// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ô°ï¿½ ï¿½ï¿½ï¿½ï¿½
 							DXSlotParam* srcslot = (DXSlotParam*)game.CurrentGrabSlotData.selectedSlot->pParamterData;
 							srcslot->itemCount = itemCnt;
 							srcslot->objid = itemId;
 							game.CurrentGrabSlotData.itemCnt = itemCnt;
 							game.CurrentGrabSlotData.objid = itemId;
 
-							//  ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 							CTS_ChangeInventoryItemSlot_Header header;
 							header.size = sizeof(CTS_ChangeInventoryItemSlot_Header);
 							header.st = CTS_Protocol::KeyInput;
@@ -4356,7 +4311,6 @@ void UIInitInventoryWindow(DXUI* ui) {
 	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
 	pWindow->page_table.push_back(sample_page);
 	{
-		// ï¿½Îºï¿½ï¿½ä¸® UI
 
 		//1. Close Btn (568, 12, W27, H27)
 		vec4 rateloc = sample_page->location;
@@ -4372,7 +4326,6 @@ void UIInitInventoryWindow(DXUI* ui) {
 		sample_page->uiArr.push_back(CloseBtn);
 
 		//2. Item Search EditBox (15, 51, W400, H40)
-		//ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Ú½ï¿½
 		rateloc = sample_page->location;
 		rateloc.x += 15;
 		rateloc.w -= 51;
@@ -4381,7 +4334,7 @@ void UIInitInventoryWindow(DXUI* ui) {
 		DXUI* ItemSearchEditBox = new DXUI(DXUI_TYPE::DXUI_Edit, sizeof(DXEditParam), rateloc, 0, new DXEditParam());
 		DXEditParam* pEdit;
 		pEdit = (DXEditParam*)ItemSearchEditBox->pParamterData;
-		pEdit->Set(0, 1, 0, 5, L"ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ë»ï¿½Ã¢...");
+		pEdit->Set(0, 1, 0, 5, L"?????? ???a...");
 		ItemSearchEditBox->SetFunctions(UIRenderDefaultEdit, UIUpdateDefaultEdit, UIEventDefaultEdit);
 		sample_page->uiArr.push_back(ItemSearchEditBox);
 
@@ -4402,7 +4355,7 @@ void UIInitInventoryWindow(DXUI* ui) {
 		* (18, 95, W130, H50) (157, 95, W130, H50) (297, 95, W130, H50) (437, 95, W130, H50)
 		*/
 		int startx = 18;
-		const wchar_t ItemTypes[4][32] = { L"ï¿½ï¿½ï¿½", L"ï¿½Òºï¿½", L"ï¿½ï¿½Å¸", L"ï¿½ï¿½Ã¼" };
+		const wchar_t ItemTypes[4][32] = { L"???", L"???", L"???", L"??u" };
 		for (int i = 0; i < 4; ++i) {
 			rateloc = sample_page->location;
 			rateloc.x += startx;
@@ -4432,7 +4385,6 @@ void UIInitInventoryWindow(DXUI* ui) {
 		pRangeSelectSlider->Set(false, 'f', true, 0, 1, '\0', &pWindow->addtionalParams[1], 7, vec4(-15, -15, 25, 15));
 		sample_page->uiArr.push_back(RangeSelectSlider);
 
-		//Item Slot ï¿½ï¿½. (12, 151, 75, 75) inc 80 7x7
 		//pWindow->addtionalPtr[1] = new vec4();
 		vec4& slotShowRt = *(vec4*)pWindow->addtionalPtr[1];
 		rateloc = sample_page->location;
@@ -4449,11 +4401,11 @@ void UIInitInventoryWindow(DXUI* ui) {
 			ItemSlot->SetFunctions(UIRender_InventoryItemSlot, UIUpdate_InventoryItemSlot, UIEvent_InventoryItemSlot);
 			DXSlotParam* slotparam = (DXSlotParam*)ItemSlot->pParamterData;
 			slotparam->Set(0, 1, SlotKind::_Item, 8);
-			slotparam->addtionalParams[0] = rateloc.w; // ï¿½âº» y ï¿½ï¿½ï¿½Û°ï¿½
-			slotparam->addtionalParams[1] = inventory_slotCount / 7.0f; // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
-			slotparam->addtionalPtr[1] = &pWindow->addtionalParams[1]; // ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
-			slotparam->addtionalPtr[2] = &slotShowRt; // Slot ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½
-			slotparam->addtionalParams_int[7] = i; // ï¿½ï¿½ï¿½Ô¹ï¿½È£
+			slotparam->addtionalParams[0] = rateloc.w; // ±âº» y ½ÃÀÛ°ª
+			slotparam->addtionalParams[1] = inventory_slotCount / 7.0f; // ½½·Ô Çà °³¼ö
+			slotparam->addtionalPtr[1] = &pWindow->addtionalParams[1]; // ½½¶óÀÌ´õ °ª Æ÷ÀÎÅÍ
+			slotparam->addtionalPtr[2] = &slotShowRt; // Slot ÀÌ º¸ÀÏ ¼ö ÀÖ´Â ¿µ¿ª
+			slotparam->addtionalParams_int[7] = i; // ½½·Ô¹øÈ£
 			sample_page->uiArr.push_back(ItemSlot);
 			game.InventorySlots[i] = ItemSlot;
 			if ((i + 1) % 7 == 0) {
@@ -4480,7 +4432,6 @@ void UIInitEquipWindow(DXUI* ui) {
 	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
 	pWindow->page_table.push_back(sample_page);
 	{
-		// ï¿½ï¿½ï¿½Ã¢ UI
 
 		//1. Close Btn (526, 10, W27, H27)
 		vec4 rateloc = sample_page->location;
@@ -4566,17 +4517,15 @@ void Game::UI_Init()
 	float ScreenW = gd.ClientFrameWidth;
 	float ScreenH = gd.ClientFrameHeight;
 
-	//UI Test ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Úµï¿½
 	if (false)
 	{
-		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Æ°
 		vec4 rateloc = vec4(0.5, 0.8, 0.7, 0.9);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* SaveBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn = (DXBtnParam*)SaveBtn->pParamterData;
 		pbtn->flow = 0;
 		pbtn->maxtime = 1;
-		wcscpy_s(pbtn->text, 64, L"ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½");
+		wcscpy_s(pbtn->text, 64, L"???????");
 		ZeroMemory(pbtn->addtionalParams, sizeof(float) * 16);
 		pbtn->Base_UITextureIndex = 0;
 		SaveBtn->RenderFunc = UIRenderDefaultBtn;
@@ -4584,14 +4533,13 @@ void Game::UI_Init()
 		SaveBtn->EventFunc = UIEventSaveBtn;
 		sample_page->uiArr.push_back(SaveBtn);
 
-		// ï¿½İ±ï¿½ ï¿½ï¿½Æ°
 		rateloc = vec4(0.75, 0.8, 0.95, 0.9);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		pbtn = (DXBtnParam*)CloseBtn->pParamterData;
 		pbtn->flow = 0;
 		pbtn->maxtime = 1;
-		wcscpy_s(pbtn->text, 64, L"ï¿½İ±ï¿½");
+		wcscpy_s(pbtn->text, 64, L"???");
 		ZeroMemory(pbtn->addtionalParams, sizeof(float) * 16);
 		pbtn->Base_UITextureIndex = 0;
 		CloseBtn->RenderFunc = UIRenderDefaultBtn;
@@ -4599,7 +4547,6 @@ void Game::UI_Init()
 		CloseBtn->EventFunc = UIEventCloseBtn;
 		sample_page->uiArr.push_back(CloseBtn);
 
-		//ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Ú½ï¿½
 		rateloc = vec4(0.1, 0.1, 0.9, 0.5);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* TextEdit = new DXUI(DXUI_TYPE::DXUI_Edit, sizeof(DXEditParam), rateloc, 0, new DXEditParam());
@@ -4616,11 +4563,10 @@ void Game::UI_Init()
 		TextEdit->RenderFunc = UIRenderDefaultEdit;
 		TextEdit->UpdateFunc = UIUpdateDefaultEdit;
 		TextEdit->EventFunc = UIEventDefaultEdit;
-		wcscpy_s(pEdit->text, 64, L"ï¿½ï¿½ï¿½ğ°¡¸ï¿½ ï¿½Ô·ï¿½ï¿½Øºï¿½ï¿½ï¿½ï¿½ï¿½!");
+		wcscpy_s(pEdit->text, 64, L"?????? ??????????!");
 		ZeroMemory(pEdit->addtionalParams, sizeof(float) * 16);
 		sample_page->uiArr.push_back(TextEdit);
 
-		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½
 		rateloc = vec4(0.1, 0.6, 0.5, 0.67);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* SliderX = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
@@ -4635,11 +4581,10 @@ void Game::UI_Init()
 		pSliderX->max = 100.0f;
 		pSliderX->setter = 0;
 		pSliderX->mod = 'f';
-		pSliderX->obj = new float(); // ï¿½ï¿½ï¿½ï¿½ Setï¿½ï¿½ ï¿½Üºï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¼Ò¸ï¿½ ï¿½Ö´Â´ï¿½. ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ newï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½.
+		pSliderX->obj = new float(); // º¸Åë SetÇÒ ¿ÜºÎ º¯¼öÀÇ ÁÖ¼Ò¸¦ ³Ö´Â´Ù. ´Ù¸¸ Áö±İÀº new·Î »õ·Î ¸¸µç´Ù.
 		ZeroMemory(pSliderX->addtionalParams, sizeof(float) * 16);
 		sample_page->uiArr.push_back(SliderX);
 
-		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½
 		rateloc = vec4(0.05, 0.6, 0.1, 0.9);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* SliderY = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
@@ -4654,11 +4599,10 @@ void Game::UI_Init()
 		pSliderY->max = 100.0f;
 		pSliderY->setter = 0;
 		pSliderY->mod = 'n';
-		pSliderY->obj = new float(); // ï¿½ï¿½ï¿½ï¿½ Setï¿½ï¿½ ï¿½Üºï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¼Ò¸ï¿½ ï¿½Ö´Â´ï¿½. ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ newï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½.
+		pSliderY->obj = new float(); // º¸Åë SetÇÒ ¿ÜºÎ º¯¼öÀÇ ÁÖ¼Ò¸¦ ³Ö´Â´Ù. ´Ù¸¸ Áö±İÀº new·Î »õ·Î ¸¸µç´Ù.
 		ZeroMemory(pSliderY->addtionalParams, sizeof(float) * 16);
 		sample_page->uiArr.push_back(SliderY);
 
-		// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã¢
 		rateloc = vec4(0.5, 0.1, 0.9, 0.5);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* SampleWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
@@ -4672,41 +4616,36 @@ void Game::UI_Init()
 		sample_page->uiArr.push_back(SampleWindow);
 	}
 
-	//ï¿½ï¿½ï¿½ï¿½ UI Init Code
 	{
 
 		/*
-		0 :ï¿½Îºï¿½ï¿½ä¸® (ï¿½ï¿½)
-		1: ï¿½ï¿½ï¿½Ã¢ (ï¿½ï¿½)
-		2. ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½)
-		3. ï¿½ï¿½ï¿½ï¿½Æ®Ã¢(ï¿½ï¿½)
-		4. Å°ï¿½ï¿½ï¿½Î´ï¿½(ï¿½ï¿½)
-		5. ï¿½Ò¼ï¿½ Ã¢(ï¿½ï¿½)
-		6. ï¿½ï¿½Æ¼Ã¢(ï¿½ï¿½)
+		0 :?¥ê??? (??)
+		1: ???a (??)
+		2. ???? (??)
+		3. ?????a(??)
+		4. ????¥ä?(??)
+		5. ??? a(??)
+		6. ???a(??)
 		*/
-		//1. ï¿½ï¿½ï¿½ï¿½ï¿½ì¸¦ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Æ° 6ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
-		// ï¿½Îºï¿½ï¿½ä¸®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½Æ°. 6:(134x54)
 		vec4 rateloc = vec4(0.01f, 0.01f, 0.01f, 0.01f);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		rateloc.z += 134;
 		rateloc.y -= 54;
 		DXUI* InventoryWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_openInven = (DXBtnParam*)InventoryWindowOpenBtn->pParamterData;
-		pbtn_openInven->Set(0, 1, 6, L"ï¿½Îºï¿½ï¿½ä¸®");
+		pbtn_openInven->Set(0, 1, 6, L"?¥ê???");
 		InventoryWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
 		sample_page->uiArr.push_back(InventoryWindowOpenBtn);
 
-		// ï¿½ï¿½ï¿½Ã¢ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½Æ°. 6:(134x54)
 		rateloc.x += 140;
 		rateloc.z += 140;
 		DXUI* EquipWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_openequip = (DXBtnParam*)EquipWindowOpenBtn->pParamterData;
-		pbtn_openequip->Set(0, 1, 6, L"ï¿½ï¿½ï¿½Ã¢");
+		pbtn_openequip->Set(0, 1, 6, L"???a");
 		EquipWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
 		sample_page->uiArr.push_back(EquipWindowOpenBtn);
 
-		//ï¿½Îºï¿½ï¿½ä¸® ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 2:(605x710)
 		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		rateloc.z += 605;
@@ -4715,16 +4654,14 @@ void Game::UI_Init()
 		InventoryWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
 		DXWindowParam* pInventoryWindow = (DXWindowParam*)InventoryWindow->pParamterData;
 		pInventoryWindow->Set(InventoryWindow, 2);
-		pInventoryWindow->addtionalParams_int[0] = 0; // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ãµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Å¸ï¿½ï¿½. (0 : ï¿½ï¿½ï¿½ / 1 : ï¿½Òºï¿½ / 2 : ï¿½ï¿½Å¸ / 3 : Æ¯ï¿½ï¿½)
-		pInventoryWindow->addtionalParams[1] = 0; // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½
-		pInventoryWindow->addtionalPtr[1] = new vec4(); // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+		pInventoryWindow->addtionalParams_int[0] = 0; // ÇöÀç ¼±ÅÃµÈ ¾ÆÀÌÅÛÀÇ Å¸ÀÔ. (0 : Àåºñ / 1 : ¼Òºñ / 2 : ±âÅ¸ / 3 : Æ¯¼ö)
+		pInventoryWindow->addtionalParams[1] = 0; // ÇöÀç º¸¿©ÁÖ´Â ¹üÀ§ ¼±ÅÃ ½½¶óÀÌ´õÀÇ °ª
+		pInventoryWindow->addtionalPtr[1] = new vec4(); // ¾ÆÀÌÅÛ ½½·ÔÀÌ º¸ÀÏ ¼ö ÀÖ´Â ¿µ¿ªÀ» ÀúÀå.
 		pInventoryWindow->LastFocusedTime = chrono::system_clock::now();
 		UIInitInventoryWindow(InventoryWindow);
 		sample_page->uiArr.push_back(InventoryWindow);
-		// ï¿½ï¿½Æ°ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½x ï¿½ï¿½ï¿½ï¿½ï¿½ì°¡ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		pbtn_openInven->addtionalPtr[0] = InventoryWindow;
 
-		//ï¿½ï¿½ï¿½Ã¢ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 9:(567 429)
 		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		rateloc.z += 567;
@@ -4736,7 +4673,6 @@ void Game::UI_Init()
 		pEquipWindow->LastFocusedTime = chrono::system_clock::now();
 		UIInitEquipWindow(EquipWindow);
 		sample_page->uiArr.push_back(EquipWindow);
-		// ï¿½ï¿½Æ°ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½x ï¿½ï¿½ï¿½ï¿½ï¿½ì°¡ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		pbtn_openequip->addtionalPtr[0] = EquipWindow;
 	}
 }
@@ -4761,7 +4697,6 @@ void DXPage::AlignUIDepth() {
 		});
 
 	depthlevel_Count = temp_WindowArr.size() + 1;
-	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Äµï¿½.
 	for (int i = 0; i < temp_WindowArr.size(); ++i) {
 		DXWindowParam* w = (DXWindowParam*)temp_WindowArr[i]->pParamterData;
 		temp_WindowArr[i]->depth = GetDepth(i + 1);
@@ -4804,7 +4739,6 @@ DXUI* DXPage::GetSlotUIFromPos(vec4 pos) {
 		if (ui != nullptr) return ui;
 	}
 
-	//ï¿½Ø´ï¿½ Pageï¿½ï¿½ ï¿½Ö´ï¿½ UI Å½ï¿½ï¿½
 	for (int i = 0; i < uiArr.size(); ++i) {
 		if (game.RectContainPos(uiArr[i]->location, pos)) {
 			return uiArr[i];
