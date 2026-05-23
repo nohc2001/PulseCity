@@ -608,6 +608,20 @@ struct ParticlePool
 	UINT Count;
 };
 
+struct ParticleEmitterCB
+{
+	XMFLOAT3 Position;
+	float Radius;
+
+	XMFLOAT3 Direction;
+	float Power;
+
+	float Duration;
+	float Age;
+	UINT OwnerId;
+	UINT Flags;
+};
+
 #pragma region RootParamSetTypes
 union GRegID {
 	unsigned int id;
@@ -3489,7 +3503,7 @@ public:
 	ID3D12PipelineState* PSO = nullptr;
 
 	void Init(const wchar_t* hlslFile, const char* entry);
-	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt);
+	void Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt, const ParticleEmitterCB& emitter);
 };
 
 class ComputeTestShader : public Shader {

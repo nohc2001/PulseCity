@@ -1,4 +1,4 @@
-﻿int dbgc[128] = {};
+int dbgc[128] = {};
 
 #include "stdafx.h"
 #include "main.h"
@@ -303,12 +303,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			case 'Q':
 			{
 				if ((game.pKeyBuffer['Q'] & 0xF0) == false) {
-					CTS_KeyInput_Header header;
-					header.size = sizeof(CTS_KeyInput_Header);
-					header.st = CTS_Protocol::KeyInput;
-					header.Key = 'Q';
-					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					CTS_UseSkill_Header header;
+					header.size = sizeof(CTS_UseSkill_Header);
+					header.st = CTS_Protocol::UseSkill;
+					header.slot = SkillSlot::Ultimate;
+					client.send((char*)&header, sizeof(CTS_UseSkill_Header), 0);
 				}
 			}
 			break;
@@ -327,7 +326,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 			case 'E':
 			{
-				game.isInventoryOpen = !game.isInventoryOpen;
+				if ((game.pKeyBuffer['E'] & 0xF0) == false) {
+					CTS_UseSkill_Header header;
+					header.size = sizeof(CTS_UseSkill_Header);
+					header.st = CTS_Protocol::UseSkill;
+					header.slot = SkillSlot::Skill1;
+					client.send((char*)&header, sizeof(CTS_UseSkill_Header), 0);
+				}
+			}
+			break;
+			case 'Z':
+			{
+				if ((game.pKeyBuffer['Z'] & 0xF0) == false) {
+					CTS_UseSkill_Header header;
+					header.size = sizeof(CTS_UseSkill_Header);
+					header.st = CTS_Protocol::UseSkill;
+					header.slot = SkillSlot::Skill2;
+					client.send((char*)&header, sizeof(CTS_UseSkill_Header), 0);
+				}
 			}
 			break;
 			case '1':
@@ -335,24 +351,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			case '3':
 			case '4':
 			case '5':
+			case '6':
+			case '7':
 			{
 				if (!(lParam & (1 << 30))) {
-					if (game.player) {
-						switch (wParam) {
-						case '1': game.player->m_currentWeaponType = (int)WeaponType::MachineGun; break;
-						case '2': game.player->m_currentWeaponType = (int)WeaponType::Sniper; break;
-						case '3': game.player->m_currentWeaponType = (int)WeaponType::Shotgun; break;
-						case '4': game.player->m_currentWeaponType = (int)WeaponType::Rifle; break;
-						case '5': game.player->m_currentWeaponType = (int)WeaponType::Pistol; break;
-						}
+					int jobIndex = (int)(wParam - '1');
+					if (jobIndex >= 0 && jobIndex < (int)PlayerJob::Max) {
+						CTS_ChangeJob_Header header;
+						header.size = sizeof(CTS_ChangeJob_Header);
+						header.st = CTS_Protocol::ChangeJob;
+						header.job = (PlayerJob)jobIndex;
+						client.send((char*)&header, sizeof(CTS_ChangeJob_Header), 0);
 					}
-
-					CTS_KeyInput_Header header;
-					header.size = sizeof(CTS_KeyInput_Header);
-					header.st = CTS_Protocol::KeyInput;
-					header.Key = (char)wParam;
-					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -435,15 +445,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 			case 'Q':
-			{
-				CTS_KeyInput_Header header;
-				header.size = sizeof(CTS_KeyInput_Header);
-				header.st = CTS_Protocol::KeyInput;
-				header.Key = 'Q';
-				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-			}
-			break;
+				break;
 			case VK_SPACE:
 			{
 				CTS_KeyInput_Header header;
@@ -602,9 +604,9 @@ void PrintOffset() {
 	//	dbglog1(L"class Player.HeatGauge%d\n", n);
 	//	n = (char*)&temp - (char*)&temp.MaxHeatGauge;
 	//	dbglog1(L"class Player.MaxHeatGauge%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HealSkillCooldown;
+	//	n = (char*)&temp - (char*)&temp.SkillCooldown;
 	//	dbglog1(L"class Player.Heal%d\n", n);
-	//	n = (char*)&temp - (char*)&temp.HealSkillCooldownFlow;
+	//	n = (char*)&temp - (char*)&temp.SkillCooldownFlow;
 	//	dbglog1(L"class Player.Healflow%d\n", n);
 	//}
 	//dbglog1(L"-----------------------------------%d\n\n", rand());

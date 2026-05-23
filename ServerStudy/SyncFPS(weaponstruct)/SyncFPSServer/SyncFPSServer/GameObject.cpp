@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "GameObject.h"
 #include <set>
 using namespace std;
@@ -2111,18 +2111,18 @@ Player::Player() {
 	worldMat.Id();
 	shapeindex = -1;
 
-	m_currentWeaponType = (int)WeaponType::Sniper;
-	weapon = Weapon(WeaponType::Sniper);
+	ApplyJob(PlayerJob::Healer);
 
 	HP = 100;
 	MaxHP = 100;
-	bullets = 30;
+	bullets = weapon.m_info.maxBullets;
 	KillCount = 0;
 	DeathCount = 0;
 	HeatGauge = 0;
 	MaxHeatGauge = 200;
-	HealSkillCooldown = 10.0f;
-	HealSkillCooldownFlow = 0.0f;
+	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
+		SkillCooldownFlow[i] = 0.0f;
+	}
 	ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
 
 	JumpVelocity = 5;
@@ -2136,6 +2136,149 @@ Player::Player() {
 	m_pitch = 0;
 }
 
+void Player::ApplyJob(PlayerJob job)
+{
+	const JobData& jobData = GetJobData(job);
+	m_currentJob = (int)jobData.job;
+	m_currentWeaponType = (int)jobData.defaultWeapon;
+	weapon = Weapon(jobData.defaultWeapon);
+	bullets = weapon.m_info.maxBullets;
+	MaxHP -= m_tempMaxHpBonus;
+	if (MaxHP <= 0.0f) MaxHP = 100.0f;
+	if (HP > MaxHP) HP = MaxHP;
+	m_tempMaxHpBonus = 0.0f;
+	m_tempMaxHpTimer = 0.0f;
+	m_iceBlockTimer = 0.0f;
+	m_frostPassiveUsed = false;
+
+	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
+		SkillCooldown[i] = jobData.skills[i].cooldown;
+		SkillCooldownFlow[i] = 0.0f;
+	}
+}
+
+void Player::SyncJobState(Zone* zones)
+{
+	if (zones == nullptr) return;
+
+	zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_currentJob);
+	zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_currentWeaponType);
+	zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
+	zones->Sending_ChangeGameObjectMember<Weapon>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &weapon);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxHP);
+	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldown)>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldown);
+	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldownFlow);
+}
+
+void Player::UpdateSkillCooldowns(float deltaTime, Zone* zones)
+{
+	bool changed = false;
+	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
+		if (SkillCooldownFlow[i] > 0.0f) {
+			SkillCooldownFlow[i] -= deltaTime;
+			if (SkillCooldownFlow[i] < 0.0f) SkillCooldownFlow[i] = 0.0f;
+			changed = true;
+		}
+	}
+
+	if (changed) {
+		zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldownFlow);
+	}
+}
+
+void Player::UpdateJobTimers(float deltaTime, Zone* zones)
+{
+	if (m_tempMaxHpTimer > 0.0f) {
+		m_tempMaxHpTimer -= deltaTime;
+		if (m_tempMaxHpTimer <= 0.0f && m_tempMaxHpBonus > 0.0f) {
+			MaxHP -= m_tempMaxHpBonus;
+			if (HP > MaxHP) HP = MaxHP;
+			m_tempMaxHpBonus = 0.0f;
+			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxHP);
+			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+		}
+	}
+
+	if (m_iceBlockTimer > 0.0f) {
+		m_iceBlockTimer -= deltaTime;
+		if (m_iceBlockTimer < 0.0f) m_iceBlockTimer = 0.0f;
+	}
+}
+
+bool Player::TryUseSkill(SkillSlot slot)
+{
+	int slotIndex = (int)slot;
+	if (slotIndex < 0 || slotIndex >= (int)SkillSlot::Max) return false;
+	if (SkillCooldownFlow[slotIndex] > 0.0f) return false;
+
+	Zone* zones = gameworld.GetClientZone(clientIndex);
+	const JobData& jobData = GetJobData((PlayerJob)m_currentJob);
+	const SkillData& skill = jobData.skills[slotIndex];
+
+	if (skill.heatCost > 0.0f && HeatGauge < skill.heatCost) return false;
+
+	bool applied = true;
+	if (skill.effectType == SkillEffectType::Healer_HealAura) {
+		if (HP >= MaxHP && HeatGauge <= 0.0f) return false;
+
+		float healAmount = skill.power;
+		if (healAmount <= 0.0f || healAmount > HeatGauge) healAmount = HeatGauge;
+		if (healAmount <= 0.0f) return false;
+
+		HP += healAmount;
+		if (HP > MaxHP) HP = MaxHP;
+		HeatGauge -= healAmount;
+		if (HeatGauge < 0.0f) HeatGauge = 0.0f;
+
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+	}
+	else {
+		if (skill.heatCost > 0.0f) {
+			HeatGauge -= skill.heatCost;
+			if (HeatGauge < 0.0f) HeatGauge = 0.0f;
+			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+		}
+	}
+
+	if (skill.effectType == SkillEffectType::Frost_IceBlock) {
+		HP += skill.power;
+		if (HP > MaxHP) HP = MaxHP;
+		m_iceBlockTimer = skill.duration;
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+	}
+	else if (skill.effectType == SkillEffectType::Juggernaut_UltimateFire || skill.effectType == SkillEffectType::Aegis_ShieldAura) {
+		float bonus = skill.power;
+		if (bonus > m_tempMaxHpBonus) {
+			MaxHP += bonus - m_tempMaxHpBonus;
+			HP += bonus - m_tempMaxHpBonus;
+			m_tempMaxHpBonus = bonus;
+		}
+		m_tempMaxHpTimer = skill.duration;
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxHP);
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+	}
+
+	if (applied == false) return false;
+
+	SkillCooldownFlow[slotIndex] = skill.cooldown;
+	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldownFlow);
+
+	XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(m_pitch, m_yaw, 0);
+	vec4 direction = { 0, 0, 1, 0 };
+	direction = XMVector3Rotate(direction, quaternion);
+	zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob, slot, skill.effectType, worldMat.pos, direction, skill.radius, skill.power, skill.duration);
+	return true;
+}
 void Player::Update(float deltaTime)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
@@ -2177,35 +2320,8 @@ void Player::Update(float deltaTime)
 		tickLVelocity += speed * worldMat.right * deltaTime;
 	}
 
-	if (HealSkillCooldownFlow >= 0.0f) {
-		HealSkillCooldownFlow -= deltaTime;
-		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HealSkillCooldownFlow);
-	}
-
-	if (InputBuffer[InputID::KeyboardQ] == true) {
-		std::cout << "[Player::Update] Q pressed!  HP=" << HP
-			<< " Heat=" << HeatGauge
-			<< " CD=" << HealSkillCooldownFlow << std::endl;
-
-		if (HealSkillCooldownFlow <= 0.0f && HeatGauge > 0.0f && HP < MaxHP) {
-
-			// ȸ���� HeatGauge ���θ� HP�� ��ȯ
-			float healAmount = HeatGauge;
-			HP += healAmount;
-
-			if (HP > MaxHP) HP = MaxHP;
-
-			// ������ �Ҹ�
-			HeatGauge = 0.0f;
-
-			// ��Ÿ�� ����
-			HealSkillCooldownFlow = HealSkillCooldown;
-
-			// HP, HeatGauge ����->Ŭ�� ���� ����ȭ
-			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
-			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
-		}
-	}
+	UpdateSkillCooldowns(deltaTime, zones);
+	UpdateJobTimers(deltaTime, zones);
 
 	//if (InputBuffer[InputID::MouseLbutton] == true) {
 	//	if (ShootFlow >= ShootDelay) {
@@ -2243,11 +2359,18 @@ void Player::Update(float deltaTime)
 
 	XMVECTOR vUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
+	if (InputBuffer[InputID::KeyboardQ] == true) {
+		TryUseSkill(SkillSlot::Ultimate);
+		InputBuffer[InputID::KeyboardQ] = false;
+	}
+
 	if (InputBuffer[InputID::MouseLbutton] == true) {
-		if (weapon.m_shootFlow >= weapon.m_info.shootDelay && bullets > 0 && HeatGauge <= MaxHeatGauge) {
+		bool isOverheated = ((PlayerJob)m_currentJob == PlayerJob::Juggernaut && HeatGauge >= MaxHeatGauge);
+		if (weapon.m_shootFlow >= weapon.m_info.shootDelay && bullets > 0 && HeatGauge < MaxHeatGauge && isOverheated == false) {
 
 			bullets -= 1;
 			HeatGauge += 2;
+			if (HeatGauge > MaxHeatGauge) HeatGauge = MaxHeatGauge;
 
 			weapon.OnFire();
 
@@ -2381,7 +2504,25 @@ BoundingOrientedBox Player::GetOBB()
 void Player::TakeDamage(float damage)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (m_iceBlockTimer > 0.0f) {
+		damage *= 0.1f;
+	}
+	else if ((PlayerJob)m_currentJob == PlayerJob::Aegis) {
+		damage *= 0.9f;
+	}
+	else if ((PlayerJob)m_currentJob == PlayerJob::Juggernaut) {
+		float heatRate = MaxHeatGauge > 0.0f ? HeatGauge / MaxHeatGauge : 0.0f;
+		if (heatRate < 0.0f) heatRate = 0.0f;
+		if (heatRate > 1.0f) heatRate = 1.0f;
+		damage *= 1.0f - (0.35f * heatRate);
+	}
 	HP -= damage;
+
+	if ((PlayerJob)m_currentJob == PlayerJob::Frost && m_frostPassiveUsed == false && HP > 0.0f && HP <= MaxHP * 0.3f) {
+		HP += MaxHP * 0.2f;
+		if (HP > MaxHP) HP = MaxHP;
+		m_frostPassiveUsed = true;
+	}
 
 	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
 
@@ -2442,8 +2583,9 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	static_data.DeathCount = DeathCount;
 	static_data.HeatGauge = HeatGauge;
 	static_data.MaxHeatGauge = MaxHeatGauge;
-	static_data.HealSkillCooldown = HealSkillCooldown;
-	static_data.HealSkillCooldownFlow = HealSkillCooldownFlow;
+	static_data.m_currentJob = m_currentJob;
+	memcpy(static_data.SkillCooldown, SkillCooldown, sizeof(SkillCooldown));
+	memcpy(static_data.SkillCooldownFlow, SkillCooldownFlow, sizeof(SkillCooldownFlow));
 	static_data.m_currentWeaponType = m_currentWeaponType;
 	/*memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);*/
 	static_data.weapon = weapon;
@@ -2476,7 +2618,13 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 
 void Player::Respawn() {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
-	HP = 100;
+	MaxHP -= m_tempMaxHpBonus;
+	if (MaxHP <= 0.0f) MaxHP = 100.0f;
+	m_tempMaxHpBonus = 0.0f;
+	m_tempMaxHpTimer = 0.0f;
+	m_iceBlockTimer = 0.0f;
+	m_frostPassiveUsed = false;
+	HP = MaxHP;
 	tag[GameObjectTag::Tag_Enable] = true;
 
 	matrix mat;
@@ -3490,8 +3638,9 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->DeathCount = data.DeathCount;
 	p->HeatGauge = data.HeatGauge;
 	p->MaxHeatGauge = data.MaxHeatGauge;
-	p->HealSkillCooldown = data.HealSkillCooldown;
-	p->HealSkillCooldownFlow = data.HealSkillCooldownFlow;
+	p->m_currentJob = data.m_currentJob;
+	memcpy(p->SkillCooldown, data.SkillCooldown, sizeof(p->SkillCooldown));
+	memcpy(p->SkillCooldownFlow, data.SkillCooldownFlow, sizeof(p->SkillCooldownFlow));
 	p->m_currentWeaponType = data.m_currentWeaponType;
 	p->weapon = Weapon((WeaponType)data.m_currentWeaponType);
 	p->m_yaw = data.yaw;
@@ -3644,8 +3793,9 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		data.DeathCount = player->DeathCount;
 		data.HeatGauge = player->HeatGauge;
 		data.MaxHeatGauge = player->MaxHeatGauge;
-		data.HealSkillCooldown = player->HealSkillCooldown;
-		data.HealSkillCooldownFlow = player->HealSkillCooldownFlow;
+		data.m_currentJob = player->m_currentJob;
+		memcpy(data.SkillCooldown, player->SkillCooldown, sizeof(data.SkillCooldown));
+		memcpy(data.SkillCooldownFlow, player->SkillCooldownFlow, sizeof(data.SkillCooldownFlow));
 		data.m_currentWeaponType = player->m_currentWeaponType;
 		for (int i = 0; i < 36; ++i) {
 			data.Inventory[i] = player->Inventory[i];

@@ -33,6 +33,20 @@ cbuffer TimeCB : register(b0)
     float dt;
 };
 
+cbuffer EmitterCB : register(b1)
+{
+    float3 EmitterPosition;
+    float EmitterRadius;
+
+    float3 EmitterDirection;
+    float EmitterPower;
+
+    float EmitterDuration;
+    float EmitterAge;
+    uint EmitterOwnerId;
+    uint EmitterFlags;
+};
+
 cbuffer CameraCB : register(b0)
 {
     float4x4 ViewProj;
@@ -44,7 +58,15 @@ cbuffer CameraCB : register(b0)
 static const uint PARTICLE_FLAG_COLLIDE_GROUND = 1u;
 static const uint PARTICLE_FLAG_ADDITIVE = 2u;
 static const uint PARTICLE_FLAG_LOOPING = 4u;
+static const uint EMITTER_FLAG_RESET = 1u;
 
+void applyEmitterReset(inout Particle p)
+{
+    if ((EmitterFlags & EMITTER_FLAG_RESET) != 0u)
+    {
+        p.Age = p.LifeTime;
+    }
+}
 float rand(float x)
 {
     return frac(sin(x) * 43758.5453);
@@ -160,10 +182,11 @@ void FireCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
     Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
 
     if (p.Age >= p.LifeTime)
     {
-        float3 base = float3(-3.0f, 4.0f, 0.0f);
+        float3 base = EmitterPosition;
         float angle = randFromSeed(p.RandomSeed, 1.0f) * 6.2831853f;
         float radius = randFromSeed(p.RandomSeed, 2.0f);
         float2 dir = float2(cos(angle), sin(angle));
@@ -207,12 +230,13 @@ void FirePillarCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
     Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
 
     if (p.Age >= p.LifeTime)
     {
-        float3 base = float3(-3.0f, 0.5f, 0.0f);
+        float3 base = EmitterPosition;
         float angle = randFromSeed(p.RandomSeed, 101.0f) * 6.2831853f;
-        float radius = sqrt(randFromSeed(p.RandomSeed, 102.0f)) * 0.75f;
+        float radius = sqrt(randFromSeed(p.RandomSeed, 102.0f)) * max(EmitterRadius, 0.001f);
         float2 offset = float2(cos(angle), sin(angle)) * radius;
 
         p.Position = base + float3(offset.x, 0.0f, offset.y);
@@ -234,7 +258,7 @@ void FirePillarCS(uint3 id : SV_DispatchThreadID)
             36u);
     }
 
-    float2 toCenter = float2(-3.0f - p.Position.x, -p.Position.z);
+    float2 toCenter = float2(EmitterPosition.x - p.Position.x, EmitterPosition.z - p.Position.z);
     p.Velocity.x += toCenter.x * 0.85f * dt;
     p.Velocity.z += toCenter.y * 0.85f * dt;
     p.Position += p.Velocity * dt;
@@ -252,7 +276,8 @@ void FireRingCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
     Particle p = ParticlesRW[i];
-    float3 centerPos = float3(-3.0f, 1.8f, 0.0f);
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
 
     if (p.Age >= p.LifeTime)
     {
@@ -260,7 +285,7 @@ void FireRingCS(uint3 id : SV_DispatchThreadID)
         float2 dir = float2(cos(angle), sin(angle));
         float2 tangent = float2(dir.y, -dir.x);
 
-        float startRadius = 0.5f + randFromSeed(p.RandomSeed, 202.0f) * 0.5f;
+        float startRadius = EmitterRadius * (0.5f + randFromSeed(p.RandomSeed, 202.0f) * 0.5f);
         p.Position = centerPos + float3(dir.x * startRadius, 0.0f, dir.y * startRadius);
 
         float expandSpeed = 6.0f + randFromSeed(p.RandomSeed, 203.0f) * 2.0f;
@@ -303,12 +328,13 @@ void ElectricArcCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
     Particle p = ParticlesRW[i];
-    float3 centerPos = float3(-1.6f, 1.85f, 0.0f);
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
 
     if (p.Age >= p.LifeTime)
     {
         float orbit = randFromSeed(p.RandomSeed, 301.0f) * 6.2831853f;
-        float radius = 0.18f + randFromSeed(p.RandomSeed, 302.0f) * 0.42f;
+        float radius = EmitterRadius * (0.18f + randFromSeed(p.RandomSeed, 302.0f) * 0.42f);
         float height = randFromSeed(p.RandomSeed, 303.0f) * 1.9f;
         float2 ring = float2(cos(orbit), sin(orbit)) * radius;
 
@@ -344,12 +370,13 @@ void ElectricBurstCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
     Particle p = ParticlesRW[i];
-    float3 centerPos = float3(-0.7f, 1.4f, 0.0f);
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
 
     if (p.Age >= p.LifeTime)
     {
         float angle = randFromSeed(p.RandomSeed, 401.0f) * 6.2831853f;
-        float radius = 0.08f + randFromSeed(p.RandomSeed, 402.0f) * 0.16f;
+        float radius = EmitterRadius * (0.08f + randFromSeed(p.RandomSeed, 402.0f) * 0.16f);
         float2 dir = float2(cos(angle), sin(angle));
 
         p.Position = centerPos + float3(dir.x * radius, randFromSeed(p.RandomSeed, 403.0f) * 0.28f, dir.y * radius);
@@ -385,7 +412,8 @@ void EmberShowerCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
     Particle p = ParticlesRW[i];
-    float3 centerPos = float3(-3.0f, 5.6f, 0.0f);
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
 
     if (p.Age >= p.LifeTime)
     {

@@ -11,11 +11,427 @@ extern GlobalDevice gd;
 extern Game game;
 
 namespace {
-	constexpr float kBoxLODEnterDistance = 65.0f;
-	constexpr float kBoxLODLeaveDistance = 52.0f;
+	constexpr bool kEnableMeshLODRender = true;
+	constexpr float kMeshLODEnterScreenRadius = 190.0f;
+	constexpr float kMeshLODLeaveScreenRadius = 260.0f;
+	constexpr float kMeshLOD2EnterScreenRadius = 55.0f;
+	constexpr float kMeshLOD2LeaveScreenRadius = 85.0f;
+	constexpr float kBoxLODEnterScreenRadius = 55.0f;
+	constexpr float kBoxLODLeaveScreenRadius = 85.0f;
+	constexpr size_t kMeshLODMinTriangleCount = 180;
+	constexpr float kMeshLODMaxRenderedTriangleRatio = 0.80f;
+	constexpr size_t kMeshLODMediumTriangleCount = 1800;
+	constexpr size_t kMeshLODSmallCullTriangleCount = 180;
+	constexpr float kBoxLODVisualShrink = 1.0f;
+	constexpr float kBoxLODThinProxyMinExtent = 0.14f;
+	constexpr float kBoxLODThinProxyLongExtent = 1.4f;
+	constexpr float kBoxLODMeshProxyMaxExtent = 6.0f;
+	constexpr float kBoxLODPartMaxExtent = 2.2f;
+	constexpr size_t kBoxLODMeshProxyMaxTriangleCount = 4500;
+	constexpr unsigned int kBoxLODProxyInitialInstanceCapacity = 4096;
 	bool gEnableBoxLOD = true;
+	std::unordered_map<const void*, bool> gMeshLODState;
 	std::unordered_map<const void*, bool> gBoxLODState;
+	BumpMesh* gBoxLODProxyMesh = nullptr;
+	int gBoxLODProxyMaterialIndex = -1;
 
+	int GetBoxLODProxyMaterialIndex()
+	{
+		if (gBoxLODProxyMaterialIndex < 0) {
+			Material* mat = new Material();
+			mat->clr.base = vec4(0.48f, 0.48f, 0.46f, 1.0f);
+			mat->clr.specular = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+			mat->clr.reflective = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+			mat->roughnessFactor = 1.0f;
+			mat->metallicFactor = 0.0f;
+			mat->specularFactor = 0.0f;
+			mat->SetDescTable();
+			gBoxLODProxyMaterialIndex = static_cast<int>(game.MaterialTable.size());
+			game.MaterialTable.push_back(mat);
+			game.RenderMaterialTable.push_back(mat);
+		}
+		return gBoxLODProxyMaterialIndex;
+	}
+
+	BumpMesh* GetBoxLODProxyMesh()
+	{
+		if (gBoxLODProxyMesh == nullptr) {
+			gBoxLODProxyMesh = new BumpMesh();
+			gBoxLODProxyMesh->IsAutoLODGenerated = true;
+			gBoxLODProxyMesh->CreateWallMesh(1.0f, 1.0f, 1.0f, vec4(1, 1, 1, 1));
+			gBoxLODProxyMesh->subMeshNum = 1;
+			gBoxLODProxyMesh->SubMeshIndexStart = new int[2];
+			gBoxLODProxyMesh->SubMeshIndexStart[0] = 0;
+			gBoxLODProxyMesh->SubMeshIndexStart[1] = 36;
+			gBoxLODProxyMesh->InstanceData = new Mesh::InstancingStruct[1];
+			gBoxLODProxyMesh->InstanceData[0].Init(kBoxLODProxyInitialInstanceCapacity, gBoxLODProxyMesh);
+			game.AddMesh(gBoxLODProxyMesh);
+		}
+		return gBoxLODProxyMesh;
+	}
+
+	matrix MakeBoxLODWorldMatrix(const BoundingOrientedBox& obb)
+	{
+		matrix world = XMMatrixScaling(obb.Extents.x * kBoxLODVisualShrink, obb.Extents.y * kBoxLODVisualShrink, obb.Extents.z * kBoxLODVisualShrink);
+		world.trQ(obb.Orientation);
+		world.pos.f3 = obb.Center;
+		world.pos.w = 1;
+		return world;
+	}
+
+	struct BoxLODProxyInstance {
+		BoundingOrientedBox obb;
+		int materialIndex = -1;
+	};
+
+	struct BoxLODMeshInstance {
+		Mesh* drawMesh = nullptr;
+		Mesh* sourceMesh = nullptr;
+		const int* materials = nullptr;
+		matrix world;
+	};
+
+	struct BoxLODHybridProxy {
+		std::vector<BoxLODProxyInstance> boxes;
+		std::vector<BoxLODMeshInstance> meshes;
+	};
+
+	enum class AutoLODPartClass {
+		CullIntoProxy,
+		MeshSimplify,
+		BoxProxy,
+	};
+
+	std::unordered_map<const GameObject*, BoxLODHybridProxy> gBoxLODProxyCache;
+
+	bool IsValidMaterialIndex(int materialIndex)
+	{
+		return materialIndex >= 0 && materialIndex < static_cast<int>(game.MaterialTable.size());
+	}
+
+	bool IsMeshLODRenderWorthUsing(Mesh* mesh)
+	{
+		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return false;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+		return bumpMesh->sourceIndexData.size() >= kMeshLODMinTriangleCount;
+	}
+
+	size_t GetMeshTriangleCount(Mesh* mesh)
+	{
+		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return 0;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+		if (!bumpMesh->sourceIndexData.empty()) return bumpMesh->sourceIndexData.size();
+		if (bumpMesh->SubMeshIndexStart != nullptr && bumpMesh->subMeshNum > 0) {
+			return static_cast<size_t>(bumpMesh->SubMeshIndexStart[bumpMesh->subMeshNum] / 3);
+		}
+		return 0;
+	}
+
+	bool IsFragileLODStructureMesh(Mesh* mesh)
+	{
+		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return false;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+		const float ex = max(bumpMesh->OBB_Ext.x, 1e-4f);
+		const float ey = max(bumpMesh->OBB_Ext.y, 1e-4f);
+		const float ez = max(bumpMesh->OBB_Ext.z, 1e-4f);
+		const float maxExt = max(ex, max(ey, ez));
+		const float minExt = min(ex, min(ey, ez));
+		const float midExt = ex + ey + ez - maxExt - minExt;
+		const float aspect = maxExt / minExt;
+		const size_t triangleCount = GetMeshTriangleCount(mesh);
+		if (triangleCount < 48) return false;
+		if (aspect >= 12.0f) return true;
+		return aspect >= 7.0f && midExt <= maxExt * 0.18f;
+	}
+
+	bool IsFragileLODStructureModel(Model* model)
+	{
+		if (model == nullptr || model->mNumMeshes < 4) return false;
+		const BoundingOrientedBox obb = model->GetOBB();
+		const float ex = max(obb.Extents.x, 1e-4f);
+		const float ey = max(obb.Extents.y, 1e-4f);
+		const float ez = max(obb.Extents.z, 1e-4f);
+		const float maxExt = max(ex, max(ey, ez));
+		const float minExt = min(ex, min(ey, ez));
+		const float modelAspect = maxExt / minExt;
+
+		int fragileMeshCount = 0;
+		size_t fragileTriangles = 0;
+		size_t totalTriangles = 0;
+		for (unsigned int i = 0; i < model->mNumMeshes; ++i) {
+			Mesh* mesh = model->mMeshes[i];
+			const size_t meshTriangles = GetMeshTriangleCount(mesh);
+			totalTriangles += meshTriangles;
+			if (IsFragileLODStructureMesh(mesh)) {
+				++fragileMeshCount;
+				fragileTriangles += meshTriangles;
+			}
+		}
+
+		if (fragileMeshCount >= 3 && modelAspect >= 3.0f) return true;
+		return fragileMeshCount >= 2 && totalTriangles > 0 && fragileTriangles >= totalTriangles / 3;
+	}
+
+	void AccumulateSourceTrianglesForMesh(Mesh* mesh, size_t& sourceTriangles)
+	{
+		sourceTriangles += GetMeshTriangleCount(mesh);
+	}
+
+	void AccumulateSourceTrianglesForModel(Model* model, size_t& sourceTriangles)
+	{
+		if (model == nullptr) return;
+		for (int i = 0; i < model->mNumMeshes; ++i) {
+			AccumulateSourceTrianglesForMesh(model->mMeshes[i], sourceTriangles);
+		}
+	}
+
+	Mesh* GetEffectiveLODMesh(Mesh* sourceMesh, int lodLevel)
+	{
+		if (!IsMeshLODRenderWorthUsing(sourceMesh)) return nullptr;
+		Mesh* lodMesh = AutoLOD_GetLODMesh(sourceMesh, lodLevel);
+		if (lodMesh == nullptr && lodLevel > 0) lodMesh = AutoLOD_GetLODMesh(sourceMesh, 0);
+		if (lodMesh == nullptr) return nullptr;
+		const size_t sourceTriangles = GetMeshTriangleCount(sourceMesh);
+		const size_t lodTriangles = GetMeshTriangleCount(lodMesh);
+		if (sourceTriangles == 0 || lodTriangles == 0) return nullptr;
+		if (float(lodTriangles) > float(sourceTriangles) * kMeshLODMaxRenderedTriangleRatio) return nullptr;
+		return lodMesh;
+	}
+
+	void AccumulateLODStatsForMesh(Mesh* sourceMesh, size_t& sourceTriangles, size_t& renderedTriangles)
+	{
+		Mesh* lodMesh = GetEffectiveLODMesh(sourceMesh, 0);
+		if (lodMesh == nullptr) return;
+		sourceTriangles += GetMeshTriangleCount(sourceMesh);
+		renderedTriangles += GetMeshTriangleCount(lodMesh);
+	}
+
+	void AccumulateLODStatsForModel(Model* model, size_t& sourceTriangles, size_t& renderedTriangles)
+	{
+		if (model == nullptr) return;
+		for (int i = 0; i < model->mNumMeshes; ++i) {
+			AccumulateLODStatsForMesh(model->mMeshes[i], sourceTriangles, renderedTriangles);
+		}
+	}
+
+	void RecordLODFrameMissesForModel(Model* model, int lodLevel)
+	{
+		if (model == nullptr) return;
+		for (int i = 0; i < model->mNumMeshes; ++i) {
+			Mesh* sourceMesh = model->mMeshes[i];
+			if (GetEffectiveLODMesh(sourceMesh, lodLevel) != nullptr) continue;
+			AutoLOD_RecordFrameMiss(sourceMesh, GetMeshTriangleCount(sourceMesh));
+		}
+	}
+
+	void AccumulateLODStatsForProxy(const BoxLODHybridProxy& proxy, size_t& sourceTriangles, size_t& renderedTriangles)
+	{
+		for (const BoxLODMeshInstance& meshInstance : proxy.meshes) {
+			sourceTriangles += GetMeshTriangleCount(meshInstance.sourceMesh);
+			renderedTriangles += GetMeshTriangleCount(meshInstance.drawMesh);
+		}
+		renderedTriangles += proxy.boxes.size() * 12;
+	}
+
+	void AccumulateRenderedTrianglesForProxy(const BoxLODHybridProxy& proxy, size_t& renderedTriangles)
+	{
+		for (const BoxLODMeshInstance& meshInstance : proxy.meshes) {
+			renderedTriangles += GetMeshTriangleCount(meshInstance.drawMesh);
+		}
+		renderedTriangles += proxy.boxes.size() * 12;
+	}
+
+	AutoLODPartClass ClassifyLODPart(BumpMesh* mesh, const BoundingOrientedBox& worldOBB)
+	{
+		if (mesh == nullptr) return AutoLODPartClass::BoxProxy;
+		const float minExtent = min(worldOBB.Extents.x, min(worldOBB.Extents.y, worldOBB.Extents.z));
+		const float maxExtent = max(worldOBB.Extents.x, max(worldOBB.Extents.y, worldOBB.Extents.z));
+		const float midExtent = worldOBB.Extents.x + worldOBB.Extents.y + worldOBB.Extents.z - minExtent - maxExtent;
+		const size_t triangleCount = mesh->sourceIndexData.size();
+		const bool thinDetail = minExtent <= kBoxLODThinProxyMinExtent && maxExtent >= kBoxLODThinProxyLongExtent;
+		const bool boxLikeSolid =
+			minExtent >= maxExtent * 0.10f &&
+			midExtent >= maxExtent * 0.22f;
+		if (thinDetail) return AutoLODPartClass::CullIntoProxy;
+		if (triangleCount < kMeshLODSmallCullTriangleCount && maxExtent <= 1.0f) return AutoLODPartClass::CullIntoProxy;
+		if (boxLikeSolid && maxExtent >= 0.8f && maxExtent <= kBoxLODMeshProxyMaxExtent) return AutoLODPartClass::BoxProxy;
+		if (triangleCount >= kMeshLODMinTriangleCount && GetEffectiveLODMesh(mesh, 0) != nullptr) return AutoLODPartClass::MeshSimplify;
+		return AutoLODPartClass::MeshSimplify;
+	}
+
+	bool ShouldSkipThinBoxProxy(const BoundingOrientedBox& obb)
+	{
+		const float minExtent = min(obb.Extents.x, min(obb.Extents.y, obb.Extents.z));
+		const float maxExtent = max(obb.Extents.x, max(obb.Extents.y, obb.Extents.z));
+		return minExtent <= kBoxLODThinProxyMinExtent && maxExtent >= kBoxLODThinProxyLongExtent;
+	}
+	float GetMaxExtent(const BoundingOrientedBox& obb)
+	{
+		return max(obb.Extents.x, max(obb.Extents.y, obb.Extents.z));
+	}
+
+	bool ShouldUseMeshProxyInsideBoxLOD(BumpMesh* mesh, const BoundingOrientedBox& worldOBB)
+	{
+		if (mesh == nullptr) return false;
+		if (GetEffectiveLODMesh(mesh, 0) == nullptr) return false;
+		return ClassifyLODPart(mesh, worldOBB) == AutoLODPartClass::MeshSimplify;
+	}
+	bool TryBuildSubMeshOBB(BumpMesh* mesh, int subMeshIndex, BoundingOrientedBox& outOBB)
+	{
+		if (mesh == nullptr) return false;
+		if (mesh->sourceVertexData.empty() || mesh->sourceIndexData.empty() || mesh->sourceSubMeshIndexStart.size() < 2) {
+			outOBB = mesh->GetOBB();
+			return outOBB.Extents.x > 0 && outOBB.Extents.y > 0 && outOBB.Extents.z > 0;
+		}
+		if (subMeshIndex < 0 || subMeshIndex + 1 >= static_cast<int>(mesh->sourceSubMeshIndexStart.size())) return false;
+
+		const int startIndex = mesh->sourceSubMeshIndexStart[subMeshIndex];
+		const int endIndex = mesh->sourceSubMeshIndexStart[subMeshIndex + 1];
+		if (endIndex <= startIndex) return false;
+
+		XMFLOAT3 minPos(FLT_MAX, FLT_MAX, FLT_MAX);
+		XMFLOAT3 maxPos(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+		bool hasVertex = false;
+		const int startTri = startIndex / 3;
+		const int endTri = (endIndex + 2) / 3;
+		for (int tri = startTri; tri < endTri && tri < static_cast<int>(mesh->sourceIndexData.size()); ++tri) {
+			const TriangleIndex& index = mesh->sourceIndexData[tri];
+			for (int corner = 0; corner < 3; ++corner) {
+				const unsigned int vertexIndex = index.v[corner];
+				if (vertexIndex >= mesh->sourceVertexData.size()) continue;
+				const XMFLOAT3& p = mesh->sourceVertexData[vertexIndex].position;
+				minPos.x = min(minPos.x, p.x);
+				minPos.y = min(minPos.y, p.y);
+				minPos.z = min(minPos.z, p.z);
+				maxPos.x = max(maxPos.x, p.x);
+				maxPos.y = max(maxPos.y, p.y);
+				maxPos.z = max(maxPos.z, p.z);
+				hasVertex = true;
+			}
+		}
+		if (!hasVertex) return false;
+
+		const XMFLOAT3 center(
+			(minPos.x + maxPos.x) * 0.5f,
+			(minPos.y + maxPos.y) * 0.5f,
+			(minPos.z + maxPos.z) * 0.5f);
+		const XMFLOAT3 extents(
+			(maxPos.x - minPos.x) * 0.5f,
+			(maxPos.y - minPos.y) * 0.5f,
+			(maxPos.z - minPos.z) * 0.5f);
+		outOBB = BoundingOrientedBox(center, extents, XMFLOAT4(0, 0, 0, 1));
+		return extents.x > 0 && extents.y > 0 && extents.z > 0;
+	}
+
+	void PushMeshProxyInstances(BumpMesh* mesh, const matrix& world, const int* materials, std::vector<BoxLODProxyInstance>& outInstances)
+	{
+		if (mesh == nullptr) return;
+		const int fallbackMaterialIndex = GetBoxLODProxyMaterialIndex();
+		const int subMeshCount = max(1, mesh->subMeshNum);
+		for (int subMeshIndex = 0; subMeshIndex < subMeshCount; ++subMeshIndex) {
+			BoundingOrientedBox localOBB;
+			if (!TryBuildSubMeshOBB(mesh, subMeshIndex, localOBB)) continue;
+			BoundingOrientedBox worldOBB;
+			localOBB.Transform(worldOBB, world);
+			if (worldOBB.Extents.x <= 0 || worldOBB.Extents.y <= 0 || worldOBB.Extents.z <= 0) continue;
+			const AutoLODPartClass partClass = ClassifyLODPart(mesh, worldOBB);
+			if (partClass == AutoLODPartClass::CullIntoProxy) continue;
+			if (partClass == AutoLODPartClass::MeshSimplify) continue;
+			if (GetMaxExtent(worldOBB) > kBoxLODPartMaxExtent) continue;
+			if (ShouldSkipThinBoxProxy(worldOBB)) continue;
+
+			int materialIndex = materials != nullptr ? materials[subMeshIndex] : fallbackMaterialIndex;
+			if (!IsValidMaterialIndex(materialIndex)) materialIndex = fallbackMaterialIndex;
+			outInstances.push_back({ worldOBB, materialIndex });
+		}
+	}
+
+	void PushModelProxyInstances(ModelNode* node, Model* model, const matrix& parentMat, GameObject* obj, BoxLODHybridProxy& outProxy)
+	{
+		if (node == nullptr || model == nullptr) return;
+		XMMATRIX sav = XMMatrixMultiply(node->transform, parentMat);
+		if (obj != nullptr) {
+			int nodeindex = ((char*)node - (char*)model->RootNode) / sizeof(ModelNode);
+			sav = XMMatrixMultiply(obj->transforms_innerModel[nodeindex], parentMat);
+		}
+
+		if (node->numMesh != 0 && node->Meshes != nullptr) {
+			for (unsigned int meshSlot = 0; meshSlot < node->numMesh; ++meshSlot) {
+				Mesh* rawMesh = model->mMeshes[node->Meshes[meshSlot]];
+				if (rawMesh == nullptr || rawMesh->type != Mesh::MeshType::_BumpMesh) continue;
+				BumpMesh* bumpMesh = static_cast<BumpMesh*>(rawMesh);
+				BoundingOrientedBox meshOBB;
+				bumpMesh->GetOBB().Transform(meshOBB, sav);
+				if (ShouldUseMeshProxyInsideBoxLOD(bumpMesh, meshOBB)) {
+					outProxy.meshes.push_back({ GetEffectiveLODMesh(bumpMesh, 0), bumpMesh, node->materialIndex, sav });
+					continue;
+				}
+				PushMeshProxyInstances(bumpMesh, sav, node->materialIndex, outProxy.boxes);
+			}
+		}
+
+		for (unsigned int childIndex = 0; childIndex < node->numChildren; ++childIndex) {
+			PushModelProxyInstances(node->Childrens[childIndex], model, sav, obj, outProxy);
+		}
+	}
+
+	BoxLODHybridProxy BuildBoxLODProxyInstances(GameObject* obj, Mesh* mesh, Model* model, const matrix& world, const BoundingOrientedBox& fallbackOBB, const int* materials)
+	{
+		BoxLODHybridProxy proxy;
+		if (mesh != nullptr && mesh->type == Mesh::MeshType::_BumpMesh) {
+			BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+			if (ShouldUseMeshProxyInsideBoxLOD(bumpMesh, fallbackOBB)) {
+				proxy.meshes.push_back({ GetEffectiveLODMesh(bumpMesh, 0), bumpMesh, materials, world });
+			}
+			else {
+				PushMeshProxyInstances(bumpMesh, world, materials, proxy.boxes);
+			}
+		}
+		else if (model != nullptr && model->RootNode != nullptr) {
+			PushModelProxyInstances(model->RootNode, model, world, obj, proxy);
+		}
+
+		return proxy;
+	}
+
+	const BoxLODHybridProxy& GetCachedBoxLODProxyInstances(GameObject* obj, Mesh* mesh, Model* model, const matrix& world, const BoundingOrientedBox& fallbackOBB, const int* materials)
+	{
+		auto it = gBoxLODProxyCache.find(obj);
+		if (it != gBoxLODProxyCache.end()) return it->second;
+		auto inserted = gBoxLODProxyCache.emplace(obj, BuildBoxLODProxyInstances(obj, mesh, model, world, fallbackOBB, materials));
+		return inserted.first->second;
+	}
+
+	void RenderBoxLODMeshInstance(ID3D12GraphicsCommandList* cmd, const BoxLODMeshInstance& meshInstance)
+	{
+		if (meshInstance.drawMesh == nullptr || meshInstance.drawMesh->type != Mesh::MeshType::_BumpMesh || meshInstance.materials == nullptr) return;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(meshInstance.drawMesh);
+		matrix meshWorld = meshInstance.world;
+		meshWorld.transpose();
+		cmd->SetGraphicsRoot32BitConstants(1, 16, &meshWorld, 0);
+		using PBRRPI = PBRShader1::RootParamId;
+		for (int i = 0; i < bumpMesh->subMeshNum; ++i) {
+			const int materialIndex = meshInstance.materials[i];
+			if (!IsValidMaterialIndex(materialIndex)) continue;
+			Material* mat = game.MaterialTable[materialIndex];
+			cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
+			cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
+			bumpMesh->Render(cmd, 1, i);
+		}
+	}
+
+	void PushBoxLODMeshInstance(const BoxLODMeshInstance& meshInstance)
+	{
+		if (meshInstance.drawMesh == nullptr || meshInstance.drawMesh->type != Mesh::MeshType::_BumpMesh || meshInstance.materials == nullptr) return;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(meshInstance.drawMesh);
+		matrix meshWorld = meshInstance.world;
+		meshWorld.transpose();
+		for (int i = 0; i < bumpMesh->subMeshNum; ++i) {
+			const int materialIndex = meshInstance.materials[i];
+			if (!IsValidMaterialIndex(materialIndex)) continue;
+			bumpMesh->InstanceData[i].PushInstance(RenderInstanceData(meshWorld, materialIndex));
+		}
+	}
 	bool IsFloorLikeOBB(const BoundingOrientedBox& obb)
 	{
 		const float width = max(obb.Extents.x, obb.Extents.z);
@@ -23,28 +439,53 @@ namespace {
 		return (width >= 20.0f && thin <= 1.5f);
 	}
 
-	bool ShouldUseBoxLODByKey(const void* key, const BoundingOrientedBox& obb)
+	float ComputeScreenRadius(const BoundingOrientedBox& obb)
 	{
-		if (!gEnableBoxLOD || game.renderViewPort == nullptr) return false;
+		vec4 delta = vec4(obb.Center.x, obb.Center.y, obb.Center.z, 0.0f) - game.renderViewPort->Camera_Pos;
+		delta.w = 0;
+		const float distance = max(delta.getlen3(), 1.0f);
+		const float radius = sqrtf(obb.Extents.x * obb.Extents.x + obb.Extents.y * obb.Extents.y + obb.Extents.z * obb.Extents.z);
+		const float viewportHeight = (game.renderViewPort->Viewport.Height > 1.0f) ? game.renderViewPort->Viewport.Height : 720.0f;
+		return (radius / distance) * viewportHeight;
+	}
+
+	bool ShouldUseScreenSizeLODByKey(const void* key, const BoundingOrientedBox& obb, float enterScreenRadius, float leaveScreenRadius, std::unordered_map<const void*, bool>& states)
+	{
+		if (!AutoLOD_IsModelLODRenderActive() || game.renderViewPort == nullptr) return false;
 		if (obb.Extents.x <= 0 || obb.Extents.y <= 0 || obb.Extents.z <= 0) return false;
 		if (IsFloorLikeOBB(obb)) return false;
 
-		vec4 delta = vec4(obb.Center.x, obb.Center.y, obb.Center.z, 0.0f) - game.renderViewPort->Camera_Pos;
-		delta.w = 0;
-		float distance = delta.getlen3();
+		const float screenRadius = ComputeScreenRadius(obb);
 		bool wasUsingLOD = false;
-		auto it = gBoxLODState.find(key);
-		if (it != gBoxLODState.end()) {
+		auto it = states.find(key);
+		if (it != states.end()) {
 			wasUsingLOD = it->second;
 		}
 
-		bool useLOD = wasUsingLOD ? (distance > kBoxLODLeaveDistance) : (distance >= kBoxLODEnterDistance);
-		gBoxLODState[key] = useLOD;
+		bool useLOD = wasUsingLOD ? (screenRadius <= leaveScreenRadius) : (screenRadius <= enterScreenRadius);
+		states[key] = useLOD;
 
 		return useLOD;
 	}
-}
 
+	bool ShouldUseMeshLODByKey(const void* key, const BoundingOrientedBox& obb)
+	{
+		if (!kEnableMeshLODRender) return false;
+		return ShouldUseScreenSizeLODByKey(key, obb, kMeshLODEnterScreenRadius, kMeshLODLeaveScreenRadius, gMeshLODState);
+	}
+
+	int GetMeshLODLevelForOBB(const BoundingOrientedBox& obb)
+	{
+		if (game.renderViewPort == nullptr) return 0;
+		return 0;
+	}
+
+	bool ShouldUseBoxLODByKey(const void* key, const BoundingOrientedBox& obb)
+	{
+		if (!gEnableBoxLOD) return false;
+		return ShouldUseScreenSizeLODByKey(key, obb, kBoxLODEnterScreenRadius, kBoxLODLeaveScreenRadius, gBoxLODState);
+	}
+}
 bool BoxLOD_ShouldUseForKey(const void* key, const BoundingOrientedBox& obb)
 {
 	return ShouldUseBoxLODByKey(key, obb);
@@ -136,20 +577,85 @@ void GameObject::Render(matrix parent)
 	obb_local.Transform(obb, world);
 	/*b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
 	if (b == false) return;*/
-	const bool allowAutoLOD = (dynamic_cast<StaticGameObject*>(this) != nullptr);
-	const bool useAutoLOD = allowAutoLOD && ShouldUseBoxLODByKey(this, obb);
+	const bool allowAutoLOD = (dynamic_cast<StaticGameObject*>(this) != nullptr) && !IsFragileLODStructureModel(model);
+	const bool useMeshLOD = allowAutoLOD && ShouldUseMeshLODByKey(this, obb);
+	const int meshLODLevel = useMeshLOD ? GetMeshLODLevelForOBB(obb) : 0;
+	const bool useBoxLOD = allowAutoLOD && ShouldUseBoxLODByKey(this, obb);
 
+	if (useBoxLOD) {
+		BumpMesh* proxyMesh = GetBoxLODProxyMesh();
+		if (proxyMesh != nullptr) {
+			const BoxLODHybridProxy& proxy = GetCachedBoxLODProxyInstances(this, mesh, model, world, obb, material);
+			if (!proxy.boxes.empty() || !proxy.meshes.empty()) {
+				size_t sourceTriangles = 0;
+				size_t renderedTriangles = 0;
+				if (mesh != nullptr) AccumulateSourceTrianglesForMesh(mesh, sourceTriangles);
+				else AccumulateSourceTrianglesForModel(model, sourceTriangles);
+				AccumulateRenderedTrianglesForProxy(proxy, renderedTriangles);
+				AutoLOD_RecordFrameSelection(true, true, sourceTriangles, renderedTriangles);
+				using PBRRPI = PBRShader1::RootParamId;
+				for (const BoxLODProxyInstance& proxyInstance : proxy.boxes) {
+					if (proxyInstance.obb.Extents.x <= 0 || proxyInstance.obb.Extents.y <= 0 || proxyInstance.obb.Extents.z <= 0) continue;
+					if (!IsValidMaterialIndex(proxyInstance.materialIndex)) continue;
+					Material* mat = game.MaterialTable[proxyInstance.materialIndex];
+					gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
+					gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
+					matrix proxyWorld = MakeBoxLODWorldMatrix(proxyInstance.obb);
+					proxyWorld.transpose();
+					gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &proxyWorld, 0);
+					proxyMesh->Render(gd.gpucmd, 1, 0);
+				}
+				return;
+			}
+		}
+	}
+	if (useMeshLOD) {
+		const BoxLODHybridProxy& proxy = GetCachedBoxLODProxyInstances(this, mesh, model, world, obb, material);
+		if (!proxy.meshes.empty()) {
+			size_t sourceTriangles = 0;
+			size_t renderedTriangles = 0;
+			AccumulateLODStatsForProxy(proxy, sourceTriangles, renderedTriangles);
+			AutoLOD_RecordFrameSelection(true, true, sourceTriangles, renderedTriangles);
+			BumpMesh* proxyMesh = GetBoxLODProxyMesh();
+			using PBRRPI = PBRShader1::RootParamId;
+			if (proxyMesh != nullptr) {
+				for (const BoxLODProxyInstance& proxyInstance : proxy.boxes) {
+					if (proxyInstance.obb.Extents.x <= 0 || proxyInstance.obb.Extents.y <= 0 || proxyInstance.obb.Extents.z <= 0) continue;
+					if (!IsValidMaterialIndex(proxyInstance.materialIndex)) continue;
+					Material* mat = game.MaterialTable[proxyInstance.materialIndex];
+					gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
+					gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
+					matrix proxyWorld = MakeBoxLODWorldMatrix(proxyInstance.obb);
+					proxyWorld.transpose();
+					gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &proxyWorld, 0);
+					proxyMesh->Render(gd.gpucmd, 1, 0);
+				}
+			}
+			for (const BoxLODMeshInstance& meshInstance : proxy.meshes) {
+				RenderBoxLODMeshInstance(gd.gpucmd, meshInstance);
+			}
+			return;
+		}
+	}
 	if (mesh != nullptr) {
 		Mesh* drawMesh = mesh;
 		bool resolvedLOD = false;
-		if (useAutoLOD) {
-			if (Mesh* lodMesh = AutoLOD_GetLODMesh(mesh)) {
+		if (useMeshLOD) {
+			if (Mesh* lodMesh = GetEffectiveLODMesh(mesh, meshLODLevel)) {
 				drawMesh = lodMesh;
 				resolvedLOD = true;
 			}
 		}
 		if (allowAutoLOD) {
-			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+			size_t sourceTriangles = GetMeshTriangleCount(mesh);
+			size_t renderedTriangles = 0;
+			if (resolvedLOD) {
+				renderedTriangles = GetMeshTriangleCount(drawMesh);
+			}
+			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, sourceTriangles, renderedTriangles);
+			if (useMeshLOD && !resolvedLOD) {
+				AutoLOD_RecordFrameMiss(mesh, sourceTriangles);
+			}
 		}
 
 		matrix rootWorld = world;
@@ -169,32 +675,39 @@ void GameObject::Render(matrix parent)
 			using PBRRPI = PBRShader1::RootParamId;
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, Mat->CB_Resource.descindex.hRender.hgpu);
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, Mat->TextureSRVTableIndex.hRender.hgpu);
+			drawMesh->Render(gd.gpucmd, 1, i);
 		}
-		drawMesh->Render(gd.gpucmd, 1);
 	}
 	else {
 		bool resolvedLOD = false;
-		if (useAutoLOD) {
+		if (useMeshLOD) {
 			for (unsigned int i = 0; i < model->mNumMeshes; ++i) {
-				if (AutoLOD_GetLODMesh(model->mMeshes[i]) != nullptr) {
+				if (GetEffectiveLODMesh(model->mMeshes[i], meshLODLevel) != nullptr) {
 					resolvedLOD = true;
 					break;
 				}
 			}
 		}
 		if (allowAutoLOD) {
-			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+			size_t sourceTriangles = 0;
+			size_t renderedTriangles = 0;
+			AccumulateSourceTrianglesForModel(model, sourceTriangles);
+			size_t resolvedSourceTriangles = 0;
+			if (resolvedLOD) AccumulateLODStatsForModel(model, resolvedSourceTriangles, renderedTriangles);
+			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, resolvedSourceTriangles, renderedTriangles, sourceTriangles);
+			if (useMeshLOD) {
+				RecordLODFrameMissesForModel(model, meshLODLevel);
+			}
 		}
-		if (resolvedLOD) {
-			AutoLOD_SetModelLODRenderActive(true);
-		}
+		const bool previousLODRenderActive = AutoLOD_IsModelLODRenderActive();
+		const int previousLODRenderLevel = AutoLOD_GetModelLODRenderLevel();
+		AutoLOD_SetModelLODRenderActive(useMeshLOD && resolvedLOD);
+		AutoLOD_SetModelLODRenderLevel(meshLODLevel);
 		model->Render(gd.gpucmd, world, this);
-		if (resolvedLOD) {
-			AutoLOD_SetModelLODRenderActive(false);
-		}
+		AutoLOD_SetModelLODRenderLevel(previousLODRenderLevel);
+		AutoLOD_SetModelLODRenderActive(previousLODRenderActive);
 	}
 }
-
 void GameObject::PushRenderBatch(matrix parent)
 {
 	Mesh* mesh = nullptr;
@@ -212,20 +725,75 @@ void GameObject::PushRenderBatch(matrix parent)
 	obb_local.Transform(obb, world);
 	/*b = (game.renderViewPort->*game.renderViewPort->FrustumIntersectFunc)(obb);
 	if (b == false) return;*/
-	const bool allowAutoLOD = (dynamic_cast<StaticGameObject*>(this) != nullptr);
-	const bool useAutoLOD = allowAutoLOD && ShouldUseBoxLODByKey(this, obb);
+	const bool allowAutoLOD = (dynamic_cast<StaticGameObject*>(this) != nullptr) && !IsFragileLODStructureModel(model);
+	const bool useMeshLOD = allowAutoLOD && ShouldUseMeshLODByKey(this, obb);
+	const int meshLODLevel = useMeshLOD ? GetMeshLODLevelForOBB(obb) : 0;
+	const bool useBoxLOD = allowAutoLOD && ShouldUseBoxLODByKey(this, obb);
 
+	if (useBoxLOD) {
+		BumpMesh* proxyMesh = GetBoxLODProxyMesh();
+		if (proxyMesh != nullptr) {
+			const BoxLODHybridProxy& proxy = GetCachedBoxLODProxyInstances(this, mesh, model, world, obb, material);
+			if (!proxy.boxes.empty() || !proxy.meshes.empty()) {
+				size_t sourceTriangles = 0;
+				size_t renderedTriangles = 0;
+				if (mesh != nullptr) AccumulateSourceTrianglesForMesh(mesh, sourceTriangles);
+				else AccumulateSourceTrianglesForModel(model, sourceTriangles);
+				AccumulateRenderedTrianglesForProxy(proxy, renderedTriangles);
+				AutoLOD_RecordFrameSelection(true, true, sourceTriangles, renderedTriangles);
+				for (const BoxLODProxyInstance& proxyInstance : proxy.boxes) {
+					if (proxyInstance.obb.Extents.x <= 0 || proxyInstance.obb.Extents.y <= 0 || proxyInstance.obb.Extents.z <= 0) continue;
+					if (!IsValidMaterialIndex(proxyInstance.materialIndex)) continue;
+					matrix proxyWorld = MakeBoxLODWorldMatrix(proxyInstance.obb);
+					proxyWorld.transpose();
+					proxyMesh->InstanceData[0].PushInstance(RenderInstanceData(proxyWorld, proxyInstance.materialIndex));
+				}
+				return;
+			}
+		}
+	}
+	if (useMeshLOD) {
+		const BoxLODHybridProxy& proxy = GetCachedBoxLODProxyInstances(this, mesh, model, world, obb, material);
+		if (!proxy.meshes.empty()) {
+			size_t sourceTriangles = 0;
+			size_t renderedTriangles = 0;
+			AccumulateLODStatsForProxy(proxy, sourceTriangles, renderedTriangles);
+			AutoLOD_RecordFrameSelection(true, true, sourceTriangles, renderedTriangles);
+			BumpMesh* proxyMesh = GetBoxLODProxyMesh();
+			if (proxyMesh != nullptr) {
+				for (const BoxLODProxyInstance& proxyInstance : proxy.boxes) {
+					if (proxyInstance.obb.Extents.x <= 0 || proxyInstance.obb.Extents.y <= 0 || proxyInstance.obb.Extents.z <= 0) continue;
+					if (!IsValidMaterialIndex(proxyInstance.materialIndex)) continue;
+					matrix proxyWorld = MakeBoxLODWorldMatrix(proxyInstance.obb);
+					proxyWorld.transpose();
+					proxyMesh->InstanceData[0].PushInstance(RenderInstanceData(proxyWorld, proxyInstance.materialIndex));
+				}
+			}
+			for (const BoxLODMeshInstance& meshInstance : proxy.meshes) {
+				PushBoxLODMeshInstance(meshInstance);
+			}
+			return;
+		}
+	}
 	if (mesh != nullptr) {
 		Mesh* drawMesh = mesh;
 		bool resolvedLOD = false;
-		if (useAutoLOD) {
-			if (Mesh* lodMesh = AutoLOD_GetLODMesh(mesh)) {
+		if (useMeshLOD) {
+			if (Mesh* lodMesh = GetEffectiveLODMesh(mesh, meshLODLevel)) {
 				drawMesh = lodMesh;
 				resolvedLOD = true;
 			}
 		}
 		if (allowAutoLOD) {
-			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
+			size_t sourceTriangles = GetMeshTriangleCount(mesh);
+			size_t renderedTriangles = 0;
+			if (resolvedLOD) {
+				renderedTriangles = GetMeshTriangleCount(drawMesh);
+			}
+			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, sourceTriangles, renderedTriangles);
+			if (useMeshLOD && !resolvedLOD) {
+				AutoLOD_RecordFrameMiss(mesh, sourceTriangles);
+			}
 		}
 
 		matrix rootWorld = world;
@@ -237,31 +805,29 @@ void GameObject::PushRenderBatch(matrix parent)
 	}
 	else {
 		bool resolvedLOD = false;
-		if (useAutoLOD) {
+		if (useMeshLOD) {
 			for (unsigned int i = 0; i < model->mNumMeshes; ++i) {
-				if (AutoLOD_GetLODMesh(model->mMeshes[i]) != nullptr) {
+				if (GetEffectiveLODMesh(model->mMeshes[i], meshLODLevel) != nullptr) {
 					resolvedLOD = true;
 					break;
 				}
 			}
 		}
-		if (allowAutoLOD) {
-			AutoLOD_RecordFrameSelection(useAutoLOD, resolvedLOD);
-		}
-		if (resolvedLOD) {
-			AutoLOD_SetModelLODRenderActive(true);
-		}
+		const bool previousLODRenderActive = AutoLOD_IsModelLODRenderActive();
+		const int previousLODRenderLevel = AutoLOD_GetModelLODRenderLevel();
+		AutoLOD_SetModelLODRenderActive(useMeshLOD && resolvedLOD);
+		AutoLOD_SetModelLODRenderLevel(meshLODLevel);
 		model->PushRenderBatch(world, this);
-		if (resolvedLOD) {
-			AutoLOD_SetModelLODRenderActive(false);
-		}
+		AutoLOD_SetModelLODRenderLevel(previousLODRenderLevel);
+		AutoLOD_SetModelLODRenderActive(previousLODRenderActive);
 	}
 }
-
 void GameObject::Release()
 {
 	tag[GameObjectTag::Tag_Enable] = false;
+	gMeshLODState.erase((const void*)this);
 	gBoxLODState.erase((const void*)this);
+	gBoxLODProxyCache.erase(this);
 	if (transforms_innerModel) {
 		delete[] transforms_innerModel;
 	}
@@ -706,13 +1272,13 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q)
 		}
 	}
 
-	// À§Ä¡ ÀÌµ¿ / È¸Àü
+	// ï¿½ï¿½Ä¡ ï¿½Ìµï¿½ / È¸ï¿½ï¿½
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
 	worldMat.pos.w = 1;
 
-	// Æ÷ÇÔ Ã»Å© Å½»ö
+	// ï¿½ï¿½ï¿½ï¿½ Ã»Å© Å½ï¿½ï¿½
 	IncludeChunks = game.Current_Zone->GetChunks_Include_OBB(GetOBB());
 
 	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
@@ -755,13 +1321,13 @@ void DynamicGameObject::Move(vec4 velocity, vec4 Q, GameObjectIncludeChunks afte
 		}
 	}
 
-	// À§Ä¡ ÀÌµ¿ / È¸Àü
+	// ï¿½ï¿½Ä¡ ï¿½Ìµï¿½ / È¸ï¿½ï¿½
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
 	worldMat.pos.w = 1;
 
-	// Æ÷ÇÔ Ã»Å© Å½»ö
+	// ï¿½ï¿½ï¿½ï¿½ Ã»Å© Å½ï¿½ï¿½
 	IncludeChunks = afterChunkInc;
 	xmax = IncludeChunks.xmin + IncludeChunks.xlen;
 	ymax = IncludeChunks.ymin + IncludeChunks.ylen;
@@ -1122,14 +1688,14 @@ void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectInclu
 	ChunkIndex ci = ChunkIndex(beforeChunckInc.xmin, beforeChunckInc.ymin, beforeChunckInc.zmin);
 	ci.extra = 0;
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci) { // ÈÄ¡´Â ºÎºÐÀ» Free ÇÏÁö ¾Ê´Â´Ù.
+		if (ci == inter_ci) { // ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ Free ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
 			continue;
 		}
 
-		// ¾È ÈÄ¡´Â ºÎºÐÀº Free ÇÑ´Ù.
+		// ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ Free ï¿½Ñ´ï¿½.
 		auto f = game.Current_Zone->chunck.find(ci);
 		if (f != game.Current_Zone->chunck.end()) {
 #ifdef ChunckDEBUG
@@ -1139,7 +1705,7 @@ void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectInclu
 		}
 	}
 
-	// À§Ä¡ ÀÌµ¿ / È¸Àü
+	// ï¿½ï¿½Ä¡ ï¿½Ìµï¿½ / È¸ï¿½ï¿½
 	worldMat = afterMat;
 
 	inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
@@ -1151,7 +1717,7 @@ void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectInclu
 
 	inter_up = 0;
 	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
-		if (ci == inter_ci) { // ÈÄ¡´Â ºÎºÐÀ» Alloc ÇÏÁö ¾Ê´Â´Ù.
+		if (ci == inter_ci) { // ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ Alloc ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
@@ -1255,10 +1821,10 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 	bool initialState = gd.gpucmd.isClose;
 
 	if (BoneToWorldMatrixCB_Default.size() > 0) {
-		// »ç½Ç ÀÌ ÄÚµå´Â ½ÇÇàÀÌ µÇ¸é ¾ÈµÇÁö ¾Ê³ª? Èì..
-		// >> ÇÏÁö¸¸ ¼­¹ö¿¡¼­ ÀÚ½ÅÀÇ ÇÃ·¹ÀÌ¾î ¿ÀºêÁ§Æ® µ¥ÀÌÅÍ¸¦ ÅëÂ¥·Î µÎ¹ø º¸³»±â ¶§¹®¿¡..
-		// >> °á±¹ µÎ¹ø µÇ´Â°Ç ¾îÂ¿ ¼ö ¾ø´Â °ÍÀ¸·Î º¸ÀÎ´Ù. Àß ¸±¸®Áî¸¦ ÇØº¸ÀÚ.
-		// >> °ÔÀÓ »óÈ²¿¡¼­ shape°¡ ¹Ù²ð ¼öµµ ÀÖÀÝÀ½? ¤·¤·..
+		// ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Úµï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ç¸ï¿½ ï¿½Èµï¿½ï¿½ï¿½ ï¿½Ê³ï¿½? ï¿½ï¿½..
+		// >> ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ú½ï¿½ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½Â¥ï¿½ï¿½ ï¿½Î¹ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½..
+		// >> ï¿½á±¹ ï¿½Î¹ï¿½ ï¿½Ç´Â°ï¿½ ï¿½ï¿½Â¿ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î´ï¿½. ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½î¸¦ ï¿½Øºï¿½ï¿½ï¿½.
+		// >> ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È²ï¿½ï¿½ï¿½ï¿½ shapeï¿½ï¿½ ï¿½Ù²ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½? ï¿½ï¿½ï¿½ï¿½..
 
 		for (int i = 0;i < BoneToWorldMatrixCB_Default.size();++i) {
 			BoneToWorldMatrixCB_Default[i].Release();
@@ -1289,14 +1855,14 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			NodeToBone_SRVDescIndex.clear();
 			NodeToBone.clear();
 		}
-		// ¸®¼Ò½º °³¸¹¾Æ
+		// ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	}
 
 	Model* pModel = shape.GetModel();
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		dbgc[5] += 1;
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ÀÇ ¹è¼ö
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
@@ -1332,7 +1898,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		{
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(int) * nodeCount;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 			Node_ToParentRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource Node_ToParentRes_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 
@@ -1380,7 +1946,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		//HumanoidToNodeIndexRes
 		{
 			datasize = sizeof(int) * 64;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 			HumanoidToNodeIndexRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource HumanoidToNodeIndexRes_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 
@@ -1425,7 +1991,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		{
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(matrix) * nodeCount;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 			NodeLocalMatrixs = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 			GPUResource NodeLocalMatrixs_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			matrix* tempMapped = nullptr;
@@ -1481,7 +2047,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		for (int i = 0;i < model->mNumSkinMesh;++i) {
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(int) * 128;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 			DescIndex resdescindex;
 			GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
@@ -1529,7 +2095,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		{
 			int nodeCount = model->nodeCount;
 			datasize = sizeof(matrix) * nodeCount;
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 			NodeTposMatrixs = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			GPUResource NodeTposMatrixs_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			matrix* tempMapped = nullptr;
@@ -1573,7 +2139,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		///AnimationBlendConstantUploadBuffer
 		{
 			datasize = sizeof(AnimationBlendingCBStruct);
-			ncbElementBytes = ((datasize + 255) & ~255); //256ÀÇ ¹è¼ö
+			ncbElementBytes = ((datasize + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 			AnimationBlendConstantUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			AnimationBlendConstantUploadBuffer.resource->Map(0, nullptr, (void**)&AnimBlendingCB_Mapped);
 			//CBV
@@ -1609,10 +2175,10 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 
 void SkinMeshGameObject::SetRootMatrixs()
 {
-	// ¾Ë°í¸®Áò ¶§¹®¿¡ º´¸ñÀÌ »ý°å¾úÀ½. ±×·¡¼­ °íÃÆ´Ù.
-	// ´Ù¸¸ 20¸íÀÇ ½ºÅ²¸Þ½¬ ¾Ö´Ï¸ÞÀÌ¼Ç °¢ Ãâ·ÂÇÏ´Âµ¥ 
-	// ÇÑ ÇÁ·¹ÀÓÀÇ 0.029124 À» Àâ¾Æ¸Ô´Â°Ç Á» ½ÉÇÏ´Ù. ±×·³ 50¸í¸¸ ÀÖ¾îµµ ÇÁ·¹ÀÓÀº °³ ³·¾ÆÁú°Å ¾Æ´Ñ°¡?
-	// ¶§¹®¿¡ GPU ÃÖÀûÈ­ µµ ÃæºÐÈ÷ °í·ÁÇØ¾ß ÇÒ °Í °°´Ù.
+	// ï¿½Ë°ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½. ï¿½×·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Æ´ï¿½.
+	// ï¿½Ù¸ï¿½ 20ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å²ï¿½Þ½ï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï´Âµï¿½ 
+	// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0.029124 ï¿½ï¿½ ï¿½ï¿½Æ¸Ô´Â°ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½Ï´ï¿½. ï¿½×·ï¿½ 50ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¾îµµ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Æ´Ñ°ï¿½?
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ GPU ï¿½ï¿½ï¿½ï¿½È­ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 
 	static matrix TempMatBuffer[128] = {};
 	Model* pModel = shape.GetModel();
@@ -1703,7 +2269,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 			modifyMeshes = new RayTracingMesh[model->mNumSkinMesh];
 			OutVertexUAV = new DescIndex[model->mNumSkinMesh];
 			for (int i = 0; i < model->mNumSkinMesh; ++i) {
-				// ¼öÁ¤ÇÒ ¹öÅÃ½º¸¸ ¸¸µé¾î rmesh¿¡ ÀúÀå. Ãâ·Â½Ã LRS¿¡¼­ ¹öÅÃ½º´Â ¿©±â¿¡¼­, ÀÎµ¦½º´Â ¿øº»¸Þ½¬¿¡¼­ °¡Á®¿Â´Ù.
+				// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ rmeshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½Â½ï¿½ LRSï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½â¿¡ï¿½ï¿½, ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
 				modifyMeshes[i].AllocateRaytracingUAVMesh(model->mBumpSkinMeshs[i]->vertexData, model->mBumpSkinMeshs[i]->rmesh.IBStartOffset, model->mBumpSkinMeshs[i]->subMeshNum, model->mBumpSkinMeshs[i]->SubMeshIndexStart);
 				modifyMeshes[i].IBStartOffset = new UINT64[/*model->mBumpSkinMeshs[i]->subMeshNum */1+ 1];
 				modifyMeshes[i].subMeshCount = model->mBumpSkinMeshs[i]->subMeshNum;
@@ -1711,7 +2277,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 					modifyMeshes[i].IBStartOffset[k] = model->mBumpSkinMeshs[i]->rmesh.IBStartOffset[k];
 				}
 
-				//Compute Geometry º¯ÇüÀ» À§ÇÑ UAV »ý¼º
+				//Compute Geometry ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ UAV ï¿½ï¿½ï¿½ï¿½
 				int index = gd.TextureDescriptorAllotter.Alloc();
 				OutVertexUAV[i] = DescIndex(false, index);
 				D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -1746,7 +2312,7 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 							RaytracingWorldMatInput_Model[i] = WorldMatInputs[0];
 						}
 						else {
-							// BumpMesh Ã³¸®.
+							// BumpMesh Ã³ï¿½ï¿½.
 							BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
 							/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
@@ -1863,7 +2429,7 @@ void SkinMeshGameObject::PushRenderBatch(matrix parent)
 
 void SkinMeshGameObject::ModifyVertexs(matrix parent)
 {
-	// ComputeShader°¡ ÀÌ¹Ì Set µÇ¾ú´Ù´Â °¡Á¤ÇÏ¿¡ ÇÔ¼ö°¡ ½ÇÇàµÈ´Ù.
+	// ComputeShaderï¿½ï¿½ ï¿½Ì¹ï¿½ Set ï¿½Ç¾ï¿½ï¿½Ù´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½È´ï¿½.
 	Model* model = shape.GetModel();
 	for (int i = 0; i < model->mNumSkinMesh; ++i) {
 		BumpSkinMesh* bsmesh = model->mBumpSkinMeshs[i];
@@ -1871,7 +2437,7 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 		using SMMSRPI = SkinMeshModifyShader::RootParamId;
 
 		int boneNum = model->mBumpSkinMeshs[i]->MatrixCount;
-		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ÀÇ ¹è¼ö
+		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿½
 		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 		//gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB[i], D3D12_RESOURCE_STATE_COPY_SOURCE);
 		//gd.CScmd->CopyBufferRegion(BoneToWorldMatrixCB_Default[i].resource, 0, BoneToWorldMatrixCB[i].resource, 0, ncbElementBytes);
@@ -1900,7 +2466,7 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 		int disPatchW = (VertexSiz / 768) + 1;
 		gd.CScmd->Dispatch(disPatchW, 1, 1);
 	}
-	// BLAS¸¦ ¼öÇàÇÒ ¿ÀºêÁ§Æ®¸¦ ¼öÁýÇÑ´Ù.
+	// BLASï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	game.MyRayTracingShader->RebuildBLASBuffer.push_back(this);
 }
 
@@ -2092,7 +2658,7 @@ void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
 		}
 	}
 	else {
-		// ¼öÇà½Ã°£ Æò±Õ 0.0000031ÃÊ
+		// ï¿½ï¿½ï¿½ï¿½Ã°ï¿½ ï¿½ï¿½ï¿½ 0.0000031ï¿½ï¿½
 		constexpr float frameSpeed = 1;
 		Model* pModel = shape.GetModel();
 		if (AnimationFlowTime[0] > game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration) AnimationFlowTime[0] = 0;
@@ -2139,7 +2705,7 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 	ci.extra = 0;
 
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci && inter_Count > 0) { // ÈÄ¡´Â ºÎºÐÀ» Free ÇÏÁö ¾Ê´Â´Ù.
+		if (ci == inter_ci && inter_Count > 0) { // ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ Free ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
@@ -2147,7 +2713,7 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 			continue;
 		}
 
-		// ¾È ÈÄ¡´Â ºÎºÐÀº Free ÇÑ´Ù.
+		// ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ Free ï¿½Ñ´ï¿½.
 		auto f = game.Current_Zone->chunck.find(ci);
 		if (f != game.Current_Zone->chunck.end()) {
 #ifdef ChunckDEBUG 
@@ -2165,7 +2731,7 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 	dbgbreak(inter_Count != inter_ci.extra);
 #endif
 
-	// À§Ä¡ ÀÌµ¿ / È¸Àü
+	// ï¿½ï¿½Ä¡ ï¿½Ìµï¿½ / È¸ï¿½ï¿½
 	worldMat = afterMat;
 
 	inter_ci = ChunkIndex(intersection.xmin, intersection.ymin, intersection.zmin);
@@ -2182,7 +2748,7 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 #endif
 	inter_up = 0;
 	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
-		if (ci == inter_ci && inter_Count > 0) { // ÈÄ¡´Â ºÎºÐÀ» Alloc ÇÏÁö ¾Ê´Â´Ù.
+		if (ci == inter_ci && inter_Count > 0) { // ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ Alloc ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
@@ -2471,7 +3037,7 @@ void Monster::ChangeState(State newState)
 	case State::RUN:
 		PlayingAnimationIndex[0] = 2;
 		break;
-		// ³ªÁß¿¡ °ø°Ý, ÇÇ°Ý, »ç¸Á Ãß°¡ ¿¹Á¤
+		// ï¿½ï¿½ï¿½ß¿ï¿½ ï¿½ï¿½ï¿½ï¿½, ï¿½Ç°ï¿½, ï¿½ï¿½ï¿½ ï¿½ß°ï¿½ ï¿½ï¿½ï¿½ï¿½
 	case State::DEATH:
 		PlayingAnimationIndex[0] = 6;
 		break;
@@ -2488,7 +3054,7 @@ Player::Player() : HP{ 100 } {
 	tag[GameObjectTag::Tag_Dynamic] = true;
 	tag[GameObjectTag::Tag_SkinMeshObject] = true;
 	worldMat.Id();
-	weapon = Weapon(WeaponType::Sniper);
+	weapon = Weapon(WeaponType::Pistol);
 	HP = 100;
 	MaxHP = 100;
 	bullets = 100;
@@ -2496,9 +3062,12 @@ Player::Player() : HP{ 100 } {
 	DeathCount = 0;
 	HeatGauge = 0;
 	MaxHeatGauge = 200;
-	HealSkillCooldown = 10.0f;
-	HealSkillCooldownFlow = 0;
-	m_currentWeaponType = (int)WeaponType::Sniper;
+	m_currentJob = (int)PlayerJob::Healer;
+	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
+		SkillCooldown[i] = 0.0f;
+		SkillCooldownFlow[i] = 0.0f;
+	}
+	m_currentWeaponType = (int)WeaponType::Pistol;
 	//ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
 
 	DeltaMousePos = 0;
@@ -2623,8 +3192,8 @@ void Player::Update(float deltaTime)
 
 	if (m_currentUpperState != UpperState::NONE)
 	{
-		m_animMask[0] = 0x7FULL;  // 0~6¹ø »À (ÇÏÃ¼)
-		m_animMask[1] = ~0x7FULL; // 7¹ø »À ÀÌ»ó (»óÃ¼)
+		m_animMask[0] = 0x7FULL;  // 0~6ï¿½ï¿½ ï¿½ï¿½ (ï¿½ï¿½Ã¼)
+		m_animMask[1] = ~0x7FULL; // 7ï¿½ï¿½ ï¿½ï¿½ ï¿½Ì»ï¿½ (ï¿½ï¿½Ã¼)
 	}
 	else
 	{
@@ -2674,7 +3243,7 @@ void Player::ClientUpdate(float deltaTime)
 	{
 	case WeaponType::Pistol:
 	{
-		// --- ±ÇÃÑ ·ÎÁ÷ ---
+		// --- ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ---
 		float recoilT = weapon.GetRecoilAlpha();
 
 		float zOffset = 0.3f - (0.0f * powf(recoilT, 3.0f));
@@ -2695,14 +3264,14 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::MachineGun:
 	{
-		// --- ¸Ó½Å°Ç ·ÎÁ÷ ---
+		// --- ï¿½Ó½Å°ï¿½ ï¿½ï¿½ï¿½ï¿½ ---
 		float shootrate = powf(weapon.m_shootFlow / weapon.m_info.shootDelay, 3);
 		if (shootrate > 1.0f) shootrate = 1.0f;
 
 		float recoilAmount = 1.0f - shootrate;
 		gunMatrix_firstPersonView.pos.z = 0.3f + 0.02f * recoilAmount;
 
-		// È¸Àü ·ÎÁ÷
+		// È¸ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		gunBarrelSpeed = 150.0f;
 		if (shootrate < 1.0f) {
 			float spinRate = powf(1.0f - shootrate, 2);
@@ -2715,7 +3284,7 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::Sniper:
 	{
-		// --- ½º³ªÀÌÆÛ ·ÎÁ÷ ---
+		// --- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ---
 		float recoilT = weapon.GetRecoilAlpha();
 		float zOffset = 0.3f;
 		float pitchAngle = 0.0f;
@@ -2934,7 +3503,7 @@ void Player::Render_AfterDepthClear()
 			if (pTargetModel) {
 				gunmat *= viewmat;
 
-				// fix?? ??ì½”ë“œ???˜ë„ê°€ ë­ì???
+				// fix?? ??ì½”ë“œ???ï¿½ë„ê°€ ë­ï¿½???
 				if (Game::renderViewPort == &game.MyDirLight[0].viewport) {
 					pTargetModel->Render(gd.gpucmd, gunmat);
 					return;
@@ -3155,9 +3724,11 @@ void Player::RecvSTC_SyncObj(char* data) {
 	DeathCount = stcsod.DeathCount;
 	HeatGauge = stcsod.HeatGauge;
 	MaxHeatGauge = stcsod.MaxHeatGauge;
-	HealSkillCooldown = stcsod.HealSkillCooldown;
-	HealSkillCooldownFlow = stcsod.HealSkillCooldownFlow;
+	m_currentJob = stcsod.m_currentJob;
+	memcpy(SkillCooldown, stcsod.SkillCooldown, sizeof(SkillCooldown));
+	memcpy(SkillCooldownFlow, stcsod.SkillCooldownFlow, sizeof(SkillCooldownFlow));
 	m_currentWeaponType = stcsod.m_currentWeaponType;
+	weapon = Weapon((WeaponType)m_currentWeaponType);
 
 	//memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));
 	//offset += sizeof(STC_SyncObjData);
@@ -3249,7 +3820,7 @@ void Portal::RecvSTC_SyncObj(char* data) {
 	radius = d.radius;
 	zoneId = d.zoneId;
 	dstzoneId = d.dstzoneId;
-	// mesh/model ÆÄ½Ì ¾øÀ½ ? Å¬¶óÀÌ¾ðÆ®°¡ ÀÚÃ¼ Portal ¸Þ½¬ »ç¿ë
+	// mesh/model ï¿½Ä½ï¿½ ï¿½ï¿½ï¿½ï¿½ ? Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½Ã¼ Portal ï¿½Þ½ï¿½ ï¿½ï¿½ï¿½
 }
 
 BulletRay::BulletRay()
@@ -3431,7 +4002,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		string& name = map->name[nameid];
 
 		string filename = MeshDirPath;
-		// .map (È®ÀåÀÚ)Á¦°Å
+		// .map (È®ï¿½ï¿½ï¿½ï¿½)ï¿½ï¿½ï¿½ï¿½
 		filename += name;
 		filename += ".mesh";
 
@@ -3647,7 +4218,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 
 		string modelName = TempBuff;
 		string filename = ModelDirPath;
-		// .map (È®ÀåÀÚ)Á¦°Å
+		// .map (È®ï¿½ï¿½ï¿½ï¿½)ï¿½ï¿½ï¿½ï¿½
 		filename += modelName;
 		filename += ".model";
 

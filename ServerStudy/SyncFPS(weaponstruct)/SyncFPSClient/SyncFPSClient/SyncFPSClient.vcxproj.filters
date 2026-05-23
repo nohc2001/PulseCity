@@ -78,6 +78,9 @@
     <ClCompile Include="third_party\meshoptimizer\src\indexgenerator.cpp">
       <Filter>Sources\Utill</Filter>
     </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\src\overdrawoptimizer.cpp">
+      <Filter>Sources\Utill</Filter>
+    </ClCompile>
     <ClCompile Include="MeshSimplifier.cpp">
       <Filter>Sources\Utill</Filter>
     </ClCompile>

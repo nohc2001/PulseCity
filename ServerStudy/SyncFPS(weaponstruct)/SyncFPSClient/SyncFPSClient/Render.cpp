@@ -4474,6 +4474,15 @@ void BumpMesh::Release()
 }
 
 void BumpMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList) {
+	bool hasInstance = false;
+	for (int i = 0; i < subMeshNum; ++i) {
+		if (InstanceData[i].InstanceSize > 0) {
+			hasInstance = true;
+			break;
+		}
+	}
+	if (!hasInstance) return;
+
 	pCommandList->IASetVertexBuffers(0, 1, &VertexBufferView);
 	pCommandList->IASetPrimitiveTopology(topology);
 	if (IndexNum > 0) {
@@ -4795,6 +4804,41 @@ void ModelNode::SkinMeshShadowRender(void* model, GPUCmd& cmd, const matrix& par
 	}
 }
 
+namespace {
+	constexpr size_t kAutoLODRenderMinTriangleCount = 300;
+	constexpr float kAutoLODMaxRenderedTriangleRatio = 0.80f;
+
+	size_t AutoLOD_GetMeshTriangleCount(Mesh* mesh)
+	{
+		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return 0;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+		if (!bumpMesh->sourceIndexData.empty()) return bumpMesh->sourceIndexData.size();
+		if (bumpMesh->SubMeshIndexStart != nullptr && bumpMesh->subMeshNum > 0) {
+			return static_cast<size_t>(bumpMesh->SubMeshIndexStart[bumpMesh->subMeshNum] / 3);
+		}
+		return 0;
+	}
+
+	bool AutoLOD_ShouldRenderSimplifiedMesh(Mesh* mesh)
+	{
+		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return false;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+		return bumpMesh->sourceIndexData.size() >= kAutoLODRenderMinTriangleCount;
+	}
+
+	Mesh* AutoLOD_GetEffectiveLODMesh(Mesh* sourceMesh)
+	{
+		if (!AutoLOD_ShouldRenderSimplifiedMesh(sourceMesh)) return nullptr;
+		Mesh* lodMesh = AutoLOD_GetLODMesh(sourceMesh, AutoLOD_GetModelLODRenderLevel());
+		if (lodMesh == nullptr && AutoLOD_GetModelLODRenderLevel() > 0) lodMesh = AutoLOD_GetLODMesh(sourceMesh, 0);
+		if (lodMesh == nullptr) return nullptr;
+		const size_t sourceTriangles = AutoLOD_GetMeshTriangleCount(sourceMesh);
+		const size_t lodTriangles = AutoLOD_GetMeshTriangleCount(lodMesh);
+		if (sourceTriangles == 0 || lodTriangles == 0) return nullptr;
+		if (float(lodTriangles) > float(sourceTriangles) * kAutoLODMaxRenderedTriangleRatio) return nullptr;
+		return lodMesh;
+	}
+}
 void ModelNode::PushRenderBatch(void* model, const matrix& parentMat, void* pGameobject)
 {
 	Model* pModel = (Model*)model;
@@ -4812,10 +4856,19 @@ void ModelNode::PushRenderBatch(void* model, const matrix& parentMat, void* pGam
 
 		for (int i = 0; i < numMesh; ++i) {
 			Mesh* drawMesh = pModel->mMeshes[Meshes[i]];
-			if (AutoLOD_IsModelLODRenderActive()) {
-				if (Mesh* lodMesh = AutoLOD_GetLODMesh(drawMesh)) {
-					drawMesh = lodMesh;
-				}
+			Mesh* lodMesh = AutoLOD_GetEffectiveLODMesh(drawMesh);
+			const bool resolvedLOD = lodMesh != nullptr;
+			const size_t activeSourceTriangles = AutoLOD_GetMeshTriangleCount(drawMesh);
+			const size_t sourceTriangles = resolvedLOD ? activeSourceTriangles : 0;
+			const size_t renderedTriangles = resolvedLOD ? AutoLOD_GetMeshTriangleCount(lodMesh) : 0;
+			bool usedLOD = false;
+			if (AutoLOD_IsModelLODRenderActive() && lodMesh != nullptr) {
+				drawMesh = lodMesh;
+				usedLOD = true;
+			}
+			AutoLOD_RecordFrameSelection(usedLOD, resolvedLOD, sourceTriangles, renderedTriangles, activeSourceTriangles);
+			if (AutoLOD_IsModelLODRenderActive() && !resolvedLOD) {
+				AutoLOD_RecordFrameMiss(drawMesh, activeSourceTriangles);
 			}
 			if (drawMesh == nullptr || drawMesh->type != Mesh::MeshType::_BumpMesh) {
 				continue;
@@ -8956,12 +9009,13 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
 {
 	// RootSignature 
-	CD3DX12_ROOT_PARAMETER params[2];
+	CD3DX12_ROOT_PARAMETER params[3];
 	params[0].InitAsUnorderedAccessView(0); // u0
 	params[1].InitAsConstants(1, 0);        // b0 (dt)
+	params[2].InitAsConstants(sizeof(ParticleEmitterCB) / sizeof(UINT), 1); // b1 (emitter)
 
 	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
-	rsDesc.Init(2, params);
+	rsDesc.Init(3, params);
 
 	ID3DBlob* sig = nullptr;
 	D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, nullptr);
@@ -8982,7 +9036,7 @@ void ParticleCompute::Init(const wchar_t* hlslFile, const char* entry)
 	csBlob->Release();
 }
 
-void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt)
+void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buffer, UINT count, float dt, const ParticleEmitterCB& emitter)
 {
 	buffer->AddResourceBarrierTransitoinToCommand(cmd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
@@ -8990,6 +9044,7 @@ void ParticleCompute::Dispatch(ID3D12GraphicsCommandList* cmd, GPUResource* buff
 	cmd->SetComputeRootSignature(RootSig);
 	cmd->SetComputeRootUnorderedAccessView(0, buffer->resource->GetGPUVirtualAddress());
 	cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
+	cmd->SetComputeRoot32BitConstants(2, sizeof(ParticleEmitterCB) / sizeof(UINT), &emitter, 0);
 
 	cmd->Dispatch((count + 255) / 256, 1, 1);
 

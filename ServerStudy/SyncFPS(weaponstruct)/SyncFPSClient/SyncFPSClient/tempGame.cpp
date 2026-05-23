@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "main.h"
 #include "Render.h"
 #include "Game.h"
@@ -1404,7 +1404,7 @@ void Game::Render() {
 	int kill = 0;
 	int death = 0;
 	int bulletCount = 0;
-	float HealSkillCooldownFlow = 0;
+	float SkillCooldownFlow = 0;
 	if (game.player != nullptr) {
 		BindStaticPBRRenderState();
 		game.player->Render_AfterDepthClear();
@@ -1413,7 +1413,7 @@ void Game::Render() {
 		kill = game.player->KillCount;
 		death = game.player->DeathCount;
 		bulletCount = game.player->bullets;
-		HealSkillCooldownFlow = game.player->HealSkillCooldownFlow;
+		SkillCooldownFlow = game.player->SkillCooldownFlow[(int)SkillSlot::Skill1];
 	}
 
 	// 26. UI 텍스트 렌더링
@@ -1440,7 +1440,7 @@ void Game::Render() {
 	//RenderText(ui_heat.c_str(), ui_heat.length(), rt_heat, 30);
 	////Skill
 	//	rt = Rate * vec4(-900, 850, -200, 700);
-	//std::wstring ui_cool = L"[Q] Heal CD: " + std::to_wstring((int)HealSkillCooldownFlow);
+	//std::wstring ui_cool = L"[Q] Heal CD: " + std::to_wstring((int)SkillCooldownFlow);
 	//RenderText(ui_cool.c_str(), ui_cool.length(), rt, 30);
 	//// Bullet
 	//rt = Rate * vec4(900, -800, 1550, -900);

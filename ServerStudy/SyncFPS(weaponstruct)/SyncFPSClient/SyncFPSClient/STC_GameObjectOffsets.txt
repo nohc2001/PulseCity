@@ -43,7 +43,7 @@ LVelocity 224 16
 AnimationFlowTime 240 4
 PlayingAnimationIndex 244 4
 Player
-24
+25
 tag 20 4
 shapeindex 24 4
 parent 28 4
@@ -62,12 +62,13 @@ KillCount 268 4
 DeathCount 272 4
 HeatGauge 276 4
 MaxHeatGauge 280 4
-HealSkillCooldown 284 4
-HealSkillCooldownFlow 288 4
-m_currentWeaponType 292 4
-Inventory 296 392
-weapon 688 48
-ZoneMoveCooldown 736 4
+m_currentJob 284 4
+SkillCooldown 288 12
+SkillCooldownFlow 300 12
+m_currentWeaponType 312 4
+Inventory 316 392
+weapon 712 48
+ZoneMoveCooldown 760 4
 Monster
 14
 tag 20 4

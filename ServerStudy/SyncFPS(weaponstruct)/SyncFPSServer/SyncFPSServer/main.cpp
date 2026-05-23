@@ -1,4 +1,4 @@
-﻿#define NOMINMAX
+#define NOMINMAX
 #include "stdafx.h"
 #include "GameObject.h"
 #include "main.h"
@@ -224,6 +224,23 @@ READ_START:
 	{
 		CTS_ServerPlayerTransfer_Header& header = *(CTS_ServerPlayerTransfer_Header*)currentPivot;
 		StoreIncomingPlayerTransfer(header.data);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::UseSkill:
+	{
+		CTS_UseSkill_Header& header = *(CTS_UseSkill_Header*)currentPivot;
+		p->TryUseSkill(header.slot);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::ChangeJob:
+	{
+		CTS_ChangeJob_Header& header = *(CTS_ChangeJob_Header*)currentPivot;
+		p->ApplyJob(header.job);
+		p->SyncJobState(gameworld.GetClientZone(clientIndex));
 		currentPivot += header.size;
 		offset += header.size;
 	}

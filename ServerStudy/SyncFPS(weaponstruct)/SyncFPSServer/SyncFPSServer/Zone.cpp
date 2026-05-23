@@ -1,4 +1,4 @@
-﻿// Zone.cpp
+// Zone.cpp
 #include "stdafx.h"
 //#include "Zone.h"
 #include "main.h"
@@ -915,6 +915,24 @@ void Zone::Sending_PlayerFire(SendDataSaver& sds, int objIndex) {
     sds.postpush_end();
 }
 
+void Zone::Sending_SkillCast(SendDataSaver& sds, int ownerObjIndex, PlayerJob job, SkillSlot slot, SkillEffectType effectType, vec4 position, vec4 direction, float radius, float power, float duration) {
+    sds.postpush_start();
+    constexpr int reqsiz = sizeof(STC_SkillCast_Header);
+    sds.postpush_reserve(reqsiz);
+    STC_SkillCast_Header& header = *(STC_SkillCast_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::SkillCast;
+    header.ownerObjIndex = ownerObjIndex;
+    header.job = job;
+    header.slot = slot;
+    header.effectType = effectType;
+    header.position = position;
+    header.direction = direction;
+    header.radius = radius;
+    header.power = power;
+    header.duration = duration;
+    sds.postpush_end();
+}
 GameObjectIncludeChunks Zone::GetChunks_Include_OBB(BoundingOrientedBox obb) {
     GameObjectIncludeChunks ret;
     XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];

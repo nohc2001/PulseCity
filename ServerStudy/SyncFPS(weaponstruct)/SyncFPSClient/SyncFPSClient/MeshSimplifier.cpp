@@ -5,23 +5,30 @@
 #include "third_party/meshoptimizer/src/meshoptimizer.h"
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <filesystem>
 #include <fstream>
 #include <unordered_set>
 #include <unordered_map>
+#include <string>
+#include <vector>
 
 namespace {
 	constexpr unsigned int kAutoLODCacheMagic = 0x31444F4C; // LOD1
-	constexpr unsigned int kAutoLODCacheVersion = 25;
-	constexpr float kAutoLODRatio = 0.35f;
+	constexpr unsigned int kAutoLODCacheVersion = 47;
+	constexpr int kAutoLODLevelCount = 2;
+	constexpr std::array<float, kAutoLODLevelCount> kAutoLODRatios = { 0.25f, 0.10f };
 	constexpr float kAutoLODTargetError = 5e-4f;
-	constexpr float kAutoLODDebugInterval = 1.0f;
+	constexpr float kAutoLODDebugInterval = 2.0f;
+	constexpr bool kAutoLODVerboseBuildLog = false;
 	constexpr float kAutoLODPreloadLargeVolume = 8.0f;
 	constexpr int kAutoLODRuntimeBuildsPerTick = 2;
+	constexpr size_t kAutoLODRuntimeBuildMaxTriangles = 250000;
 	constexpr int kAutoLODMinSubsetTriangles = 54;
 	constexpr int kAutoLODMinResultTriangles = 84;
-	constexpr float kAutoLODMinAcceptedSubsetRatio = 0.30f;
+	constexpr float kAutoLODMinAcceptedSubsetRatio = 0.20f;
+	constexpr float kAutoLODMaxAcceptedResultRatio = 0.70f;
 	constexpr float kAutoLODNormalProtectDot = 0.10f;
 	constexpr float kAutoLODTangentProtectDot = -0.10f;
 	constexpr float kAutoLODNormalPriorityDot = 0.60f;
@@ -30,9 +37,9 @@ namespace {
 	constexpr float kAutoLODSubMeshPriorityTangentDot = 0.40f;
 	constexpr float kAutoLODUVProtectEpsilon = 1e-4f;
 	constexpr float kAutoLODPositionRemapTolerance = 1e-3f;
-	constexpr float kAutoLODMaxAspectRatio = 18.0f;
+	constexpr float kAutoLODMaxAspectRatio = 12.0f;
 	constexpr float kAutoLODMaxProtectedVertexRatio = 0.995f;
-	constexpr size_t kAutoLODMaxSubMeshCount = 45;
+	constexpr size_t kAutoLODMaxSubMeshCount = 256;
 
 	enum class RemapPairPolicy {
 		None,
@@ -51,7 +58,7 @@ namespace {
 		unsigned int vertexCount = 0;
 		unsigned int triangleCount = 0;
 		unsigned int subMeshCount = 0;
-		float ratio = kAutoLODRatio;
+		float ratio = 0.0f;
 		XMFLOAT3 obbExt = {};
 		XMFLOAT3 obbTr = {};
 	};
@@ -73,19 +80,30 @@ namespace {
 		float priority = 0.0f;
 	};
 
-	std::unordered_map<const Mesh*, BumpMesh*> gAutoLODMeshes;
+	struct AutoLODMeshSet {
+		std::array<BumpMesh*, kAutoLODLevelCount> levels = {};
+	};
+
+	std::unordered_map<const Mesh*, AutoLODMeshSet> gAutoLODMeshes;
 	std::unordered_map<const Mesh*, BumpMesh*> gRegisteredSourceMeshes;
 	std::vector<BumpMesh*> gAutoLODOwnedMeshes;
 	std::vector<PreloadEntry> gPreloadQueue;
 	std::unordered_set<const Mesh*> gQueuedPreloadMeshes;
+	std::unordered_set<std::string> gAutoLODFailedCacheKeys;
 	std::vector<PreloadEntry> gRuntimeQueue;
 	bool gAutoLODModelRenderActive = false;
+	int gAutoLODModelRenderLevel = 0;
 	thread_local const char* gAutoLODSkipReason = nullptr;
 
 	bool gAutoLODTrackFrameStats = false;
 	int gAutoLODFrameTotal = 0;
 	int gAutoLODFrameActive = 0;
 	int gAutoLODFrameResolved = 0;
+	uint64_t gAutoLODFrameActiveSourceTriangles = 0;
+	uint64_t gAutoLODFrameSourceTriangles = 0;
+	uint64_t gAutoLODFrameRenderedTriangles = 0;
+	uint64_t gAutoLODFrameSavedTriangles = 0;
+	std::unordered_map<std::string, uint64_t> gAutoLODFrameMissTriangles;
 	float gAutoLODDebugTimer = 0.0f;
 
 	int gAutoLODCacheHits = 0;
@@ -96,6 +114,11 @@ namespace {
 	int gAutoLODPreloadTotal = 0;
 	int gAutoLODRuntimeProcessed = 0;
 	int gAutoLODRuntimeTotal = 0;
+	bool gAutoLODPrintedCacheDir = false;
+	std::unordered_map<std::string, int> gAutoLODSkipReasonCounts;
+	std::unordered_map<const Mesh*, std::string> gAutoLODFailureReasons;
+	std::string gAutoLODTopSkipReason = "none";
+	int gAutoLODTopSkipCount = 0;
 
 	uint64_t HashAppend(uint64_t hash, const void* data, size_t size)
 	{
@@ -107,11 +130,29 @@ namespace {
 		return hash;
 	}
 
-	uint64_t BuildMeshHash(const BumpMesh* mesh)
+	float GetAutoLODRatio(int lodLevel)
+	{
+		if (lodLevel < 0 || lodLevel >= kAutoLODLevelCount) return kAutoLODRatios[0];
+		return kAutoLODRatios[lodLevel];
+	}
+
+	float GetAutoLODMaxAcceptedRatio(float targetRatio)
+	{
+		return targetRatio <= 0.12f ? 0.45f : 0.80f;
+	}
+
+	float GetAutoLODMinAcceptedRatio(float targetRatio)
+	{
+		return targetRatio <= 0.12f ? 0.08f : kAutoLODMinAcceptedSubsetRatio;
+	}
+
+	uint64_t BuildMeshHash(const BumpMesh* mesh, int lodLevel)
 	{
 		uint64_t hash = 1469598103934665603ull;
+		const float ratio = GetAutoLODRatio(lodLevel);
 		hash = HashAppend(hash, &kAutoLODCacheVersion, sizeof(kAutoLODCacheVersion));
-		hash = HashAppend(hash, &kAutoLODRatio, sizeof(kAutoLODRatio));
+		hash = HashAppend(hash, &lodLevel, sizeof(lodLevel));
+		hash = HashAppend(hash, &ratio, sizeof(ratio));
 		hash = HashAppend(hash, mesh->sourceVertexData.data(), mesh->sourceVertexData.size() * sizeof(BumpMesh::Vertex));
 		hash = HashAppend(hash, mesh->sourceIndexData.data(), mesh->sourceIndexData.size() * sizeof(TriangleIndex));
 		hash = HashAppend(hash, mesh->sourceSubMeshIndexStart.data(), mesh->sourceSubMeshIndexStart.size() * sizeof(int));
@@ -123,14 +164,23 @@ namespace {
 		return std::filesystem::path("Cache") / "AutoLOD";
 	}
 
-	std::filesystem::path GetCachePath(const BumpMesh* mesh)
+	void DebugCacheDirOnce()
+	{
+		if (gAutoLODPrintedCacheDir) return;
+		gAutoLODPrintedCacheDir = true;
+		char dbg[512];
+		sprintf_s(dbg, "[AutoLOD] cache-dir=%s\n", std::filesystem::absolute(GetCacheDir()).string().c_str());
+		OutputDebugStringA(dbg);
+	}
+
+	std::filesystem::path GetCachePath(const BumpMesh* mesh, int lodLevel)
 	{
 		char buf[64];
-		sprintf_s(buf, "mesh_%016llx.bin", static_cast<unsigned long long>(BuildMeshHash(mesh)));
+		sprintf_s(buf, "mesh_%016llx_lod%d.bin", static_cast<unsigned long long>(BuildMeshHash(mesh, lodLevel)), lodLevel + 1);
 		return GetCacheDir() / buf;
 	}
 
-	bool SaveCacheFile(const std::filesystem::path& path, const BumpMesh* sourceMesh, const AutoLODMeshData& data)
+	bool SaveCacheFile(const std::filesystem::path& path, const BumpMesh* sourceMesh, const AutoLODMeshData& data, float ratio)
 	{
 		std::filesystem::create_directories(path.parent_path());
 
@@ -138,6 +188,7 @@ namespace {
 		header.vertexCount = static_cast<unsigned int>(data.vertices.size());
 		header.triangleCount = static_cast<unsigned int>(data.indices.size());
 		header.subMeshCount = static_cast<unsigned int>(data.subMeshIndexStart.size() > 0 ? data.subMeshIndexStart.size() - 1 : 0);
+		header.ratio = ratio;
 		header.obbExt = sourceMesh->OBB_Ext;
 		header.obbTr = sourceMesh->OBB_Tr;
 
@@ -170,7 +221,7 @@ namespace {
 		return ifs.good();
 	}
 
-	bool BuildSimplifiedMeshData(const BumpMesh* sourceMesh, AutoLODMeshData& outData)
+	bool BuildSimplifiedMeshData(const BumpMesh* sourceMesh, float targetRatio, AutoLODMeshData& outData)
 	{
 		gAutoLODSkipReason = nullptr;
 		if (sourceMesh->sourceVertexData.empty() || sourceMesh->sourceIndexData.empty() || sourceMesh->sourceSubMeshIndexStart.size() < 2) {
@@ -189,10 +240,7 @@ namespace {
 		const float ez = (sourceMesh->OBB_Ext.z > 1e-4f) ? sourceMesh->OBB_Ext.z : 1e-4f;
 		const float maxExt = (ex > ey) ? ((ex > ez) ? ex : ez) : ((ey > ez) ? ey : ez);
 		const float minExt = (ex < ey) ? ((ex < ez) ? ex : ez) : ((ey < ez) ? ey : ez);
-		if ((maxExt / minExt) >= kAutoLODMaxAspectRatio) {
-			gAutoLODSkipReason = "thin-structure";
-			return false;
-		}
+		const bool thinStructure = (maxExt / minExt) >= kAutoLODMaxAspectRatio;
 
 		const float horizontalMax = (ex > ez) ? ex : ez;
 		const float horizontalMin = (ex < ez) ? ex : ez;
@@ -260,8 +308,8 @@ namespace {
 
 		const bool smallSinglePartMesh =
 			subMeshCount == 1 &&
-			expandedTriangleCount <= 384 &&
-			maxExt <= 0.12f;
+			expandedTriangleCount <= 4096 &&
+			maxExt <= 1.25f;
 		const bool largeSinglePartVehicleLike =
 			subMeshCount == 1 &&
 			expandedTriangleCount >= 128 &&
@@ -278,21 +326,32 @@ namespace {
 			}
 		}
 
-		if (lowProfileWideMesh && substantialSubmeshCount >= 2) {
+		const bool vehicleStructure = lowProfileWideMesh && substantialSubmeshCount >= 2;
+		const bool assemblyStructure = subMeshCount >= 4 && substantialSubmeshCount >= 3;
+		const bool largeConservativeAssembly =
+			assemblyStructure &&
+			expandedTriangleCount >= 4096;
+		const bool unsafeForAggressiveLOD =
+			assemblyStructure ||
+			subMeshCount > 1 ||
+			(maxExt / minExt) > 6.0f ||
+			lowProfileWideMesh;
+		if (thinStructure) {
+			gAutoLODSkipReason = "thin-structure";
+			return false;
+		}
+		if (vehicleStructure || largeSinglePartVehicleLike) {
 			gAutoLODSkipReason = "vehicle-structure";
 			return false;
 		}
-
-		if (largeSinglePartVehicleLike) {
-			gAutoLODSkipReason = "vehicle-part-structure";
+		if (targetRatio <= 0.12f && unsafeForAggressiveLOD) {
+			gAutoLODSkipReason = "lod2-unsafe-structure";
 			return false;
 		}
-
-		if (subMeshCount >= 4 && substantialSubmeshCount >= 3) {
+		if (assemblyStructure && !largeConservativeAssembly) {
 			gAutoLODSkipReason = "assembly-structure";
 			return false;
 		}
-
 		std::vector<AutoLODAttr> attrs(expandedVertices.size());
 		for (size_t i = 0; i < expandedVertices.size(); ++i) {
 			const BumpMesh::Vertex& v = expandedVertices[i].vertex;
@@ -379,7 +438,7 @@ namespace {
 		}
 
 		const float attrWeights[8] = { 0.75f, 0.75f, 0.75f, uvWeight, uvWeight, 0.25f, 0.25f, 0.25f };
-		size_t targetIndexCount = static_cast<size_t>(float(expandedIndices.size()) * kAutoLODRatio);
+		size_t targetIndexCount = static_cast<size_t>(float(expandedIndices.size()) * targetRatio);
 		targetIndexCount = (targetIndexCount / 3) * 3;
 		targetIndexCount = std::max<size_t>(targetIndexCount, static_cast<size_t>(kAutoLODMinResultTriangles * 3));
 
@@ -407,13 +466,18 @@ namespace {
 		}
 
 		const bool isAssemblyLike =
+			assemblyStructure ||
+			vehicleStructure ||
 			(subMeshCount >= 4 && expandedTriangleCount >= 512) ||
 			(subMeshCount > 1 && protectedRatio >= 0.12f);
+		const bool allowNoLockFallback =
+			!isAssemblyLike &&
+			expandedTriangleCount <= 4096;
 		const bool preferClassicSimplifier =
 			isAssemblyLike ||
 			expandedTriangleCount >= 4096;
 		const bool allowPrune =
-			!isAssemblyLike &&
+			allowNoLockFallback &&
 			subMeshCount <= 6 &&
 			expandedTriangleCount <= 4096 &&
 			protectedRatio < 0.20f;
@@ -498,7 +562,7 @@ namespace {
 
 		const size_t minAcceptedIndexCount = std::max<size_t>(
 			static_cast<size_t>(kAutoLODMinResultTriangles * 3),
-			static_cast<size_t>(float(expandedIndices.size()) * kAutoLODMinAcceptedSubsetRatio));
+			static_cast<size_t>(float(expandedIndices.size()) * GetAutoLODMinAcceptedRatio(targetRatio)));
 
 		auto simplifyAccepted = [&](size_t indexCount) -> bool
 		{
@@ -520,7 +584,7 @@ namespace {
 			}
 		}
 
-		if (!simplifyAccepted(simplifiedCount) && !isAssemblyLike) {
+		if (!simplifyAccepted(simplifiedCount) && allowNoLockFallback) {
 			const std::vector<unsigned char> noLocks;
 			if (preferClassicSimplifier) {
 				simplifiedCount = trySimplifyClassic(noLocks, kAutoLODTargetError, lodIndices, lodError);
@@ -530,12 +594,12 @@ namespace {
 			}
 		}
 
-		if (!simplifyAccepted(simplifiedCount) && preferClassicSimplifier && !isAssemblyLike) {
+		if (!simplifyAccepted(simplifiedCount) && preferClassicSimplifier && allowNoLockFallback) {
 			usedUpdatedVertices = true;
 			simplifiedCount = trySimplify(vertexLocks, kAutoLODTargetError, lodIndices, updatedPositions, updatedAttrs, lodError);
 		}
 
-		if (!simplifyAccepted(simplifiedCount) && preferClassicSimplifier && !isAssemblyLike) {
+		if (!simplifyAccepted(simplifiedCount) && preferClassicSimplifier && allowNoLockFallback) {
 			std::vector<unsigned char> protectOnlyLocks = vertexLocks;
 			for (unsigned char& lock : protectOnlyLocks) {
 				lock &= ~meshopt_SimplifyVertex_Priority;
@@ -543,7 +607,7 @@ namespace {
 			simplifiedCount = trySimplify(protectOnlyLocks, kAutoLODTargetError, lodIndices, updatedPositions, updatedAttrs, lodError);
 		}
 
-		if (!simplifyAccepted(simplifiedCount) && preferClassicSimplifier && !isAssemblyLike) {
+		if (!simplifyAccepted(simplifiedCount) && preferClassicSimplifier && allowNoLockFallback) {
 			const std::vector<unsigned char> noLocks;
 			simplifiedCount = trySimplify(noLocks, kAutoLODTargetError, lodIndices, updatedPositions, updatedAttrs, lodError);
 		}
@@ -564,9 +628,10 @@ namespace {
 		}
 
 		const bool allowSloppyFallback =
+			!isAssemblyLike &&
 			subMeshCount <= 4 &&
-			expandedTriangleCount <= 2048 &&
-			protectedRatio < 0.15f;
+			expandedTriangleCount <= 4096 &&
+			protectedRatio < 0.20f;
 
 		if (!simplifyAccepted(simplifiedCount) && allowSloppyFallback) {
 			lodIndices = expandedIndices;
@@ -579,17 +644,17 @@ namespace {
 				expandedVertices.size(),
 				sizeof(ExpandedVertex),
 				targetIndexCount,
-				kAutoLODTargetError,
+				aggressiveTargetError,
 				&lodError);
 			usedUpdatedVertices = false;
 		}
 
 		if (!simplifyAccepted(simplifiedCount)) {
-			if (expandedTriangleCount >= 128 && expandedTriangleCount <= 12000) {
+			if (kAutoLODVerboseBuildLog && expandedTriangleCount >= 128 && expandedTriangleCount <= 12000) {
 				char dbg[512];
 				sprintf_s(dbg,
-					"[AutoLOD] simplify-failed-detail hash=%016llx tris=%llu submeshes=%llu substantial=%d protected=%.3f ext=(%.3f,%.3f,%.3f) lowProfile=%d assembly=%d preferClassic=%d allowPrune=%d allowSloppy=%d unlockedSingle=%d acceptedMin=%llu got=%llu\n",
-					static_cast<unsigned long long>(BuildMeshHash(sourceMesh)),
+					"[AutoLOD] simplify-failed-detail ratio=%.2f tris=%llu submeshes=%llu substantial=%d protected=%.3f ext=(%.3f,%.3f,%.3f) lowProfile=%d assembly=%d preferClassic=%d allowPrune=%d allowSloppy=%d unlockedSingle=%d acceptedMin=%llu got=%llu\n",
+					targetRatio,
 					static_cast<unsigned long long>(expandedTriangleCount),
 					static_cast<unsigned long long>(subMeshCount),
 					substantialSubmeshCount,
@@ -608,6 +673,33 @@ namespace {
 				OutputDebugStringA(dbg);
 			}
 			gAutoLODSkipReason = "simplify-failed";
+			return false;
+		}
+		const size_t maxAcceptedIndexCount = static_cast<size_t>(float(expandedIndices.size()) * GetAutoLODMaxAcceptedRatio(targetRatio));
+		const bool needsMoreReduction = simplifiedCount > maxAcceptedIndexCount;
+		const bool allowReductionFallback =
+			!isAssemblyLike &&
+			subMeshCount <= 6 &&
+			expandedTriangleCount <= 12000 &&
+			protectedRatio < 0.45f;
+		if (needsMoreReduction && allowReductionFallback) {
+			lodIndices = expandedIndices;
+			lodError = 0.0f;
+			const float fallbackError = targetRatio <= 0.12f ? aggressiveTargetError * 4.0f : aggressiveTargetError;
+			simplifiedCount = meshopt_simplifySloppy(
+				lodIndices.data(),
+				expandedIndices.data(),
+				expandedIndices.size(),
+				&expandedVertices[0].vertex.position.x,
+				expandedVertices.size(),
+				sizeof(ExpandedVertex),
+				targetIndexCount,
+				fallbackError,
+				&lodError);
+			usedUpdatedVertices = false;
+		}
+		if (float(simplifiedCount) > float(expandedIndices.size()) * GetAutoLODMaxAcceptedRatio(targetRatio)) {
+			gAutoLODSkipReason = "insufficient-reduction";
 			return false;
 		}
 
@@ -703,6 +795,15 @@ namespace {
 		}
 
 		meshopt_optimizeVertexCache(orderedIndices.data(), orderedIndices.data(), orderedIndices.size(), compactVertices.size());
+		meshopt_optimizeOverdraw(
+			orderedIndices.data(),
+			orderedIndices.data(),
+			orderedIndices.size(),
+			&compactVertices[0].vertex.position.x,
+			compactVertices.size(),
+			sizeof(ExpandedVertex),
+			1.05f);
+		meshopt_optimizeVertexCache(orderedIndices.data(), orderedIndices.data(), orderedIndices.size(), compactVertices.size());
 		const size_t finalVertexCount = meshopt_optimizeVertexFetch(
 			compactVertices.data(),
 			orderedIndices.data(),
@@ -759,6 +860,7 @@ namespace {
 
 	void DebugBuildMessage(const char* tag, const std::filesystem::path& path, size_t triCount, const char* detail = nullptr)
 	{
+		if (!kAutoLODVerboseBuildLog) return;
 		char dbg[512];
 		if (detail != nullptr && detail[0] != '\0') {
 			sprintf_s(dbg, "[AutoLOD] %s %s tris=%llu reason=%s\n", tag, path.string().c_str(), static_cast<unsigned long long>(triCount), detail);
@@ -779,6 +881,38 @@ namespace {
 		return ex * ey * ez;
 	}
 
+	bool ShouldSkipRuntimeMissCandidate(const BumpMesh* mesh, const char*& reason)
+	{
+		if (mesh == nullptr) {
+			reason = "null";
+			return true;
+		}
+
+		const size_t indexCount = mesh->sourceIndexData.size();
+		if (indexCount < static_cast<size_t>(kAutoLODMinSubsetTriangles)) {
+			reason = "too-few-triangles";
+			return true;
+		}
+
+		const XMFLOAT3 ext = mesh->OBB_Ext;
+		const float ex = (ext.x > 0.0f) ? ext.x : 0.0f;
+		const float ey = (ext.y > 0.0f) ? ext.y : 0.0f;
+		const float ez = (ext.z > 0.0f) ? ext.z : 0.0f;
+		const float maxExt = max(ex, max(ey, ez));
+		if (maxExt <= 0.04f && indexCount <= 512) {
+			reason = "tiny-detail";
+			return true;
+		}
+
+		if (indexCount > kAutoLODRuntimeBuildMaxTriangles) {
+			reason = "runtime-too-expensive";
+			return true;
+		}
+
+		reason = nullptr;
+		return false;
+	}
+
 	int GetAutoLODPlannedTotal()
 	{
 		return gAutoLODPreloadTotal;
@@ -789,9 +923,44 @@ namespace {
 		return gAutoLODPreloadProcessed + gAutoLODRuntimeProcessed;
 	}
 
+	int GetAutoLODUsableTotal(int lodLevel)
+	{
+		if (lodLevel < 0 || lodLevel >= kAutoLODLevelCount) return 0;
+		int usable = 0;
+		for (const auto& entry : gAutoLODMeshes) {
+			if (entry.second.levels[lodLevel] != nullptr) ++usable;
+		}
+		return usable;
+	}
+
 	int GetAutoLODUsableTotal()
 	{
-		return gAutoLODCacheHits + gAutoLODBuilds;
+		return GetAutoLODUsableTotal(0);
+	}
+
+	std::string GetAutoLODSkipSummary()
+	{
+		if (gAutoLODSkipReasonCounts.empty()) return "none";
+
+		std::vector<std::pair<std::string, int>> reasons;
+		reasons.reserve(gAutoLODSkipReasonCounts.size());
+		for (const auto& entry : gAutoLODSkipReasonCounts) {
+			reasons.push_back(entry);
+		}
+		std::sort(reasons.begin(), reasons.end(),
+			[](const auto& a, const auto& b) {
+				return a.second > b.second;
+			});
+
+		std::string summary;
+		const size_t count = (std::min)(size_t(5), reasons.size());
+		for (size_t i = 0; i < count; ++i) {
+			if (!summary.empty()) summary += ",";
+			summary += reasons[i].first;
+			summary += ":";
+			summary += std::to_string(reasons[i].second);
+		}
+		return summary;
 	}
 
 	float GetPercent(int part, int total)
@@ -828,13 +997,7 @@ namespace {
 		}
 
 		if (aSubMeshId != bSubMeshId) {
-			if (normalDot >= kAutoLODSubMeshPriorityNormalDot && tangentDot >= kAutoLODSubMeshPriorityTangentDot) {
-				return RemapPairPolicy::None;
-			}
-			if (normalDot >= kAutoLODNormalPriorityDot && tangentDot >= kAutoLODTangentPriorityDot) {
-				return RemapPairPolicy::Priority;
-			}
-			return RemapPairPolicy::None;
+			return RemapPairPolicy::Protect;
 		}
 
 		if (normalDot < kAutoLODNormalPriorityDot || tangentDot < kAutoLODTangentPriorityDot) {
@@ -849,42 +1012,159 @@ namespace {
 		return gAutoLODSkipReason ? gAutoLODSkipReason : "unknown";
 	}
 
+	void RecordAutoLODSkipReason(const char* reason)
+	{
+		const char* key = (reason != nullptr && reason[0] != '\0') ? reason : "unknown";
+		const int count = ++gAutoLODSkipReasonCounts[key];
+		if (count > gAutoLODTopSkipCount) {
+			gAutoLODTopSkipCount = count;
+			gAutoLODTopSkipReason = key;
+		}
+	}
+
+	void RecordAutoLODFailedMesh(const Mesh* mesh, const char* reason)
+	{
+		if (mesh == nullptr) return;
+		const char* key = (reason != nullptr && reason[0] != '\0') ? reason : "unknown";
+		gAutoLODFailureReasons[mesh] = key;
+	}
+
+	std::string GetAutoLODFrameMissSummary()
+	{
+		if (gAutoLODFrameMissTriangles.empty()) return "none";
+
+		std::vector<std::pair<std::string, uint64_t>> reasons;
+		reasons.reserve(gAutoLODFrameMissTriangles.size());
+		for (const auto& entry : gAutoLODFrameMissTriangles) {
+			reasons.push_back(entry);
+		}
+		std::sort(reasons.begin(), reasons.end(),
+			[](const auto& a, const auto& b) {
+				return a.second > b.second;
+			});
+
+		std::string summary;
+		const size_t count = (std::min)(size_t(4), reasons.size());
+		for (size_t i = 0; i < count; ++i) {
+			if (!summary.empty()) summary += ",";
+			summary += reasons[i].first;
+			summary += ":";
+			summary += std::to_string(reasons[i].second);
+		}
+		return summary;
+	}
+
+	bool TryLoadCachedLODForMesh(BumpMesh* mesh)
+	{
+		if (mesh == nullptr || mesh->IsAutoLODGenerated) return false;
+		if (!mesh->sourceAutoLODReady || mesh->sourceVertexData.empty() || mesh->sourceIndexData.empty()) return false;
+		auto existing = gAutoLODMeshes.find(mesh);
+		if (existing != gAutoLODMeshes.end() && existing->second.levels[0] != nullptr) return true;
+
+		AutoLODMeshSet loadedSet;
+		bool loadedAny = false;
+		for (int level = 0; level < kAutoLODLevelCount; ++level) {
+			const std::filesystem::path cachePath = GetCachePath(mesh, level);
+			const std::string cacheKey = cachePath.string();
+			if (gAutoLODFailedCacheKeys.find(cacheKey) != gAutoLODFailedCacheKeys.end()) {
+				continue;
+			}
+
+			AutoLODCacheHeader header;
+			AutoLODMeshData data;
+			if (!LoadCacheFile(cachePath, header, data)) continue;
+			BumpMesh* lodMesh = CreateLODMeshFromData(mesh, data);
+			if (lodMesh == nullptr) continue;
+
+			loadedSet.levels[level] = lodMesh;
+			loadedAny = true;
+			++gAutoLODCacheHits;
+			DebugBuildMessage("cache-hit", cachePath, data.indices.size());
+		}
+
+		if (!loadedAny || loadedSet.levels[0] == nullptr) return false;
+		gAutoLODMeshes[mesh] = loadedSet;
+		return true;
+	}
+
 	void BuildLODForMesh(BumpMesh* mesh)
 	{
 		if (mesh == nullptr || mesh->IsAutoLODGenerated) return;
+		DebugCacheDirOnce();
 		if (!mesh->sourceAutoLODReady || mesh->sourceVertexData.empty() || mesh->sourceIndexData.empty()) {
 			++gAutoLODSkips;
+			RecordAutoLODSkipReason("not-ready");
+			RecordAutoLODFailedMesh(mesh, "not-ready");
 			return;
 		}
-		if (gAutoLODMeshes.find(mesh) != gAutoLODMeshes.end()) return;
+		auto existing = gAutoLODMeshes.find(mesh);
+		if (existing != gAutoLODMeshes.end() && existing->second.levels[0] != nullptr) return;
 
-		const std::filesystem::path cachePath = GetCachePath(mesh);
-		AutoLODCacheHeader header;
-		AutoLODMeshData data;
+		const std::filesystem::path requiredCachePath = GetCachePath(mesh, 0);
+		const std::string requiredCacheKey = requiredCachePath.string();
+		if (gAutoLODFailedCacheKeys.find(requiredCacheKey) != gAutoLODFailedCacheKeys.end()) {
+			++gAutoLODSkips;
+			RecordAutoLODSkipReason("cached-failed-this-run");
+			RecordAutoLODFailedMesh(mesh, "cached-failed-this-run");
+			return;
+		}
 
-		if (LoadCacheFile(cachePath, header, data)) {
-			BumpMesh* lodMesh = CreateLODMeshFromData(mesh, data);
-			if (lodMesh != nullptr) {
-				gAutoLODMeshes[mesh] = lodMesh;
-				++gAutoLODCacheHits;
-				DebugBuildMessage("cache-hit", cachePath, data.indices.size());
-				return;
+		AutoLODMeshSet meshSet;
+		bool loadedRequired = false;
+		for (int level = 0; level < kAutoLODLevelCount; ++level) {
+			const std::filesystem::path cachePath = GetCachePath(mesh, level);
+			AutoLODCacheHeader header;
+			AutoLODMeshData data;
+			if (LoadCacheFile(cachePath, header, data)) {
+				BumpMesh* lodMesh = CreateLODMeshFromData(mesh, data);
+				if (lodMesh != nullptr) {
+					meshSet.levels[level] = lodMesh;
+					if (level == 0) loadedRequired = true;
+					++gAutoLODCacheHits;
+					DebugBuildMessage("cache-hit", cachePath, data.indices.size());
+				}
 			}
+		}
+		if (loadedRequired) {
+			gAutoLODMeshes[mesh] = meshSet;
+			return;
 		}
 
 		++gAutoLODCacheMisses;
-		if (!BuildSimplifiedMeshData(mesh, data)) {
-			++gAutoLODSkips;
-			DebugBuildMessage("skip", cachePath, mesh->sourceIndexData.size(), GetAutoLODSkipReason());
-			return;
+		bool builtRequired = false;
+		for (int level = 0; level < kAutoLODLevelCount; ++level) {
+			if (meshSet.levels[level] != nullptr) continue;
+
+			const float ratio = GetAutoLODRatio(level);
+			const std::filesystem::path cachePath = GetCachePath(mesh, level);
+			const std::string cacheKey = cachePath.string();
+			AutoLODMeshData data;
+			if (!BuildSimplifiedMeshData(mesh, ratio, data)) {
+				if (level == 0) {
+					++gAutoLODSkips;
+					RecordAutoLODSkipReason(GetAutoLODSkipReason());
+					RecordAutoLODFailedMesh(mesh, GetAutoLODSkipReason());
+					gAutoLODFailedCacheKeys.insert(cacheKey);
+				}
+				DebugBuildMessage("skip", cachePath, mesh->sourceIndexData.size(), GetAutoLODSkipReason());
+				continue;
+			}
+
+			if (!SaveCacheFile(cachePath, mesh, data, ratio)) {
+				DebugBuildMessage("cache-save-failed", cachePath, data.indices.size());
+			}
+			BumpMesh* lodMesh = CreateLODMeshFromData(mesh, data);
+			if (lodMesh != nullptr) {
+				meshSet.levels[level] = lodMesh;
+				if (level == 0) builtRequired = true;
+				DebugBuildMessage("build", cachePath, data.indices.size());
+			}
 		}
 
-		SaveCacheFile(cachePath, mesh, data);
-		BumpMesh* lodMesh = CreateLODMeshFromData(mesh, data);
-		if (lodMesh != nullptr) {
-			gAutoLODMeshes[mesh] = lodMesh;
-			++gAutoLODBuilds;
-			DebugBuildMessage("build", cachePath, data.indices.size());
+		if (meshSet.levels[0] != nullptr) {
+			gAutoLODMeshes[mesh] = meshSet;
+			gAutoLODFailureReasons.erase(mesh);
+			if (builtRequired) ++gAutoLODBuilds;
 		}
 	}
 }
@@ -902,10 +1182,15 @@ void AutoLOD_ResetPreloadQueue()
 	gPreloadQueue.clear();
 	gRuntimeQueue.clear();
 	gQueuedPreloadMeshes.clear();
+	gAutoLODFailedCacheKeys.clear();
+	gAutoLODFailureReasons.clear();
 	gAutoLODPreloadProcessed = 0;
 	gAutoLODPreloadTotal = 0;
 	gAutoLODRuntimeProcessed = 0;
 	gAutoLODRuntimeTotal = 0;
+	gAutoLODSkipReasonCounts.clear();
+	gAutoLODTopSkipReason = "none";
+	gAutoLODTopSkipCount = 0;
 }
 
 //Push Single Mesh to Preload Queue
@@ -943,18 +1228,48 @@ void AutoLOD_ProcessPreloadQueue()
 	gAutoLODRuntimeProcessed = 0;
 	gAutoLODRuntimeTotal = 0;
 
+	int preloadCacheHits = 0;
+	int deferredMisses = 0;
+	int preloadSkippedMisses = 0;
+	int scannedPreloadEntries = 0;
 	for (const PreloadEntry& entry : gPreloadQueue) {
-		if (entry.priority >= kAutoLODPreloadLargeVolume) {
+		++scannedPreloadEntries;
+		if (TryLoadCachedLODForMesh(entry.mesh)) {
+			++gAutoLODPreloadProcessed;
+			++preloadCacheHits;
+		}
+		else if (entry.priority >= kAutoLODPreloadLargeVolume) {
 			++gAutoLODPreloadProcessed;
 			BuildLODForMesh(entry.mesh);
+		}
+		else {
+			const char* preloadSkipReason = nullptr;
+			if (ShouldSkipRuntimeMissCandidate(entry.mesh, preloadSkipReason)) {
+				++gAutoLODPreloadProcessed;
+				++gAutoLODSkips;
+				++preloadSkippedMisses;
+				RecordAutoLODSkipReason(preloadSkipReason);
+				RecordAutoLODFailedMesh(entry.mesh, preloadSkipReason);
+			}
+			else {
+				gRuntimeQueue.push_back(entry);
+				++gAutoLODRuntimeTotal;
+				++deferredMisses;
+			}
+		}
 
-			if ((gAutoLODPreloadProcessed % 32) == 0 || gAutoLODPreloadProcessed == gAutoLODPreloadTotal) {
-				char dbg[256];
+		if ((scannedPreloadEntries % 64) == 0 || scannedPreloadEntries == gAutoLODPreloadTotal) {
+			if (kAutoLODVerboseBuildLog) {
+				char dbg[320];
 				sprintf_s(dbg,
-					"[AutoLOD] preload=%d/%d (%.1f%%) hits=%d builds=%d misses=%d skips=%d\n",
-					gAutoLODPreloadProcessed,
+					"[AutoLOD] preload-scan=%d/%d (%.1f%%) loaded=%d preloadHits=%d deferredMisses=%d preloadSkips=%d hits=%d builds=%d misses=%d skips=%d\n",
+					scannedPreloadEntries,
 					gAutoLODPreloadTotal,
-					(gAutoLODPreloadTotal > 0) ? (100.0f * float(gAutoLODPreloadProcessed) / float(gAutoLODPreloadTotal)) : 0.0f,
+					(gAutoLODPreloadTotal > 0) ? (100.0f * float(scannedPreloadEntries) / float(gAutoLODPreloadTotal)) : 0.0f,
+					gAutoLODPreloadProcessed,
+					preloadCacheHits,
+					deferredMisses,
+					preloadSkippedMisses,
 					gAutoLODCacheHits,
 					gAutoLODBuilds,
 					gAutoLODCacheMisses,
@@ -962,16 +1277,12 @@ void AutoLOD_ProcessPreloadQueue()
 				OutputDebugStringA(dbg);
 			}
 		}
-		else {
-			gRuntimeQueue.push_back(entry);
-			++gAutoLODRuntimeTotal;
-		}
 	}
 
 	if (!gRuntimeQueue.empty()) {
 		char dbg[256];
 		sprintf_s(dbg,
-			"[AutoLOD] deferred=%d small meshes will build during gameplay\n",
+			"[AutoLOD] deferred=%d cache-miss meshes will build during gameplay\n",
 			static_cast<int>(gRuntimeQueue.size()));
 		OutputDebugStringA(dbg);
 	}
@@ -993,6 +1304,15 @@ void AutoLOD_ProcessRuntimeQueue(int maxCount)
 		gRuntimeQueue.pop_back();
 		++processedThisTick;
 		++gAutoLODRuntimeProcessed;
+
+		const char* runtimeSkipReason = nullptr;
+		if (ShouldSkipRuntimeMissCandidate(entry.mesh, runtimeSkipReason)) {
+			++gAutoLODSkips;
+			RecordAutoLODSkipReason(runtimeSkipReason);
+			RecordAutoLODFailedMesh(entry.mesh, runtimeSkipReason);
+			continue;
+		}
+
 		BuildLODForMesh(entry.mesh);
 	}
 
@@ -1000,35 +1320,46 @@ void AutoLOD_ProcessRuntimeQueue(int maxCount)
 			const int plannedTotal = GetAutoLODPlannedTotal();
 			const int processedTotal = GetAutoLODProcessedTotal();
 			const int usableTotal = GetAutoLODUsableTotal();
-			char dbg[320];
-			sprintf_s(dbg,
-				"[AutoLOD] runtime-build=%d/%d remaining=%d progress=%d/%d (%.1f%%) usable=%d/%d (%.1f%%) hits=%d builds=%d misses=%d skips=%d\n",
-				gAutoLODRuntimeProcessed,
-				gAutoLODRuntimeTotal,
-				static_cast<int>(gRuntimeQueue.size()),
-				processedTotal,
-				plannedTotal,
-				GetPercent(processedTotal, plannedTotal),
-				usableTotal,
-				plannedTotal,
-				GetPercent(usableTotal, plannedTotal),
-				gAutoLODCacheHits,
-				gAutoLODBuilds,
-				gAutoLODCacheMisses,
-				gAutoLODSkips);
-			OutputDebugStringA(dbg);
-
-			if (gRuntimeQueue.empty()) {
-				char doneDbg[256];
-				sprintf_s(doneDbg,
-					"[AutoLOD] generation-complete progress=%d/%d (%.1f%%) usable=%d/%d (%.1f%%) skipped=%d\n",
+			const int usableLOD2Total = GetAutoLODUsableTotal(1);
+			if (kAutoLODVerboseBuildLog) {
+				const std::string skipSummary = GetAutoLODSkipSummary();
+				char dbg[512];
+				sprintf_s(dbg,
+					"[AutoLOD] runtime-build=%d/%d remaining=%d progress=%d/%d (%.1f%%) usable=%d/%d (%.1f%%) lod2=%d hits=%d builds=%d misses=%d skips=%d topSkips=%s runtimeCap=%zu\n",
+					gAutoLODRuntimeProcessed,
+					gAutoLODRuntimeTotal,
+					static_cast<int>(gRuntimeQueue.size()),
 					processedTotal,
 					plannedTotal,
 					GetPercent(processedTotal, plannedTotal),
 					usableTotal,
 					plannedTotal,
 					GetPercent(usableTotal, plannedTotal),
-					gAutoLODSkips);
+					usableLOD2Total,
+					gAutoLODCacheHits,
+					gAutoLODBuilds,
+					gAutoLODCacheMisses,
+					gAutoLODSkips,
+					skipSummary.c_str(),
+					kAutoLODRuntimeBuildMaxTriangles);
+				OutputDebugStringA(dbg);
+			}
+
+			if (gRuntimeQueue.empty()) {
+				const std::string skipSummary = GetAutoLODSkipSummary();
+				char doneDbg[384];
+				sprintf_s(doneDbg,
+					"[AutoLOD] generation-complete progress=%d/%d (%.1f%%) usable=%d/%d (%.1f%%) lod2=%d skipped=%d topSkips=%s runtimeCap=%zu\n",
+					processedTotal,
+					plannedTotal,
+					GetPercent(processedTotal, plannedTotal),
+					usableTotal,
+					plannedTotal,
+					GetPercent(usableTotal, plannedTotal),
+					usableLOD2Total,
+					gAutoLODSkips,
+					skipSummary.c_str(),
+					kAutoLODRuntimeBuildMaxTriangles);
 				OutputDebugStringA(doneDbg);
 			}
 	}
@@ -1036,9 +1367,16 @@ void AutoLOD_ProcessRuntimeQueue(int maxCount)
 
 Mesh* AutoLOD_GetLODMesh(Mesh* sourceMesh)
 {
+	return AutoLOD_GetLODMesh(sourceMesh, 0);
+}
+
+Mesh* AutoLOD_GetLODMesh(Mesh* sourceMesh, int lodLevel)
+{
+	if (lodLevel < 0) lodLevel = 0;
+	if (lodLevel >= kAutoLODLevelCount) lodLevel = kAutoLODLevelCount - 1;
 	auto it = gAutoLODMeshes.find(sourceMesh);
 	if (it == gAutoLODMeshes.end()) return nullptr;
-	return it->second;
+	return it->second.levels[lodLevel];
 }
 
 void AutoLOD_SetModelLODRenderActive(bool active)
@@ -1051,20 +1389,78 @@ bool AutoLOD_IsModelLODRenderActive()
 	return gAutoLODModelRenderActive;
 }
 
+void AutoLOD_SetModelLODRenderLevel(int lodLevel)
+{
+	if (lodLevel < 0) lodLevel = 0;
+	if (lodLevel >= kAutoLODLevelCount) lodLevel = kAutoLODLevelCount - 1;
+	gAutoLODModelRenderLevel = lodLevel;
+}
+
+int AutoLOD_GetModelLODRenderLevel()
+{
+	return gAutoLODModelRenderLevel;
+}
+
 void AutoLOD_BeginFrame()
 {
 	gAutoLODTrackFrameStats = true;
 	gAutoLODFrameTotal = 0;
 	gAutoLODFrameActive = 0;
 	gAutoLODFrameResolved = 0;
+	gAutoLODFrameActiveSourceTriangles = 0;
+	gAutoLODFrameSourceTriangles = 0;
+	gAutoLODFrameRenderedTriangles = 0;
+	gAutoLODFrameSavedTriangles = 0;
+	gAutoLODFrameMissTriangles.clear();
 }
 
-void AutoLOD_RecordFrameSelection(bool usedLOD, bool resolvedLOD)
+void AutoLOD_RecordFrameSelection(bool usedLOD, bool resolvedLOD, size_t sourceTriangles, size_t renderedTriangles, size_t activeSourceTriangles)
 {
 	if (!gAutoLODTrackFrameStats) return;
 	++gAutoLODFrameTotal;
-	if (usedLOD) ++gAutoLODFrameActive;
-	if (resolvedLOD) ++gAutoLODFrameResolved;
+	if (usedLOD) {
+		++gAutoLODFrameActive;
+		gAutoLODFrameActiveSourceTriangles += static_cast<uint64_t>(activeSourceTriangles > 0 ? activeSourceTriangles : sourceTriangles);
+	}
+	if (resolvedLOD) {
+		++gAutoLODFrameResolved;
+		gAutoLODFrameSourceTriangles += static_cast<uint64_t>(sourceTriangles);
+		gAutoLODFrameRenderedTriangles += static_cast<uint64_t>(renderedTriangles);
+		if (sourceTriangles > renderedTriangles) {
+			gAutoLODFrameSavedTriangles += static_cast<uint64_t>(sourceTriangles - renderedTriangles);
+		}
+	}
+}
+
+void AutoLOD_RecordFrameMiss(Mesh* sourceMesh, size_t sourceTriangles)
+{
+	if (!gAutoLODTrackFrameStats || sourceTriangles == 0) return;
+
+	const char* reason = "unknown";
+	if (sourceMesh == nullptr) {
+		reason = "null";
+	}
+	else if (sourceMesh->type != Mesh::MeshType::_BumpMesh) {
+		reason = "not-bump";
+	}
+	else {
+		auto successIt = gAutoLODMeshes.find(sourceMesh);
+		if (successIt != gAutoLODMeshes.end() && successIt->second.levels[0] != nullptr) {
+			reason = "render-rejected";
+		}
+		else {
+			auto failIt = gAutoLODFailureReasons.find(sourceMesh);
+			if (failIt != gAutoLODFailureReasons.end()) {
+				reason = failIt->second.c_str();
+			}
+			else {
+				BumpMesh* bumpMesh = static_cast<BumpMesh*>(sourceMesh);
+				reason = bumpMesh->sourceAutoLODReady ? "not-generated" : "not-ready";
+			}
+		}
+	}
+
+	gAutoLODFrameMissTriangles[reason] += static_cast<uint64_t>(sourceTriangles);
 }
 
 void AutoLOD_DebugUpdate(float deltaTime)
@@ -1075,24 +1471,44 @@ void AutoLOD_DebugUpdate(float deltaTime)
 
 	float activePct = 0.0f;
 	float resolvedPct = 0.0f;
+	float triResolvedPct = 0.0f;
+	float savedPct = 0.0f;
 	if (gAutoLODFrameTotal > 0) {
 		activePct = 100.0f * float(gAutoLODFrameActive) / float(gAutoLODFrameTotal);
 		resolvedPct = 100.0f * float(gAutoLODFrameResolved) / float(gAutoLODFrameTotal);
+	}
+	if (gAutoLODFrameActiveSourceTriangles > 0) {
+		triResolvedPct = 100.0f * float(gAutoLODFrameSourceTriangles) / float(gAutoLODFrameActiveSourceTriangles);
+	}
+	if (gAutoLODFrameSourceTriangles > 0) {
+		savedPct = 100.0f * float(gAutoLODFrameSavedTriangles) / float(gAutoLODFrameSourceTriangles);
 	}
 
 	const int plannedTotal = GetAutoLODPlannedTotal();
 	const int processedTotal = GetAutoLODProcessedTotal();
 	const int usableTotal = GetAutoLODUsableTotal();
+	const int usableLOD2Total = GetAutoLODUsableTotal(1);
+	const std::string skipSummary = GetAutoLODSkipSummary();
+	const std::string missSummary = GetAutoLODFrameMissSummary();
 	const bool generationComplete = (plannedTotal > 0) && (processedTotal >= plannedTotal) && gRuntimeQueue.empty();
+	if (generationComplete && gAutoLODFrameActive == 0 && gAutoLODFrameResolved == 0) return;
 
-	char dbg[384];
+	char dbg[900];
 	sprintf_s(dbg,
-		"[AutoLOD] active=%d/%d (%.1f%%) resolved=%d (%.1f%%) gen=%d/%d (%.1f%%,%s) usable=%d/%d (%.1f%%) hits=%d builds=%d misses=%d skips=%d ratio=%.2f\n",
+		"[AutoLOD] render=%s active=%d/%d (%.1f%%) resolved=%d (%.1f%%) activeTris=%llu triCover=%.1f%% missTris=%s tris=%llu->%llu saved=%llu (%.1f%%) gen=%d/%d (%.1f%%,%s) usable=%d/%d (%.1f%%) lod2=%d skips=%d topSkips=%s ratios=%.2f/%.2f runtimeCap=%zu\n",
+		gAutoLODModelRenderActive ? "ON" : "OFF",
 		gAutoLODFrameActive,
 		gAutoLODFrameTotal,
 		activePct,
 		gAutoLODFrameResolved,
 		resolvedPct,
+		static_cast<unsigned long long>(gAutoLODFrameActiveSourceTriangles),
+		triResolvedPct,
+		missSummary.c_str(),
+		static_cast<unsigned long long>(gAutoLODFrameSourceTriangles),
+		static_cast<unsigned long long>(gAutoLODFrameRenderedTriangles),
+		static_cast<unsigned long long>(gAutoLODFrameSavedTriangles),
+		savedPct,
 		processedTotal,
 		plannedTotal,
 		GetPercent(processedTotal, plannedTotal),
@@ -1100,10 +1516,11 @@ void AutoLOD_DebugUpdate(float deltaTime)
 		usableTotal,
 		plannedTotal,
 		GetPercent(usableTotal, plannedTotal),
-		gAutoLODCacheHits,
-		gAutoLODBuilds,
-		gAutoLODCacheMisses,
+		usableLOD2Total,
 		gAutoLODSkips,
-		kAutoLODRatio);
+		skipSummary.c_str(),
+		kAutoLODRatios[0],
+		kAutoLODRatios[1],
+		kAutoLODRuntimeBuildMaxTriangles);
 	OutputDebugStringA(dbg);
 }

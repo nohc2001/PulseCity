@@ -57,6 +57,8 @@ union STC_Protocol {
 		SyncPlayerMoveZone = 11,
 
 		ServerTransfer = 12,
+
+		SkillCast = 13,
 	};
 
 	// enum�� ���ڷ� ��Ÿ�� ��.
@@ -198,6 +200,59 @@ struct STC_ServerTransfer_Header {
 	char ip[32] = {};
 };
 
+enum class PlayerJob : int {
+	Juggernaut,
+	Frost,
+	Aegis,
+	Mage,
+	Healer,
+	Gunner,
+	Tank,
+	Max
+};
+
+enum class SkillSlot : int {
+	Skill1,
+	Skill2,
+	Ultimate,
+	Max
+};
+
+enum class SkillEffectType : int {
+	Mage_FireBall,
+	Healer_HealAura,
+	Gunner_Muzzle,
+	Tank_ShockWave,
+	Fire_Pillar,
+	Fire_Ring,
+	Electric_Arc,
+	Electric_Burst,
+	Ember_Shower,
+	Juggernaut_FireProjectile,
+	Juggernaut_Taunt,
+	Juggernaut_UltimateFire,
+	Frost_Cone,
+	Frost_IceBlock,
+	Frost_Blizzard,
+	Aegis_ShieldCharge,
+	Aegis_Barrier,
+	Aegis_ShieldAura,
+};
+
+struct STC_SkillCast_Header {
+	unsigned int size = sizeof(STC_SkillCast_Header);
+	STC_Protocol st = STC_Protocol::SkillCast;
+	int ownerObjIndex = -1;
+	PlayerJob job = PlayerJob::Healer;
+	SkillSlot slot = SkillSlot::Skill1;
+	SkillEffectType effectType = SkillEffectType::Healer_HealAura;
+	vec4 position = vec4(0, 0, 0, 1);
+	vec4 direction = vec4(0, 0, 1, 0);
+	float radius = 1.0f;
+	float power = 1.0f;
+	float duration = 1.0f;
+};
+
 union CTS_Protocol {
 	enum {
 		KeyInput = 0,
@@ -206,6 +261,8 @@ union CTS_Protocol {
 		TransferConnect = 3,
 		ServerPlayerTransfer = 4,
 		ChangeInventoryItemSlot = 5,
+		UseSkill = 6,
+		ChangeJob = 7,
 	};
 	short n;
 	char two_byte[2];
@@ -226,6 +283,18 @@ struct CTS_SyncRotation_Header {
 	CTS_Protocol st = CTS_Protocol::SyncRotation;
 	float yaw;
 	float pitch;
+};
+
+struct CTS_UseSkill_Header {
+	unsigned int size = sizeof(CTS_UseSkill_Header);
+	CTS_Protocol st = CTS_Protocol::UseSkill;
+	SkillSlot slot = SkillSlot::Skill1;
+};
+
+struct CTS_ChangeJob_Header {
+	unsigned int size = sizeof(CTS_ChangeJob_Header);
+	CTS_Protocol st = CTS_Protocol::ChangeJob;
+	PlayerJob job = PlayerJob::Healer;
 };
 
 struct CTS_ClientHello_Header {
@@ -252,8 +321,9 @@ struct PlayerTransferData {
 	int DeathCount = 0;
 	float HeatGauge = 0.0f;
 	float MaxHeatGauge = 100.0f;
-	float HealSkillCooldown = 10.0f;
-	float HealSkillCooldownFlow = 0.0f;
+	int m_currentJob = (int)PlayerJob::Healer;
+	float SkillCooldown[(int)SkillSlot::Max] = {};
+	float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 	int m_currentWeaponType = 0;
 	ItemStack Inventory[36] = {};
 };
