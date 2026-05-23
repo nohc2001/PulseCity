@@ -599,6 +599,7 @@ struct Particle
 	UINT RandomSeed;
 	UINT FrameIndex;
 	UINT FrameCount;
+	UINT FrameCols;
 };
 
 

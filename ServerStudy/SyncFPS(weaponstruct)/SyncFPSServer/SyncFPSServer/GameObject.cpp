@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "GameObject.h"
 #include <set>
 using namespace std;
@@ -33,7 +33,7 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, bool centering)
 		char rstr[128] = {};
 		in >> rstr;
 		if (strcmp(rstr, "v") == 0) {
-			//��ǥ
+			//좌표
 			XMFLOAT3 pos;
 			in >> pos.x;
 			in >> pos.y;
@@ -63,9 +63,9 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, bool centering)
 	MAXpos.y = (maxPos.y - minPos.y) * 0.5f;
 	MAXpos.z = (maxPos.z - minPos.z) * 0.5f;
 
-	// fbx�� �⺻ ũ�� ������ 100 �̱� ������ �̷��� ��������.
-	// ������ UnitScale�� �ٸ� ��쿡�� ��� �ϴ°�?
-	// ��ġ�� �ʿ��ϴ�.
+	// fbx의 기본 크기 비율이 100 이기 때문에 이렇게 조정했음.
+	// 하지만 UnitScale이 다를 경우에는 어떻게 하는가?
+	// 조치가 필요하다.
 	MAXpos *= 0.01f;
 
 	subMeshNum = 1;
@@ -515,7 +515,7 @@ void DynamicGameObject::SetWorld(matrix local)
 {
 	Zone& zone = gameworld.zones[zoneId];
 
-	//���� ûũ���� ���� �����
+	//기존 청크에서 정보 지우기
 	if (chunkAllocIndexs) {
 		ChunkIndex ci = ChunkIndex(IncludeChunks.xmin, IncludeChunks.ymin, IncludeChunks.zmin);
 		int len = IncludeChunks.GetChunckSize();
@@ -530,7 +530,7 @@ void DynamicGameObject::SetWorld(matrix local)
 	worldMat = local;
 
 	if (chunkAllocIndexs) {
-		// �� ��ġ���� ûũ�� �ֱ�
+		// 새 위치에서 청크에 넣기
 		GameObjectIncludeChunks chunkIds = zone.GetChunks_Include_OBB(GetOBB());
 		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
 		ci.extra = 0;
@@ -579,14 +579,14 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
         chunkAllocIndexsCapacity = requiredChunkCapacity;
     }
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci) { // ��ġ�� �κ��� Free ���� �ʴ´�.
+		if (ci == inter_ci) { // 곂치는 부분을 Free 하지 않는다.
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
 			continue;
 		}
 
-		// �� ��ġ�� �κ��� Free �Ѵ�.
+		// 안 곂치는 부분은 Free 한다.
 		auto f = zone->chunck.find(ci);
 		if (f != zone->chunck.end()) {
 #ifdef DEVELOPMODE_ChunckDEBUG
@@ -596,7 +596,7 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
 		}
 	}
 
-	// ��ġ �̵� / ȸ��
+	// 위치 이동 / 회전
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
@@ -611,7 +611,7 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
 
 	inter_up = 0;
 	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
-		if (ci == inter_ci) { // ��ġ�� �κ��� Alloc ���� �ʴ´�.
+		if (ci == inter_ci) { // 곂치는 부분을 Alloc 하지 않는다.
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
@@ -1039,14 +1039,14 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
     }
 	
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci && inter_Count > 0) { // ��ġ�� �κ��� Free ���� �ʴ´�.
+		if (ci == inter_ci && inter_Count > 0) { // 곂치는 부분을 Free 하지 않는다.
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
 			
 			continue;
 		}
-		// �� ��ġ�� �κ��� Free �Ѵ�.
+		// 안 곂치는 부분은 Free 한다.
 		auto f = zone->chunck.find(ci);
 		if (f != zone->chunck.end()) {
 #ifdef DEVELOPMODE_ChunckDEBUG 
@@ -1062,7 +1062,7 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 
 
 
-	// ��ġ �̵� / ȸ��
+	// 위치 이동 / 회전
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
@@ -1082,7 +1082,7 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 #endif
 	inter_up = 0;
 	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
-		if (ci == inter_ci && inter_Count > 0) { // ��ġ�� �κ��� Alloc ���� �ʴ´�.
+		if (ci == inter_ci && inter_Count > 0) { // 곂치는 부분을 Alloc 하지 않는다.
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
@@ -1181,7 +1181,7 @@ void SkinMeshGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 void SkinMeshGameObject::SetWorld(matrix local) {
 	Zone& zone = gameworld.zones[zoneId];
 
-	//���� ûũ���� ���� �����
+	//기존 청크에서 정보 지우기
 	if (chunkAllocIndexs) {
 		ChunkIndex ci = ChunkIndex(IncludeChunks.xmin, IncludeChunks.ymin, IncludeChunks.zmin);
 		int len = IncludeChunks.GetChunckSize();
@@ -1196,7 +1196,7 @@ void SkinMeshGameObject::SetWorld(matrix local) {
 	worldMat = local;
 
 	if (chunkAllocIndexs) {
-		// �� ��ġ���� ûũ�� �ֱ�
+		// 새 위치에서 청크에 넣기
 		GameObjectIncludeChunks chunkIds = zone.GetChunks_Include_OBB(GetOBB());
 		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
 		ci.extra = 0;
@@ -1243,7 +1243,7 @@ void GameMap::StaticCollisionMove(DynamicGameObject* obj)
 	BoundingOrientedBox obb = obj->GetOBB();
 	obj->worldMat.pos -= obj->tickLVelocity;
 
-	// ������ ���� ûũ������ ã�Ƴ�.
+	// 움직인 후의 청크영역을 찾아냄.
 	GameObjectIncludeChunks goic = ownerzone->GetChunks_Include_OBB(obb);
 
 	for (int ix = goic.xmin; ix <= goic.xmin + goic.xlen; ++ix) {
@@ -1252,10 +1252,10 @@ void GameMap::StaticCollisionMove(DynamicGameObject* obj)
 				auto chun = ownerzone->chunck.find(ChunkIndex(ix, iy, iz));
 				if (chun == ownerzone->chunck.end()) continue;
 				GameChunk* ch = chun->second;
-				//Static Object�� Enable�� false�� �� ���� ������ �Ҵ�˻�� ����.
-				// >> �׷� �׳� vector���� ��������� �� vecset���� ��? >> fix
+				//Static Object는 Enable이 false일 수 없기 때문에 할당검사는 안함.
+				// >> 그럼 그냥 vector여도 상관없잖음 왜 vecset으로 함? >> fix
 
-				//��¥�� ������ ûũ�� �� ����°� ���� ������? �׷� nullptr üũ�� �� �ʿ䰡 �ֳ�?
+				//어짜피 서버면 청크를 다 만드는게 맞지 않을까? 그럼 nullptr 체크를 할 필요가 있나?
 				// fix
 				for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
 					BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
@@ -1356,8 +1356,8 @@ void GameMap::LoadMap(const char* MapName)
 		map->name[i] = name;
 	}
 
-	TextureTableStart = gameworld.GlobalTextureCount; // fix : ���� MaterialTexture ����
-	MaterialTableStart = gameworld.GlobalMaterialCount; // fix : ���� Material ����
+	TextureTableStart = gameworld.GlobalTextureCount; // fix : 현재 MaterialTexture 개수
+	MaterialTableStart = gameworld.GlobalMaterialCount; // fix : 현재 Material 개수
 
 	constexpr char MeshDir[] = "Mesh/";
 	constexpr char TextureDir[] = "Texture/";
@@ -1379,7 +1379,7 @@ void GameMap::LoadMap(const char* MapName)
 		Mesh mesh;
 
 		string filename = MeshDirPath;
-		// .map (Ȯ����)����
+		// .map (확장자)제거
 		filename += name;
 		filename += ".mesh";
 		ifstream ifs2{ filename, ios_base::binary };
@@ -1391,7 +1391,7 @@ void GameMap::LoadMap(const char* MapName)
 		ifs2.close();
 
 		//string filename = MeshDirPath;
-		//// .map (Ȯ����)����
+		//// .map (확장자)제거
 		//filename += name;
 		//filename += ".mesh";
 		//Mesh mesh;
@@ -1482,7 +1482,7 @@ void GameMap::LoadMap(const char* MapName)
 
 		string modelName = TempBuff;
 		string filename = ModelDirPath;
-		// .map (Ȯ����)����
+		// .map (확장자)제거
 		filename += modelName;
 		filename += ".model";
 
@@ -1642,7 +1642,7 @@ void GameMap::LoadMap(const char* MapName)
 			model->RootNode->PushOBBs(model, go->worldMat, &go->obbArr, go);
 			//for (int k = 0;k < model->nodeCount;++k) {
 			//	ModelNode* node = &model->Nodes[k];
-			//	// fix. ����Ƽ �ڽ� ������Ʈ���� AABB�� ��� ������? ���������� ������ �޴��� Ȯ���� �ʿ�.
+			//	// fix. 유니티 자식 오브젝트들의 AABB는 어떻게 구성됨? 계층구조의 영향을 받는지 확인이 필요.
 			//	for (int u = 0;u < node->aabbArr.size();++u) {
 			//		BoundingOrientedBox obb;
 			//		obb.Center = node->aabbArr[u].Center;
@@ -2389,8 +2389,8 @@ void Player::Update(float deltaTime)
 			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
 			zones->FireRaycast((GameObject*)this, shootOrigin + clook * 1.5f, clook, 50.0f, weapon.m_info.damage);
 
-			// fix �̰� �̷��� �ϸ� �ȵɰ� ������? Update �ɶ����� ��Ŷ�� ����. 
-			// ��Ŷ�� �������� �������� �δ��̹Ƿ� ���� Ư���ð����� ���ִ°� ����.
+			// fix 이건 이렇게 하면 안될것 같은데? Update 될때마다 패킷이 쌓임. 
+			// 패킷이 많아지면 서버에서 부담이므로 차라리 특정시간마다 쏴주는게 좋다.
 			zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
 			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
 			zones->Sending_PlayerFire(zones->CommonSDS, gameworld.clients[clientIndex].objindex);
@@ -2444,10 +2444,10 @@ void Player::Update(float deltaTime)
 		}
 	}
 
-	//��Ʈ ������ ���� ���� (�߻� ���ҽ�)
+	//히트 게이지 지속 감소 (발사 안할시)
 
 	if (HeatGauge > 0.0f) {
-		float decayRate = 5.0f; // �ʴ� ���ҷ�
+		float decayRate = 5.0f; // 초당 감소량
 		HeatGauge -= decayRate * deltaTime;
 		if (HeatGauge < 0.0f) HeatGauge = 0.0f;
 	}
@@ -2455,7 +2455,7 @@ void Player::Update(float deltaTime)
 	static float heatSendTimer = 0.0f;
 	heatSendTimer += deltaTime;
 
-	if (heatSendTimer > 0.2f) { // 0.2�ʸ��� ���� �� Ŭ�� ����
+	if (heatSendTimer > 0.2f) { // 0.2초마다 서버 → 클라 전송
 		heatSendTimer = 0.0f;
 
 		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS
@@ -2748,12 +2748,12 @@ void Monster::Update(float deltaTime)
 		toPlayer.y = 0.0f;
 		float distanceToPlayer = toPlayer.len3;
 
-		// �÷��̾� ����
+		// 플레이어 추적
 		if (distanceToPlayer <= m_chaseRange) {
 			m_targetPos = playerPos;
 			m_isMove = true;
 
-			// A* ��ΰ� ���ų�, �� �Һ������� ���� ���
+			// A* 경로가 없거나, 다 소비했으면 새로 계산
 			if (path.empty() || currentPathIndex >= path.size()) {
 				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
 				AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, zone->allnodes);
@@ -2764,12 +2764,12 @@ void Monster::Update(float deltaTime)
 				}
 			}
 
-			// A* ��ΰ� ������ �� ��θ� ���� �̵�
+			// A* 경로가 있으면 그 경로를 따라 이동
 			if (!path.empty() && currentPathIndex < path.size()) {
 				MoveByAstar(deltaTime);
 			}
 			else {
-				// ��� ��� �������� ���� ���� ���� �������� fallback
+				// 경로 계산 실패했을 때만 기존 직선 추적으로 fallback
 				if (distanceToPlayer > 0.0001f) {
 					toPlayer.len3 = 1.0f;
 					tickLVelocity += toPlayer * m_speed * deltaTime;
@@ -2946,6 +2946,42 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	}
 }
 
+void Monster::ApplyDamage(GameObject* source, float damage)
+{
+	if (isDead || damage <= 0.0f) return;
+
+	Zone* zone = gameworld.GetZone(zoneId);
+	if (zone == nullptr) return;
+
+	float defense = Defense;
+	damage *= 100.0f / (100.0f + defense);
+	HP -= damage;
+	zone->Sending_ChangeGameObjectMember<float>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &HP);
+
+	if (HP <= 0 && isDead == false) {
+		isDead = true;
+		zone->Sending_ChangeGameObjectMember<bool>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &isDead);
+
+		vec4 prevpos = worldMat.pos;
+		if (source != nullptr) {
+			void* vptr = *(void**)source;
+			if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
+				Player* p = (Player*)source;
+				p->KillCount += 1;
+				zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
+			}
+		}
+
+		ItemLoot il = {};
+		il.itemDrop.id = 1 + (rand() % (ItemTable.size() - 1));
+		il.itemDrop.ItemCount = 1 + rand() % 5;
+		il.pos = prevpos;
+		int newindex = zone->DropedItems.Alloc();
+		zone->DropedItems[newindex] = il;
+		zone->Sending_ItemDrop(zone->CommonSDS, newindex, il);
+	}
+}
+
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
 {
 	SetWorld(initialWorldMatrix);
@@ -2980,23 +3016,24 @@ BoundingOrientedBox Monster::GetOBB()
 
 
 /*
-<����>
-A*���� ���� ���(current) �������� �� �� �ִ� �̿� ��带 ã�� ��ȯ�Ѵ�.
-8����(�����¿� + �밢��) ��� �˻��Ѵ�.
-�� ������ ������ ���� �����Ѵ�.
-�̵� �Ұ�(cango==false) ���� �����Ѵ�.
+<설명>
+A*에서 현재 노드(current) 기준으로 갈 수 있는 이웃 노드를 찾아 반환한다.
+8방향(상하좌우 + 대각선)을 모두 검사한다.
+맵 범위를 벗어난 노드는 제외한다.
+이동 불가(cango==false) 노드는 제외한다.
 
-�ź� :
-current : �̿��� ���Ϸ��� ���� ���.
-allNodes : ��ü ���.
-gridWidth : �׸��� ���� ũ��.
-gridHeight : �׸��� ���� ũ��.
+인자 :
+current : 이웃을 구하려는 현재 노드.
+allNodes : 전체 노드.
+gridWidth : 그리드 가로 크기.
+gridHeight : 그리드 세로 크기.
 
 return :
-vector<AstarNode*> neighbor (�̵� ������ �̿� ��� ���)
-if current�� �����ڸ� -> ���� �˻�� �̿� ���� �پ��
-if �ֺ� ��尡 cango=false -> ��Ͽ��� ���ܵ�
+vector<AstarNode*> neighbor (이동 가능한 이웃 노드 목록)
+if current가 가장자리면 -> 범위 검사로 이웃 개수 감소
+if 주변 노드가 cango=false -> 목록에서 제외됨
 */
+
 //AI involved Code Start : <chatgpt>
 vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*>& allNodes, int gridWidth, int gridHeight)
 {
@@ -3010,11 +3047,11 @@ vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*
 			int nx = current->xIndex + dx;
 			int nz = current->zIndex + dz;
 
-			// ���� ���̸� ����
+			// 범위 밖이면 무시
 			if (nx < 0 || nz < 0 || nx >= gridWidth || nz >= gridHeight)
 				continue;
 
-			// �ε����� ��� ����
+			// 인덱스로 노드 접근
 			AstarNode* neighbor = allNodes[nz * gridWidth + nx];
 			if (neighbor->cango)
 				neighbors.push_back(neighbor);
@@ -3025,28 +3062,28 @@ vector<AstarNode*> GetNeighbors(AstarNode* current, const std::vector<AstarNode*
 }
 //AI involved Code End : <chatgpt>
 
-/* <����>
-- A* �˰��������� start -> destination �ִ� ��θ� ����� "��� ����Ʈ(path)"�� ��ȯ�Ѵ�.
-- ��帶�� g/h/f ���� parent�� �����ϸ�, ������ ���� �� parent�� ���� �������� ��θ� �����.
+/* <설명>
+- A* 알고리즘으로 start -> destination 최단 경로를 찾아 "노드 리스트(path)"를 반환한다.
+- 노드마다 g/h/f 값과 parent를 저장하며, 목적지를 찾은 뒤 parent를 따라 거꾸로 경로를 복원한다.
 
-�ź� :
-<start> : ���� ���(���� ��ġ�� FindClosestNode�� ������ ���).
-<destination> : ������ ���(�÷��̾�/���� ��ǥ�� FindClosestNode�� ������ ���).
-<allNodes> : ��ü ��� ���(�� Ž������ ��� ���/parent �ʱ�ȭ�� ���).
+인자 :
+<start> : 시작 노드(현재 위치를 FindClosestNode로 찾은 노드).
+<destination> : 목적지 노드(플레이어/목표 좌표를 FindClosestNode로 찾은 노드).
+<allNodes> : 전체 노드 목록(매 탐색마다 모든 노드 parent 초기화에 사용).
 
 return :
-vector<AstarNode*> (start���� destination������ ��� ����)
-if start == nullptr or destination == nullptr -> �� ���� ��ȯ
-if openList�� ���� destination�� ���� ���� -> �� ���� ��ȯ(��� ����)
-if destination ���� -> parent�� ���� �������� �� reverse�Ͽ� ���� ���� ��� ��ȯ
+vector<AstarNode*> (start에서 destination까지의 노드 경로)
+if start == nullptr or destination == nullptr -> 빈 배열 반환
+if openList가 비어서 destination을 찾지 못함 -> 빈 배열 반환(경로 없음)
+if destination 도달 -> parent를 따라 거꾸로 간 뒤 reverse하여 정방향 경로 반환
 
-1) ��� ����� gCost�� ���Ѵ��, parent�� nullptr�� �ʱ�ȭ�Ѵ�(���� Ž�� ���� ����).
-2) start�� openList�� �ְ� g=0, h=�Ÿ�(�޸���ƽ), f=g+h�� ����Ѵ�.
-3) openList���� f�� ���� ���� ��带 current�� �̴´�.
-4) current�� destination�̸�, current���� parent�� ���󰡸� ��θ� ����� ��ȯ�Ѵ�.
-5) �ƴϸ� current�� closedList�� �ű��.
-6) current�� �̿����� ��������, �� ���� ���(tentativeG)�� ������ neighbor�� parent/g/h/f�� �����Ѵ�.
-7) openList�� �� ������ �ݺ��Ѵ�.
+1) 모든 노드의 gCost를 무한대로, parent를 nullptr로 초기화한다(이전 탐색 정보 제거).
+2) start를 openList에 넣고 g=0, h=거리(맨해튼), f=g+h를 계산한다.
+3) openList에서 f가 가장 낮은 노드를 current로 뽑는다.
+4) current가 destination이면, current에서 parent를 따라가며 경로를 만들어 반환한다.
+5) 아니면 current를 closedList로 옮긴다.
+6) current의 이웃들을 검사하고, 더 짧은 비용(tentativeG)이 나오면 neighbor의 parent/g/h/f를 갱신한다.
+7) openList가 빌 때까지 반복한다.
 */
 
 //AI Code Start : <chatgpt>
@@ -3059,7 +3096,7 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 	if (start == nullptr || destination == nullptr)
 		return {};
 
-	// �ʱ�ȭ
+	// 초기화
 	for (auto node : allNodes)
 	{
 		node->gCost = FLT_MAX;
@@ -3076,7 +3113,7 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 
 	while (!openList.empty())
 	{
-		// fCost �ּ� ��� ����
+		// fCost 최소 노드 선택
 		AstarNode* currentNode = openList[0];
 		for (AstarNode* node : openList)
 		{
@@ -3084,7 +3121,7 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 				currentNode = node;
 		}
 
-		// ������ ���� �� ��� ����
+		// 목적지 도달 시 경로 추적
 		if (currentNode == destination)
 		{
 			std::vector<AstarNode*> path;
@@ -3098,14 +3135,14 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 			return path;
 		}
 
-		// ���� ����Ʈ �� Ŭ����� ����Ʈ
+		// 오픈 리스트 → 클로즈드 리스트
 		openList.erase(std::remove(openList.begin(), openList.end(), currentNode), openList.end());
 		closedList.push_back(currentNode);
 
-		// �̿� Ž��
+		// 이웃 탐색
 		for (AstarNode* neighbor : GetNeighbors(currentNode, allNodes, 80, 80))
 		{
-			// �̹� �湮�� ���� ��ŵ
+			// 이미 방문한 노드는 스킵
 			if (std::find(closedList.begin(), closedList.end(), neighbor) != closedList.end())
 				continue;
 
@@ -3125,24 +3162,25 @@ vector<AstarNode*> Monster::AstarSearch(AstarNode* start, AstarNode* destination
 		}
 	}
 
-	return {}; // ��� ����
+	return {}; // 경로 없음
 }
 //AI Code End : <chatgpt>
 
-/*<����>
-AstarSearch�� ������� path�� ���� �̵�.
-path[currentPathIndex] ��� �������� �̵��Ѵ�.
-��ǥ ��忡 ��������� currentPathIndex++ �Ͽ� ���� ��带 ��ǥ�� �Ѵ�.
+/*<설명>
+AstarSearch가 만들어준 path를 따라 이동.
+path[currentPathIndex] 노드 방향으로 이동한다.
+목표 노드에 가까워지면 currentPathIndex++ 하여 다음 노드를 목표로 한다.
 
-�ź� :
-deltaTime : speed*deltaTime�� �̵����� ����Ѵ�.
+인자 :
+deltaTime : speed*deltaTime으로 이동량을 계산한다.
 
-1) ���� ��ǥ ��� = path[currentPathIndex]�� ��´�.
-2) ���� ��ġ���� ��ǥ ��� ������ǥ(worldx, worldz)���� ���� ����(dir)�� ���� ��.
-3) ���� ���������� ���� ���� �Ѿ��.
-4) �ƴϸ� dir�� ����ȭ�ϰ�, tickLVelocity = dir * m_speed * deltaTime�� �̹� ������ �̵����� �����.
-5) �ٶ󺸴� ����(look)�� dir�� �����.
+1) 현재 목표 노드 = path[currentPathIndex]를 얻는다.
+2) 현재 위치에서 목표 노드 월드좌표(worldx, worldz)까지의 방향(dir)을 구한다.
+3) 목표 근처까지 오면 다음 경로로 넘어간다.
+4) 아니면 dir을 정규화하고, tickLVelocity = dir * m_speed * deltaTime으로 이번 프레임 이동량을 만든다.
+5) 바라보는 방향(look)을 dir로 맞춘다.
 */
+
 //AI involved Code Start : <chatgpt>
 void Monster::MoveByAstar(float deltaTime)
 {
@@ -3152,29 +3190,29 @@ void Monster::MoveByAstar(float deltaTime)
 
 	AstarNode* targetNode = path[currentPathIndex];
 
-	// ���� ���� ��ġ
+	// 현재 몬스터 위치
 	vec4 pos = worldMat.pos;
 	pos.w = 1.0f;
 
-	// A*���� ������ Ÿ�� ��� ��ġ (y�� ���� ���� ����)
+	// A*에서 지정한 타겟 노드 위치 (y는 현재 높이 유지)
 	vec4 target(targetNode->worldx, pos.y, targetNode->worldz, 1.0f);
 	if (zone->AstarStartX > target.x) target.x = zone->AstarStartX;
 	if (zone->AstarStartZ > target.z) target.z = zone->AstarStartZ;
 	if (zone->AstarEndX < target.x) target.x = zone->AstarEndX;
 	if (zone->AstarEndZ < target.z) target.z = zone->AstarEndZ;
 
-	// ���� ����
+	// 방향 벡터
 	vec4 dir = target - pos;
 	dir.y = 0.0f;
 	float len = dir.len3;
 
-	// ���� �����ߴٰ� ���� ���� ���� �Ѿ
+	// 거의 도착했다고 보면 다음 노드로 넘어감
 	if (len < 0.3f) {
 		currentPathIndex++;
 		return;
 	}
 
-	// ����ȭ
+	// 정규화
 	dir /= len;
 
 	tickLVelocity.x = dir.x * m_speed * deltaTime;
@@ -3248,23 +3286,24 @@ void Monster::SendGameObject(int objindex, SendDataSaver& sds) {
 	sds.postpush_end();
 }
 
-/*<����>
-- ���� ��ǥ(wx, wz)�� ���� ����� "�̵� ���� ���(cango==true)"�� ã�� ��ȯ�Ѵ�.
-- ���� ��ǥ�� �׸��� ���߾��� �ƴ� �� �����Ƿ�, A*�� start/goal ��带 ��� ���� �Լ�.
+/*<설명>
+- 월드 좌표(wx, wz)에 가장 가까운 "이동 가능 노드(cango==true)"를 찾아 반환한다.
+- 월드 좌표를 그리드에 맞추지 않아도 되도록, A*의 start/goal 노드를 고르는 보조 함수.
 
-�ź� :
-wx : ���� X ��ǥ.
-wz : ���� Z ��ǥ.
-allNodes : ��ü ��� ���(���� ����� ��� ã�� ���� ��ü ��ȸ).
+인자 :
+wx : 월드 X 좌표.
+wz : 월드 Z 좌표.
+allNodes : 전체 노드 목록(이동 가능한 노드를 찾기 위해 전체 순회).
 
 return :
-if �̵� ���� ��尡 �ϳ��� ������ -> nullptr ��ȯ
-if ���� �ĺ��� ������ -> �Ÿ�^2(dx^2+dz^2)�� �ּ��� ��� ��ȯ
+if 이동 가능 노드가 하나도 없으면 -> nullptr 반환
+if 후보 노드가 있으면 -> 거리^2(dx^2+dz^2)이 최소인 노드 반환
 
-1) allNodes�� ���� ���� cango==true�� ��常 ����.
-2) (node.worldx - wx)^2 + (node.worldz - wz)^2 �� ����� ���� ���� ��带 �����Ѵ�.
-3) ���������� ���� ����� ��带 ��ȯ.
+1) allNodes를 돌며 cango==true인 노드만 본다.
+2) (node.worldx - wx)^2 + (node.worldz - wz)^2 이 가장 작은 노드를 갱신한다.
+3) 최종적으로 가장 가까운 노드를 반환.
 */
+
 AstarNode* Monster::FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes)
 {
 	AstarNode* best = nullptr;
@@ -3300,7 +3339,7 @@ BoundingOrientedBox Portal::GetOBB() {
 void Portal::SendGameObject(int objindex, SendDataSaver& sds) {
 	sds.postpush_start();
 
-	// mesh/model ���� �⺻ �����͸� ����
+	// mesh/model 없이 기본 데이터만 전송
 	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(Portal::STC_SyncObjData);
 	sds.postpush_reserve(reqsiz);
 	int offset = 0;
@@ -3360,7 +3399,7 @@ void World::Init() {
 	clients.Init(32);
 	GameObjectType::STATICINIT();
 
-	// ���� �� �ε�
+	// 전역 모델 로드
 	{
 		HumanoidAnimation animIdle;
 		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
@@ -3394,7 +3433,7 @@ void World::Init() {
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
 		Shape::AddMesh("Portal", portalMesh);
 
-		//Item ����
+		//Item 리소스
 		{
 			int globalitem_index = 0;
 			Shape BlackShape;
@@ -3414,47 +3453,47 @@ void World::Init() {
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
 				"Resources/Model/ItemModel/BioFix.model",
 				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",
-				L"[���̿��Ƚ�] : ��ü ������ ����ϴ� ������ �Ƿ� �ֻ��! \n HP+20");
+				L"[바이오픽스] : 신체 조직을 재생하는 가성비 의료 주사기! \n HP+20");
 			globalitem_index += 1;
 
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
 				"Resources/Model/ItemModel/Tier4Gear.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Tear4Gear.png",
-				L"[Ƽ��4 ��ǰ] : Ƽ�� 4 ���� ���ۿ� ���Ǵ� �ֿ����. ���� ������ ���⳪ ������ �����ϴµ� ������ �ȴ�.");
+				L"[티어4 부품] : 티어 4 도구 제작에 사용되는 주요재료. 많이 모으면 무기나 도구를 제작하는데 도움이 된다.");
 			globalitem_index += 1;
 
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "Sniper_IronSight",
 				"Resources/Model/sniper.model",
 				L"Resources/UI/ItemIcons/ItemIcon_IronSight.png",
-				L"[�������� - ���̾����Ʈ] : ���� ������� ����� �޸��� ���� ���� ��ź ���ݼ���.");
+				L"[스나이퍼 - 아이언사이트] : 광학 장비조차 제대로 달리지 않은 구식 실탄 저격소총.");
 			globalitem_index += 1;
 
-			// ������ �� �ε�
+			// 라이플 모델 로드
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "Rifle_StreetSweeper",
 				"Resources/Model/Rifle.model",
 				L"Resources/UI/ItemIcons/ItemIcon_StreetSweeper.png",
-				L"[���ݼ��� - ��Ʈ��Ʈ������] : �Ѷ� �Ÿ��� ������ȴ� Ŭ���� ���ݼ���. ������ ���� ���� ���̴�.");
+				L"[돌격소총 - 스트리트스위퍼] : 한때 거리를 쓸어버렸던 클래식 돌격소총. 이제는 흔해 빠진 모델이다.");
 			globalitem_index += 1;
 
-			// ���� �� �ε�
+			// 샷건 모델 로드
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "Pistol_DoubleTroble",
 				"Resources/Model/pistol.model",
 				L"Resources/UI/ItemIcons/ItemIcon_DoubleTroble.png",
-				L"[�ֱ��� - ����Ʈ����] : ������ ������ �� ��� ��ƺ��̴� ������ �ֱ���.");
+				L"[쌍권총 - 더블트러블] : 성능은 낮지만 두 배로 쏘아붙이는 저가형 쌍권총.");
 			globalitem_index += 1;
 
-			// ���� �� �ε�
+			// 샷건 모델 로드
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
 				"Resources/Model/shootgun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_SlagShot.png",
-				L"[���� - �����׽�] : ���� ��⸦ ��� ���� ��ĥ�� ����� ��. ���� ���̶� ���ɵ� �״��� ���� �ʴ�.");
+				L"[샷건 - 슬래그슛] : 제련 찌꺼기를 쏘는 듯한 거칠고 어려운 총. 구형 모델이라 성능도 그다지 좋지 않다.");
 			globalitem_index += 1;
 
-			// �ӽŰ�(�̴ϰ�) �� �ε�
+			// 머신건(미니건) 모델 로드
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
 				"Resources/Model/minigun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Ratler.png",
-				L"[�ӽŰ� - ��Ʋ��] : ���� ��ǰ�� �����Ÿ��� �Ҹ����� ���� �̸�. ���� ����������� �� �� ����.");
+				L"[머신건 - 라틀러] : 낡은 부품이 덜덜거리는 소리에서 따온 이름. 언제 만들어졌는지 알 수 없다.");
 			globalitem_index += 1;
 		}
 	}
@@ -3491,35 +3530,35 @@ void World::Init() {
 		constexpr bool kLoadShotGunModel = true;
 		constexpr bool kLoadMachineGunModel = true;
 
-		// �������� �� �ε�
+		// 스나이퍼 모델 로드
 		Model* SniperModel = nullptr;
 		if (kLoadSniperModel) {
 			SniperModel = new Model;
 			SniperModel->LoadModelFile2("Resources/Model/sniper.model");
 		}
 
-		// ������ �� �ε�
+		// 라이플 모델 로드
 		Model* RifleModel = nullptr;
 		if (kLoadRifleModel) {
 			RifleModel = new Model;
 			RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
 		}
 
-		// ���� �� �ε�
+		// 권총 모델 로드
 		Model* PistolModel = nullptr;
 		if (kLoadPistolModel) {
 			PistolModel = new Model;
 			PistolModel->LoadModelFile2("Resources/Model/pistol.model");
 		}
 
-		// ���� �� �ε�
+		// 샷건 모델 로드
 		Model* ShotGunModel = nullptr;
 		if (kLoadShotGunModel) {
 			ShotGunModel = new Model;
 			ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
 		}
 
-		//// �ӽŰ�(�̴ϰ�) �� �ε�
+		//// 머신건(미니건) 모델 로드
 		Model* MachineGunModel = nullptr;
 		if (kLoadMachineGunModel) {
 			MachineGunModel = new Model;
@@ -3550,14 +3589,14 @@ void World::Init() {
 
 #ifdef DEVELOPMODE_SYNC_GLOBAL_ASSET
 	dbgWarn(GlobalMaterialCount != GlobalMaterialSiz,
-        cout << "WARN : ������ Ŭ���̾�Ʈ ���� �ε�� ���� �迭�� �׸��� ��ġ���� �ʴ� ���� �ֽ��ϴ�" << endl;);
+        cout << "WARN : 서버와 클라이언트 간에 로드된 에셋 배열의 항목중 일치하지 않는 것이 있습니다" << endl;);
 	dbgWarn(Shape::ShapeTable.size() != GlobalShapeTableSyncSiz,
-        cout << "WARN : ������ Ŭ���̾�Ʈ ���� �ε�� Shape ������ ��ġ���� �ʽ��ϴ�." << endl;);
+        cout << "WARN : 서버와 클라이언트 간에 로드된 Shape 개수가 일치하지 않습니다." << endl;);
 	GlobalMaterialCount = GlobalMaterialSiz;
 #endif
 
 	zones.resize(zoneCount);
-	// Zone �ʱ�ȭ
+	// Zone 초기화
 	for (int i = 0; i < zoneCount; ++i) {
 		zones[i].world = this;
 		zones[i].zoneId = i;
@@ -3596,7 +3635,7 @@ void World::Update() {
 
 //should i separate player delete and gameobject delete?
 
-//Ŭ���̾�Ʈ �ε����� �ش��ϴ� �� ã��
+//클라이언트 인덱스에 해당하는 존 찾기
 
 bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 	SOCKET sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, 0);

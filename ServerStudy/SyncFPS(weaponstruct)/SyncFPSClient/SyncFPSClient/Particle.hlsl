@@ -23,6 +23,7 @@ struct Particle
     uint RandomSeed;
     uint FrameIndex;
     uint FrameCount;
+    uint FrameCols;
 };
 
 RWStructuredBuffer<Particle> ParticlesRW : register(u0);
@@ -91,6 +92,20 @@ float3 randomUnitCircle(uint seed, float salt)
     return float3(cos(angle), 0.0f, sin(angle));
 }
 
+float3 safeNormalize(float3 v, float3 fallback)
+{
+    float lenSq = dot(v, v);
+    return lenSq > 0.0001f ? v * rsqrt(lenSq) : fallback;
+}
+
+void makeBasis(float3 forward, out float3 right, out float3 up)
+{
+    forward = safeNormalize(forward, float3(0.0f, 0.0f, 1.0f));
+    float3 upHint = abs(forward.y) > 0.85f ? float3(1.0f, 0.0f, 0.0f) : float3(0.0f, 1.0f, 0.0f);
+    right = safeNormalize(cross(upHint, forward), float3(1.0f, 0.0f, 0.0f));
+    up = safeNormalize(cross(forward, right), float3(0.0f, 1.0f, 0.0f));
+}
+
 float3 turbulence(float3 position, float phase)
 {
     float n1 = rand(position.x * 0.73f + position.y * 1.13f + position.z * 0.37f + phase);
@@ -122,7 +137,8 @@ void resetParticleCommon(
     float stretch,
     float collisionRadius,
     uint flags,
-    uint frameCount)
+    uint frameCount,
+    uint frameCols)
 {
     p.Age = 0.0f;
     p.LifeTime = lifeTime;
@@ -139,6 +155,7 @@ void resetParticleCommon(
     p.Flags = flags;
     p.FrameIndex = 0;
     p.FrameCount = max(frameCount, 1u);
+    p.FrameCols = max(frameCols, 1u);
 }
 
 void simulateParticle(
@@ -210,7 +227,8 @@ void FireCS(uint3 id : SV_DispatchThreadID)
             0.0f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u);
+            36u,
+            6u);
     }
 
     p.Position += p.Velocity * dt;
@@ -255,7 +273,8 @@ void FirePillarCS(uint3 id : SV_DispatchThreadID)
             0.0f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u);
+            36u,
+            6u);
     }
 
     float2 toCenter = float2(EmitterPosition.x - p.Position.x, EmitterPosition.z - p.Position.z);
@@ -309,7 +328,8 @@ void FireRingCS(uint3 id : SV_DispatchThreadID)
             0.0f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u);
+            36u,
+            6u);
     }
 
     p.Velocity.x *= 0.98f;
@@ -357,7 +377,8 @@ void ElectricArcCS(uint3 id : SV_DispatchThreadID)
             0.75f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u);
+            36u,
+            6u);
     }
 
     float3 arcPull = (centerPos - p.Position) * float3(1.85f, 0.15f, 1.85f);
@@ -398,7 +419,8 @@ void ElectricBurstCS(uint3 id : SV_DispatchThreadID)
             1.15f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u);
+            36u,
+            6u);
     }
 
     float3 snapBack = (centerPos - p.Position) * float3(0.55f, 0.08f, 0.55f);
@@ -439,10 +461,141 @@ void EmberShowerCS(uint3 id : SV_DispatchThreadID)
             0.22f,
             0.015f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_COLLIDE_GROUND | PARTICLE_FLAG_LOOPING,
-            36u);
+            36u,
+            6u);
     }
 
     simulateParticle(p, float3(0.45f, 0.0f, 0.10f), 0.42f, 0.42f, 0.22f);
+    ParticlesRW[i] = p;
+}
+
+[numthreads(256, 1, 1)]
+void FrostConeCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
+
+    float3 forward = safeNormalize(EmitterDirection, float3(0.0f, 0.0f, 1.0f));
+    float3 right;
+    float3 up;
+    makeBasis(forward, right, up);
+
+    if (p.Age >= p.LifeTime)
+    {
+        float side = (randFromSeed(p.RandomSeed, 601.0f) * 2.0f - 1.0f) * 0.82f;
+        float lift = (randFromSeed(p.RandomSeed, 602.0f) * 2.0f - 1.0f) * 0.20f;
+        float distanceT = randFromSeed(p.RandomSeed, 603.0f);
+        float3 dir = safeNormalize(forward + right * side + up * lift, forward);
+        float startOffset = randFromSeed(p.RandomSeed, 604.0f) * 0.35f;
+
+        p.Position = EmitterPosition + up * 0.82f + forward * startOffset;
+        p.Velocity = dir * lerp(7.2f, 12.8f, distanceT) * max(EmitterPower, 0.1f);
+
+        resetParticleCommon(
+            p,
+            lerp(0.34f, 0.62f, randFromSeed(p.RandomSeed, 605.0f)),
+            float4(0.70f, 1.28f, 1.85f, 0.92f),
+            float4(0.10f, 0.32f, 0.62f, 0.0f),
+            lerp(0.18f, 0.32f, randFromSeed(p.RandomSeed, 606.0f)),
+            0.035f,
+            randFromSeed(p.RandomSeed, 607.0f) * 6.2831853f,
+            lerp(-4.0f, 4.0f, randFromSeed(p.RandomSeed, 608.0f)),
+            1.8f,
+            -0.08f,
+            0.95f,
+            0.0f,
+            PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
+            29u,
+            5u);
+    }
+
+    simulateParticle(p, forward * 1.1f + up * 0.28f, 1.15f, 0.0f, 0.0f);
+    ParticlesRW[i] = p;
+}
+
+[numthreads(256, 1, 1)]
+void FrostIceBlockCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
+
+    if (p.Age >= p.LifeTime)
+    {
+        float angle = randFromSeed(p.RandomSeed, 701.0f) * 6.2831853f;
+        float height = lerp(0.18f, 1.95f, randFromSeed(p.RandomSeed, 702.0f));
+        float radius = lerp(0.32f, max(EmitterRadius, 0.55f), randFromSeed(p.RandomSeed, 703.0f));
+        float2 ring = float2(cos(angle), sin(angle)) * radius;
+
+        p.Position = centerPos + float3(ring.x, height, ring.y);
+        p.Velocity = float3(-ring.y, 0.35f, ring.x) * lerp(0.75f, 1.45f, randFromSeed(p.RandomSeed, 704.0f));
+
+        resetParticleCommon(
+            p,
+            lerp(0.72f, 1.18f, randFromSeed(p.RandomSeed, 705.0f)),
+            float4(0.78f, 1.34f, 1.95f, 0.86f),
+            float4(0.16f, 0.45f, 0.82f, 0.0f),
+            lerp(0.20f, 0.42f, randFromSeed(p.RandomSeed, 706.0f)),
+            0.055f,
+            angle,
+            lerp(-2.0f, 2.0f, randFromSeed(p.RandomSeed, 707.0f)),
+            2.6f,
+            0.0f,
+            0.35f,
+            0.0f,
+            PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
+            29u,
+            5u);
+    }
+
+    float3 shellPull = (centerPos + float3(0.0f, 1.0f, 0.0f) - p.Position) * float3(0.55f, 0.08f, 0.55f);
+    simulateParticle(p, shellPull + float3(0.0f, 0.55f, 0.0f), 0.72f, 0.0f, 0.0f);
+    ParticlesRW[i] = p;
+}
+
+[numthreads(256, 1, 1)]
+void FrostBlizzardCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
+
+    if (p.Age >= p.LifeTime)
+    {
+        float angle = randFromSeed(p.RandomSeed, 801.0f) * 6.2831853f;
+        float radius = sqrt(randFromSeed(p.RandomSeed, 802.0f)) * max(EmitterRadius, 0.8f);
+        float2 dir = float2(cos(angle), sin(angle));
+        float2 tangent = float2(-dir.y, dir.x);
+
+        p.Position = centerPos + float3(dir.x * radius, randFromSeed(p.RandomSeed, 803.0f) * 1.35f, dir.y * radius);
+        p.Velocity = float3(tangent.x * lerp(2.4f, 5.6f, randFromSeed(p.RandomSeed, 804.0f)),
+                            lerp(0.15f, 1.05f, randFromSeed(p.RandomSeed, 805.0f)),
+                            tangent.y * lerp(2.4f, 5.6f, randFromSeed(p.RandomSeed, 806.0f)));
+
+        resetParticleCommon(
+            p,
+            lerp(0.82f, 1.48f, randFromSeed(p.RandomSeed, 807.0f)),
+            float4(0.62f, 1.20f, 1.85f, 0.76f),
+            float4(0.05f, 0.18f, 0.38f, 0.0f),
+            lerp(0.12f, 0.30f, randFromSeed(p.RandomSeed, 808.0f)),
+            0.025f,
+            angle,
+            lerp(-5.0f, 5.0f, randFromSeed(p.RandomSeed, 809.0f)),
+            0.85f,
+            0.08f,
+            0.65f,
+            0.0f,
+            PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
+            29u,
+            5u);
+    }
+
+    float3 inward = (centerPos - p.Position) * float3(0.18f, 0.0f, 0.18f);
+    float3 swirl = vortexForce(p.Position, centerPos, 3.9f);
+    simulateParticle(p, inward + swirl + float3(0.0f, 0.28f, 0.0f), 1.05f, 0.0f, 0.0f);
     ParticlesRW[i] = p;
 }
 
@@ -499,7 +652,7 @@ VSOut VS(uint id : SV_VertexID)
     float flicker = 0.92f + rand(p.Position.x * 2.7f + p.Position.y * 1.5f + p.Position.z * 2.1f + p.Age * 11.0f) * 0.18f;
     o.Color = lerp(p.StartColor, p.EndColor, lifeT) * flicker;
 
-    uint frameCols = 6u;
+    uint frameCols = max(p.FrameCols, 1u);
     uint frameRows = max((p.FrameCount + frameCols - 1u) / frameCols, 1u);
     uint frameIndex = min(p.FrameIndex, p.FrameCount - 1u);
     uint col = frameIndex % frameCols;

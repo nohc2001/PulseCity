@@ -61,7 +61,7 @@ struct Mesh {
 };
 
 /*
-* 설명 : 모델의 노드
+	* 매개변수 :
 * Sentinal Value :
 * NULL = (parent == nullptr && numChildren == 0 && Childrens == nullptr && numMesh == 0 && Meshes == nullptr)
 */
@@ -107,7 +107,7 @@ struct ModelNode {
 };
 
 /*
-* 설명 : 모델
+	* 매개변수 :
 * Sentinal Value :
 * NULL = (nodeCount == 0 && RootNode == nullptr && Nodes == nullptr && mNumMeshes == 0 && mMeshes == nullptr)
 */
@@ -275,7 +275,7 @@ struct Shape {
 };
 
 /*
-* 설명 : 게임에 나타날 모든 아이템을 저장해놓은 테이블
+	* 매개변수 :
 */
 extern vector<Item> ItemTable;
 
@@ -665,7 +665,6 @@ struct DynamicGameObject : public GameObject {
 	* GameObject* shooter : Ray를 쏜 게임 오브젝트
 	*/
 	virtual void OnCollisionRayWithBullet(GameObject* shooter, float damage);
-	void ApplyDamage(GameObject* source, float damage);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -817,47 +816,42 @@ struct SkillData {
 
 struct JobData {
 	PlayerJob job;
-
-	float MaxHP;
-	float Attack;
-	float Defense;
-
 	WeaponType defaultWeapon;
 	SkillData skills[(int)SkillSlot::Max];
 };
 
 static JobData GJobTable[] = {
-	{ PlayerJob::Juggernaut, 150.0f, 10.0f, 15.0f, WeaponType::MachineGun, {
+	{ PlayerJob::Juggernaut, WeaponType::MachineGun, {
 		{ SkillEffectType::Juggernaut_FireProjectile, 5.0f, 35.0f, 35.0f, 1.2f, 40.0f, 1.0f },
 		{ SkillEffectType::Juggernaut_Taunt, 10.0f, 30.0f, 0.0f, 6.0f, 0.0f, 1.5f },
 		{ SkillEffectType::Juggernaut_UltimateFire, 32.0f, 80.0f, 30.0f, 5.0f, 75.0f, 5.0f },
 	} },
-	{ PlayerJob::Frost, 120.0f, 15.0f, 10.0f, WeaponType::Shotgun, {
+	{ PlayerJob::Frost, WeaponType::Shotgun, {
 		{ SkillEffectType::Frost_Cone, 7.0f, 25.0f, 12.0f, 5.0f, 20.0f, 1.0f },
 		{ SkillEffectType::Frost_IceBlock, 12.0f, 20.0f, 0.0f, 3.0f, 35.0f, 1.5f },
 		{ SkillEffectType::Frost_Blizzard, 34.0f, 90.0f, 0.0f, 8.0f, 45.0f, 4.0f },
 	} },
-	{ PlayerJob::Aegis, 100.0f, 20.0f, 9.0f, WeaponType::Pistol, {
+	{ PlayerJob::Aegis, WeaponType::Pistol, {
 		{ SkillEffectType::Aegis_ShieldCharge, 7.0f, 20.0f, 8.0f, 2.0f, 25.0f, 0.8f },
 		{ SkillEffectType::Aegis_Barrier, 14.0f, 35.0f, 8.0f, 4.0f, 0.0f, 3.0f },
 		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 80.0f, 0.0f, 7.0f, 50.0f, 6.0f },
 	} },
-	{ PlayerJob::Mage, 100.0f, 20.0f, 9.0f,WeaponType::Pistol, {
+	{ PlayerJob::Mage, WeaponType::Pistol, {
 		{ SkillEffectType::Mage_FireBall, 4.0f, 20.0f, 30.0f, 1.0f, 35.0f, 1.0f },
 		{ SkillEffectType::Fire_Ring, 8.0f, 35.0f, 8.0f, 4.0f, 20.0f, 1.5f },
 		{ SkillEffectType::Fire_Pillar, 25.0f, 100.0f, 20.0f, 5.0f, 80.0f, 2.5f },
 	} },
-	{ PlayerJob::Healer, 100.0f, 20.0f, 9.0f,WeaponType::Pistol, {
+	{ PlayerJob::Healer, WeaponType::Pistol, {
 		{ SkillEffectType::Healer_HealAura, 10.0f, 0.0f, 0.0f, 3.5f, 0.0f, 1.5f },
 		{ SkillEffectType::Electric_Arc, 8.0f, 25.0f, 18.0f, 1.0f, 15.0f, 1.0f },
 		{ SkillEffectType::Healer_HealAura, 30.0f, 100.0f, 0.0f, 7.0f, 100.0f, 3.0f },
 	} },
-	{ PlayerJob::Gunner, 100.0f, 20.0f, 9.0f,WeaponType::Rifle, {
+	{ PlayerJob::Gunner, WeaponType::Rifle, {
 		{ SkillEffectType::Gunner_Muzzle, 5.0f, 20.0f, 30.0f, 1.0f, 20.0f, 0.5f },
 		{ SkillEffectType::Electric_Burst, 9.0f, 35.0f, 12.0f, 3.0f, 25.0f, 1.0f },
 		{ SkillEffectType::Ember_Shower, 28.0f, 100.0f, 25.0f, 5.0f, 60.0f, 3.0f },
 	} },
-	{ PlayerJob::Tank, 100.0f, 20.0f, 9.0f, WeaponType::Shotgun, {
+	{ PlayerJob::Tank, WeaponType::Shotgun, {
 		{ SkillEffectType::Tank_ShockWave, 7.0f, 25.0f, 0.0f, 5.0f, 20.0f, 1.0f },
 		{ SkillEffectType::Electric_Burst, 11.0f, 35.0f, 0.0f, 4.0f, 25.0f, 1.0f },
 		{ SkillEffectType::Tank_ShockWave, 32.0f, 100.0f, 0.0f, 8.0f, 70.0f, 2.0f },
@@ -983,7 +977,6 @@ struct Player : public SkinMeshGameObject {
 	* GameObject* shooter : Ray를 발사한 오브젝트
 	*/
 	virtual void OnCollisionRayWithBullet(GameObject* shooter, float damage);
-	void ApplyDamage(GameObject* source, float damage);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -1064,6 +1057,15 @@ struct AstarNode2 {
 
 AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
 
+struct StatusEffect {
+	StatusEffectType type = StatusEffectType::None;
+	float duration = 0.0f;
+	float remainTime = 0.0f;
+	float power = 0.0f;
+	int sourceObjIndex = -1;
+	bool active = false;
+};
+
 /*
 * 설명 : 몬스터 게임 오브젝트.
 */
@@ -1110,6 +1112,9 @@ struct Monster : public SkinMeshGameObject {
 	// ServerOnly 상태
 	float pathfindTimer = 0.0f;
 
+	static constexpr int MaxStatusEffectCount = 8;
+	StatusEffect StatusEffects[MaxStatusEffectCount];
+
 	Monster();
 	virtual ~Monster() {}
 
@@ -1120,7 +1125,12 @@ struct Monster : public SkinMeshGameObject {
 	virtual void OnStaticCollision(BoundingOrientedBox obb) override;
 
 	virtual void OnCollisionRayWithBullet(GameObject* shooter, float damage);
-	void ApplyDamage(GameObject* source, float damage);
+	void ApplyDamage(GameObject* attacker, float damage);
+	void UpdateStatusEffects(float deltaTime);
+	bool AddStatusEffect(StatusEffectType type, float duration, float power, int sourceObjIndex);
+	void RemoveStatusEffect(StatusEffectType type);
+	bool HasStatusEffect(StatusEffectType type) const;
+	float GetStatusPower(StatusEffectType type) const;
 
 	void Init(const XMMATRIX& initialWorldMatrix);
 
@@ -1269,7 +1279,7 @@ struct GameMap {
 
 	/*
 	* 설명 : OBB가 맵 StaticCollision과 충돌하는지 검사한다.
-	* BoundingOrientedBox obb : 검사할 OBB
+	* BoundingOrientedBox obb : 추가할 OBB
 	* 반환 : 충돌하면 true, 아니면 false
 	*/
 	bool isStaticCollision(BoundingOrientedBox obb);
@@ -1515,7 +1525,7 @@ struct Zone {
 	void FlushSendToClients();
 
 	/*
-	// 글로벌 휴머노이드 애니메이션 카운트
+	// 글로벌 머터리얼 카운트
 	*/
 	void SendingAllObjectForNewClient(SendDataSaver& sds);
 
@@ -1629,12 +1639,12 @@ struct World {
 	void Update();
 
 	/*
-	* 설명 : 클라이언트 패킷을 처리한다.
+	* 설명 : 게임 월드를 초기화한다.
 	*/
 	__forceinline int Receiving(int clientIndex, char* rBuffer, int totallen);
 
 	/*
-	* 설명 : 클라이언트에게 할당된 플레이어 인덱스를 전송한다.
+* 설명 : 서버의 전체 게임 월드를 관리한다.
 	*/
 	__forceinline void Sending_AllocPlayerIndex(SendDataSaver& sds, int clientindex, int objindex) {
 		sds.postpush_start();
@@ -1676,7 +1686,7 @@ struct World {
 
 
 	/*
-	* 설명 : 현재 게임 상태를 전송한다.
+	* 설명 : 월드를 한 프레임 갱신한다.
 	*/
 	__forceinline void Sending_SyncGameState(SendDataSaver& sds) {
 		sds.postpush_start();

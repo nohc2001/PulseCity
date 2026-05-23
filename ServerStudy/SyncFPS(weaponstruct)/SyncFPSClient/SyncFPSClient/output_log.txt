@@ -1,7 +1,9 @@
 Microsoft (R) DirectX Texture Converter [DirectXTex] Version 208 (library)
 Copyright (C) Microsoft Corp.
 
-reading Resources\UI\ItemIcons\ItemIcon_Ratler.png (256x256 B8G8R8A8_UNORM 2D) as
+reading Resources\ice.png (946x1116 B8G8R8A8_UNORM 2D) as
 WARNING: Image is not using premultipled alpha
- (256x256,9 BC3_UNORM 2D ес:NonPM)
-writing ItemIcon_Ratler.dds
+ (946x1116,11 BC3_UNORM 2D ес:NonPM)
+writing ice.dds
+
+WARNING: Direct3D requires BC image to be multiple of 4 in width & height

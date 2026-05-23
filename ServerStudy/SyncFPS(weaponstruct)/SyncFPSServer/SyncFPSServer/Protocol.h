@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #pragma region ProtocolStruct
 
 ///���� �߿� ���� ���ǵ�.
@@ -59,6 +59,8 @@ union STC_Protocol {
 		ServerTransfer = 12,
 
 		SkillCast = 13,
+
+		StatusEffect = 14,
 	};
 
 	// enum�� ���ڷ� ��Ÿ�� ��.
@@ -238,6 +240,16 @@ enum class SkillEffectType : int {
 	Aegis_Barrier,
 	Aegis_ShieldAura,
 };
+enum class StatusEffectType : int {
+	None,
+	Freeze,
+	Slow,
+	Taunt,
+	Burn,
+	Stun,
+	Paralyze,
+	Max
+};
 
 struct STC_SkillCast_Header {
 	unsigned int size = sizeof(STC_SkillCast_Header);
@@ -251,6 +263,19 @@ struct STC_SkillCast_Header {
 	float radius = 1.0f;
 	float power = 1.0f;
 	float duration = 1.0f;
+};
+struct STC_StatusEffect_Header {
+	unsigned int size = sizeof(STC_StatusEffect_Header);
+	STC_Protocol st = STC_Protocol::StatusEffect;
+	int targetObjIndex = -1;
+	int sourceObjIndex = -1;
+	StatusEffectType statusType = StatusEffectType::None;
+	bool active = false;
+	float duration = 0.0f;
+	float remainTime = 0.0f;
+	float power = 0.0f;
+	vec4 position = vec4(0, 0, 0, 1);
+	vec4 extents = vec4(0.3f, 1.0f, 0.3f, 0.0f);
 };
 
 union CTS_Protocol {

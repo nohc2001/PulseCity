@@ -870,6 +870,65 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     header.distance = closestDistance;
     CommonSDS.postpush_end();
 }
+int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage) {
+    if (caster == nullptr || damage <= 0.0f || radius <= 0.0f) return 0;
+
+    bool selfOnly = effectType == SkillEffectType::Healer_HealAura ||
+        effectType == SkillEffectType::Frost_IceBlock ||
+        effectType == SkillEffectType::Aegis_ShieldAura;
+    if (selfOnly) return 0;
+
+    direction.y = 0.0f;
+    if (direction.len3 <= 0.0001f) direction = vec4(0, 0, 1, 0);
+    direction.len3 = 1.0f;
+
+    bool directional = range > 0.0f;
+    BoundingOrientedBox skillBox;
+    BoundingSphere skillSphere;
+
+    if (directional) {
+        BoundingOrientedBox localBox;
+        localBox.Center = XMFLOAT3(0.0f, 1.0f, range * 0.5f);
+        localBox.Extents = XMFLOAT3(radius, 1.5f, max(0.5f, range * 0.5f));
+        localBox.Orientation = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+
+        matrix skillWorld;
+        skillWorld.Id();
+        skillWorld.pos = position;
+        skillWorld.SetLook(direction);
+        localBox.Transform(skillBox, skillWorld);
+    }
+    else {
+        skillSphere.Center = XMFLOAT3(position.x, position.y + 1.0f, position.z);
+        skillSphere.Radius = radius;
+    }
+
+    int hitCount = 0;
+    int lastCurrentIndex = currentIndex;
+
+    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+        if (Dynamic_gameObjects.isnull(i)) continue;
+        GameObject* object = (GameObject*)Dynamic_gameObjects[i];
+        if (object == caster) continue;
+
+        void* vptr = *(void**)object;
+        if (GameObjectType::VptrToTypeTable[vptr] != GameObjectType::_Monster) continue;
+
+        Monster* monster = (Monster*)object;
+        if (monster->isDead) continue;
+
+        BoundingOrientedBox monsterOBB = monster->GetOBB();
+        bool hit = directional ? skillBox.Intersects(monsterOBB) : skillSphere.Intersects(monsterOBB);
+        if (hit == false) continue;
+
+        currentIndex = i;
+        monster->ApplyDamage(caster, damage);
+        ++hitCount;
+    }
+
+    currentIndex = lastCurrentIndex;
+    return hitCount;
+}
 
 bool Zone::CheckAABBSphereCollision(const vec4& boxCenter, const vec4& boxHalfSize, const collisionchecksphere& sphere) {
     float dx = max(0.0f, abs(sphere.center.f3.x - boxCenter.f3.x) - boxHalfSize.f3.x);
@@ -931,6 +990,24 @@ void Zone::Sending_SkillCast(SendDataSaver& sds, int ownerObjIndex, PlayerJob jo
     header.radius = radius;
     header.power = power;
     header.duration = duration;
+    sds.postpush_end();
+}
+void Zone::Sending_StatusEffect(SendDataSaver& sds, int targetObjIndex, int sourceObjIndex, StatusEffectType statusType, bool active, float duration, float remainTime, float power, vec4 position, vec4 extents) {
+    sds.postpush_start();
+    constexpr int reqsiz = sizeof(STC_StatusEffect_Header);
+    sds.postpush_reserve(reqsiz);
+    STC_StatusEffect_Header& header = *(STC_StatusEffect_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::StatusEffect;
+    header.targetObjIndex = targetObjIndex;
+    header.sourceObjIndex = sourceObjIndex;
+    header.statusType = statusType;
+    header.active = active;
+    header.duration = duration;
+    header.remainTime = remainTime;
+    header.power = power;
+    header.position = position;
+    header.extents = extents;
     sds.postpush_end();
 }
 GameObjectIncludeChunks Zone::GetChunks_Include_OBB(BoundingOrientedBox obb) {
