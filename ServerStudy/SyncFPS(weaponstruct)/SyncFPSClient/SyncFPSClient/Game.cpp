@@ -2064,6 +2064,8 @@ void Game::Render() {
 
 	// 25. ?¡À?????? ???? ???? ??? ?????????? ??? ?????? (ex> ???)
 	float hhpp = 0;
+	float Attack = 0;
+	float Defense = 0;
 	float HeatGauge = 0;
 	int kill = 0;
 	int death = 0;
@@ -2073,6 +2075,8 @@ void Game::Render() {
 		BindStaticPBRRenderState();
 		game.player->Render_AfterDepthClear();
 		hhpp = game.player->HP;
+		Attack = game.player->Attack;
+		Defense = game.player->Defense;
 		HeatGauge = game.player->HeatGauge;
 		kill = game.player->KillCount;
 		death = game.player->DeathCount;

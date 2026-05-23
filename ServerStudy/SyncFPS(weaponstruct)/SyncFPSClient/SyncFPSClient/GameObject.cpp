@@ -2850,6 +2850,7 @@ Monster::Monster() {
 	worldMat.Id();
 	HP = 30;
 	MaxHP = 30;
+	Defense = 0;
 	isDead = false;
 	HPBarIndex = 0;
 	HPMatrix.Id();
@@ -2985,6 +2986,7 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
 	HP = stcsod.HP;
 	MaxHP = stcsod.MaxHP;
+	Defense = stcsod.Defense;
 	isDead = stcsod.isDead;
 	offset += sizeof(STC_SyncObjData);
 
@@ -3058,6 +3060,8 @@ Player::Player() : HP{ 100 } {
 	weapon = Weapon(WeaponType::Pistol);
 	HP = 100;
 	MaxHP = 100;
+	Attack = 0;
+	Defense = 0;
 	bullets = 100;
 	KillCount = 0;
 	DeathCount = 0;
@@ -3721,6 +3725,8 @@ void Player::RecvSTC_SyncObj(char* data) {
 	//PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
 	HP = stcsod.HP;
 	MaxHP = stcsod.MaxHP;
+	Attack = stcsod.Attack;
+	Defense = stcsod.Defense;
 	bullets = stcsod.bullets;
 	KillCount = stcsod.KillCount;
 	DeathCount = stcsod.DeathCount;

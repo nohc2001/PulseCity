@@ -43,7 +43,7 @@ LVelocity 224 16
 AnimationFlowTime 240 4
 PlayingAnimationIndex 244 4
 Player
-25
+27
 tag 20 4
 shapeindex 24 4
 parent 28 4
@@ -57,20 +57,22 @@ AnimationFlowTime 240 4
 PlayingAnimationIndex 244 4
 HP 256 4
 MaxHP 260 4
-bullets 264 4
-KillCount 268 4
-DeathCount 272 4
-HeatGauge 276 4
-MaxHeatGauge 280 4
-m_currentJob 284 4
-SkillCooldown 288 12
-SkillCooldownFlow 300 12
-m_currentWeaponType 312 4
-Inventory 316 392
-weapon 712 48
-ZoneMoveCooldown 760 4
+Attack 264 4
+Defense 268 4
+bullets 272 4
+KillCount 276 4
+DeathCount 280 4
+HeatGauge 284 4
+MaxHeatGauge 288 4
+m_currentJob 292 4
+SkillCooldown 296 12
+SkillCooldownFlow 308 12
+m_currentWeaponType 320 4
+Inventory 324 392
+weapon 720 48
+ZoneMoveCooldown 768 4
 Monster
-14
+15
 tag 20 4
 shapeindex 24 4
 parent 28 4
@@ -84,7 +86,8 @@ AnimationFlowTime 240 4
 PlayingAnimationIndex 244 4
 HP 256 4
 MaxHP 260 4
-isDead 264 1
+Defense 264 4
+isDead 268 1
 Portal
 14
 tag 20 4

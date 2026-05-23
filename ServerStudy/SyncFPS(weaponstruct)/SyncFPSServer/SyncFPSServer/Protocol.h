@@ -316,6 +316,8 @@ struct PlayerTransferData {
 	float pitch = 0.0f;
 	float HP = 0.0f;
 	float MaxHP = 100.0f;
+	float Attack = 0.0f;
+	float Defense = 0.0f;
 	int bullets = 0;
 	int KillCount = 0;
 	int DeathCount = 0;

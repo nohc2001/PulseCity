@@ -988,6 +988,7 @@ public:
 	STCDef(float, HP);// = 30;
 	// 이름에서 ShapeIndex를 얻는 map
 	STCDef(float, MaxHP);// = 30;
+	STCDef(float, Defense);// = 0;
 	// 이름에서 ShapeIndex를 얻는 map
 	STCDef(bool, isDead);
 
@@ -1037,6 +1038,7 @@ public:
 		float MaxHP = 30;
 		// 이름에서 ShapeIndex를 얻는 map
 		bool isDead = false;
+		float Defense = 0;
 	};
 #pragma pack(pop)
 
@@ -1079,6 +1081,8 @@ public:
 	STCDef(float, HP);
 	// 이름에서 ShapeIndex를 얻는 map
 	STCDef(float, MaxHP);// = 100;
+	STCDef(float, Attack); // = 0
+	STCDef(float, Defense);// = 0;
 	// 이름에서 ShapeIndex를 얻는 map
 	STCDef(int, bullets);
 	// 이름에서 ShapeIndex를 얻는 map
@@ -1177,6 +1181,8 @@ public:
 		// 이름에서 ShapeIndex를 얻는 map
 		float MaxHP = 100;
 		// 이름에서 ShapeIndex를 얻는 map
+		float Attack = 0;
+		float Defense = 0;
 		int bullets = 100;
 		// 이름에서 ShapeIndex를 얻는 map
 		int KillCount = 0;

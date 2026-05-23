@@ -2504,6 +2504,11 @@ BoundingOrientedBox Player::GetOBB()
 void Player::TakeDamage(float damage)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
+
+	float defense = Defense;
+	// All Job Reduce Damage With Defense
+	damage *= 100.0f / (100.0f + defense);
+
 	if (m_iceBlockTimer > 0.0f) {
 		damage *= 0.1f;
 	}
@@ -2886,7 +2891,19 @@ void Monster::OnStaticCollision(BoundingOrientedBox obb)
 void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 {
 	Zone* zone = gameworld.GetZone(zoneId);
+	
+	// Monster take damage with player's Attack
+	void* vptr = *(void**)shooter;
+	if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
+		Player* p = (Player*)shooter;
+		damage = p->Attack;
+	}
+
+	// Monster Reduce Damage With Defense
+	float defense = Defense;
+	damage *= 100.0f / (100.0f + defense);
 	HP -= damage;
+
 	zone->Sending_ChangeGameObjectMember<float>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &HP);
 
 	if (HP <= 0 && isDead == false) {
@@ -3788,6 +3805,8 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		data.pitch = player->m_pitch;
 		data.HP = player->HP;
 		data.MaxHP = player->MaxHP;
+		data.Attack = player->Attack;
+		data.Defense = player->Defense;
 		data.bullets = player->bullets;
 		data.KillCount = player->KillCount;
 		data.DeathCount = player->DeathCount;

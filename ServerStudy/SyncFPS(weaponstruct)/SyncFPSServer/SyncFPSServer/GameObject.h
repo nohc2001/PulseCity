@@ -873,6 +873,8 @@ struct Player : public SkinMeshGameObject {
 	STCDef(float, HP);
 	// OBB.Center
 	STCDef(float, MaxHP);// = 100;
+	STCDef(float, Attack); // = 0;
+	STCDef(float, Defense) // = 0;
 	// OBB.Center
 	STCDef(int, bullets);// = 100;
 	// OBB.Center
@@ -992,6 +994,8 @@ struct Player : public SkinMeshGameObject {
 		float HP;
 		// OBB.Center
 		float MaxHP = 100;
+		float Attack = 0;
+		float Defense = 0;
 		// OBB.Center
 		int bullets = 100;
 		// OBB.Center
@@ -1064,6 +1068,7 @@ struct Monster : public SkinMeshGameObject {
 	STCDef(float, HP); // = 30;
 	// OBB.Center
 	STCDef(float, MaxHP); // = 30;
+	STCDef(float, Defense) // = 0;
 	// OBB.Center
 	STCDef(bool, isDead);// = false;
 
@@ -1140,6 +1145,7 @@ struct Monster : public SkinMeshGameObject {
 		float MaxHP = 30;
 		// OBB.Center
 		bool isDead = false;
+		float Defense = 0;
 	};
 #pragma pack(pop)
 
