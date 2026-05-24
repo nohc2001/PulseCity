@@ -1064,6 +1064,37 @@ struct AstarNode2 {
 
 AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
 
+enum class MonsterType : int {
+	Walker,
+	Dron,
+	Tower,
+	Max
+};
+
+struct MonsterData {
+	MonsterType type;
+	const char* name;
+	const char* shapeName;
+	float MaxHP;
+	float Attack;
+	float Defense;
+	float MoveSpeed;
+	float FireDelay;
+};
+
+static MonsterData GMonsterTable[] = {
+	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f },
+	{ MonsterType::Dron, "Dron", "Monster001", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f },
+	{ MonsterType::Tower, "Tower", "Monster001", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f },
+};
+
+inline const MonsterData& GetMonsterData(MonsterType type) {
+	for (int i = 0; i < (int)MonsterType::Max; ++i) {
+		if (GMonsterTable[i].type == type) return GMonsterTable[i];
+	}
+	return GMonsterTable[0];
+}
+
 /*
 * 설명 : 몬스터 게임 오브젝트.
 */
@@ -1078,6 +1109,9 @@ struct Monster : public SkinMeshGameObject {
 	STCDef(float, Defense) // = 0;
 	// OBB.Center
 	STCDef(bool, isDead);// = false;
+
+	MonsterType m_monsterType = MonsterType::Walker;
+	float Attack = 10.0f;
 
 	// OBB.Center
 	vec4 m_homePos;
@@ -1121,6 +1155,7 @@ struct Monster : public SkinMeshGameObject {
 
 	virtual void OnCollisionRayWithBullet(GameObject* shooter, float damage);
 	void ApplyDamage(GameObject* source, float damage);
+	void ApplyMonsterData(MonsterType type);
 
 	void Init(const XMMATRIX& initialWorldMatrix);
 

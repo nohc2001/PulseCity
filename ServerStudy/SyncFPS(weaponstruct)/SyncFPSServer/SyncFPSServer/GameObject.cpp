@@ -2552,7 +2552,7 @@ void Player::TakeDamage(float damage)
 		Respawn();
 	}
 
-	cout << "player's defense" << defense << " final damage is " << damage << " remain hp: " << HP << endl;
+	//cout << "player's defense" << defense << " final damage is " << damage << " remain hp: " << HP << endl;
 }
 
 void Player::OnCollisionRayWithBullet(GameObject* shooter, float damage)
@@ -2667,6 +2667,8 @@ Monster::Monster() {
 
 	HP = 30;
 	MaxHP = 30;
+	Attack = 10.0f;
+	Defense = 0.0f;
 	isDead = false;
 
 	m_homePos = 0;
@@ -2686,6 +2688,32 @@ Monster::Monster() {
 	pathfindTimer = 0.0f;
 }
 
+void Monster::ApplyMonsterData(MonsterType type)
+{
+	const MonsterData& data = GetMonsterData(type);
+
+	m_monsterType = data.type;
+	MaxHP = data.MaxHP;
+	HP = MaxHP;
+	Attack = data.Attack;
+	Defense = data.Defense;
+	m_speed = data.MoveSpeed;
+	m_fireDelay = data.FireDelay;
+
+	auto shape = Shape::StrToShapeIndex.find(data.shapeName);
+	if (shape != Shape::StrToShapeIndex.end()) {
+		SetShape(shape->second);
+	}
+
+	cout << "[MonsterData] type=" << data.name
+		<< " MaxHP=" << MaxHP
+		<< " Attack=" << Attack
+		<< " Defense=" << Defense
+		<< " Speed=" << m_speed
+		<< " FireDelay=" << m_fireDelay
+		<< endl;
+}
+
 void Monster::Update(float deltaTime)
 {
 	Zone* zone = gameworld.GetZone(zoneId);
@@ -2698,12 +2726,30 @@ void Monster::Update(float deltaTime)
 		}
 	}
 	else {
+
 		if (collideCount == 0) isGround = false;
 		collideCount = 0;
 
-		if (isGround == false) {
-			LVelocity.y -= 9.81f * deltaTime;
+		if (m_monsterType == MonsterType::Dron) {
+			LVelocity = 0;
+			isGround == true;
 		}
+		else {
+			if (isGround == false) {
+				LVelocity.y -= 9.81f * deltaTime;
+			}
+		}
+
+		//dron is zerogravity 
+		if (m_monsterType != MonsterType::Dron) {
+			if (isGround == false) {
+				LVelocity.y -= 9.81f * deltaTime;
+			}
+		}
+		else {
+			LVelocity.y = 0.0f;
+		}
+	
 		if (worldMat.pos.y < -50.0f) {
 			worldMat.pos.y = 100.0f;
 			LVelocity.y = 0;
@@ -2751,10 +2797,10 @@ void Monster::Update(float deltaTime)
 		// 플레이어 추적
 		if (distanceToPlayer <= m_chaseRange) {
 			m_targetPos = playerPos;
-			m_isMove = true;
+			m_isMove = m_speed > 0.0f;
 
 			// A* 경로가 없거나, 다 소비했으면 새로 계산
-			if (path.empty() || currentPathIndex >= path.size()) {
+			if (m_speed > 0.0f && (path.empty() || currentPathIndex >= path.size())) {
 				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
 				AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, zone->allnodes);
 
@@ -2765,10 +2811,10 @@ void Monster::Update(float deltaTime)
 			}
 
 			// A* 경로가 있으면 그 경로를 따라 이동
-			if (!path.empty() && currentPathIndex < path.size()) {
+			if (m_speed > 0.0f && !path.empty() && currentPathIndex < path.size()) {
 				MoveByAstar(deltaTime);
 			}
-			else {
+			else if (m_speed > 0.0f) {
 				// 경로 계산 실패했을 때만 기존 직선 추적으로 fallback
 				if (distanceToPlayer > 0.0001f) {
 					toPlayer.len3 = 1.0f;
@@ -2796,10 +2842,18 @@ void Monster::Update(float deltaTime)
 				rayDirection.z += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
 				rayDirection.len3 = 1.0f;
 
-				zone->FireRaycast(this, rayStart, rayDirection, m_chaseRange, 10);
+				zone->FireRaycast(this, rayStart, rayDirection, m_chaseRange, Attack);
 			}
 		}
 		else {
+			if (m_speed <= 0.0f || m_patrolRange <= 0.0f) {
+				tickLVelocity.x = 0;
+				tickLVelocity.z = 0;
+				m_isMove = false;
+				path.clear();
+				currentPathIndex = 0;
+			}
+			else
 			if (!m_isMove) {
 				float randomAngle = ((float)rand() / RAND_MAX) * 2.0f * XM_PI;
 				float randomRadius = ((float)rand() / RAND_MAX) * m_patrolRange;
@@ -2999,8 +3053,8 @@ void Monster::Respawn()
 	zone->Sending_ChangeGameObjectMember<vec4>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &worldMat);
 	isDead = false;
 	zone->Sending_ChangeGameObjectMember<bool>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &isDead);
-	HP = 30;
-	zone->Sending_ChangeGameObjectMember<int>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &HP);
+	HP = MaxHP;
+	zone->Sending_ChangeGameObjectMember<float>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &HP);
 }
 
 BoundingOrientedBox Monster::GetOBB()
@@ -3259,6 +3313,7 @@ void Monster::SendGameObject(int objindex, SendDataSaver& sds) {
 	static_data.HP = HP;
 	static_data.MaxHP = MaxHP;
 	static_data.isDead = isDead;
+	static_data.Defense = Defense;
 	offset += sizeof(STC_SyncObjData);
 
 	//dynamic push
@@ -3704,6 +3759,8 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->SetShape(Shape::StrToShapeIndex["Player"]);
 	p->HP = data.HP;
 	p->MaxHP = data.MaxHP;
+	p->Attack = data.Attack;
+	p->Defense = data.Defense;
 	p->bullets = data.bullets;
 	p->KillCount = data.KillCount;
 	p->DeathCount = data.DeathCount;

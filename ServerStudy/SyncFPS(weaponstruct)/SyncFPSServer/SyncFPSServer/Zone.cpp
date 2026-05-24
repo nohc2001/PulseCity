@@ -766,18 +766,26 @@ void Zone::SpawnObjects() {
     // Static ������Ʈ ����
     // TODO: ���� Shape �̸��� �ٲ� ������ �´��� Ȯ�� �ʿ�
 
-    // ���� ���� (zoneId == 1 �̸� ��ŵ)
+    // zoneId == 1 => no spawn monster
     if (zoneId == 1) return;
 
     static constexpr int range = 100;
     for (int i = 0; i < 20; ++i) {
         Monster* mon = new Monster();
         mon->zone = this;
-        mon->SetShape(Shape::StrToShapeIndex["Monster001"]);
-        // ���� ������ ���̰� ���̸� �ø�
-        mon->Init(XMMatrixTranslation((float)(rand() % range - (range/2)), 10.0f, (float)(rand() % range - (range / 2))));
+        MonsterType monsterType = (MonsterType)(rand() % (int)MonsterType::Max);
+        mon->ApplyMonsterData(monsterType);
+        //dron spawn higher
+
+        float spawnY = 2.0f;
+
+        if (monsterType == MonsterType::Dron) {
+            spawnY = 4.0f;
+        }
+
+        mon->Init(XMMatrixTranslation((float)(rand() % range - (range/2)), spawnY, (float)(rand() % range - (range / 2))));
         while (map.isStaticCollision(mon->GetOBB())) {
-            mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), 10.0f, (float)((rand() % range - (range / 2)))));
+            mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
         }
 
         NewObject(mon, GameObjectType::_Monster);
