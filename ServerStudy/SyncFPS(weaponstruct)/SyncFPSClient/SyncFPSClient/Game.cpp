@@ -1101,10 +1101,11 @@ void Game::Init()
 		Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
 		game.ZoneTable.push_back(Zone_ThePort);
 
-		Zone* Zone_OfficeDungeon_1floor = new Zone(1, "OfficeDungeon_1floor", 1, 0);
-		game.ZoneTable.push_back(Zone_OfficeDungeon_1floor);
+		Zone* Zone_ThePort_Zone1 = new Zone(1, "The_Port", 1, 0);
+		game.ZoneTable.push_back(Zone_ThePort_Zone1);
 
-		Zone_ThePort->nearZones[1] = Zone_OfficeDungeon_1floor;
+		Zone_ThePort->nearZones[1] = Zone_ThePort_Zone1;
+		Zone_ThePort_Zone1->nearZones[1] = Zone_ThePort;
 	}
 	Current_Zone = game.ZoneTable[0];
 
@@ -1644,6 +1645,10 @@ void Game::ResendHeldMovementKeys()
 }
 
 void Game::MoveZone(int zoneid) {
+	if (zoneid < 0 || zoneid >= (int)ZoneTable.size()) return;
+	Zone* prevZone = Current_Zone;
+	Zone* nextZone = ZoneTable[zoneid];
+
 	bool CmdInitStateIsClose = gd.gpucmd.isClose;
 	if (CmdInitStateIsClose) {
 		gd.gpucmd.Reset();
@@ -1658,6 +1663,18 @@ void Game::MoveZone(int zoneid) {
 		}
 	}
 	DynmaicGameObjects.clear();
+
+	if (prevZone != nullptr) {
+		for (auto& chunkPair : prevZone->chunck) {
+			GameChunk* chunk = chunkPair.second;
+			if (chunk == nullptr) continue;
+			chunk->Dynamic_gameobjects.Release();
+			chunk->Dynamic_gameobjects.Init(32);
+			chunk->SkinMesh_gameobjects.Release();
+			chunk->SkinMesh_gameobjects.Init(32);
+		}
+	}
+
 	player = nullptr;
 	playerGameObjectIndex = -1;
 
@@ -1668,6 +1685,7 @@ void Game::MoveZone(int zoneid) {
 	}
 	Portals.clear();
 
+	Current_Zone = nextZone;
 	isAssetAddingInGlobal = false;
 	LoadLinkedZoneMaps();
 
@@ -2541,6 +2559,7 @@ void Game::Render_ShadowPass()
 					if (gc->SkinMesh_gameobjects.isnull(i)) continue;
 					SkinMeshGameObject* smgo = gc->SkinMesh_gameobjects[i];
 					if ((smgo == nullptr || smgo->tag[GameObjectTag::Tag_Enable] == false) || smgo->TourID == game.TourID) continue;
+					if (smgo->BoneToWorldMatrixCB_Default.size() == 0) continue;
 					ShadowRenderSkinMeshObjArr.push_back(smgo);
 					smgo->TourID = game.TourID;
 				}
@@ -2886,7 +2905,7 @@ READ_START:
 		return offset;
 	}
 	size = *(unsigned int*)currentPivot;
-	if (offset + size >= totallen) {
+	if (offset + size > totallen) {
 		return offset;
 	}
 	type = *(STC_Protocol*)(currentPivot + sizeof(int));

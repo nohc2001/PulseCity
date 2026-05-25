@@ -114,6 +114,7 @@ int main() {
 						gameworld.clients[newindex].pObjData = nullptr;
 						gameworld.clients[newindex].objindex = -1;
 						gameworld.clients[newindex].zoneId = gameworld.ownedZoneId;
+						gameworld.clients[newindex].pendingTransferToken = 0;
 
 						cout << "Socket from " << a << " is accepted.\n";
 						char newParticipantstr[128] = {};
@@ -183,6 +184,15 @@ READ_START:
 	size = *(int*)currentPivot;
 	if (offset + size > totallen) return offset;
 	type = *(CTS_Protocol*)(currentPivot + sizeof(int));
+
+	if (p == nullptr
+		&& type.n != CTS_Protocol::ClientHello
+		&& type.n != CTS_Protocol::TransferConnect
+		&& type.n != CTS_Protocol::ServerPlayerTransfer) {
+		currentPivot += size;
+		offset += size;
+		goto READ_START;
+	}
 
 	switch (type) {
 	

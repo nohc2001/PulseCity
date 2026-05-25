@@ -1216,6 +1216,8 @@ public:
 		float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 	// 이름에서 ShapeIndex를 얻는 map
 		int m_currentWeaponType = 0;
+		float m_yaw = 0.0f;
+		float m_pitch = 0.0f;
 	// 이름에서 ShapeIndex를 얻는 map
 		//static constexpr int maxItem = 36;
 		//ItemStack Inventory[maxItem];

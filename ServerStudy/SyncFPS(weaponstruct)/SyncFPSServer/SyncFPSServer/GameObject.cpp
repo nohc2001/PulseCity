@@ -2609,6 +2609,8 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	memcpy(static_data.SkillCooldown, SkillCooldown, sizeof(SkillCooldown));
 	memcpy(static_data.SkillCooldownFlow, SkillCooldownFlow, sizeof(SkillCooldownFlow));
 	static_data.m_currentWeaponType = m_currentWeaponType;
+	static_data.m_yaw = m_yaw;
+	static_data.m_pitch = m_pitch;
 	/*memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);*/
 	static_data.weapon = weapon;
 	offset += sizeof(STC_SyncObjData);
@@ -3701,7 +3703,9 @@ void World::Update() {
 
 bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 	SOCKET sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, 0);
-	if (sock == INVALID_SOCKET) return false;
+	if (sock == INVALID_SOCKET) {
+		return false;
+	}
 
 	sockaddr_in serveraddr = {};
 	serveraddr.sin_family = AF_INET;
@@ -3729,6 +3733,7 @@ void World::AcceptClientHello(int clientIndex) {
 
 	int StartzoneId = ownedZoneId;
 	clients[clientIndex].PersonalSDS.Init(4096);
+	clients[clientIndex].pendingTransferToken = 0;
 	Sending_SyncGameState(clients[clientIndex].PersonalSDS);
 
 	Player* p = new Player();
@@ -3752,12 +3757,16 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	auto f = pendingTransfers.find(transferToken);
 	if (f == pendingTransfers.end()) {
 		cout << "[AcceptTransferConnect] token not yet received client=" << clientIndex << " token=" << transferToken << " (will retry)" << endl;
+		if (clientIndex >= 0 && clientIndex < clients.size && clients.isnull(clientIndex) == false) {
+			clients[clientIndex].pendingTransferToken = transferToken;
+		}
 		return false;
 	}
 	PlayerTransferData data = f->second;
 	pendingTransfers.erase(f);
 
 	clients[clientIndex].PersonalSDS.Init(4096);
+	clients[clientIndex].pendingTransferToken = 0;
 	Sending_SyncGameState(clients[clientIndex].PersonalSDS);
 
 	Player* p = new Player();
@@ -3773,6 +3782,9 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->DeathCount = data.DeathCount;
 	p->HeatGauge = data.HeatGauge;
 	p->MaxHeatGauge = data.MaxHeatGauge;
+	p->zoneMoveCooldownRemain = data.zoneMoveCooldownRemain;
+	p->lastBoundaryIndex = data.lastBoundaryIndex;
+	p->wasInsideBoundary = data.wasInsideBoundary;
 	p->m_currentJob = data.m_currentJob;
 	memcpy(p->SkillCooldown, data.SkillCooldown, sizeof(p->SkillCooldown));
 	memcpy(p->SkillCooldownFlow, data.SkillCooldownFlow, sizeof(p->SkillCooldownFlow));
@@ -3793,6 +3805,13 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 void World::StoreIncomingPlayerTransfer(const PlayerTransferData& data) {
 	pendingTransfers[data.transferToken] = data;
+
+	for (int i = 0; i < clients.size; ++i) {
+		if (clients.isnull(i)) continue;
+		if (clients[i].pendingTransferToken != data.transferToken) continue;
+		AcceptTransferConnect(i, data.transferToken);
+		break;
+	}
 }
 Zone* World::GetClientZone(int clientIndex)
 {
@@ -3860,6 +3879,7 @@ void ClientData::DisconnectToServer(int index) {
 
 	client.pObjData = nullptr;
 	client.objindex = -1;
+	client.pendingTransferToken = 0;
 	client.rbufoffset = 0;
 	memset(client.rbuf, 0, sizeof(client.rbuf));
 	client.PersonalSDS.Clear();
@@ -3930,6 +3950,9 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		data.DeathCount = player->DeathCount;
 		data.HeatGauge = player->HeatGauge;
 		data.MaxHeatGauge = player->MaxHeatGauge;
+		data.zoneMoveCooldownRemain = max(player->zoneMoveCooldownRemain, 0.75f);
+		data.lastBoundaryIndex = player->lastBoundaryIndex;
+		data.wasInsideBoundary = player->wasInsideBoundary;
 		data.m_currentJob = player->m_currentJob;
 		memcpy(data.SkillCooldown, player->SkillCooldown, sizeof(data.SkillCooldown));
 		memcpy(data.SkillCooldownFlow, player->SkillCooldownFlow, sizeof(data.SkillCooldownFlow));

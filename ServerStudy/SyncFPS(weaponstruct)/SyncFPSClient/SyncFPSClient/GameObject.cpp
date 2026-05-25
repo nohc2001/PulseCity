@@ -1376,12 +1376,16 @@ void DynamicGameObject::Release() {
 		for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
 			for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
 				for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
-					game.Current_Zone->chunck[ChunkIndex(ix, iy, iz)]->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+					auto chunkIt = game.Current_Zone->chunck.find(ChunkIndex(ix, iy, iz));
+					if (chunkIt != game.Current_Zone->chunck.end() && chunkIt->second != nullptr) {
+						chunkIt->second->Dynamic_gameobjects.Free(chunkAllocIndexs[up]);
+					}
 					up += 1;
 				}
 			}
 		}
 		delete[] chunkAllocIndexs;
+		chunkAllocIndexs = nullptr;
 	}
 
 	GameObject::Release();
@@ -2474,17 +2478,22 @@ void SkinMeshGameObject::ModifyVertexs(matrix parent)
 void SkinMeshGameObject::BlendingAnimation() {
 	AnimationBlendingCBStruct* cbData = (AnimationBlendingCBStruct*)AnimBlendingCB_Mapped;
 
+	if (game.HumanoidAnimationTable.size() == 0) return;
+
 	if (cbData != nullptr) {
 		int anim0 = PlayingAnimationIndex[0];
+		if (anim0 < 0 || anim0 >= game.HumanoidAnimationTable.size()) {
+			anim0 = 0;
+		}
 		cbData->animTime[0] = AnimationFlowTime[0];
 		cbData->MAXTime[0] = game.HumanoidAnimationTable[anim0].Duration;
 		cbData->animWeight[0] = 1.0f;
 
 		int anim1 = PlayingAnimationIndex[1];
-		if (anim1 != -1) {
+		if (anim1 >= 0 && anim1 < game.HumanoidAnimationTable.size()) {
 			cbData->animTime[1] = AnimationFlowTime[1];
 			cbData->MAXTime[1] = game.HumanoidAnimationTable[anim1].Duration;
-			cbData->animWeight[1] = (PlayingAnimationIndex[1] != -1) ? 1.0f : 0.0f;
+			cbData->animWeight[1] = 1.0f;
 		}
 		else {
 			cbData->animTime[1] = 0.0f;
@@ -2839,7 +2848,27 @@ void SkinMeshGameObject::Release() {
 	OutVertexUAV = nullptr;
 	delete[] modifyMeshes;
 
-	DynamicGameObject::Release();
+	if (chunkAllocIndexs) {
+		int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
+		int ymax = IncludeChunks.ymin + IncludeChunks.ylen;
+		int zmax = IncludeChunks.zmin + IncludeChunks.zlen;
+		int up = 0;
+		for (int ix = IncludeChunks.xmin; ix <= xmax; ++ix) {
+			for (int iy = IncludeChunks.ymin; iy <= ymax; ++iy) {
+				for (int iz = IncludeChunks.zmin; iz <= zmax; ++iz) {
+					auto chunkIt = game.Current_Zone->chunck.find(ChunkIndex(ix, iy, iz));
+					if (chunkIt != game.Current_Zone->chunck.end() && chunkIt->second != nullptr) {
+						chunkIt->second->SkinMesh_gameobjects.Free(chunkAllocIndexs[up]);
+					}
+					up += 1;
+				}
+			}
+		}
+		delete[] chunkAllocIndexs;
+		chunkAllocIndexs = nullptr;
+	}
+
+	GameObject::Release();
 }
 
 Monster::Monster() {
@@ -3755,6 +3784,8 @@ void Player::RecvSTC_SyncObj(char* data) {
 	memcpy(SkillCooldown, stcsod.SkillCooldown, sizeof(SkillCooldown));
 	memcpy(SkillCooldownFlow, stcsod.SkillCooldownFlow, sizeof(SkillCooldownFlow));
 	m_currentWeaponType = stcsod.m_currentWeaponType;
+	m_yaw = stcsod.m_yaw;
+	m_pitch = stcsod.m_pitch;
 	weapon = Weapon((WeaponType)m_currentWeaponType);
 
 	//memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));

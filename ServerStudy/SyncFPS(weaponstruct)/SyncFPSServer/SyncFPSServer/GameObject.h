@@ -1021,6 +1021,8 @@ struct Player : public SkinMeshGameObject {
 		float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 		// OBB.Center
 		int m_currentWeaponType = 0;
+		float m_yaw = 0.0f;
+		float m_pitch = 0.0f;
 
 		// OBB.Center
 		//static constexpr int maxItem = 36;
@@ -1347,6 +1349,8 @@ struct ClientData {
 	// OBB.Center
 	int zoneId = 0;
 
+	int pendingTransferToken = 0;
+
 	// OBB.Center
 	SendDataSaver PersonalSDS;
 
@@ -1637,7 +1641,7 @@ struct World {
 	static constexpr int zoneCount = 2;
 	const char* ZoneMapName[zoneCount] = {
 		"The_Port",
-		"OfficeDungeon_1floor",
+		"The_Port",
 	};
 	vector<Zone> zones;
 	int serverId = 0;

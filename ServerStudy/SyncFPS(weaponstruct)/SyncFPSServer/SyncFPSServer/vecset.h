@@ -250,6 +250,7 @@ template <typename T> struct vecset {
 
 	void Release() {
 		if (Arr) delete[] Arr;
+		Arr = nullptr;
 		Alloter.Release();
 	}
 

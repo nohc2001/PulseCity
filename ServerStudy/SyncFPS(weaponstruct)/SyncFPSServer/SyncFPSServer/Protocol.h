@@ -348,6 +348,9 @@ struct PlayerTransferData {
 	int DeathCount = 0;
 	float HeatGauge = 0.0f;
 	float MaxHeatGauge = 100.0f;
+	float zoneMoveCooldownRemain = 0.0f;
+	int lastBoundaryIndex = -1;
+	bool wasInsideBoundary = false;
 	int m_currentJob = (int)PlayerJob::Healer;
 	float SkillCooldown[(int)SkillSlot::Max] = {};
 	float SkillCooldownFlow[(int)SkillSlot::Max] = {};
