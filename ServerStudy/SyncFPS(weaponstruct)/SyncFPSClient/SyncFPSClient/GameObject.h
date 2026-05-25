@@ -492,6 +492,21 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	vector<DescIndex> BoneToWorldMatrix_UAVDescIndex;
 	vector<GPUResource> NodeToBone;
 	vector<DescIndex> NodeToBone_SRVDescIndex;
+	float HitFlashTimer = 0.0f;
+	float HitFlashDuration = 0.14f;
+
+	__forceinline void TriggerHitFlash(float duration = 0.14f) {
+		HitFlashDuration = duration;
+		HitFlashTimer = duration;
+	}
+
+	__forceinline float GetHitFlashRate() const {
+		if (HitFlashDuration <= 0.0f) return 0.0f;
+		float rate = HitFlashTimer / HitFlashDuration;
+		if (rate < 0.0f) return 0.0f;
+		if (rate > 1.0f) return 1.0f;
+		return rate;
+	}
 
 // 이름에서 ShapeIndex를 얻는 map
 	GPUResource NodeWorldMatrixReadBack;
@@ -1043,6 +1058,7 @@ public:
 #pragma pack(pop)
 
 	virtual void RecvSTC_SyncObj(char* data);
+	static void SyncHP(GameObject* go, char* data, int len);
 	static void STATICINIT(int typeindex = GameObjectType::_Monster);
 #undef STC_CurrentStruct
 };

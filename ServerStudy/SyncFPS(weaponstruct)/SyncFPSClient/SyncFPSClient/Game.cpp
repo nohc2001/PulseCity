@@ -24,6 +24,9 @@ extern GlobalDevice gd;
 Game game;
 
 namespace {
+	constexpr float BULLET_RAY_MISS_DISTANCE = 49.95f;
+	constexpr bool SHOW_BULLET_RAY_DEBUG_MESH = false;
+
 	// StaticGameObjects에 등록된 Mesh/Model을 Auto LOD 프리로드 대상으로 수집한다.
 	void PrebuildStaticObjectAutoLOD()
 	{
@@ -153,6 +156,7 @@ void GameObjectType::STATICINIT() {
 	LinkOffsetAsFunction(GameObjectType::_SkinMeshGameObject, "worldMat", DynamicGameObject::SyncDestWolrd);
 	LinkOffsetAsFunction(GameObjectType::_Player, "worldMat", DynamicGameObject::SyncDestWolrd);
 	LinkOffsetAsFunction(GameObjectType::_Monster, "worldMat", DynamicGameObject::SyncDestWolrd);
+	LinkOffsetAsFunction(GameObjectType::_Monster, "HP", Monster::SyncHP);
 }
 
 void Game::SetLight()
@@ -864,6 +868,49 @@ namespace
 			particle->RandomSeed = gTransientParticleSeed++;
 			particle->FrameIndex = 0;
 			particle->FrameCount = 6u;
+			particle->FrameCols = 6u;
+		}
+	}
+
+	void SpawnBulletImpact(vec4 start, vec4 direction, float distance)
+	{
+		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
+		vec4 right = forward.cross(upHint);
+		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
+		vec4 up = right.cross(forward);
+		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
+		vec4 impactPos = start + forward * distance;
+
+		for (int i = 0; i < 14; ++i) {
+			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
+			if (particle == nullptr) break;
+
+			vec4 scatter = right * RandomRange(-1.0f, 1.0f) + up * RandomRange(-0.35f, 0.95f) - forward * RandomRange(0.35f, 1.0f);
+			scatter = NormalizeOrFallback(scatter, forward * -1.0f);
+			vec4 pos = impactPos - forward * 0.025f + right * RandomRange(-0.035f, 0.035f) + up * RandomRange(-0.025f, 0.045f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(
+				scatter.x * RandomRange(1.8f, 4.8f),
+				scatter.y * RandomRange(1.8f, 4.8f),
+				scatter.z * RandomRange(1.8f, 4.8f));
+			particle->Age = 0.0f;
+			particle->LifeTime = RandomRange(0.09f, 0.18f);
+			particle->StartColor = XMFLOAT4(2.0f, 0.38f, 0.18f, 0.95f);
+			particle->EndColor = XMFLOAT4(0.34f, 0.02f, 0.01f, 0.0f);
+			particle->StartSize = RandomRange(0.045f, 0.085f);
+			particle->EndSize = 0.006f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-7.0f, 7.0f);
+			particle->Drag = RandomRange(3.8f, 7.2f);
+			particle->GravityScale = 0.15f;
+			particle->Stretch = RandomRange(1.0f, 2.1f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 36u;
 			particle->FrameCols = 6u;
 		}
 	}
@@ -3049,12 +3096,17 @@ READ_START:
 	case STC_Protocol::NewRay:
 	{
 		STC_NewRay_Header& header = *(STC_NewRay_Header*)currentPivot;
-		int BulletIndex = bulletRays.Alloc();
-		if (BulletIndex >= 0) {
-			BulletRay& bray = bulletRays[BulletIndex];
-			bray = BulletRay(header.raystart, header.rayDir, header.distance);
+		if constexpr (SHOW_BULLET_RAY_DEBUG_MESH) {
+			int BulletIndex = bulletRays.Alloc();
+			if (BulletIndex >= 0) {
+				BulletRay& bray = bulletRays[BulletIndex];
+				bray = BulletRay(header.raystart, header.rayDir, header.distance);
+			}
 		}
 		SpawnElectricTracer(header.raystart, header.rayDir, header.distance);
+		if (header.distance < BULLET_RAY_MISS_DISTANCE) {
+			SpawnBulletImpact(header.raystart, header.rayDir, header.distance);
+		}
 		currentPivot += header.size;
 		offset += header.size;
 	}

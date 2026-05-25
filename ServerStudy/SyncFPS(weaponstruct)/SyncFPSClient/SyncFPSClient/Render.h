@@ -3424,7 +3424,8 @@ public:
 		SRVTable_SkinMeshShadowMaps = 6,
 		SRVTable_SKinMeshEnvironmentMap = 7,
 		SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer = 8,
-		withSkinMeshShaow_RootParamCapacity = 9,
+		Const_SkinMeshHitFlash = 9,
+		withSkinMeshShaow_RootParamCapacity = 10,
 
 		CBVTable_Instancing_DirLightData = 1,
 		SRVTable_Instancing_RenderInstance = 2,

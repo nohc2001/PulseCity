@@ -845,6 +845,8 @@ void Zone::GridCollisionCheck() {
 void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage) {
     vec4 rayOrigin = rayStart;
     float closestDistance = rayDistance;
+    DynamicGameObject* hitObject = nullptr;
+    int hitObjectIndex = -1;
 
     int lastcurrentindex = currentIndex;
 
@@ -859,9 +861,15 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
         if (obb.Intersects(rayOrigin, rayDirection, distance)) {
             if (distance < closestDistance) {
                 closestDistance = distance;
-                Dynamic_gameObjects[i]->OnCollisionRayWithBullet(shooter, damage);
+                hitObject = Dynamic_gameObjects[i];
+                hitObjectIndex = i;
             }
         }
+    }
+
+    if (hitObject != nullptr) {
+        currentIndex = hitObjectIndex;
+        hitObject->OnCollisionRayWithBullet(shooter, damage);
     }
 
     currentIndex = lastcurrentindex;

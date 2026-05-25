@@ -2870,6 +2870,10 @@ void Monster::STATICINIT(int typeindex) {
 void Monster::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
+	if (HitFlashTimer > 0.0f) {
+		HitFlashTimer -= deltaTime;
+		if (HitFlashTimer < 0.0f) HitFlashTimer = 0.0f;
+	}
 
 	if (isDead)
 	{
@@ -2984,10 +2988,14 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	LVelocity = stcsod.LVelocity;
 	AnimationFlowTime[0] = stcsod.AnimationFlowTime;
 	PlayingAnimationIndex[0] = stcsod.PlayingAnimationIndex;
+	float prevHP = HP;
 	HP = stcsod.HP;
 	MaxHP = stcsod.MaxHP;
 	Defense = stcsod.Defense;
 	isDead = stcsod.isDead;
+	if (HP < prevHP && !isDead) {
+		TriggerHitFlash();
+	}
 	offset += sizeof(STC_SyncObjData);
 
 	Mesh* mesh = nullptr;
@@ -3021,6 +3029,17 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	}
 
 	SetShape(shape);
+}
+
+void Monster::SyncHP(GameObject* go, char* data, int len)
+{
+	if (go == nullptr || data == nullptr || len < sizeof(float)) return;
+	Monster* monster = (Monster*)go;
+	float newHP = *(float*)data;
+	if (newHP < monster->HP && !monster->isDead) {
+		monster->TriggerHitFlash();
+	}
+	monster->HP = newHP;
 }
 
 void Monster::ChangeState(State newState)

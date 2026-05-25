@@ -7144,6 +7144,9 @@ void PBRShader1::CreateRootSignature_SkinedMesh()
 	DescTable5.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParam[RootParamId::SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer] = DescTable5;
 
+	rootParam[RootParamId::Const_SkinMeshHitFlash] =
+		RootParam1::Const32s(GRegID('b', 5), 4, D3D12_SHADER_VISIBILITY_PIXEL);
+
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |

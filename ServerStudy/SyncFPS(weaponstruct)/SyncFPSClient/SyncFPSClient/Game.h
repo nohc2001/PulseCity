@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "stdafx.h"
 #include "main.h"
 #include "Render.h"
@@ -603,6 +603,8 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 						//copying
 						int skindex = Mesh_SkinMeshindex[i];
 						int boneNum = pModel->mBumpSkinMeshs[skindex]->MatrixCount;
+						vec4 hitFlash = vec4(smgo->GetHitFlashRate(), 1.0f, 0.05f, 0.02f);
+						cmd->SetGraphicsRoot32BitConstants(PBRRPI::Const_SkinMeshHitFlash, 4, &hitFlash, 0);
 						UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
 						gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_COPY_DEST);
 						gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -635,6 +637,8 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 						if (true) {
 
 							//Set Offset
+							vec4 hitFlash = vec4(smgo->GetHitFlashRate(), 1.0f, 0.05f, 0.02f);
+							cmd->SetGraphicsRoot32BitConstants(PBRRPI::Const_SkinMeshHitFlash, 4, &hitFlash, 0);
 							DescHandle OffsetMatrixCBVHandle;
 							gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);
 							gd.pDevice->CopyDescriptorsSimple(1, OffsetMatrixCBVHandle.hcpu, bmesh->ToOffsetMatrixsCB.descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
