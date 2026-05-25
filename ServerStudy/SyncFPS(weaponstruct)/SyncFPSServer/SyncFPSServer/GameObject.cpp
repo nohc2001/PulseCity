@@ -2377,12 +2377,15 @@ void Player::Update(float deltaTime)
 	}
 
 	if (InputBuffer[InputID::MouseLbutton] == true) {
-		bool isOverheated = ((PlayerJob)m_currentJob == PlayerJob::Juggernaut && HeatGauge >= MaxHeatGauge);
-		if (weapon.m_shootFlow >= weapon.m_info.shootDelay && bullets > 0 && HeatGauge < MaxHeatGauge && isOverheated == false) {
+		bool isHeatWeapon = ((PlayerJob)m_currentJob == PlayerJob::Juggernaut && (WeaponType)m_currentWeaponType == WeaponType::MachineGun);
+		bool isOverheated = (isHeatWeapon && HeatGauge >= MaxHeatGauge);
+		if (weapon.m_shootFlow >= weapon.m_info.shootDelay && bullets > 0 && isOverheated == false) {
 
 			bullets -= 1;
-			HeatGauge += 2;
-			if (HeatGauge > MaxHeatGauge) HeatGauge = MaxHeatGauge;
+			if (isHeatWeapon) {
+				HeatGauge += 2;
+				if (HeatGauge > MaxHeatGauge) HeatGauge = MaxHeatGauge;
+			}
 
 			weapon.OnFire();
 
@@ -3483,6 +3486,10 @@ void World::Init() {
 		Model* MonsterModel = new Model();
 		MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
 		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
+
+		Model* DroneModel = new Model();
+		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
+		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
 
 		Mesh* portalMesh = new Mesh();
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);

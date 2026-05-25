@@ -833,34 +833,34 @@ static JobData GJobTable[] = {
 		{ SkillEffectType::Juggernaut_UltimateFire, 32.0f, 80.0f, 30.0f, 5.0f, 75.0f, 5.0f },
 	} },
 	{ PlayerJob::Frost, 120.0f, 15.0f, 10.0f, WeaponType::Shotgun, {
-		{ SkillEffectType::Frost_Cone, 7.0f, 25.0f, 12.0f, 5.0f, 20.0f, 1.0f },
-		{ SkillEffectType::Frost_IceBlock, 12.0f, 20.0f, 0.0f, 3.0f, 35.0f, 1.5f },
-		{ SkillEffectType::Frost_Blizzard, 34.0f, 90.0f, 0.0f, 8.0f, 45.0f, 4.0f },
+		{ SkillEffectType::Frost_Cone, 7.0f, 0.0f, 12.0f, 5.0f, 20.0f, 1.0f },
+		{ SkillEffectType::Frost_IceBlock, 12.0f, 0.0f, 0.0f, 3.0f, 35.0f, 1.5f },
+		{ SkillEffectType::Frost_Blizzard, 34.0f, 0.0f, 0.0f, 8.0f, 45.0f, 4.0f },
 	} },
 	{ PlayerJob::Aegis, 100.0f, 20.0f, 9.0f, WeaponType::Pistol, {
-		{ SkillEffectType::Aegis_ShieldCharge, 7.0f, 20.0f, 8.0f, 2.0f, 25.0f, 0.8f },
-		{ SkillEffectType::Aegis_Barrier, 14.0f, 35.0f, 8.0f, 4.0f, 0.0f, 3.0f },
-		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 80.0f, 0.0f, 7.0f, 50.0f, 6.0f },
+		{ SkillEffectType::Aegis_ShieldCharge, 7.0f, 0.0f, 8.0f, 2.0f, 25.0f, 0.8f },
+		{ SkillEffectType::Aegis_Barrier, 14.0f, 0.0f, 8.0f, 4.0f, 0.0f, 3.0f },
+		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 0.0f, 0.0f, 7.0f, 50.0f, 6.0f },
 	} },
 	{ PlayerJob::Mage, 100.0f, 20.0f, 9.0f,WeaponType::Pistol, {
-		{ SkillEffectType::Mage_FireBall, 4.0f, 20.0f, 30.0f, 1.0f, 35.0f, 1.0f },
-		{ SkillEffectType::Fire_Ring, 8.0f, 35.0f, 8.0f, 4.0f, 20.0f, 1.5f },
-		{ SkillEffectType::Fire_Pillar, 25.0f, 100.0f, 20.0f, 5.0f, 80.0f, 2.5f },
+		{ SkillEffectType::Mage_FireBall, 4.0f, 0.0f, 30.0f, 1.0f, 35.0f, 1.0f },
+		{ SkillEffectType::Fire_Ring, 8.0f, 0.0f, 8.0f, 4.0f, 20.0f, 1.5f },
+		{ SkillEffectType::Fire_Pillar, 25.0f, 0.0f, 20.0f, 5.0f, 80.0f, 2.5f },
 	} },
 	{ PlayerJob::Healer, 100.0f, 20.0f, 9.0f,WeaponType::Pistol, {
 		{ SkillEffectType::Healer_HealAura, 10.0f, 0.0f, 0.0f, 3.5f, 0.0f, 1.5f },
-		{ SkillEffectType::Electric_Arc, 8.0f, 25.0f, 18.0f, 1.0f, 15.0f, 1.0f },
-		{ SkillEffectType::Healer_HealAura, 30.0f, 100.0f, 0.0f, 7.0f, 100.0f, 3.0f },
+		{ SkillEffectType::Electric_Arc, 8.0f, 0.0f, 18.0f, 1.0f, 15.0f, 1.0f },
+		{ SkillEffectType::Healer_HealAura, 30.0f, 0.0f, 0.0f, 7.0f, 100.0f, 3.0f },
 	} },
 	{ PlayerJob::Gunner, 100.0f, 20.0f, 9.0f,WeaponType::Rifle, {
-		{ SkillEffectType::Gunner_Muzzle, 5.0f, 20.0f, 30.0f, 1.0f, 20.0f, 0.5f },
-		{ SkillEffectType::Electric_Burst, 9.0f, 35.0f, 12.0f, 3.0f, 25.0f, 1.0f },
-		{ SkillEffectType::Ember_Shower, 28.0f, 100.0f, 25.0f, 5.0f, 60.0f, 3.0f },
+		{ SkillEffectType::Gunner_Muzzle, 5.0f, 0.0f, 30.0f, 1.0f, 20.0f, 0.5f },
+		{ SkillEffectType::Electric_Burst, 9.0f, 0.0f, 12.0f, 3.0f, 25.0f, 1.0f },
+		{ SkillEffectType::Ember_Shower, 28.0f, 0.0f, 25.0f, 5.0f, 60.0f, 3.0f },
 	} },
 	{ PlayerJob::Tank, 100.0f, 20.0f, 9.0f, WeaponType::Shotgun, {
-		{ SkillEffectType::Tank_ShockWave, 7.0f, 25.0f, 0.0f, 5.0f, 20.0f, 1.0f },
-		{ SkillEffectType::Electric_Burst, 11.0f, 35.0f, 0.0f, 4.0f, 25.0f, 1.0f },
-		{ SkillEffectType::Tank_ShockWave, 32.0f, 100.0f, 0.0f, 8.0f, 70.0f, 2.0f },
+		{ SkillEffectType::Tank_ShockWave, 7.0f, 0.0f, 0.0f, 5.0f, 20.0f, 1.0f },
+		{ SkillEffectType::Electric_Burst, 11.0f, 0.0f, 0.0f, 4.0f, 25.0f, 1.0f },
+		{ SkillEffectType::Tank_ShockWave, 32.0f, 0.0f, 0.0f, 8.0f, 70.0f, 2.0f },
 	} },
 };
 
@@ -1084,7 +1084,7 @@ struct MonsterData {
 
 static MonsterData GMonsterTable[] = {
 	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f },
-	{ MonsterType::Dron, "Dron", "Monster001", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f },
+	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f },
 	{ MonsterType::Tower, "Tower", "Monster001", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f },
 };
 

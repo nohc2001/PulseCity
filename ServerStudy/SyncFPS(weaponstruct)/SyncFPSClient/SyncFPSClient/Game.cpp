@@ -1204,6 +1204,10 @@ void Game::Init()
 		MonsterModel->Retargeting_Humanoid();
 		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
 
+		Model* DroneModel = new Model();
+		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
+		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
+
 		Mesh* portalMesh = new Mesh();
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
 		Shape::AddMesh("Portal", portalMesh);
