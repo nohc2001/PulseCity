@@ -2154,6 +2154,12 @@ void Player::ApplyJob(PlayerJob job)
 	m_tempMaxHpBonus = 0.0f;
 	m_tempMaxHpTimer = 0.0f;
 	m_iceBlockTimer = 0.0f;
+	m_juggernautFlameTimer = 0.0f;
+	m_juggernautFlameTickFlow = 0.0f;
+	m_juggernautFlameEffectFlow = 0.0f;
+	m_juggernautFlameRange = 0.0f;
+	m_juggernautFlameRadius = 0.0f;
+	m_juggernautFlameDps = 0.0f;
 	m_frostPassiveUsed = false;
 
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
@@ -2207,6 +2213,25 @@ void Player::UpdateSkillCooldowns(float deltaTime, Zone* zones)
 	}
 }
 
+static vec4 RotateDirectionYaw(vec4 direction, float degree)
+{
+	direction.y = 0.0f;
+	if (direction.len3 <= 0.0001f) direction = vec4(0, 0, 1, 0);
+	direction.len3 = 1.0f;
+
+	XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(0.0f, degree * XM_PI / 180.0f, 0.0f);
+	return XMVector3Rotate(direction, quaternion);
+}
+
+static vec4 ApplyShotgunSpread(vec4 direction, float yawDegree, float pitchDegree)
+{
+	vec4 spreadDirection = RotateDirectionYaw(direction, yawDegree);
+	spreadDirection.y += tanf(pitchDegree * XM_PI / 180.0f);
+	if (spreadDirection.len3 <= 0.0001f) spreadDirection = direction;
+	spreadDirection.len3 = 1.0f;
+	return spreadDirection;
+}
+
 void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 {
 	if (m_tempMaxHpTimer > 0.0f) {
@@ -2223,6 +2248,31 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 	if (m_iceBlockTimer > 0.0f) {
 		m_iceBlockTimer -= deltaTime;
 		if (m_iceBlockTimer < 0.0f) m_iceBlockTimer = 0.0f;
+	}
+
+	if (m_juggernautFlameTimer > 0.0f) {
+		m_juggernautFlameTimer -= deltaTime;
+		if (m_juggernautFlameTimer < 0.0f) m_juggernautFlameTimer = 0.0f;
+
+		XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(m_pitch, m_yaw, 0);
+		vec4 direction = { 0, 0, 1, 0 };
+		direction = XMVector3Rotate(direction, quaternion);
+
+		m_juggernautFlameTickFlow += deltaTime;
+		constexpr float flameTickDelay = 0.18f;
+		while (m_juggernautFlameTickFlow >= flameTickDelay && m_juggernautFlameTimer > 0.0f) {
+			m_juggernautFlameTickFlow -= flameTickDelay;
+			zones->ApplySkillDamage(this, SkillEffectType::Juggernaut_UltimateFire, worldMat.pos, direction,
+				m_juggernautFlameRange, m_juggernautFlameRadius, m_juggernautFlameDps * flameTickDelay);
+		}
+
+		m_juggernautFlameEffectFlow += deltaTime;
+		if (m_juggernautFlameEffectFlow >= 0.12f || m_juggernautFlameTimer == 0.0f) {
+			m_juggernautFlameEffectFlow = 0.0f;
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Ultimate, SkillEffectType::Juggernaut_UltimateFire, worldMat.pos, direction,
+				m_juggernautFlameRadius, m_juggernautFlameDps, 0.35f);
+		}
 	}
 }
 
@@ -2288,6 +2338,24 @@ bool Player::TryUseSkill(SkillSlot slot)
 	XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(m_pitch, m_yaw, 0);
 	vec4 direction = { 0, 0, 1, 0 };
 	direction = XMVector3Rotate(direction, quaternion);
+	if (skill.effectType == SkillEffectType::Juggernaut_FireProjectile) {
+		const float fireAngles[] = { -30.0f, 0.0f, 30.0f };
+		for (float angle : fireAngles) {
+			vec4 shotDirection = RotateDirectionYaw(direction, angle);
+			zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, shotDirection, skill.range, skill.radius, skill.power);
+		}
+	}
+	else if (skill.effectType == SkillEffectType::Juggernaut_UltimateFire) {
+		m_juggernautFlameTimer = skill.duration;
+		m_juggernautFlameTickFlow = 0.18f;
+		m_juggernautFlameEffectFlow = 0.12f;
+		m_juggernautFlameRange = max(skill.range, 50.0f);
+		m_juggernautFlameRadius = max(skill.radius, 2.4f);
+		m_juggernautFlameDps = max(18.0f, skill.power * 0.35f);
+	}
+	else {
+		zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, direction, skill.range, skill.radius, skill.power);
+	}
 	zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob, slot, skill.effectType, worldMat.pos, direction, skill.radius, skill.power, skill.duration);
 	return true;
 }
@@ -2390,7 +2458,23 @@ void Player::Update(float deltaTime)
 			weapon.OnFire();
 
 			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
-			zones->FireRaycast((GameObject*)this, shootOrigin + clook * 1.5f, clook, 50.0f, weapon.m_info.damage);
+			vec4 rayStart = shootOrigin + clook * 1.5f;
+			if ((WeaponType)m_currentWeaponType == WeaponType::Shotgun) {
+				constexpr int shotgunPelletCount = 9;
+				constexpr float shotgunRayDistance = 35.0f;
+				const float yawOffsets[shotgunPelletCount] = { 0.0f, -3.5f, 3.5f, -7.0f, 7.0f, -2.0f, 2.0f, -5.5f, 5.5f };
+				const float pitchOffsets[shotgunPelletCount] = { 0.0f, 2.0f, 2.0f, -1.5f, -1.5f, -4.0f, -4.0f, 4.5f, 4.5f };
+
+				for (int pelletIndex = 0; pelletIndex < shotgunPelletCount; ++pelletIndex) {
+					float jitterYaw = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.4f;
+					float jitterPitch = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.0f;
+					vec4 pelletDirection = ApplyShotgunSpread(clook, yawOffsets[pelletIndex] + jitterYaw, pitchOffsets[pelletIndex] + jitterPitch);
+					zones->FireRaycast((GameObject*)this, rayStart, pelletDirection, shotgunRayDistance, weapon.m_info.damage);
+				}
+			}
+			else {
+				zones->FireRaycast((GameObject*)this, rayStart, clook, 50.0f, weapon.m_info.damage);
+			}
 
 			// fix 이건 이렇게 하면 안될것 같은데? Update 될때마다 패킷이 쌓임. 
 			// 패킷이 많아지면 서버에서 부담이므로 차라리 특정시간마다 쏴주는게 좋다.
@@ -2647,6 +2731,12 @@ void Player::Respawn() {
 	m_tempMaxHpBonus = 0.0f;
 	m_tempMaxHpTimer = 0.0f;
 	m_iceBlockTimer = 0.0f;
+	m_juggernautFlameTimer = 0.0f;
+	m_juggernautFlameTickFlow = 0.0f;
+	m_juggernautFlameEffectFlow = 0.0f;
+	m_juggernautFlameRange = 0.0f;
+	m_juggernautFlameRadius = 0.0f;
+	m_juggernautFlameDps = 0.0f;
 	m_frostPassiveUsed = false;
 	HP = MaxHP;
 	tag[GameObjectTag::Tag_Enable] = true;
@@ -2691,6 +2781,13 @@ Monster::Monster() {
 	isGround = false;
 	respawntimer = 0;
 	pathfindTimer = 0.0f;
+	for (int i = 0; i < (int)StatusEffectType::Max; ++i) {
+		StatusRemain[i] = 0.0f;
+		StatusDuration[i] = 0.0f;
+		StatusPower[i] = 0.0f;
+		StatusTickFlow[i] = 0.0f;
+		StatusSource[i] = nullptr;
+	}
 }
 
 void Monster::ApplyMonsterData(MonsterType type)
@@ -2704,6 +2801,13 @@ void Monster::ApplyMonsterData(MonsterType type)
 	Defense = data.Defense;
 	m_speed = data.MoveSpeed;
 	m_fireDelay = data.FireDelay;
+	for (int i = 0; i < (int)StatusEffectType::Max; ++i) {
+		StatusRemain[i] = 0.0f;
+		StatusDuration[i] = 0.0f;
+		StatusPower[i] = 0.0f;
+		StatusTickFlow[i] = 0.0f;
+		StatusSource[i] = nullptr;
+	}
 
 	auto shape = Shape::StrToShapeIndex.find(data.shapeName);
 	if (shape != Shape::StrToShapeIndex.end()) {
@@ -2731,6 +2835,8 @@ void Monster::Update(float deltaTime)
 		}
 	}
 	else {
+		UpdateStatusEffects(deltaTime);
+		if (isDead) return;
 
 		if (collideCount == 0) isGround = false;
 		collideCount = 0;
@@ -2760,6 +2866,15 @@ void Monster::Update(float deltaTime)
 			LVelocity.y = 0;
 		}
 		tickLVelocity = LVelocity * deltaTime;
+		bool hardControlled = HasStatusEffect(StatusEffectType::Freeze) ||
+			HasStatusEffect(StatusEffectType::Stun) ||
+			HasStatusEffect(StatusEffectType::Paralyze);
+		if (hardControlled) {
+			tickLVelocity.x = 0.0f;
+			tickLVelocity.z = 0.0f;
+			m_isMove = false;
+			return;
+		}
 
 		vec4 monsterPos = worldMat.pos;
 		monsterPos.w = 0;
@@ -2801,11 +2916,13 @@ void Monster::Update(float deltaTime)
 
 		// 플레이어 추적
 		if (distanceToPlayer <= m_chaseRange) {
+			float effectiveSpeed = m_speed;
+			if (HasStatusEffect(StatusEffectType::Slow)) effectiveSpeed *= 0.45f;
 			m_targetPos = playerPos;
-			m_isMove = m_speed > 0.0f;
+			m_isMove = effectiveSpeed > 0.0f;
 
 			// A* 경로가 없거나, 다 소비했으면 새로 계산
-			if (m_speed > 0.0f && (path.empty() || currentPathIndex >= path.size())) {
+			if (effectiveSpeed > 0.0f && (path.empty() || currentPathIndex >= path.size())) {
 				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
 				AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, zone->allnodes);
 
@@ -2816,14 +2933,15 @@ void Monster::Update(float deltaTime)
 			}
 
 			// A* 경로가 있으면 그 경로를 따라 이동
-			if (m_speed > 0.0f && !path.empty() && currentPathIndex < path.size()) {
-				MoveByAstar(deltaTime);
+			if (effectiveSpeed > 0.0f && !path.empty() && currentPathIndex < path.size()) {
+				float speedScale = (m_speed > 0.0f) ? (effectiveSpeed / m_speed) : 0.0f;
+				MoveByAstar(deltaTime * speedScale);
 			}
-			else if (m_speed > 0.0f) {
+			else if (effectiveSpeed > 0.0f) {
 				// 경로 계산 실패했을 때만 기존 직선 추적으로 fallback
 				if (distanceToPlayer > 0.0001f) {
 					toPlayer.len3 = 1.0f;
-					tickLVelocity += toPlayer * m_speed * deltaTime;
+					tickLVelocity += toPlayer * effectiveSpeed * deltaTime;
 					worldMat.SetLook(toPlayer);
 				}
 			}
@@ -2969,8 +3087,8 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	void* vptr = *(void**)shooter;
 	if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 		Player* p = (Player*)shooter;
-		damage = p->Attack;
-		cout << "Player Attack: " << damage << endl;
+		damage += p->Attack * 0.25f;
+		cout << "Player Weapon Damage: " << damage << endl;
 	}
 
 	// Monster Reduce Damage With Defense
@@ -3041,6 +3159,81 @@ void Monster::ApplyDamage(GameObject* source, float damage)
 	}
 }
 
+void Monster::ApplyStatusEffect(GameObject* source, StatusEffectType type, float duration, float power)
+{
+	int statusIndex = (int)type;
+	if (isDead || type == StatusEffectType::None || statusIndex <= 0 || statusIndex >= (int)StatusEffectType::Max) return;
+	if (duration <= 0.0f) return;
+
+	Zone* zone = gameworld.GetZone(zoneId);
+	if (zone == nullptr) return;
+
+	StatusRemain[statusIndex] = max(StatusRemain[statusIndex], duration);
+	StatusDuration[statusIndex] = max(StatusDuration[statusIndex], duration);
+	StatusPower[statusIndex] = max(StatusPower[statusIndex], power);
+	StatusSource[statusIndex] = source;
+	if (type == StatusEffectType::Burn) StatusTickFlow[statusIndex] = 0.0f;
+	if (type == StatusEffectType::Taunt && source != nullptr) {
+		void* vptr = *(void**)source;
+		if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
+			Player* player = (Player*)source;
+			int objIndex = gameworld.clients[player->clientIndex].objindex;
+			if (objIndex >= 0 && objIndex < zone->Dynamic_gameObjects.size && zone->Dynamic_gameObjects.isnull(objIndex) == false) {
+				Target = (Player**)&zone->Dynamic_gameObjects[objIndex];
+				m_fireTimer = m_fireDelay;
+				path.clear();
+				currentPathIndex = 0;
+			}
+		}
+	}
+
+	BoundingOrientedBox obb = GetOBB();
+	vec4 extents = vec4(obb.Extents.x, obb.Extents.y, obb.Extents.z, 0.0f);
+	zone->Sending_StatusEffect(zone->CommonSDS, zone->currentIndex, -1, type, true, duration, StatusRemain[statusIndex], StatusPower[statusIndex], worldMat.pos, extents);
+}
+
+void Monster::UpdateStatusEffects(float deltaTime)
+{
+	Zone* zone = gameworld.GetZone(zoneId);
+	if (zone == nullptr) return;
+
+	for (int i = 1; i < (int)StatusEffectType::Max; ++i) {
+		if (StatusRemain[i] <= 0.0f) continue;
+
+		StatusRemain[i] -= deltaTime;
+		StatusEffectType type = (StatusEffectType)i;
+
+		if (type == StatusEffectType::Burn) {
+			StatusTickFlow[i] += deltaTime;
+			constexpr float burnTickDelay = 0.5f;
+			while (StatusTickFlow[i] >= burnTickDelay && StatusRemain[i] > 0.0f && isDead == false) {
+				StatusTickFlow[i] -= burnTickDelay;
+				float burnDamage = StatusPower[i] > 0.0f ? StatusPower[i] : 4.0f;
+				ApplyDamage(StatusSource[i], burnDamage * burnTickDelay);
+			}
+		}
+
+		if (StatusRemain[i] <= 0.0f) {
+			StatusRemain[i] = 0.0f;
+			StatusDuration[i] = 0.0f;
+			StatusPower[i] = 0.0f;
+			StatusTickFlow[i] = 0.0f;
+			StatusSource[i] = nullptr;
+
+			BoundingOrientedBox obb = GetOBB();
+			vec4 extents = vec4(obb.Extents.x, obb.Extents.y, obb.Extents.z, 0.0f);
+			zone->Sending_StatusEffect(zone->CommonSDS, zone->currentIndex, -1, type, false, 0.0f, 0.0f, 0.0f, worldMat.pos, extents);
+		}
+	}
+}
+
+bool Monster::HasStatusEffect(StatusEffectType type) const
+{
+	int statusIndex = (int)type;
+	if (statusIndex <= 0 || statusIndex >= (int)StatusEffectType::Max) return false;
+	return StatusRemain[statusIndex] > 0.0f;
+}
+
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
 {
 	SetWorld(initialWorldMatrix);
@@ -3055,6 +3248,16 @@ void Monster::Respawn()
 		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
 	}
 	m_isMove = false;
+	for (int i = 0; i < (int)StatusEffectType::Max; ++i) {
+		if (StatusRemain[i] > 0.0f) {
+			zone->Sending_StatusEffect(zone->CommonSDS, zone->currentIndex, -1, (StatusEffectType)i, false, 0.0f, 0.0f, 0.0f, worldMat.pos, vec4(0.3f, 1.0f, 0.3f, 0.0f));
+		}
+		StatusRemain[i] = 0.0f;
+		StatusDuration[i] = 0.0f;
+		StatusPower[i] = 0.0f;
+		StatusTickFlow[i] = 0.0f;
+		StatusSource[i] = nullptr;
+	}
 	zone->Sending_ChangeGameObjectMember<vec4>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &worldMat);
 	isDead = false;
 	zone->Sending_ChangeGameObjectMember<bool>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &isDead);

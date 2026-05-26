@@ -910,6 +910,12 @@ struct Player : public SkinMeshGameObject {
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
 	float m_iceBlockTimer = 0.0f;
+	float m_juggernautFlameTimer = 0.0f;
+	float m_juggernautFlameTickFlow = 0.0f;
+	float m_juggernautFlameEffectFlow = 0.0f;
+	float m_juggernautFlameRange = 0.0f;
+	float m_juggernautFlameRadius = 0.0f;
+	float m_juggernautFlameDps = 0.0f;
 
 	// OBB.Center
 	float zoneMoveCooldownRemain = 0.0f;
@@ -1145,6 +1151,11 @@ struct Monster : public SkinMeshGameObject {
 	float respawntimer = 0;
 	// ServerOnly 상태
 	float pathfindTimer = 0.0f;
+	float StatusRemain[(int)StatusEffectType::Max] = {};
+	float StatusDuration[(int)StatusEffectType::Max] = {};
+	float StatusPower[(int)StatusEffectType::Max] = {};
+	float StatusTickFlow[(int)StatusEffectType::Max] = {};
+	GameObject* StatusSource[(int)StatusEffectType::Max] = {};
 
 	Monster();
 	virtual ~Monster() {}
@@ -1157,6 +1168,9 @@ struct Monster : public SkinMeshGameObject {
 
 	virtual void OnCollisionRayWithBullet(GameObject* shooter, float damage);
 	void ApplyDamage(GameObject* source, float damage);
+	void ApplyStatusEffect(GameObject* source, StatusEffectType type, float duration, float power);
+	void UpdateStatusEffects(float deltaTime);
+	bool HasStatusEffect(StatusEffectType type) const;
 	void ApplyMonsterData(MonsterType type);
 
 	void Init(const XMMATRIX& initialWorldMatrix);

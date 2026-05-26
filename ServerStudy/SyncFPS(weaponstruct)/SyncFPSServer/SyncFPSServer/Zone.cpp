@@ -218,7 +218,7 @@ void Zone::Update(float deltaTime) {
                             StaticGameObject* sgo = c->Static_gameobjects[k];
 
                             if (sgo->obbArr.size() == 0) {
-                                ////Static Object¿¡¼­ obb Á¤º¸°¡ ¾øÀ¸¸é µû·Î Ãæµ¹Ã¼¸¦ ¸¸µéÁö ¾Ê°Ô Á¶Á¤ÇÑ´Ù.
+                                //// Skip fallback collision when a static object has no OBB data.
                                 //BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
 
                                 //if (obb_after.Intersects(staticobb)) {
@@ -413,25 +413,25 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
         << player->worldMat.pos.f3.z << ")" << endl;
 
 
-    // ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½é¿¡ï¿½ï¿½ ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ ï¿½Ë¸ï¿½ (CommonSDS)
+    // Notify other clients in this zone about the new player. (CommonSDS)
     player->SendGameObject(newIdx, CommonSDS);
 
-    // ï¿½ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (PersonalSDS)
+    // Send current zone data to the new client. (PersonalSDS)
     SendDataSaver& personalSDS = gameworld.clients[clientIndex].PersonalSDS;
 
     if (update_Map) {
-        //// Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ Zone ï¿½Ìµï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½Öµï¿½ï¿½ï¿½ ï¿½ï¿½Å¶ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½. (Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ® ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
+        //// Send zone move packet so the client can load the zone map.
         gameworld.Sending_PlayerMoveZone(personalSDS, clientIndex, zoneId);
     }
 
-    // ï¿½ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ Zoneï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+    // Send all objects in this zone to the new client.
     SendingAllObjectForNewClient(personalSDS);
 
-    // AllocPlayerIndex ï¿½ï¿½ï¿½ï¿½
+    // Send allocated player index.
     gameworld.Sending_AllocPlayerIndex(personalSDS, clientIndex, newIdx);
 
-    // ÇÃ·¹ÀÌ¾î ÀÎº¥Åä¸® Á¤º¸¸¦ Àü¼Û
-    // ÀÌ¶§ ÇÊ¿äÇÏ¸é µ¥ÀÌÅÍº£ÀÌ½º¿¡¼­ ÇÃ·¹ÀÌ¾î Á¤º¸ ¾ò±â..
+    // Send player inventory data.
+    // Load player data from database here when needed.
     for (int i = 0; i < player->maxItem; ++i) {
         Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
     }
@@ -691,13 +691,13 @@ void Zone::FlushSendToClients() {
 }
 
 //void Zone::SendZoneDataToClient(SendDataSaver& sds) {
-//    // ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?Dynamic ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
+//    // Send all dynamic objects in this zone.
 //    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
 //        if (Dynamic_gameObjects.isnull(i)) continue;
 //        Dynamic_gameObjects[i]->SendGameObject(i, sds);
 //    }
 //
-//    // ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+//    // Send dropped items.
 //    for (int i = 0; i < DropedItems.size; ++i) {
 //        if (DropedItems.isnull(i)) continue;
 //        // Sending_ItemDrop to personal SDS
@@ -905,6 +905,40 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     header.distance = closestDistance;
     CommonSDS.postpush_end();
 }
+static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& statusDuration, float& statusPower)
+{
+    statusDuration = 0.0f;
+    statusPower = 0.0f;
+    switch (effectType) {
+    case SkillEffectType::Juggernaut_FireProjectile:
+    case SkillEffectType::Juggernaut_UltimateFire:
+        statusDuration = 3.0f;
+        statusPower = 6.0f;
+        return StatusEffectType::Burn;
+    case SkillEffectType::Juggernaut_Taunt:
+        statusDuration = 3.0f;
+        statusPower = 1.0f;
+        return StatusEffectType::Taunt;
+    case SkillEffectType::Frost_Cone:
+        statusDuration = 2.4f;
+        statusPower = 1.0f;
+        return StatusEffectType::Freeze;
+    case SkillEffectType::Frost_Blizzard:
+        statusDuration = 1.6f;
+        statusPower = 1.0f;
+        return StatusEffectType::Freeze;
+    case SkillEffectType::Tank_ShockWave:
+        statusDuration = 0.8f;
+        statusPower = 1.0f;
+        return StatusEffectType::Stun;
+    case SkillEffectType::Electric_Burst:
+        statusDuration = 1.2f;
+        statusPower = 1.0f;
+        return StatusEffectType::Paralyze;
+    default:
+        return StatusEffectType::None;
+    }
+}
 int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage) {
     if (caster == nullptr || damage <= 0.0f || radius <= 0.0f) return 0;
 
@@ -958,6 +992,12 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 
         currentIndex = i;
         monster->ApplyDamage(caster, damage);
+        float statusDuration = 0.0f;
+        float statusPower = 0.0f;
+        StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
+        if (statusType != StatusEffectType::None) {
+            monster->ApplyStatusEffect(caster, statusType, statusDuration, statusPower);
+        }
         ++hitCount;
     }
 

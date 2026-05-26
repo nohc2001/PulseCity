@@ -914,10 +914,73 @@ namespace
 			particle->FrameCols = 6u;
 		}
 	}
+
+	vec4 RotateDirectionYaw(vec4 direction, float degree)
+	{
+		direction.y = 0.0f;
+		direction = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(0.0f, degree * XM_PI / 180.0f, 0.0f);
+		return XMVector3Rotate(direction, quaternion);
+	}
+
+	void SpawnJuggernautFlameJet(vec4 position, vec4 direction, float range, float radius, int streamCount)
+	{
+		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
+		vec4 right = forward.cross(upHint);
+		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
+		vec4 up = right.cross(forward);
+		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
+		vec4 origin = position + up * 1.15f + forward * 1.0f;
+
+		int particleCount = max(12, streamCount * 16);
+		for (int i = 0; i < particleCount; ++i) {
+			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
+			if (particle == nullptr) break;
+
+			float t = RandomRange(0.0f, 1.0f);
+			float coneWidth = radius * (0.25f + t * 0.95f);
+			vec4 pos = origin
+				+ forward * RandomRange(0.0f, range * 0.75f)
+				+ right * RandomRange(-coneWidth, coneWidth)
+				+ up * RandomRange(-coneWidth * 0.25f, coneWidth * 0.55f);
+			vec4 velocity = NormalizeOrFallback(forward + right * RandomRange(-0.25f, 0.25f) + up * RandomRange(-0.05f, 0.2f), forward);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(velocity.x * RandomRange(6.0f, 13.0f), velocity.y * RandomRange(6.0f, 13.0f), velocity.z * RandomRange(6.0f, 13.0f));
+			particle->Age = 0.0f;
+			particle->LifeTime = RandomRange(0.18f, 0.42f);
+			particle->StartColor = XMFLOAT4(2.6f, 0.82f, 0.22f, 0.9f);
+			particle->EndColor = XMFLOAT4(0.45f, 0.03f, 0.01f, 0.0f);
+			particle->StartSize = RandomRange(0.18f, 0.42f);
+			particle->EndSize = 0.025f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-6.0f, 6.0f);
+			particle->Drag = RandomRange(2.2f, 4.8f);
+			particle->GravityScale = -0.05f;
+			particle->Stretch = RandomRange(1.2f, 2.8f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 36u;
+			particle->FrameCols = 6u;
+		}
+	}
 }
 
 void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction, UINT ownerId, float radius, float power, float duration)
 {
+	if (type == SkillEffectType::Juggernaut_FireProjectile) {
+		const float fireAngles[] = { -30.0f, 0.0f, 30.0f };
+		for (float angle : fireAngles) {
+			SpawnJuggernautFlameJet(position, RotateDirectionYaw(direction, angle), max(power, 12.0f), max(radius, 1.4f), 1);
+		}
+	}
+	else if (type == SkillEffectType::Juggernaut_UltimateFire) {
+		SpawnJuggernautFlameJet(position, direction, max(power, 45.0f), max(radius, 2.2f), 2);
+	}
+
 	SkillEffectType runtimeType = type;
 	switch (type) {
 	case SkillEffectType::Healer_HealAura:
@@ -927,13 +990,13 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 		runtimeType = SkillEffectType::Fire_Ring;
 		break;
 	case SkillEffectType::Juggernaut_FireProjectile:
-		runtimeType = SkillEffectType::Mage_FireBall;
+		runtimeType = SkillEffectType::Frost_Cone;
 		break;
 	case SkillEffectType::Juggernaut_Taunt:
 		runtimeType = SkillEffectType::Fire_Ring;
 		break;
 	case SkillEffectType::Juggernaut_UltimateFire:
-		runtimeType = SkillEffectType::Ember_Shower;
+		runtimeType = SkillEffectType::Frost_Cone;
 		break;
 	case SkillEffectType::Aegis_Barrier:
 	case SkillEffectType::Aegis_ShieldAura:
