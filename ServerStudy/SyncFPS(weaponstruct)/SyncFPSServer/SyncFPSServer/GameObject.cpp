@@ -2215,7 +2215,6 @@ void Player::UpdateSkillCooldowns(float deltaTime, Zone* zones)
 
 static vec4 RotateDirectionYaw(vec4 direction, float degree)
 {
-	direction.y = 0.0f;
 	if (direction.len3 <= 0.0001f) direction = vec4(0, 0, 1, 0);
 	direction.len3 = 1.0f;
 
@@ -2459,6 +2458,15 @@ void Player::Update(float deltaTime)
 
 			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
 			vec4 rayStart = shootOrigin + clook * 1.5f;
+			vec4 cameraPos = worldMat.pos + vec4(0, 1.55f, 0, 0);
+			vec4 aimPoint = cameraPos + clook * 50.0f;
+			vec4 aimDirection = aimPoint - rayStart;
+			if (aimDirection.fast_square_of_len3 < 0.0001f) {
+				aimDirection = clook;
+			}
+			else {
+				aimDirection.len3 = 1.0f;
+			}
 			if ((WeaponType)m_currentWeaponType == WeaponType::Shotgun) {
 				constexpr int shotgunPelletCount = 9;
 				constexpr float shotgunRayDistance = 35.0f;
@@ -2468,12 +2476,12 @@ void Player::Update(float deltaTime)
 				for (int pelletIndex = 0; pelletIndex < shotgunPelletCount; ++pelletIndex) {
 					float jitterYaw = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.4f;
 					float jitterPitch = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.0f;
-					vec4 pelletDirection = ApplyShotgunSpread(clook, yawOffsets[pelletIndex] + jitterYaw, pitchOffsets[pelletIndex] + jitterPitch);
+					vec4 pelletDirection = ApplyShotgunSpread(aimDirection, yawOffsets[pelletIndex] + jitterYaw, pitchOffsets[pelletIndex] + jitterPitch);
 					zones->FireRaycast((GameObject*)this, rayStart, pelletDirection, shotgunRayDistance, weapon.m_info.damage);
 				}
 			}
 			else {
-				zones->FireRaycast((GameObject*)this, rayStart, clook, 50.0f, weapon.m_info.damage);
+				zones->FireRaycast((GameObject*)this, rayStart, aimDirection, 50.0f, weapon.m_info.damage);
 			}
 
 			// fix 이건 이렇게 하면 안될것 같은데? Update 될때마다 패킷이 쌓임. 

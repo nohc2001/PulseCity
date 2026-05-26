@@ -2926,6 +2926,13 @@ void Game::Update()
 				pat += 0.35f * player->worldMat.right;
 			}
 
+			const float minCameraY = player->worldMat.pos.y + 0.3f;
+			if (peye.y < minCameraY) {
+				const float cameraLift = minCameraY - peye.y;
+				peye.y = minCameraY;
+				pat.y += cameraLift;
+			}
+
 			XMFLOAT3 Up = { 0, 1, 0 };
 			gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
 			gd.viewportArr[0].Camera_Pos = peye;
