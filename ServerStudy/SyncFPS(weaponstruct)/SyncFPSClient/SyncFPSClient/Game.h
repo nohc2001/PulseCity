@@ -363,6 +363,13 @@ public:
 	bool bFirstPersonVision = false;
 	// delta time
 	float DeltaTime;
+	double PerfGPUWaitMs = 0.0;
+	double PerfGPUPreWaitMs = 0.0;
+	double PerfGPUShadowWaitMs = 0.0;
+	double PerfGPUMainWaitMs = 0.0;
+	double PerfGPUComputeWaitMs = 0.0;
+	double PerfGPUFinalWaitMs = 0.0;
+	double PerfPresentMs = 0.0;
 
 	UINT TourID = 0;
 	// 현재 렌더링을 수행하는 셰이더 타입
@@ -583,7 +590,9 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 					BumpMesh* Bmesh = (BumpMesh*)drawMesh;
 					for (int k = 0; k < Bmesh->subMeshNum; ++k) {
 						using PBRRPI = PBRShader1::RootParamId;
-						Material* mat = game.MaterialTable[materialIndex[k]];
+						const int drawMaterialIndex = materialIndex[k];
+						if (drawMaterialIndex < 0 || drawMaterialIndex >= static_cast<int>(game.MaterialTable.size())) continue;
+						Material* mat = game.MaterialTable[drawMaterialIndex];
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
 						drawMesh->Render(cmd, 1, k);

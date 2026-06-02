@@ -16,9 +16,9 @@
 
 namespace {
 	constexpr unsigned int kAutoLODCacheMagic = 0x31444F4C; // LOD1
-	constexpr unsigned int kAutoLODCacheVersion = 47;
-	constexpr int kAutoLODLevelCount = 2;
-	constexpr std::array<float, kAutoLODLevelCount> kAutoLODRatios = { 0.25f, 0.10f };
+	constexpr unsigned int kAutoLODCacheVersion = 56;
+	constexpr int kAutoLODLevelCount = 1;
+	constexpr std::array<float, kAutoLODLevelCount> kAutoLODRatios = { 0.25f };
 	constexpr float kAutoLODTargetError = 5e-4f;
 	constexpr float kAutoLODDebugInterval = 2.0f;
 	constexpr bool kAutoLODVerboseBuildLog = false;
@@ -28,7 +28,10 @@ namespace {
 	constexpr int kAutoLODMinSubsetTriangles = 54;
 	constexpr int kAutoLODMinResultTriangles = 84;
 	constexpr float kAutoLODMinAcceptedSubsetRatio = 0.20f;
-	constexpr float kAutoLODMaxAcceptedResultRatio = 0.70f;
+	constexpr float kAutoLODMaxAcceptedResultRatio = 0.95f;
+	constexpr float kAutoLODConservativeFallbackRatio = 0.55f;
+	constexpr float kAutoLODFragileStructureRatio = 0.55f;
+	constexpr float kAutoLODDrawCallBenefitAcceptedRatio = 0.98f;
 	constexpr float kAutoLODNormalProtectDot = 0.10f;
 	constexpr float kAutoLODTangentProtectDot = -0.10f;
 	constexpr float kAutoLODNormalPriorityDot = 0.60f;
@@ -40,6 +43,7 @@ namespace {
 	constexpr float kAutoLODMaxAspectRatio = 12.0f;
 	constexpr float kAutoLODMaxProtectedVertexRatio = 0.995f;
 	constexpr size_t kAutoLODMaxSubMeshCount = 256;
+	constexpr size_t kAutoLODMaxRenderedSubMeshes = 12;
 
 	enum class RemapPairPolicy {
 		None,
@@ -103,6 +107,16 @@ namespace {
 	uint64_t gAutoLODFrameSourceTriangles = 0;
 	uint64_t gAutoLODFrameRenderedTriangles = 0;
 	uint64_t gAutoLODFrameSavedTriangles = 0;
+	uint64_t gAutoLODFrameSourceDraws = 0;
+	uint64_t gAutoLODFrameRenderedDraws = 0;
+	uint64_t gAutoLODFrameSavedDraws = 0;
+	uint64_t gAutoLODFrameCombinedLOD1Attempts = 0;
+	uint64_t gAutoLODFrameCombinedLOD1Uses = 0;
+	uint64_t gAutoLODFrameCombinedLOD1SourceDraws = 0;
+	uint64_t gAutoLODFrameCombinedLOD1RenderedDraws = 0;
+	uint64_t gAutoLODFrameBoxLODObjects = 0;
+	uint64_t gAutoLODFrameBoxLODBoxes = 0;
+	uint64_t gAutoLODFrameBoxLODMeshProxies = 0;
 	std::unordered_map<std::string, uint64_t> gAutoLODFrameMissTriangles;
 	float gAutoLODDebugTimer = 0.0f;
 
@@ -136,9 +150,15 @@ namespace {
 		return kAutoLODRatios[lodLevel];
 	}
 
+	float GetAutoLODLogRatio(int lodLevel)
+	{
+		if (lodLevel < 0 || lodLevel >= kAutoLODLevelCount) return 0.0f;
+		return kAutoLODRatios[lodLevel];
+	}
+
 	float GetAutoLODMaxAcceptedRatio(float targetRatio)
 	{
-		return targetRatio <= 0.12f ? 0.45f : 0.80f;
+		return targetRatio <= 0.12f ? 0.45f : kAutoLODMaxAcceptedResultRatio;
 	}
 
 	float GetAutoLODMinAcceptedRatio(float targetRatio)
@@ -331,16 +351,29 @@ namespace {
 		const bool largeConservativeAssembly =
 			assemblyStructure &&
 			expandedTriangleCount >= 4096;
+		const bool fragileStructure =
+			thinStructure ||
+			vehicleStructure ||
+			largeSinglePartVehicleLike;
+		const bool allowFragileConservativeLOD =
+			targetRatio > 0.12f &&
+			fragileStructure &&
+			expandedTriangleCount >= 256 &&
+			(subMeshCount > 1 || expandedTriangleCount >= 1024);
+		const float effectiveTargetRatio =
+			allowFragileConservativeLOD
+				? (std::max)(targetRatio, kAutoLODFragileStructureRatio)
+				: targetRatio;
 		const bool unsafeForAggressiveLOD =
 			assemblyStructure ||
 			subMeshCount > 1 ||
 			(maxExt / minExt) > 6.0f ||
 			lowProfileWideMesh;
-		if (thinStructure) {
+		if (thinStructure && !allowFragileConservativeLOD) {
 			gAutoLODSkipReason = "thin-structure";
 			return false;
 		}
-		if (vehicleStructure || largeSinglePartVehicleLike) {
+		if ((vehicleStructure || largeSinglePartVehicleLike) && !allowFragileConservativeLOD) {
 			gAutoLODSkipReason = "vehicle-structure";
 			return false;
 		}
@@ -438,7 +471,7 @@ namespace {
 		}
 
 		const float attrWeights[8] = { 0.75f, 0.75f, 0.75f, uvWeight, uvWeight, 0.25f, 0.25f, 0.25f };
-		size_t targetIndexCount = static_cast<size_t>(float(expandedIndices.size()) * targetRatio);
+		size_t targetIndexCount = static_cast<size_t>(float(expandedIndices.size()) * effectiveTargetRatio);
 		targetIndexCount = (targetIndexCount / 3) * 3;
 		targetIndexCount = std::max<size_t>(targetIndexCount, static_cast<size_t>(kAutoLODMinResultTriangles * 3));
 
@@ -649,6 +682,32 @@ namespace {
 			usedUpdatedVertices = false;
 		}
 
+		const bool allowConservativeFallback =
+			targetRatio > 0.12f &&
+			expandedTriangleCount >= 512 &&
+			protectedRatio < 0.70f;
+		if (!simplifyAccepted(simplifiedCount) && allowConservativeFallback) {
+			size_t conservativeTargetIndexCount = static_cast<size_t>(float(expandedIndices.size()) * kAutoLODConservativeFallbackRatio);
+			conservativeTargetIndexCount = (conservativeTargetIndexCount / 3) * 3;
+			conservativeTargetIndexCount = std::max<size_t>(conservativeTargetIndexCount, minAcceptedIndexCount);
+			conservativeTargetIndexCount = std::min<size_t>(conservativeTargetIndexCount, maxReducibleIndexCount);
+			if (conservativeTargetIndexCount >= 3 && conservativeTargetIndexCount < expandedIndices.size()) {
+				lodIndices = expandedIndices;
+				lodError = 0.0f;
+				simplifiedCount = meshopt_simplifySloppy(
+					lodIndices.data(),
+					expandedIndices.data(),
+					expandedIndices.size(),
+					&expandedVertices[0].vertex.position.x,
+					expandedVertices.size(),
+					sizeof(ExpandedVertex),
+					conservativeTargetIndexCount,
+					aggressiveTargetError,
+					&lodError);
+				usedUpdatedVertices = false;
+			}
+		}
+
 		if (!simplifyAccepted(simplifiedCount)) {
 			if (kAutoLODVerboseBuildLog && expandedTriangleCount >= 128 && expandedTriangleCount <= 12000) {
 				char dbg[512];
@@ -675,7 +734,13 @@ namespace {
 			gAutoLODSkipReason = "simplify-failed";
 			return false;
 		}
-		const size_t maxAcceptedIndexCount = static_cast<size_t>(float(expandedIndices.size()) * GetAutoLODMaxAcceptedRatio(targetRatio));
+		const bool drawCallBenefitCandidate =
+			targetRatio > 0.12f &&
+			(subMeshCount > kAutoLODMaxRenderedSubMeshes || allowFragileConservativeLOD);
+		const float acceptedReductionRatio = drawCallBenefitCandidate
+			? kAutoLODDrawCallBenefitAcceptedRatio
+			: GetAutoLODMaxAcceptedRatio(targetRatio);
+		const size_t maxAcceptedIndexCount = static_cast<size_t>(float(expandedIndices.size()) * acceptedReductionRatio);
 		const bool needsMoreReduction = simplifiedCount > maxAcceptedIndexCount;
 		const bool allowReductionFallback =
 			!isAssemblyLike &&
@@ -698,7 +763,7 @@ namespace {
 				&lodError);
 			usedUpdatedVertices = false;
 		}
-		if (float(simplifiedCount) > float(expandedIndices.size()) * GetAutoLODMaxAcceptedRatio(targetRatio)) {
+		if (float(simplifiedCount) > float(expandedIndices.size()) * acceptedReductionRatio) {
 			gAutoLODSkipReason = "insufficient-reduction";
 			return false;
 		}
@@ -789,21 +854,39 @@ namespace {
 			}
 		}
 
+		if (trianglesBySubMesh.size() > kAutoLODMaxRenderedSubMeshes) {
+			std::vector<std::vector<TriangleRef>> compressedSubMeshes(kAutoLODMaxRenderedSubMeshes);
+			for (size_t subMeshIndex = 0; subMeshIndex < trianglesBySubMesh.size(); ++subMeshIndex) {
+				size_t targetSubMesh = subMeshIndex;
+				if (targetSubMesh >= kAutoLODMaxRenderedSubMeshes) {
+					targetSubMesh = (subMeshIndex - kAutoLODMaxRenderedSubMeshes) % kAutoLODMaxRenderedSubMeshes;
+				}
+				compressedSubMeshes[targetSubMesh].insert(
+					compressedSubMeshes[targetSubMesh].end(),
+					trianglesBySubMesh[subMeshIndex].begin(),
+					trianglesBySubMesh[subMeshIndex].end());
+			}
+			trianglesBySubMesh.swap(compressedSubMeshes);
+
+			orderedIndices.clear();
+			orderedSubMeshStarts.clear();
+			orderedSubMeshStarts.reserve(trianglesBySubMesh.size() + 1);
+			orderedSubMeshStarts.push_back(0);
+			for (size_t subMeshIndex = 0; subMeshIndex < trianglesBySubMesh.size(); ++subMeshIndex) {
+				for (const TriangleRef& tri : trianglesBySubMesh[subMeshIndex]) {
+					orderedIndices.push_back(tri.v[0]);
+					orderedIndices.push_back(tri.v[1]);
+					orderedIndices.push_back(tri.v[2]);
+				}
+				orderedSubMeshStarts.push_back(static_cast<int>(orderedIndices.size()));
+			}
+		}
+
 		if (orderedIndices.empty()) {
 			gAutoLODSkipReason = "empty-output";
 			return false;
 		}
 
-		meshopt_optimizeVertexCache(orderedIndices.data(), orderedIndices.data(), orderedIndices.size(), compactVertices.size());
-		meshopt_optimizeOverdraw(
-			orderedIndices.data(),
-			orderedIndices.data(),
-			orderedIndices.size(),
-			&compactVertices[0].vertex.position.x,
-			compactVertices.size(),
-			sizeof(ExpandedVertex),
-			1.05f);
-		meshopt_optimizeVertexCache(orderedIndices.data(), orderedIndices.data(), orderedIndices.size(), compactVertices.size());
 		const size_t finalVertexCount = meshopt_optimizeVertexFetch(
 			compactVertices.data(),
 			orderedIndices.data(),
@@ -828,7 +911,7 @@ namespace {
 				orderedIndices[i + 2]));
 		}
 
-		outData.subMeshIndexStart = std::move(orderedSubMeshStarts);
+		outData.subMeshIndexStart = orderedSubMeshStarts;
 		if (outData.vertices.empty() || outData.indices.empty() || outData.indices.size() >= sourceMesh->sourceIndexData.size()) {
 			gAutoLODSkipReason = "not-beneficial";
 			return false;
@@ -854,6 +937,10 @@ namespace {
 		std::vector<BumpMesh::Vertex> vertices = data.vertices;
 		std::vector<TriangleIndex> indices = data.indices;
 		lodMesh->CreateMesh_FromVertexAndIndexData(vertices, indices, static_cast<int>(data.subMeshIndexStart.size() - 1), subMeshStarts, false);
+		lodMesh->sourceVertexData = vertices;
+		lodMesh->sourceIndexData = indices;
+		lodMesh->sourceSubMeshIndexStart = data.subMeshIndexStart;
+		lodMesh->sourceAutoLODReady = true;
 		gAutoLODOwnedMeshes.push_back(lodMesh);
 		return lodMesh;
 	}
@@ -1411,10 +1498,30 @@ void AutoLOD_BeginFrame()
 	gAutoLODFrameSourceTriangles = 0;
 	gAutoLODFrameRenderedTriangles = 0;
 	gAutoLODFrameSavedTriangles = 0;
+	gAutoLODFrameSourceDraws = 0;
+	gAutoLODFrameRenderedDraws = 0;
+	gAutoLODFrameSavedDraws = 0;
+	gAutoLODFrameCombinedLOD1Attempts = 0;
+	gAutoLODFrameCombinedLOD1Uses = 0;
+	gAutoLODFrameCombinedLOD1SourceDraws = 0;
+	gAutoLODFrameCombinedLOD1RenderedDraws = 0;
+	gAutoLODFrameBoxLODObjects = 0;
+	gAutoLODFrameBoxLODBoxes = 0;
+	gAutoLODFrameBoxLODMeshProxies = 0;
 	gAutoLODFrameMissTriangles.clear();
 }
 
-void AutoLOD_RecordFrameSelection(bool usedLOD, bool resolvedLOD, size_t sourceTriangles, size_t renderedTriangles, size_t activeSourceTriangles)
+void AutoLOD_SetFrameStatsTracking(bool enabled)
+{
+	gAutoLODTrackFrameStats = enabled;
+}
+
+bool AutoLOD_IsFrameStatsTracking()
+{
+	return gAutoLODTrackFrameStats;
+}
+
+void AutoLOD_RecordFrameSelection(bool usedLOD, bool resolvedLOD, size_t sourceTriangles, size_t renderedTriangles, size_t activeSourceTriangles, size_t sourceDraws, size_t renderedDraws)
 {
 	if (!gAutoLODTrackFrameStats) return;
 	++gAutoLODFrameTotal;
@@ -1429,7 +1536,41 @@ void AutoLOD_RecordFrameSelection(bool usedLOD, bool resolvedLOD, size_t sourceT
 		if (sourceTriangles > renderedTriangles) {
 			gAutoLODFrameSavedTriangles += static_cast<uint64_t>(sourceTriangles - renderedTriangles);
 		}
+		gAutoLODFrameSourceDraws += static_cast<uint64_t>(sourceDraws);
+		gAutoLODFrameRenderedDraws += static_cast<uint64_t>(renderedDraws);
+		if (sourceDraws > renderedDraws) {
+			gAutoLODFrameSavedDraws += static_cast<uint64_t>(sourceDraws - renderedDraws);
+		}
 	}
+}
+
+void AutoLOD_RecordFrameDraws(size_t sourceDraws, size_t renderedDraws)
+{
+	if (!gAutoLODTrackFrameStats) return;
+	gAutoLODFrameSourceDraws += static_cast<uint64_t>(sourceDraws);
+	gAutoLODFrameRenderedDraws += static_cast<uint64_t>(renderedDraws);
+	if (sourceDraws > renderedDraws) {
+		gAutoLODFrameSavedDraws += static_cast<uint64_t>(sourceDraws - renderedDraws);
+	}
+}
+
+void AutoLOD_RecordCombinedLOD1(bool used, size_t sourceDraws, size_t renderedDraws)
+{
+	if (!gAutoLODTrackFrameStats) return;
+	++gAutoLODFrameCombinedLOD1Attempts;
+	if (used) {
+		++gAutoLODFrameCombinedLOD1Uses;
+		gAutoLODFrameCombinedLOD1SourceDraws += static_cast<uint64_t>(sourceDraws);
+		gAutoLODFrameCombinedLOD1RenderedDraws += static_cast<uint64_t>(renderedDraws);
+	}
+}
+
+void AutoLOD_RecordBoxLOD(size_t boxCount, size_t meshProxyCount)
+{
+	if (!gAutoLODTrackFrameStats) return;
+	++gAutoLODFrameBoxLODObjects;
+	gAutoLODFrameBoxLODBoxes += static_cast<uint64_t>(boxCount);
+	gAutoLODFrameBoxLODMeshProxies += static_cast<uint64_t>(meshProxyCount);
 }
 
 void AutoLOD_RecordFrameMiss(Mesh* sourceMesh, size_t sourceTriangles)
@@ -1493,9 +1634,9 @@ void AutoLOD_DebugUpdate(float deltaTime)
 	const bool generationComplete = (plannedTotal > 0) && (processedTotal >= plannedTotal) && gRuntimeQueue.empty();
 	if (generationComplete && gAutoLODFrameActive == 0 && gAutoLODFrameResolved == 0) return;
 
-	char dbg[900];
+	char dbg[1024];
 	sprintf_s(dbg,
-		"[AutoLOD] render=%s active=%d/%d (%.1f%%) resolved=%d (%.1f%%) activeTris=%llu triCover=%.1f%% missTris=%s tris=%llu->%llu saved=%llu (%.1f%%) gen=%d/%d (%.1f%%,%s) usable=%d/%d (%.1f%%) lod2=%d skips=%d topSkips=%s ratios=%.2f/%.2f runtimeCap=%zu\n",
+		"[AutoLOD] render=%s active=%d/%d (%.1f%%) resolved=%d (%.1f%%) activeTris=%llu triCover=%.1f%% missTris=%s tris=%llu->%llu saved=%llu (%.1f%%) draws=%llu->%llu drawSaved=%llu box=%llu boxes=%llu mesh=%llu combined=%llu/%llu cDraws=%llu->%llu gen=%d/%d (%.1f%%,%s) usable=%d/%d (%.1f%%) lod2=%d skips=%d topSkips=%s ratios=%.2f/%.2f runtimeCap=%zu\n",
 		gAutoLODModelRenderActive ? "ON" : "OFF",
 		gAutoLODFrameActive,
 		gAutoLODFrameTotal,
@@ -1509,6 +1650,16 @@ void AutoLOD_DebugUpdate(float deltaTime)
 		static_cast<unsigned long long>(gAutoLODFrameRenderedTriangles),
 		static_cast<unsigned long long>(gAutoLODFrameSavedTriangles),
 		savedPct,
+		static_cast<unsigned long long>(gAutoLODFrameSourceDraws),
+		static_cast<unsigned long long>(gAutoLODFrameRenderedDraws),
+		static_cast<unsigned long long>(gAutoLODFrameSavedDraws),
+		static_cast<unsigned long long>(gAutoLODFrameBoxLODObjects),
+		static_cast<unsigned long long>(gAutoLODFrameBoxLODBoxes),
+		static_cast<unsigned long long>(gAutoLODFrameBoxLODMeshProxies),
+		static_cast<unsigned long long>(gAutoLODFrameCombinedLOD1Uses),
+		static_cast<unsigned long long>(gAutoLODFrameCombinedLOD1Attempts),
+		static_cast<unsigned long long>(gAutoLODFrameCombinedLOD1SourceDraws),
+		static_cast<unsigned long long>(gAutoLODFrameCombinedLOD1RenderedDraws),
 		processedTotal,
 		plannedTotal,
 		GetPercent(processedTotal, plannedTotal),
@@ -1519,8 +1670,8 @@ void AutoLOD_DebugUpdate(float deltaTime)
 		usableLOD2Total,
 		gAutoLODSkips,
 		skipSummary.c_str(),
-		kAutoLODRatios[0],
-		kAutoLODRatios[1],
+		GetAutoLODLogRatio(0),
+		GetAutoLODLogRatio(1),
 		kAutoLODRuntimeBuildMaxTriangles);
 	OutputDebugStringA(dbg);
 }

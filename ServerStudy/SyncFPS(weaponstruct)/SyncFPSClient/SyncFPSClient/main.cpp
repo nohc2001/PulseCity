@@ -22,13 +22,6 @@ int resolutionLevel = 3;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
-	AllocConsole();
-	FILE* _fpStdOut = nullptr;
-	FILE* _fpStdErr = nullptr;
-	freopen_s(&_fpStdOut, "CONOUT$", "w", stdout);
-	freopen_s(&_fpStdErr, "CONOUT$", "w", stderr);
-	SetConsoleTitleA("SyncFPSClient Console");
-
 	// 오류등이 한글로 표시되도록 한다.
 	wcout.imbue(locale("korean"));
 	//WSA �ʱ�ȭ
@@ -117,6 +110,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	constexpr double InvHZ = 1.0 / (double)QUERYPERFORMANCE_HZ;
 	double FPSflow = 0;
 	double DeltaFlow = 0;
+	double perfFlow = 0.0;
+	double perfFrameMs = 0.0;
+	double perfRenderMs = 0.0;
+	double perfUpdateMs = 0.0;
+	double perfGPUWaitMs = 0.0;
+	double perfGPUPreWaitMs = 0.0;
+	double perfGPUShadowWaitMs = 0.0;
+	double perfGPUMainWaitMs = 0.0;
+	double perfGPUComputeWaitMs = 0.0;
+	double perfGPUFinalWaitMs = 0.0;
+	double perfPresentMs = 0.0;
+	double perfMaxFrameMs = 0.0;
+	int perfFrameCount = 0;
 	ui64 ft = GetTicks();
 	while (1) {
 		game.isPrepared = game.isPreparedClientIndex && game.isMapInit && game.isGlobalAssetInit;
@@ -135,19 +141,86 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		{
 			if (DeltaFlow >= 0.016) { // limiting fps.
 				game.DeltaTime = (float)DeltaFlow;
+				const ui64 perfFrameStart = GetTicks();
+				bool didRender = false;
 				if (game.isPrepared) {
 					//gd.AverageSecPer60Start(0);
+					const ui64 perfRenderStart = GetTicks();
 					if (gd.isRaytracingRender) {
 						game.Render_RayTracing();
 					}
 					else {
 						game.Render();
 					}
+					perfRenderMs += 1000.0 * double(GetTicks() - perfRenderStart) / double(QUERYPERFORMANCE_HZ);
+					perfGPUWaitMs += game.PerfGPUWaitMs;
+					perfGPUPreWaitMs += game.PerfGPUPreWaitMs;
+					perfGPUShadowWaitMs += game.PerfGPUShadowWaitMs;
+					perfGPUMainWaitMs += game.PerfGPUMainWaitMs;
+					perfGPUComputeWaitMs += game.PerfGPUComputeWaitMs;
+					perfGPUFinalWaitMs += game.PerfGPUFinalWaitMs;
+					perfPresentMs += game.PerfPresentMs;
+					didRender = true;
 					//gd.AverageSecPer60End(0);
 				}
 				//gd.AverageSecPer60Start(1);
+				const ui64 perfUpdateStart = GetTicks();
 				game.Update();
+				const double updateMs = 1000.0 * double(GetTicks() - perfUpdateStart) / double(QUERYPERFORMANCE_HZ);
 				//gd.AverageSecPer60End(1);
+				if (didRender) {
+					perfUpdateMs += updateMs;
+					const double frameMs = 1000.0 * double(GetTicks() - perfFrameStart) / double(QUERYPERFORMANCE_HZ);
+					perfFrameMs += frameMs;
+					perfMaxFrameMs = (std::max)(perfMaxFrameMs, frameMs);
+					perfFlow += game.DeltaTime;
+					++perfFrameCount;
+					if (perfFlow >= 2.0 && perfFrameCount > 0) {
+						const double invFrameCount = 1.0 / double(perfFrameCount);
+						const double avgFrameMs = perfFrameMs * invFrameCount;
+						const double avgRenderMs = perfRenderMs * invFrameCount;
+						const double avgUpdateMs = perfUpdateMs * invFrameCount;
+						const double avgGPUWaitMs = perfGPUWaitMs * invFrameCount;
+						const double avgGPUPreWaitMs = perfGPUPreWaitMs * invFrameCount;
+						const double avgGPUShadowWaitMs = perfGPUShadowWaitMs * invFrameCount;
+						const double avgGPUMainWaitMs = perfGPUMainWaitMs * invFrameCount;
+						const double avgGPUComputeWaitMs = perfGPUComputeWaitMs * invFrameCount;
+						const double avgGPUFinalWaitMs = perfGPUFinalWaitMs * invFrameCount;
+						const double avgPresentMs = perfPresentMs * invFrameCount;
+						const double avgCPURecordMs = (std::max)(0.0, avgRenderMs - avgGPUWaitMs - avgPresentMs);
+						char perfDbg[768];
+						sprintf_s(perfDbg,
+							"[Perf] fps=%.1f frame=%.2fms max=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms samples=%d\n",
+							avgFrameMs > 0.0 ? 1000.0 / avgFrameMs : 0.0,
+							avgFrameMs,
+							perfMaxFrameMs,
+							avgRenderMs,
+							avgUpdateMs,
+							avgGPUWaitMs,
+							avgGPUPreWaitMs,
+							avgGPUShadowWaitMs,
+							avgGPUMainWaitMs,
+							avgGPUComputeWaitMs,
+							avgGPUFinalWaitMs,
+							avgPresentMs,
+							avgCPURecordMs,
+							perfFrameCount);
+						OutputDebugStringA(perfDbg);
+						perfFlow = 0.0;
+						perfFrameMs = 0.0;
+						perfRenderMs = 0.0;
+						perfUpdateMs = 0.0;
+						perfGPUWaitMs = 0.0;
+						perfGPUPreWaitMs = 0.0;
+						perfGPUShadowWaitMs = 0.0;
+						perfGPUMainWaitMs = 0.0;
+						perfGPUComputeWaitMs = 0.0;
+						perfGPUFinalWaitMs = 0.0;
+						perfPresentMs = 0.0;
+						perfMaxFrameMs = 0.0;
+						perfFrameCount = 0;
+					}
+				}
 				
 				DeltaFlow = 0;
 			}

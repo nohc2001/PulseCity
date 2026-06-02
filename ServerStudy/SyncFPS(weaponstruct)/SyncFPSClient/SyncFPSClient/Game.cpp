@@ -24,6 +24,27 @@ extern GlobalDevice gd;
 Game game;
 
 namespace {
+	constexpr int kShadowCascadeResolutions[3] = { 4096, 2048, 1024 };
+	constexpr ui64 kShadowCascadeUpdateIntervals[3] = { 1, 2, 4 };
+
+	template <typename WaitFunc>
+	void MeasureGPUWait(double& phaseWaitMs, WaitFunc&& waitFunc)
+	{
+		const ui64 start = GetTicks();
+		waitFunc();
+		const double waitMs = 1000.0 * double(GetTicks() - start) / double(QUERYPERFORMANCE_HZ);
+		game.PerfGPUWaitMs += waitMs;
+		phaseWaitMs += waitMs;
+	}
+
+	template <typename PresentFunc>
+	void MeasurePresent(PresentFunc&& presentFunc)
+	{
+		const ui64 start = GetTicks();
+		presentFunc();
+		game.PerfPresentMs += 1000.0 * double(GetTicks() - start) / double(QUERYPERFORMANCE_HZ);
+	}
+
 	constexpr float BULLET_RAY_MISS_DISTANCE = 49.95f;
 	constexpr bool SHOW_BULLET_RAY_DEBUG_MESH = false;
 
@@ -1245,7 +1266,7 @@ void Game::Init()
 		game.ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
 
 		for (int i = 0; i < 3; ++i) {
-			MyDirLight[i].ShadowMap = gd.CreateShadowMap(4096, 4096, gd.GetDirLightCascadingShadowDSVIndex(i), MyDirLight[i]);
+			MyDirLight[i].ShadowMap = gd.CreateShadowMap(kShadowCascadeResolutions[i], kShadowCascadeResolutions[i], gd.GetDirLightCascadingShadowDSVIndex(i), MyDirLight[i]);
 			MyDirLight[i].View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
 		}
 
@@ -1827,6 +1848,13 @@ void Game::InitDirLightGPURes() {
 }
 
 void Game::Render() {
+	PerfGPUWaitMs = 0.0;
+	PerfGPUPreWaitMs = 0.0;
+	PerfGPUShadowWaitMs = 0.0;
+	PerfGPUMainWaitMs = 0.0;
+	PerfGPUComputeWaitMs = 0.0;
+	PerfGPUFinalWaitMs = 0.0;
+	PerfPresentMs = 0.0;
 	// 1. DRED 활성화
 	D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr);
 
@@ -1940,7 +1968,7 @@ void Game::Render() {
 	if (gd.gpucmd.isClose == false) {
 		gd.gpucmd.Close();
 		gd.gpucmd.Execute(true);
-		gd.gpucmd.WaitGPUComplete();
+		MeasureGPUWait(PerfGPUPreWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
 	}
 	gd.addSDFTextureStack.clear();
 
@@ -2227,7 +2255,7 @@ void Game::Render() {
 	//Command execution
 	hResult = gd.gpucmd.Close();
 	gd.gpucmd.Execute();
-	gd.gpucmd.WaitGPUComplete();
+	MeasureGPUWait(PerfGPUMainWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
 
 	//Bluring + DepthConvolution(주목받는 물체의 선을 더욱 블러링 시킨다.) (Compute Shader)
 	hResult = gd.CScmd.Reset();
@@ -2270,7 +2298,7 @@ void Game::Render() {
 
 	hResult = gd.CScmd.Close();
 	gd.CScmd.Execute();
-	gd.CScmd.WaitGPUComplete();
+	MeasureGPUWait(PerfGPUComputeWaitMs, [&]() { gd.CScmd.WaitGPUComplete(); });
 
 	SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::Render;
 	TourID += 1;
@@ -2346,7 +2374,7 @@ void Game::Render() {
 	//Command execution
 	hResult = gd.gpucmd.Close();
 	gd.gpucmd.Execute();
-	gd.gpucmd.WaitGPUComplete();
+	MeasureGPUWait(PerfGPUFinalWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
 
 	// Present to Swapchain BackBuffer & RenderTargetIndex Update
 	DXGI_PRESENT_PARAMETERS dxgiPresentParameters;
@@ -2354,7 +2382,7 @@ void Game::Render() {
 	dxgiPresentParameters.pDirtyRects = NULL;
 	dxgiPresentParameters.pScrollRect = NULL;
 	dxgiPresentParameters.pScrollOffset = NULL;
-	gd.pSwapChain->Present1(1, 0, &dxgiPresentParameters);
+	MeasurePresent([&]() { gd.pSwapChain->Present1(1, 0, &dxgiPresentParameters); });
 
 	//Get Present RenderTarget Index
 	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
@@ -2364,6 +2392,13 @@ void Game::Render() {
 
 void Game::Render_RayTracing()
 {
+	PerfGPUWaitMs = 0.0;
+	PerfGPUPreWaitMs = 0.0;
+	PerfGPUShadowWaitMs = 0.0;
+	PerfGPUMainWaitMs = 0.0;
+	PerfGPUComputeWaitMs = 0.0;
+	PerfGPUFinalWaitMs = 0.0;
+	PerfPresentMs = 0.0;
 	for (int i = 0; i < 9; ++i) {
 		gd.raytracing.MappedCB[i]->DirLight_invDirection = vec4(vec4(0) - LightDirection).f3;
 	}
@@ -2457,7 +2492,7 @@ void Game::Render_RayTracing()
 
 	gd.gpucmd.Close(true);
 	gd.gpucmd.Execute(true);
-	gd.gpucmd.WaitGPUComplete();
+	MeasureGPUWait(PerfGPUMainWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
 
 	HRESULT hResult;
 	//Blur
@@ -2478,7 +2513,7 @@ void Game::Render_RayTracing()
 
 		hResult = gd.CScmd.Close();
 		gd.CScmd.Execute();
-		gd.CScmd.WaitGPUComplete();
+		MeasureGPUWait(PerfGPUComputeWaitMs, [&]() { gd.CScmd.WaitGPUComplete(); });
 
 		//gd.DeviceRemoveResonDebug();
 	}
@@ -2497,8 +2532,8 @@ void Game::Render_RayTracing()
 	//Execute
 	gd.gpucmd.Close(true);
 	gd.gpucmd.Execute(true);
-	gd.gpucmd.WaitGPUComplete();
-	gd.pSwapChain->Present(1, 0);
+	MeasureGPUWait(PerfGPUFinalWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
+	MeasurePresent([&]() { gd.pSwapChain->Present(1, 0); });
 
 	//Get Present RenderTarget Index
 	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
@@ -2508,14 +2543,32 @@ void Game::Render_ShadowPass()
 {
 
 	static vector<SkinMeshGameObject*> ShadowRenderSkinMeshObjArr;
+	static bool shadowCascadeInitialized[3] = { false, false, false };
+	static const void* previousShadowZone = nullptr;
+	static ui64 shadowFrameIndex = 0;
 	constexpr float CascadeRange[4] = { 0.01f, 50.0f, 200.0f, 1000.0f };
 
 
 	// 2. 렌더링을 시작한다.
 	HRESULT hResult = gd.gpucmd.Reset();
+	const bool enableShadowMeshLOD = AutoLOD_IsModelLODRenderActive();
+	const ui64 currentShadowFrame = shadowFrameIndex++;
+	if (previousShadowZone != game.Current_Zone) {
+		shadowCascadeInitialized[0] = false;
+		shadowCascadeInitialized[1] = false;
+		shadowCascadeInitialized[2] = false;
+		previousShadowZone = game.Current_Zone;
+	}
 
 
 	for (int i = 0; i < 3; ++i) {
+		const bool updateShadowCascade =
+			!enableShadowMeshLOD ||
+			!shadowCascadeInitialized[i] ||
+			(currentShadowFrame % kShadowCascadeUpdateIntervals[i]) == 0;
+		if (!updateShadowCascade) continue;
+		shadowCascadeInitialized[i] = true;
+
 		matrix viewproj;
 		viewproj = gd.viewportArr[0].ViewMatrix;
 		matrix proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight, CascadeRange[i], CascadeRange[i+1]);
@@ -2523,19 +2576,19 @@ void Game::Render_ShadowPass()
 		vec4 LightDirQ = vec4::DirectionToQuaternion(LightDirection);
 		LightOBB = game.MyDirLight[0].viewport.GetOBB_IncludeFrustum(viewproj, LightDirQ);
 
-		constexpr int ShadowResolusion = 4096;
+		const int shadowResolution = kShadowCascadeResolutions[i];
 		constexpr float LightDistance = 1000;
 		vec4 obj = LightOBB.Center;
 		obj += LightDirection * LightOBB.Extents.z;
 
 		float MaxWidth = max(LightOBB.Extents.x, LightOBB.Extents.y) * 2;
-		game.MyDirLight[i].viewport.Viewport.Width = ShadowResolusion;
-		game.MyDirLight[i].viewport.Viewport.Height = ShadowResolusion;
+		game.MyDirLight[i].viewport.Viewport.Width = shadowResolution;
+		game.MyDirLight[i].viewport.Viewport.Height = shadowResolution;
 		game.MyDirLight[i].viewport.Viewport.MaxDepth = 1.0f;
 		game.MyDirLight[i].viewport.Viewport.MinDepth = 0.0f;
 		game.MyDirLight[i].viewport.Viewport.TopLeftX = 0.0f;
 		game.MyDirLight[i].viewport.Viewport.TopLeftY = 0.0f;
-		game.MyDirLight[i].viewport.ScissorRect = {0, 0, (long)ShadowResolusion, (long)ShadowResolusion};
+		game.MyDirLight[i].viewport.ScissorRect = {0, 0, (long)shadowResolution, (long)shadowResolution};
 
 
 		game.MyDirLight[i].viewport.Camera_Pos = obj - (LightDirection * LightDistance);
@@ -2588,7 +2641,11 @@ void Game::Render_ShadowPass()
 		game.renderViewPort->UpdateOrthoFrustum(0.1f, 1000.0f);
 		const bool previousAutoLODRenderActive = AutoLOD_IsModelLODRenderActive();
 		const int previousAutoLODRenderLevel = AutoLOD_GetModelLODRenderLevel();
-		AutoLOD_SetModelLODRenderActive(false);
+		const bool previousAutoLODFrameStatsTracking = AutoLOD_IsFrameStatsTracking();
+		ViewportData* const shadowRenderViewPort = game.renderViewPort;
+		game.renderViewPort = &gd.viewportArr[0];
+		AutoLOD_SetFrameStatsTracking(false);
+		AutoLOD_SetModelLODRenderActive(enableShadowMeshLOD);
 		AutoLOD_SetModelLODRenderLevel(0);
 
 		ShadowRenderSkinMeshObjArr.clear();
@@ -2628,6 +2685,8 @@ void Game::Render_ShadowPass()
 				}
 			}
 		}
+		game.renderViewPort = shadowRenderViewPort;
+		AutoLOD_SetFrameStatsTracking(previousAutoLODFrameStatsTracking);
 
 		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRenderShadowMap);
 		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &xmf4x4View, 0);
@@ -2648,7 +2707,7 @@ void Game::Render_ShadowPass()
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
-	gd.WaitGPUComplete();
+	MeasureGPUWait(PerfGPUShadowWaitMs, [&]() { gd.WaitGPUComplete(); });
 }
 
 void Game::SetRenderMod(bool isbatch)

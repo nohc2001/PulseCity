@@ -510,7 +510,8 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
             float vLightSpaceDepth = vLightSpacePos.z - SHADOW_DEPTH_BIAS;
 
         // Find sub-pixel weights.
-            float2 vShadowMapDims = float2(4096, 4096); // need to keep in sync with .cpp file
+            float shadowMapResolution = (i == 0) ? 4096.0f : ((i == 1) ? 2048.0f : 1024.0f);
+            float2 vShadowMapDims = float2(shadowMapResolution, shadowMapResolution); // need to keep in sync with .cpp file
             float4 vSubPixelCoords = float4(1.0f, 1.0f, 1.0f, 1.0f);
             vSubPixelCoords.xy = frac(vShadowMapDims * vShadowTexCoord);
             vSubPixelCoords.zw = 1.0f - vSubPixelCoords.xy;

@@ -19,7 +19,7 @@ namespace {
 	constexpr float kBoxLODEnterScreenRadius = 55.0f;
 	constexpr float kBoxLODLeaveScreenRadius = 85.0f;
 	constexpr size_t kMeshLODMinTriangleCount = 180;
-	constexpr float kMeshLODMaxRenderedTriangleRatio = 0.80f;
+	constexpr float kMeshLODMaxRenderedTriangleRatio = 0.98f;
 	constexpr size_t kMeshLODMediumTriangleCount = 1800;
 	constexpr size_t kMeshLODSmallCullTriangleCount = 180;
 	constexpr float kBoxLODVisualShrink = 1.0f;
@@ -29,7 +29,7 @@ namespace {
 	constexpr float kBoxLODPartMaxExtent = 2.2f;
 	constexpr size_t kBoxLODMeshProxyMaxTriangleCount = 4500;
 	constexpr unsigned int kBoxLODProxyInitialInstanceCapacity = 4096;
-	bool gEnableBoxLOD = true;
+	bool gEnableBoxLOD = false;
 	std::unordered_map<const void*, bool> gMeshLODState;
 	std::unordered_map<const void*, bool> gBoxLODState;
 	BumpMesh* gBoxLODProxyMesh = nullptr;
@@ -127,6 +127,13 @@ namespace {
 		return 0;
 	}
 
+	size_t GetMeshDrawCount(Mesh* mesh)
+	{
+		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return 0;
+		BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+		return static_cast<size_t>(max(1, bumpMesh->subMeshNum));
+	}
+
 	bool IsFragileLODStructureMesh(Mesh* mesh)
 	{
 		if (mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh) return false;
@@ -185,6 +192,14 @@ namespace {
 		}
 	}
 
+	void AccumulateSourceDrawsForModel(Model* model, size_t& sourceDraws)
+	{
+		if (model == nullptr) return;
+		for (int i = 0; i < model->mNumMeshes; ++i) {
+			sourceDraws += GetMeshDrawCount(model->mMeshes[i]);
+		}
+	}
+
 	Mesh* GetEffectiveLODMesh(Mesh* sourceMesh, int lodLevel)
 	{
 		if (!IsMeshLODRenderWorthUsing(sourceMesh)) return nullptr;
@@ -206,11 +221,27 @@ namespace {
 		renderedTriangles += GetMeshTriangleCount(lodMesh);
 	}
 
+	void AccumulateLODDrawStatsForMesh(Mesh* sourceMesh, size_t& sourceDraws, size_t& renderedDraws)
+	{
+		Mesh* lodMesh = GetEffectiveLODMesh(sourceMesh, 0);
+		if (lodMesh == nullptr) return;
+		sourceDraws += GetMeshDrawCount(sourceMesh);
+		renderedDraws += GetMeshDrawCount(lodMesh);
+	}
+
 	void AccumulateLODStatsForModel(Model* model, size_t& sourceTriangles, size_t& renderedTriangles)
 	{
 		if (model == nullptr) return;
 		for (int i = 0; i < model->mNumMeshes; ++i) {
 			AccumulateLODStatsForMesh(model->mMeshes[i], sourceTriangles, renderedTriangles);
+		}
+	}
+
+	void AccumulateLODDrawStatsForModel(Model* model, size_t& sourceDraws, size_t& renderedDraws)
+	{
+		if (model == nullptr) return;
+		for (int i = 0; i < model->mNumMeshes; ++i) {
+			AccumulateLODDrawStatsForMesh(model->mMeshes[i], sourceDraws, renderedDraws);
 		}
 	}
 
@@ -609,7 +640,7 @@ void GameObject::Render(matrix parent)
 			}
 		}
 	}
-	if (useMeshLOD) {
+	if (false && useMeshLOD) {
 		const BoxLODHybridProxy& proxy = GetCachedBoxLODProxyInstances(this, mesh, model, world, obb, material);
 		if (!proxy.meshes.empty()) {
 			size_t sourceTriangles = 0;
@@ -649,10 +680,13 @@ void GameObject::Render(matrix parent)
 		if (allowAutoLOD) {
 			size_t sourceTriangles = GetMeshTriangleCount(mesh);
 			size_t renderedTriangles = 0;
+			size_t sourceDraws = GetMeshDrawCount(mesh);
+			size_t renderedDraws = 0;
 			if (resolvedLOD) {
 				renderedTriangles = GetMeshTriangleCount(drawMesh);
+				renderedDraws = GetMeshDrawCount(drawMesh);
 			}
-			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, sourceTriangles, renderedTriangles);
+			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, sourceTriangles, renderedTriangles, 0, sourceDraws, renderedDraws);
 			if (useMeshLOD && !resolvedLOD) {
 				AutoLOD_RecordFrameMiss(mesh, sourceTriangles);
 			}
@@ -691,10 +725,17 @@ void GameObject::Render(matrix parent)
 		if (allowAutoLOD) {
 			size_t sourceTriangles = 0;
 			size_t renderedTriangles = 0;
+			size_t sourceDraws = 0;
+			size_t renderedDraws = 0;
 			AccumulateSourceTrianglesForModel(model, sourceTriangles);
+			AccumulateSourceDrawsForModel(model, sourceDraws);
 			size_t resolvedSourceTriangles = 0;
-			if (resolvedLOD) AccumulateLODStatsForModel(model, resolvedSourceTriangles, renderedTriangles);
-			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, resolvedSourceTriangles, renderedTriangles, sourceTriangles);
+			size_t resolvedSourceDraws = 0;
+			if (resolvedLOD) {
+				AccumulateLODStatsForModel(model, resolvedSourceTriangles, renderedTriangles);
+				AccumulateLODDrawStatsForModel(model, resolvedSourceDraws, renderedDraws);
+			}
+			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, resolvedSourceTriangles, renderedTriangles, sourceTriangles, resolvedSourceDraws, renderedDraws);
 			if (useMeshLOD) {
 				RecordLODFrameMissesForModel(model, meshLODLevel);
 			}
@@ -752,7 +793,7 @@ void GameObject::PushRenderBatch(matrix parent)
 			}
 		}
 	}
-	if (useMeshLOD) {
+	if (false && useMeshLOD) {
 		const BoxLODHybridProxy& proxy = GetCachedBoxLODProxyInstances(this, mesh, model, world, obb, material);
 		if (!proxy.meshes.empty()) {
 			size_t sourceTriangles = 0;
@@ -787,10 +828,13 @@ void GameObject::PushRenderBatch(matrix parent)
 		if (allowAutoLOD) {
 			size_t sourceTriangles = GetMeshTriangleCount(mesh);
 			size_t renderedTriangles = 0;
+			size_t sourceDraws = GetMeshDrawCount(mesh);
+			size_t renderedDraws = 0;
 			if (resolvedLOD) {
 				renderedTriangles = GetMeshTriangleCount(drawMesh);
+				renderedDraws = GetMeshDrawCount(drawMesh);
 			}
-			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, sourceTriangles, renderedTriangles);
+			AutoLOD_RecordFrameSelection(useMeshLOD, resolvedLOD, sourceTriangles, renderedTriangles, 0, sourceDraws, renderedDraws);
 			if (useMeshLOD && !resolvedLOD) {
 				AutoLOD_RecordFrameMiss(mesh, sourceTriangles);
 			}
@@ -800,6 +844,7 @@ void GameObject::PushRenderBatch(matrix parent)
 		rootWorld.transpose();
 		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
+			if (material[i] < 0 || material[i] >= static_cast<int>(game.MaterialTable.size())) continue;
 			Bmesh->InstanceData[i].PushInstance(RenderInstanceData(rootWorld, material[i]));
 		}
 	}
@@ -812,6 +857,12 @@ void GameObject::PushRenderBatch(matrix parent)
 					break;
 				}
 			}
+		}
+		if (allowAutoLOD && resolvedLOD) {
+			size_t sourceDraws = 0;
+			size_t renderedDraws = 0;
+			AccumulateLODDrawStatsForModel(model, sourceDraws, renderedDraws);
+			AutoLOD_RecordFrameDraws(sourceDraws, renderedDraws);
 		}
 		const bool previousLODRenderActive = AutoLOD_IsModelLODRenderActive();
 		const int previousLODRenderLevel = AutoLOD_GetModelLODRenderLevel();

@@ -4805,8 +4805,8 @@ void ModelNode::SkinMeshShadowRender(void* model, GPUCmd& cmd, const matrix& par
 }
 
 namespace {
-	constexpr size_t kAutoLODRenderMinTriangleCount = 300;
-	constexpr float kAutoLODMaxRenderedTriangleRatio = 0.80f;
+	constexpr size_t kAutoLODRenderMinTriangleCount = 180;
+	constexpr float kAutoLODMaxRenderedTriangleRatio = 0.98f;
 
 	size_t AutoLOD_GetMeshTriangleCount(Mesh* mesh)
 	{
