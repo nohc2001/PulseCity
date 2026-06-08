@@ -304,10 +304,11 @@ struct CTS_KeyInput_Header {
 };
 
 struct CTS_SyncRotation_Header {
-	unsigned int size = 14;
+	unsigned int size = sizeof(CTS_SyncRotation_Header);
 	CTS_Protocol st = CTS_Protocol::SyncRotation;
 	float yaw;
 	float pitch;
+	bool bFirstPersonVision = true;
 };
 
 struct CTS_UseSkill_Header {

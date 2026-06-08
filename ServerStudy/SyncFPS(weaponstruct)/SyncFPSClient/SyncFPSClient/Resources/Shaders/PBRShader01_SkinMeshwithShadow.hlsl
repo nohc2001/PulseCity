@@ -378,7 +378,10 @@ float CosAttenuation(float x)
 float4 PBRPS(VS_OUTPUT input, float isShadow)
 {
     float3 Color = PBR_Tex[0].Sample(StaticSampler, input.uv) * baseColor;
-    Color = lerp(Color, HitFlash.yzw, saturate(HitFlash.x));
+    float hitFlashAmount = saturate(HitFlash.x);
+    float hitFlashGlow = saturate((HitFlash.x - 0.60f) / 0.75f);
+    Color = lerp(Color, HitFlash.yzw, hitFlashAmount);
+    Color += HitFlash.yzw * hitFlashGlow * 0.85f;
     float3 TBNnormal = PBR_Tex[1].Sample(StaticSampler, input.uv);
     TBNnormal = TBNnormal.xyz;
     TBNnormal = 2.0 * (TBNnormal - 0.5);

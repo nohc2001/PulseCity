@@ -237,9 +237,9 @@ public:
 	static constexpr char basicTexFormatStr[] = "BC3_UNORM";
 
 	// particle
-	static constexpr UINT FIRE_COUNT = 200;
-	static constexpr UINT FIRE_PILLAR_COUNT = 400;
-	static constexpr UINT FIRE_RING_COUNT = 300;
+	static constexpr UINT FIRE_COUNT = 160;
+	static constexpr UINT FIRE_PILLAR_COUNT = 220;
+	static constexpr UINT FIRE_RING_COUNT = 160;
 
 	GPUResource FireTextureRes;
 
@@ -304,6 +304,13 @@ public:
 	void UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid);
 	void UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float LineWidth, int uitextureid);
 	void UI_Init();
+	void UpdateGameplaySkillHUD(float deltaTime);
+	void RenderGameplaySkillHUD();
+	float UltimateChargePercent = 0.0f;
+	float UltimateChargePassiveFlow = 0.0f;
+	float LastUltimateCooldownFlow = 0.0f;
+	int LastUltimateKillCount = 0;
+	int LastUltimateJob = -1;
 
 	float depth_min = 0.9999f;
 	float depth_max = 0;
@@ -612,7 +619,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 						//copying
 						int skindex = Mesh_SkinMeshindex[i];
 						int boneNum = pModel->mBumpSkinMeshs[skindex]->MatrixCount;
-						vec4 hitFlash = vec4(smgo->GetHitFlashRate(), 1.0f, 0.05f, 0.02f);
+						vec4 hitFlash = smgo->GetRenderTint();
 						cmd->SetGraphicsRoot32BitConstants(PBRRPI::Const_SkinMeshHitFlash, 4, &hitFlash, 0);
 						UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
 						gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_COPY_DEST);
@@ -646,7 +653,7 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 						if (true) {
 
 							//Set Offset
-							vec4 hitFlash = vec4(smgo->GetHitFlashRate(), 1.0f, 0.05f, 0.02f);
+							vec4 hitFlash = smgo->GetRenderTint();
 							cmd->SetGraphicsRoot32BitConstants(PBRRPI::Const_SkinMeshHitFlash, 4, &hitFlash, 0);
 							DescHandle OffsetMatrixCBVHandle;
 							gd.ShaderVisibleDescPool.DynamicAlloc(&OffsetMatrixCBVHandle, 1);

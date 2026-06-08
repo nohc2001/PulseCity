@@ -2249,6 +2249,27 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 		if (m_iceBlockTimer < 0.0f) m_iceBlockTimer = 0.0f;
 	}
 
+	if (m_frostBlizzardTimer > 0.0f) {
+		m_frostBlizzardTimer -= deltaTime;
+		if (m_frostBlizzardTimer < 0.0f) m_frostBlizzardTimer = 0.0f;
+
+		m_frostBlizzardTickFlow += deltaTime;
+		constexpr float blizzardTickDelay = 0.35f;
+		while (m_frostBlizzardTickFlow >= blizzardTickDelay && m_frostBlizzardTimer > 0.0f) {
+			m_frostBlizzardTickFlow -= blizzardTickDelay;
+			zones->ApplySkillDamage(this, SkillEffectType::Frost_Blizzard, worldMat.pos, vec4(0, 1, 0, 0),
+				0.0f, m_frostBlizzardRadius, 0.0f);
+		}
+
+		m_frostBlizzardEffectFlow += deltaTime;
+		if (m_frostBlizzardEffectFlow >= 0.8f && m_frostBlizzardTimer > 0.0f) {
+			m_frostBlizzardEffectFlow = 0.0f;
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Ultimate, SkillEffectType::Frost_Blizzard, worldMat.pos, vec4(0, 1, 0, 0),
+				m_frostBlizzardRadius, 1.0f, 1.0f);
+		}
+	}
+
 	if (m_juggernautFlameTimer > 0.0f) {
 		m_juggernautFlameTimer -= deltaTime;
 		if (m_juggernautFlameTimer < 0.0f) m_juggernautFlameTimer = 0.0f;
@@ -2315,6 +2336,10 @@ bool Player::TryUseSkill(SkillSlot slot)
 		HP += skill.power;
 		if (HP > MaxHP) HP = MaxHP;
 		m_iceBlockTimer = skill.duration;
+		LVelocity.x = 0.0f;
+		LVelocity.z = 0.0f;
+		tickLVelocity.x = 0.0f;
+		tickLVelocity.z = 0.0f;
 		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
 	}
 	else if (skill.effectType == SkillEffectType::Juggernaut_UltimateFire || skill.effectType == SkillEffectType::Aegis_ShieldAura) {
@@ -2352,6 +2377,12 @@ bool Player::TryUseSkill(SkillSlot slot)
 		m_juggernautFlameRadius = max(skill.radius, 2.4f);
 		m_juggernautFlameDps = max(18.0f, skill.power * 0.35f);
 	}
+	else if (skill.effectType == SkillEffectType::Frost_Blizzard) {
+		m_frostBlizzardTimer = skill.duration;
+		m_frostBlizzardTickFlow = 0.35f;
+		m_frostBlizzardEffectFlow = 0.8f;
+		m_frostBlizzardRadius = max(skill.radius, 8.0f);
+	}
 	else {
 		zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, direction, skill.range, skill.radius, skill.power);
 	}
@@ -2377,8 +2408,9 @@ void Player::Update(float deltaTime)
 
 	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
 	constexpr float speed = 6.0f;
+	const bool iceBlocked = m_iceBlockTimer > 0.0f;
 
-	if (isGround) {
+	if (isGround && iceBlocked == false) {
 		if (InputBuffer[InputID::KeyboardSpace]) {
 			LVelocity.y = JumpVelocity;
 			isGround = false;
@@ -2386,17 +2418,25 @@ void Player::Update(float deltaTime)
 	}
 	tickLVelocity = LVelocity * deltaTime;
 
-	if (InputBuffer[InputID::KeyboardW] == true) {
-		tickLVelocity += speed * worldMat.look * deltaTime;
+	if (iceBlocked) {
+		tickLVelocity.x = 0.0f;
+		tickLVelocity.z = 0.0f;
+		LVelocity.x = 0.0f;
+		LVelocity.z = 0.0f;
 	}
-	if (InputBuffer[InputID::KeyboardS] == true) {
-		tickLVelocity -= speed * worldMat.look * deltaTime;
-	}
-	if (InputBuffer[InputID::KeyboardA] == true) {
-		tickLVelocity -= speed * worldMat.right * deltaTime;
-	}
-	if (InputBuffer[InputID::KeyboardD] == true) {
-		tickLVelocity += speed * worldMat.right * deltaTime;
+	else {
+		if (InputBuffer[InputID::KeyboardW] == true) {
+			tickLVelocity += speed * worldMat.look * deltaTime;
+		}
+		if (InputBuffer[InputID::KeyboardS] == true) {
+			tickLVelocity -= speed * worldMat.look * deltaTime;
+		}
+		if (InputBuffer[InputID::KeyboardA] == true) {
+			tickLVelocity -= speed * worldMat.right * deltaTime;
+		}
+		if (InputBuffer[InputID::KeyboardD] == true) {
+			tickLVelocity += speed * worldMat.right * deltaTime;
+		}
 	}
 
 	UpdateSkillCooldowns(deltaTime, zones);
@@ -2456,17 +2496,22 @@ void Player::Update(float deltaTime)
 
 			weapon.OnFire();
 
-			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
-			vec4 rayStart = shootOrigin + clook * 1.5f;
-			vec4 cameraPos = worldMat.pos + vec4(0, 1.55f, 0, 0);
-			vec4 aimPoint = cameraPos + clook * 50.0f;
-			vec4 aimDirection = aimPoint - rayStart;
-			if (aimDirection.fast_square_of_len3 < 0.0001f) {
-				aimDirection = clook;
+			vec4 rayStart;
+			vec4 cameraPos;
+			if (bFirstPersonVision) {
+				vec4 shootOrigin = worldMat.pos + worldMat.up * 1.0f;
+				rayStart = shootOrigin + clook * 1.5f;
+				cameraPos = worldMat.pos + worldMat.up * 1.55f;
 			}
 			else {
-				aimDirection.len3 = 1.0f;
+				cameraPos = worldMat.pos;
+				cameraPos += worldMat.up * 1.35f;
+				cameraPos -= clook * 4.0f;
+				cameraPos += worldMat.right * 1.10f;
+
+				rayStart = cameraPos;
 			}
+			vec4 aimDirection = clook;
 			if ((WeaponType)m_currentWeaponType == WeaponType::Shotgun) {
 				constexpr int shotgunPelletCount = 9;
 				constexpr float shotgunRayDistance = 35.0f;

@@ -40,13 +40,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 
 	gd.Factory_Adaptor_Output_Init();
 	
-	int i = (int)((float)gd.EnableFullScreenMode_Resolusions.size() * 0.75f);
-	//16:9 ������ �ػ󵵸� ã���� ä���Ѵ�.
-	for (;i < gd.EnableFullScreenMode_Resolusions.size();++i) {
-		float rate = (float)gd.EnableFullScreenMode_Resolusions[i].height / (float)gd.EnableFullScreenMode_Resolusions[i].width;
-		if (fabsf(rate - 0.5625f) < 0.001f) {
+	RECT workArea = {};
+	SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
+	const int maxStartWidth = (int)((workArea.right - workArea.left) * 0.90f);
+	const int maxStartHeight = (int)((workArea.bottom - workArea.top) * 0.90f);
+	int bestArea = 0;
+	for (int i = 0; i < gd.EnableFullScreenMode_Resolusions.size(); ++i) {
+		const ResolutionStruct& res = gd.EnableFullScreenMode_Resolusions[i];
+		float rate = (float)res.height / (float)res.width;
+		if (fabsf(rate - 0.5625f) >= 0.001f) continue;
+		if ((int)res.width > maxStartWidth || (int)res.height > maxStartHeight) continue;
+
+		const int area = (int)(res.width * res.height);
+		if (area > bestArea) {
+			bestArea = area;
 			resolutionLevel = i;
-			break;
+		}
+	}
+	if (bestArea == 0) {
+		for (int i = 0; i < gd.EnableFullScreenMode_Resolusions.size(); ++i) {
+			const ResolutionStruct& res = gd.EnableFullScreenMode_Resolusions[i];
+			if ((int)res.width > maxStartWidth || (int)res.height > maxStartHeight) continue;
+
+			const int area = (int)(res.width * res.height);
+			if (area > bestArea) {
+				bestArea = area;
+				resolutionLevel = i;
+			}
 		}
 	}
 	gd.ClientFrameWidth = gd.EnableFullScreenMode_Resolusions[resolutionLevel].width;
@@ -75,7 +95,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		return 1;
 	}
 
-	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, 0, 0, gd.ClientFrameWidth, gd.ClientFrameHeight, NULL, (HMENU)NULL, hInstance, NULL);
+	RECT windowRect = { 0, 0, (LONG)gd.ClientFrameWidth, (LONG)gd.ClientFrameHeight };
+	AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
+	const int windowWidth = windowRect.right - windowRect.left;
+	const int windowHeight = windowRect.bottom - windowRect.top;
+	const int windowX = workArea.left + max(0, ((workArea.right - workArea.left) - windowWidth) / 2);
+	const int windowY = workArea.top + max(0, ((workArea.bottom - workArea.top) - windowHeight) / 2);
+
+	hWnd = CreateWindow(lpszClass, lpszWindowName, WS_OVERLAPPEDWINDOW, windowX, windowY, windowWidth, windowHeight, NULL, (HMENU)NULL, hInstance, NULL);
 	if (hWnd == NULL) {
 		WSACleanup();
 		return 1;

@@ -910,6 +910,10 @@ struct Player : public SkinMeshGameObject {
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
 	float m_iceBlockTimer = 0.0f;
+	float m_frostBlizzardTimer = 0.0f;
+	float m_frostBlizzardTickFlow = 0.0f;
+	float m_frostBlizzardEffectFlow = 0.0f;
+	float m_frostBlizzardRadius = 0.0f;
 	float m_juggernautFlameTimer = 0.0f;
 	float m_juggernautFlameTickFlow = 0.0f;
 	float m_juggernautFlameEffectFlow = 0.0f;

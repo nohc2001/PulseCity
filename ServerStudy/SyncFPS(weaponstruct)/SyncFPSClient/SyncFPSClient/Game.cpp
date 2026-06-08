@@ -464,14 +464,18 @@ namespace
 	GPUResource gParticleElectricTexture;
 	GPUResource gParticleIceTexture;
 
-	constexpr UINT ELECTRIC_COUNT = 180;
-	constexpr UINT ELECTRIC_BURST_COUNT = 96;
-	constexpr UINT EMBER_SHOWER_COUNT = 220;
-	constexpr UINT FROST_CONE_COUNT = 180;
-	constexpr UINT FROST_ICE_BLOCK_COUNT = 220;
-	constexpr UINT FROST_BLIZZARD_COUNT = 320;
-	constexpr UINT MUZZLE_FLASH_COUNT = 96;
+	constexpr UINT ELECTRIC_COUNT = 120;
+	constexpr UINT ELECTRIC_BURST_COUNT = 72;
+	constexpr UINT EMBER_SHOWER_COUNT = 120;
+	constexpr UINT FROST_CONE_COUNT = 120;
+	constexpr UINT FROST_ICE_BLOCK_COUNT = 190;
+	constexpr UINT FROST_BLIZZARD_COUNT = 220;
+	constexpr UINT MUZZLE_FLASH_COUNT = 384;
 	constexpr UINT BULLET_TRACER_COUNT = 256;
+	constexpr UINT ICE_PROJECTILE_COUNT = 224;
+	constexpr float MAX_PARTICLE_EFFECT_RADIUS = 8.0f;
+	constexpr float MAX_PARTICLE_EFFECT_POWER = 60.0f;
+	constexpr float MAX_PARTICLE_EFFECT_DURATION = 4.0f;
 	constexpr UINT PARTICLE_FLAG_COLLIDE_GROUND = 1u;
 	ParticlePool gElectricPool;
 	ParticlePool gElectricBurstPool;
@@ -481,6 +485,7 @@ namespace
 	ParticlePool gFrostBlizzardPool;
 	ParticlePool gMuzzleFlashPool;
 	ParticlePool gBulletTracerPool;
+	ParticlePool gIceProjectilePool;
 	ParticleCompute* gElectricCS = nullptr;
 	ParticleCompute* gElectricBurstCS = nullptr;
 	ParticleCompute* gEmberShowerCS = nullptr;
@@ -489,8 +494,10 @@ namespace
 	ParticleCompute* gFrostBlizzardCS = nullptr;
 	GPUResource gMuzzleFlashUpload;
 	GPUResource gBulletTracerUpload;
+	GPUResource gIceProjectileUpload;
 	std::vector<Particle> gMuzzleFlashParticles;
 	std::vector<Particle> gBulletTracerParticles;
+	std::vector<Particle> gIceProjectileParticles;
 
 	ParticleSpriteSlot gFireSpriteSlot = ParticleSpriteSlot::FirePrimary;
 	ParticleSpriteSlot gFirePillarSpriteSlot = ParticleSpriteSlot::FirePrimary;
@@ -535,6 +542,70 @@ namespace
 
 	std::vector<StatusEffectVisual> gStatusEffectVisuals;
 
+	vec4 GetStatusEffectTint(StatusEffectType type)
+	{
+		switch (type) {
+		case StatusEffectType::Freeze:
+			return vec4(0.70f, 0.04f, 0.48f, 1.00f);
+		case StatusEffectType::Slow:
+			return vec4(0.58f, 0.16f, 0.68f, 1.00f);
+		case StatusEffectType::Taunt:
+			return vec4(0.68f, 1.00f, 0.70f, 0.00f);
+		case StatusEffectType::Burn:
+			return vec4(0.70f, 1.00f, 0.08f, 0.00f);
+		case StatusEffectType::Stun:
+			return vec4(0.72f, 1.00f, 0.88f, 0.05f);
+		case StatusEffectType::Paralyze:
+			return vec4(0.70f, 0.48f, 0.05f, 1.00f);
+		case StatusEffectType::None:
+		default:
+			return vec4(0.0f, 1.0f, 1.0f, 1.0f);
+		}
+	}
+
+	int GetStatusEffectTintPriority(StatusEffectType type)
+	{
+		switch (type) {
+		case StatusEffectType::Freeze:
+			return 60;
+		case StatusEffectType::Stun:
+			return 50;
+		case StatusEffectType::Paralyze:
+			return 45;
+		case StatusEffectType::Taunt:
+			return 40;
+		case StatusEffectType::Burn:
+			return 30;
+		case StatusEffectType::Slow:
+			return 20;
+		case StatusEffectType::None:
+		default:
+			return 0;
+		}
+	}
+
+	void RefreshMonsterStatusTint(int targetObjIndex)
+	{
+		if (targetObjIndex < 0 || targetObjIndex >= (int)game.DynmaicGameObjects.size()) return;
+
+		Monster* monster = dynamic_cast<Monster*>(game.DynmaicGameObjects[targetObjIndex]);
+		if (monster == nullptr) return;
+
+		StatusEffectType selectedType = StatusEffectType::None;
+		int selectedPriority = 0;
+		for (const StatusEffectVisual& visual : gStatusEffectVisuals) {
+			if (visual.Active == false || visual.TargetObjIndex != targetObjIndex) continue;
+
+			int priority = GetStatusEffectTintPriority(visual.Type);
+			if (priority > selectedPriority) {
+				selectedType = visual.Type;
+				selectedPriority = priority;
+			}
+		}
+
+		monster->SetStatusTint(GetStatusEffectTint(selectedType));
+	}
+
 	GPUResource* GetParticleSpriteResource(ParticleSpriteSlot slot)
 	{
 		switch (slot) {
@@ -557,6 +628,9 @@ namespace
 	ParticleEmitterCB MakeParticleEmitter(vec4 position, vec4 direction, float radius, float power, float duration, UINT ownerId)
 	{
 		direction = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		radius = min(max(radius, 0.1f), MAX_PARTICLE_EFFECT_RADIUS);
+		power = min(max(power, 0.1f), MAX_PARTICLE_EFFECT_POWER);
+		duration = min(max(duration, 0.05f), MAX_PARTICLE_EFFECT_DURATION);
 
 		ParticleEmitterCB emitter{};
 		emitter.Position = XMFLOAT3(position.x, position.y, position.z);
@@ -944,7 +1018,7 @@ namespace
 		return XMVector3Rotate(direction, quaternion);
 	}
 
-	void SpawnJuggernautFlameJet(vec4 position, vec4 direction, float range, float radius, int streamCount)
+	void SpawnJuggernautFireball(vec4 position, vec4 direction, float range, float radius)
 	{
 		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
 		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
@@ -952,34 +1026,164 @@ namespace
 		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
 		vec4 up = right.cross(forward);
 		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
-		vec4 origin = position + up * 1.15f + forward * 1.0f;
+		vec4 origin = position + up * 1.12f + forward * 0.9f;
 
-		int particleCount = max(12, streamCount * 16);
+		int particleCount = 34;
 		for (int i = 0; i < particleCount; ++i) {
 			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
 			if (particle == nullptr) break;
 
-			float t = RandomRange(0.0f, 1.0f);
-			float coneWidth = radius * (0.25f + t * 0.95f);
+			float shell = RandomRange(0.0f, 1.0f);
+			float angle = RandomRange(0.0f, XM_2PI);
+			float ballRadius = max(radius, 0.65f) * RandomRange(0.10f, 0.38f);
+			vec4 radial = right * (cosf(angle) * ballRadius) + up * (sinf(angle) * ballRadius * 0.78f);
 			vec4 pos = origin
-				+ forward * RandomRange(0.0f, range * 0.75f)
-				+ right * RandomRange(-coneWidth, coneWidth)
-				+ up * RandomRange(-coneWidth * 0.25f, coneWidth * 0.55f);
-			vec4 velocity = NormalizeOrFallback(forward + right * RandomRange(-0.25f, 0.25f) + up * RandomRange(-0.05f, 0.2f), forward);
+				+ forward * RandomRange(0.0f, 0.38f)
+				+ radial;
+			vec4 velocity = NormalizeOrFallback(forward + radial * 0.18f + up * RandomRange(-0.025f, 0.08f), forward);
 
 			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
-			particle->Velocity = XMFLOAT3(velocity.x * RandomRange(6.0f, 13.0f), velocity.y * RandomRange(6.0f, 13.0f), velocity.z * RandomRange(6.0f, 13.0f));
+			float speed = RandomRange(max(12.0f, range * 0.45f), max(18.0f, range * 0.72f));
+			particle->Velocity = XMFLOAT3(velocity.x * speed, velocity.y * speed, velocity.z * speed);
 			particle->Age = 0.0f;
-			particle->LifeTime = RandomRange(0.18f, 0.42f);
-			particle->StartColor = XMFLOAT4(2.6f, 0.82f, 0.22f, 0.9f);
-			particle->EndColor = XMFLOAT4(0.45f, 0.03f, 0.01f, 0.0f);
-			particle->StartSize = RandomRange(0.18f, 0.42f);
-			particle->EndSize = 0.025f;
+			particle->LifeTime = RandomRange(0.30f, 0.52f);
+			particle->StartColor = shell > 0.68f ? XMFLOAT4(3.2f, 1.45f, 0.38f, 0.96f) : XMFLOAT4(2.15f, 0.62f, 0.12f, 0.88f);
+			particle->EndColor = XMFLOAT4(0.28f, 0.015f, 0.0f, 0.0f);
+			particle->StartSize = RandomRange(0.18f, 0.34f) * max(radius, 0.8f);
+			particle->EndSize = 0.035f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-4.0f, 4.0f);
+			particle->Drag = RandomRange(0.55f, 1.2f);
+			particle->GravityScale = -0.02f;
+			particle->Stretch = RandomRange(1.4f, 2.6f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 36u;
+			particle->FrameCols = 6u;
+		}
+	}
+
+	void SpawnFrostShardProjectile(vec4 position, vec4 direction, float range, float radius)
+	{
+		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
+		vec4 right = forward.cross(upHint);
+		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
+		vec4 up = right.cross(forward);
+		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
+		vec4 origin = position + up * 1.08f + forward * 0.92f;
+		float shardRange = max(range, 18.0f);
+		float shardRadius = max(radius, 1.1f);
+
+		const int coreCount = 38;
+		for (int i = 0; i < coreCount; ++i) {
+			Particle* particle = AllocateTransientParticle(gIceProjectileParticles);
+			if (particle == nullptr) break;
+
+			float t = RandomRange(0.0f, 1.0f);
+			float angle = RandomRange(0.0f, XM_2PI);
+			float width = shardRadius * RandomRange(0.02f, 0.16f) * (1.0f + t * 0.35f);
+			vec4 radial = right * (cosf(angle) * width) + up * (sinf(angle) * width * 0.72f);
+			vec4 pos = origin + forward * RandomRange(0.0f, 0.65f) + radial;
+			vec4 velocity = NormalizeOrFallback(forward + radial * 0.10f + up * RandomRange(-0.02f, 0.06f), forward);
+			float speed = RandomRange(shardRange * 0.80f, shardRange * 1.12f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(velocity.x * speed, velocity.y * speed, velocity.z * speed);
+			particle->Age = RandomRange(0.0f, 0.035f);
+			particle->LifeTime = RandomRange(0.34f, 0.58f);
+			particle->StartColor = XMFLOAT4(0.45f, 1.25f, 2.25f, 0.92f);
+			particle->EndColor = XMFLOAT4(0.04f, 0.24f, 0.62f, 0.0f);
+			particle->StartSize = RandomRange(0.12f, 0.24f) * (1.0f + shardRadius * 0.18f);
+			particle->EndSize = 0.018f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-7.0f, 7.0f);
+			particle->Drag = RandomRange(0.35f, 0.85f);
+			particle->GravityScale = -0.015f;
+			particle->Stretch = RandomRange(2.8f, 5.4f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 29u;
+			particle->FrameCols = 5u;
+		}
+
+		const int mistCount = 30;
+		for (int i = 0; i < mistCount; ++i) {
+			Particle* particle = AllocateTransientParticle(gIceProjectileParticles);
+			if (particle == nullptr) break;
+
+			float t = RandomRange(0.0f, 1.0f);
+			float width = shardRadius * (0.12f + t * 0.58f);
+			vec4 lateral = right * RandomRange(-width, width) + up * RandomRange(-width * 0.24f, width * 0.46f);
+			vec4 pos = origin - forward * RandomRange(0.08f, 0.55f) + lateral;
+			vec4 velocity = NormalizeOrFallback(forward * RandomRange(0.55f, 0.9f) + lateral * 0.10f, forward);
+			float speed = RandomRange(shardRange * 0.35f, shardRange * 0.62f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(velocity.x * speed, velocity.y * speed, velocity.z * speed);
+			particle->Age = RandomRange(0.0f, 0.08f);
+			particle->LifeTime = RandomRange(0.28f, 0.52f);
+			particle->StartColor = XMFLOAT4(0.28f, 0.88f, 1.70f, 0.55f);
+			particle->EndColor = XMFLOAT4(0.02f, 0.12f, 0.36f, 0.0f);
+			particle->StartSize = RandomRange(0.18f, 0.42f) * (1.0f + t * 0.45f);
+			particle->EndSize = 0.04f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-2.0f, 2.0f);
+			particle->Drag = RandomRange(1.2f, 2.4f);
+			particle->GravityScale = -0.03f;
+			particle->Stretch = RandomRange(1.0f, 2.2f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 29u;
+			particle->FrameCols = 5u;
+		}
+	}
+
+	void SpawnJuggernautFlamethrower(vec4 position, vec4 direction, float range, float radius)
+	{
+		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
+		vec4 right = forward.cross(upHint);
+		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
+		vec4 up = right.cross(forward);
+		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
+		vec4 nozzle = position + up * 1.18f + forward * 0.95f;
+		float flameRange = max(range, 32.0f);
+		float flameRadius = max(radius, 1.5f);
+
+		const int coreCount = 42;
+		for (int i = 0; i < coreCount; ++i) {
+			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
+			if (particle == nullptr) break;
+
+			float t = RandomRange(0.0f, 1.0f);
+			float along = flameRange * (0.06f + t * 0.86f);
+			float width = flameRadius * (0.10f + t * 0.62f);
+			vec4 lateral = right * RandomRange(-width, width) + up * RandomRange(-width * 0.28f, width * 0.48f);
+			vec4 pos = nozzle + forward * along + lateral;
+			vec4 velocity = NormalizeOrFallback(forward + lateral * (0.05f + t * 0.02f) + up * RandomRange(-0.035f, 0.065f), forward);
+			float heat = 1.0f - t;
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			float speed = RandomRange(18.0f, 34.0f) * (0.72f + heat * 0.35f);
+			particle->Velocity = XMFLOAT3(velocity.x * speed, velocity.y * speed, velocity.z * speed);
+			particle->Age = RandomRange(0.0f, 0.07f);
+			particle->LifeTime = RandomRange(0.20f, 0.46f) * (1.0f + t * 0.55f);
+			particle->StartColor = t < 0.33f ? XMFLOAT4(3.8f, 1.62f, 0.45f, 0.92f) : XMFLOAT4(2.1f, 0.42f, 0.08f, 0.78f);
+			particle->EndColor = XMFLOAT4(0.18f, 0.015f, 0.0f, 0.0f);
+			particle->StartSize = RandomRange(0.18f, 0.42f) * (1.0f + t * 1.4f);
+			particle->EndSize = 0.02f;
 			particle->Rotation = RandomRange(0.0f, XM_2PI);
 			particle->RotationSpeed = RandomRange(-6.0f, 6.0f);
-			particle->Drag = RandomRange(2.2f, 4.8f);
-			particle->GravityScale = -0.05f;
-			particle->Stretch = RandomRange(1.2f, 2.8f);
+			particle->Drag = RandomRange(0.85f, 2.0f);
+			particle->GravityScale = -0.035f;
+			particle->Stretch = RandomRange(2.2f, 4.6f);
 			particle->CollisionRadius = 0.0f;
 			particle->Flags = 0u;
 			particle->RandomSeed = gTransientParticleSeed++;
@@ -995,11 +1199,17 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 	if (type == SkillEffectType::Juggernaut_FireProjectile) {
 		const float fireAngles[] = { -30.0f, 0.0f, 30.0f };
 		for (float angle : fireAngles) {
-			SpawnJuggernautFlameJet(position, RotateDirectionYaw(direction, angle), max(power, 12.0f), max(radius, 1.4f), 1);
+			SpawnJuggernautFireball(position, RotateDirectionYaw(direction, angle), max(power, 18.0f), max(radius, 0.85f));
 		}
+		return;
 	}
 	else if (type == SkillEffectType::Juggernaut_UltimateFire) {
-		SpawnJuggernautFlameJet(position, direction, max(power, 45.0f), max(radius, 2.2f), 2);
+		SpawnJuggernautFlamethrower(position, direction, min(max(power, 42.0f), 58.0f), max(radius, 2.0f));
+		return;
+	}
+	else if (type == SkillEffectType::Frost_Cone) {
+		SpawnFrostShardProjectile(position, direction, max(power, 20.0f), max(radius, 1.1f));
+		return;
 	}
 
 	SkillEffectType runtimeType = type;
@@ -1010,14 +1220,8 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 	case SkillEffectType::Tank_ShockWave:
 		runtimeType = SkillEffectType::Fire_Ring;
 		break;
-	case SkillEffectType::Juggernaut_FireProjectile:
-		runtimeType = SkillEffectType::Frost_Cone;
-		break;
 	case SkillEffectType::Juggernaut_Taunt:
 		runtimeType = SkillEffectType::Fire_Ring;
-		break;
-	case SkillEffectType::Juggernaut_UltimateFire:
-		runtimeType = SkillEffectType::Frost_Cone;
 		break;
 	case SkillEffectType::Aegis_Barrier:
 	case SkillEffectType::Aegis_ShieldAura:
@@ -1069,9 +1273,12 @@ void Game::SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sour
 			break;
 		}
 	}
+	const bool shouldSpawnVisual = (visualIndex < 0) || (gStatusEffectVisuals[visualIndex].Active == false);
+	const float previousRemainTime = (visualIndex >= 0) ? gStatusEffectVisuals[visualIndex].RemainTime : 0.0f;
 
 	if (active == false) {
 		if (visualIndex >= 0) gStatusEffectVisuals[visualIndex].Active = false;
+		RefreshMonsterStatusTint(targetObjIndex);
 		return;
 	}
 
@@ -1091,28 +1298,33 @@ void Game::SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sour
 	visual.Power = power;
 	visual.Position = position;
 	visual.Extents = extents;
+	RefreshMonsterStatusTint(targetObjIndex);
 
-	float radius = max(max(extents.x, extents.z) * 2.0f, 1.0f);
+	float radius = max(max(extents.x, extents.z) * 2.6f, 1.35f);
 	float visualDuration = max(remainTime, duration);
 	if (visualDuration <= 0.0f) visualDuration = 1.0f;
 
-	switch (type) {
-	case StatusEffectType::Freeze:
-	case StatusEffectType::Slow:
-		SpawnSkillEffect(SkillEffectType::Frost_IceBlock, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), visualDuration);
-		break;
-	case StatusEffectType::Burn:
-		SpawnSkillEffect(SkillEffectType::Ember_Shower, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.5f));
-		break;
-	case StatusEffectType::Stun:
-	case StatusEffectType::Paralyze:
-		SpawnSkillEffect(SkillEffectType::Electric_Burst, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.2f));
-		break;
-	case StatusEffectType::Taunt:
-		SpawnSkillEffect(SkillEffectType::Fire_Ring, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.0f));
-		break;
-	default:
-		break;
+	bool refreshFreezeVisual = (type == StatusEffectType::Freeze || type == StatusEffectType::Slow) &&
+		shouldSpawnVisual == false && previousRemainTime <= 0.45f;
+	if (shouldSpawnVisual || refreshFreezeVisual) {
+		switch (type) {
+		case StatusEffectType::Freeze:
+		case StatusEffectType::Slow:
+			SpawnSkillEffect(SkillEffectType::Frost_IceBlock, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.6f), visualDuration);
+			break;
+		case StatusEffectType::Burn:
+			SpawnSkillEffect(SkillEffectType::Ember_Shower, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.5f));
+			break;
+		case StatusEffectType::Stun:
+		case StatusEffectType::Paralyze:
+			SpawnSkillEffect(SkillEffectType::Electric_Burst, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.2f));
+			break;
+		case StatusEffectType::Taunt:
+			SpawnSkillEffect(SkillEffectType::Fire_Ring, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.0f));
+			break;
+		default:
+			break;
+		}
 	}
 }
 void Game::InitParticlePool(ParticlePool& pool, UINT count)
@@ -1283,6 +1495,7 @@ void Game::Init()
 
 			InitTransientParticlePool(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles, MUZZLE_FLASH_COUNT);
 			InitTransientParticlePool(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles, BULLET_TRACER_COUNT);
+			InitTransientParticlePool(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles, ICE_PROJECTILE_COUNT);
 		}
 
 		ParticleDraw = new ParticleShader();
@@ -2159,14 +2372,19 @@ void Game::Render() {
 
 		TickTransientParticles(gMuzzleFlashParticles, DeltaTime);
 		TickTransientParticles(gBulletTracerParticles, DeltaTime);
+		TickTransientParticles(gIceProjectileParticles, DeltaTime);
 		UploadTransientParticles(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles);
 		UploadTransientParticles(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles);
+		UploadTransientParticles(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles);
 
 		ParticleDraw->FireTexture = GetParticleSpriteResource(gMuzzleFlashSpriteSlot);
 		ParticleDraw->Render(gd.gpucmd, &gMuzzleFlashPool.Buffer, gMuzzleFlashPool.Count);
 
 		ParticleDraw->FireTexture = GetParticleSpriteResource(gBulletTracerSpriteSlot);
 		ParticleDraw->Render(gd.gpucmd, &gBulletTracerPool.Buffer, gBulletTracerPool.Count);
+
+		ParticleDraw->FireTexture = &gParticleIceTexture;
+		ParticleDraw->Render(gd.gpucmd, &gIceProjectilePool.Buffer, gIceProjectilePool.Count);
 	}
 
 
@@ -2354,6 +2572,7 @@ void Game::Render() {
 
 
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	RenderGameplaySkillHUD();
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
 	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
@@ -2748,6 +2967,7 @@ void Game::Update()
 {
 	AutoLOD_ProcessRuntimeQueue(1);
 	BoxLOD_DebugUpdate(DeltaTime);
+	UpdateGameplaySkillHUD(DeltaTime);
 
 	static bool wasLODKeyDown = false;
 	const bool isLODKeyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
@@ -2890,6 +3110,7 @@ void Game::Update()
 				pkt.st = CTS_Protocol::SyncRotation;
 				pkt.yaw = player->m_yaw;
 				pkt.pitch = player->m_pitch;
+				pkt.bFirstPersonVision = bFirstPersonVision;
 				client.send((char*)&pkt, sizeof(CTS_SyncRotation_Header), 0);
 				accSend = 0;
 			}
@@ -2980,9 +3201,7 @@ void Game::Update()
 				peye += 1.35f * player->worldMat.up;
 				peye -= 4.0f * clook;
 				peye += 1.10f * player->worldMat.right;
-				pat += 1.20f * player->worldMat.up;
-				pat += 10.0f * clook;
-				pat += 0.35f * player->worldMat.right;
+				pat = peye + 10.0f * clook;
 			}
 
 			const float minCameraY = player->worldMat.pos.y + 0.3f;
@@ -3251,7 +3470,6 @@ READ_START:
 				bray = BulletRay(header.raystart, header.rayDir, header.distance);
 			}
 		}
-		SpawnElectricTracer(header.raystart, header.rayDir, header.distance);
 		if (header.distance < BULLET_RAY_MISS_DISTANCE) {
 			SpawnBulletImpact(header.raystart, header.rayDir, header.distance);
 		}
@@ -3702,6 +3920,149 @@ void Game::UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float Li
 	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
 	game.TextMesh->Render(gd.gpucmd, 1);
+}
+
+void Game::UpdateGameplaySkillHUD(float deltaTime)
+{
+	constexpr float PassiveChargeInterval = 5.0f;
+	constexpr float PassiveChargeAmount = 1.0f;
+	constexpr float KillChargeAmount = 20.0f;
+
+	if (player == nullptr) {
+		UltimateChargePercent = 0.0f;
+		UltimateChargePassiveFlow = 0.0f;
+		LastUltimateCooldownFlow = 0.0f;
+		LastUltimateKillCount = 0;
+		LastUltimateJob = -1;
+		return;
+	}
+
+	if (LastUltimateJob != player->m_currentJob) {
+		UltimateChargePercent = 0.0f;
+		UltimateChargePassiveFlow = 0.0f;
+		LastUltimateKillCount = player->KillCount;
+		LastUltimateCooldownFlow = player->SkillCooldownFlow[(int)SkillSlot::Ultimate];
+		LastUltimateJob = player->m_currentJob;
+		return;
+	}
+
+	int killDelta = player->KillCount - LastUltimateKillCount;
+	if (killDelta > 0) {
+		UltimateChargePercent += KillChargeAmount * (float)killDelta;
+	}
+	LastUltimateKillCount = player->KillCount;
+
+	UltimateChargePassiveFlow += max(0.0f, deltaTime);
+	while (UltimateChargePassiveFlow >= PassiveChargeInterval) {
+		UltimateChargePercent += PassiveChargeAmount;
+		UltimateChargePassiveFlow -= PassiveChargeInterval;
+	}
+
+	float ultimateCooldownFlow = player->SkillCooldownFlow[(int)SkillSlot::Ultimate];
+	if (LastUltimateCooldownFlow <= 0.0f && ultimateCooldownFlow > 0.0f) {
+		UltimateChargePercent = 0.0f;
+		UltimateChargePassiveFlow = 0.0f;
+	}
+	LastUltimateCooldownFlow = ultimateCooldownFlow;
+
+	UltimateChargePercent = min(100.0f, max(0.0f, UltimateChargePercent));
+}
+
+static vec4 GetUltimateHUDColor(int job)
+{
+	switch (job % 7) {
+	case 0: return vec4(0.25f, 0.78f, 1.00f, 1.00f);
+	case 1: return vec4(1.00f, 0.55f, 0.20f, 1.00f);
+	case 2: return vec4(1.00f, 0.28f, 0.16f, 1.00f);
+	case 3: return vec4(0.52f, 0.95f, 0.42f, 1.00f);
+	case 4: return vec4(0.70f, 0.50f, 1.00f, 1.00f);
+	case 5: return vec4(1.00f, 0.82f, 0.22f, 1.00f);
+	default: return vec4(0.35f, 0.95f, 0.82f, 1.00f);
+	}
+}
+
+void Game::RenderGameplaySkillHUD()
+{
+	if (player == nullptr || UITextureTable.size() <= 39) return;
+
+	constexpr int SkillFrameTexture = 8;      // temp: Resources/UI/UI_Inventory_ItemSlot.png
+	constexpr int SkillIconTexture = 39;      // temp: Resources/UI/UI_GamePlay_Passive.png
+	constexpr int ReadyGlowTexture = 1;       // temp: Resources/UI/NeonLight.png
+	constexpr int FillTexture = 0;            // temp: DefaultTex
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.75f, screenHeight / 960.0f);
+	const float slotSize = 74.0f * scale;
+	const float slotGap = 14.0f * scale;
+	const float ultSize = 94.0f * scale;
+	const float bottom = -screenHeight * 0.5f + 48.0f * scale;
+	const float left = -screenWidth * 0.5f + 44.0f * scale;
+	const float skillY0 = bottom;
+	const float depth = 0.020f;
+	const vec4 jobColor = GetUltimateHUDColor(player->m_currentJob);
+
+	auto drawSkillSlot = [&](SkillSlot slot, const wchar_t* keyText, float x0, float size)
+		{
+			const int slotIndex = (int)slot;
+			float cooldownRemain = max(0.0f, player->SkillCooldownFlow[slotIndex]);
+			bool canUse = cooldownRemain <= 0.0f;
+			vec4 rt = vec4(x0, skillY0, x0 + size, skillY0 + size);
+
+			if (canUse) {
+				vec4 glowRt = rt + vec4(-8.0f, -8.0f, 8.0f, 8.0f) * scale;
+				UIDraw_TextureRect(glowRt, vec4(jobColor.r, jobColor.g, jobColor.b, 0.32f), depth + ui_depth_epsilon, ReadyGlowTexture);
+			}
+
+			UIDraw_TextureRect(rt, vec4(0.10f, 0.12f, 0.14f, 0.86f), depth, SkillFrameTexture);
+			vec4 iconRt = rt + vec4(8.0f, 8.0f, -8.0f, -8.0f) * scale;
+			vec4 iconColor = canUse ? vec4(1.20f, 1.20f, 1.20f, 1.00f) : vec4(0.22f, 0.22f, 0.22f, 0.88f);
+			UIDraw_TextureRect(iconRt, iconColor, depth - ui_depth_epsilon, SkillIconTexture);
+
+			vec4 keyRt = vec4(rt.x + 4.0f * scale, rt.y + 4.0f * scale, rt.x + 38.0f * scale, rt.y + 34.0f * scale);
+			UIDraw_TextureRect(keyRt, vec4(0.0f, 0.0f, 0.0f, 0.86f), depth - ui_depth_epsilon * 2, FillTexture);
+			RenderSDFText(keyText, (int)wcslen(keyText), keyRt, 20.0f * scale, vec4(1, 1, 1, 1), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+
+			if (!canUse) {
+				UIDraw_TextureRect(iconRt, vec4(0.0f, 0.0f, 0.0f, 0.46f), depth - ui_depth_epsilon * 4, FillTexture);
+
+				wchar_t cooldownText[16] = {};
+				swprintf_s(cooldownText, L"%.0f", ceilf(cooldownRemain));
+				RenderSDFText(cooldownText, (int)wcslen(cooldownText), rt, 28.0f * scale, vec4(1, 1, 1, 1), nullptr, nullptr, depth - ui_depth_epsilon * 5);
+			}
+		};
+
+	float x = left;
+	drawSkillSlot(SkillSlot::Skill1, L"E", x, slotSize);
+	x += slotSize + slotGap;
+	drawSkillSlot(SkillSlot::Skill2, L"Z", x, slotSize);
+	x += slotSize + slotGap;
+
+	float ultimateChargePercent = UltimateChargePercent;
+	bool canUseUltimate = ultimateChargePercent >= 100.0f && player->SkillCooldownFlow[(int)SkillSlot::Ultimate] <= 0.0f;
+	vec4 ultRt = vec4(x, bottom - (ultSize - slotSize) * 0.5f, x + ultSize, bottom - (ultSize - slotSize) * 0.5f + ultSize);
+
+	if (canUseUltimate) {
+		vec4 glowRt = ultRt + vec4(-12.0f, -12.0f, 12.0f, 12.0f) * scale;
+		UIDraw_TextureRect(glowRt, vec4(jobColor.r, jobColor.g, jobColor.b, 0.58f), depth + ui_depth_epsilon, ReadyGlowTexture);
+	}
+
+	UIDraw_TextureRect(ultRt, vec4(0.12f, 0.10f, 0.06f, 0.90f), depth, SkillFrameTexture);
+	vec4 ultIconRt = ultRt + vec4(10.0f, 10.0f, -10.0f, -10.0f) * scale;
+	vec4 ultIconColor = canUseUltimate ? vec4(jobColor.r * 1.25f, jobColor.g * 1.25f, jobColor.b * 1.25f, 1.00f) : vec4(0.24f, 0.24f, 0.24f, 0.90f);
+	UIDraw_TextureRect(ultIconRt, ultIconColor, depth - ui_depth_epsilon, SkillIconTexture);
+
+	float fillRate = ultimateChargePercent / 100.0f;
+	vec4 fillRt = vec4(ultRt.x + 8.0f * scale, ultRt.y + 8.0f * scale, ultRt.x + 8.0f * scale + (ultSize - 16.0f * scale) * fillRate, ultRt.y + 14.0f * scale);
+	UIDraw_TextureRect(fillRt, vec4(jobColor.r, jobColor.g, jobColor.b, canUseUltimate ? 1.0f : 0.95f), depth - ui_depth_epsilon * 2, FillTexture);
+
+	wchar_t percentText[16] = {};
+	swprintf_s(percentText, L"%d%%", (int)(ultimateChargePercent + 0.5f));
+	RenderSDFText(percentText, (int)wcslen(percentText), ultRt, 22.0f * scale, canUseUltimate ? vec4(jobColor.r, jobColor.g, jobColor.b, 1.0f) : vec4(1, 1, 1, 1), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+
+	vec4 keyRt = vec4(ultRt.x + 6.0f * scale, ultRt.y + 6.0f * scale, ultRt.x + 44.0f * scale, ultRt.y + 39.0f * scale);
+	UIDraw_TextureRect(keyRt, vec4(0.0f, 0.0f, 0.0f, 0.88f), depth - ui_depth_epsilon * 5, FillTexture);
+	RenderSDFText(L"Q", 1, keyRt, 22.0f * scale, vec4(1, 1, 1, 1), nullptr, nullptr, depth - ui_depth_epsilon * 6);
 }
 
 #pragma region UICode

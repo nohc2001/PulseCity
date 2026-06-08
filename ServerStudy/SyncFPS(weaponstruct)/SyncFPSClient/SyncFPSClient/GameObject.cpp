@@ -3772,37 +3772,38 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponTyp
 	{
 	case WeaponType::Sniper:
 		weaponLocal *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
-		weaponLocal.pos.x += 0.07f;
-		weaponLocal.pos.y -= 0.02f;
-		weaponLocal.pos.z += 0.28f;
+		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+		weaponLocal.pos.x += 0.05f;
+		weaponLocal.pos.y -= 0.04f;
+		weaponLocal.pos.z += 0.16f;
 		break;
 	case WeaponType::MachineGun:
 		weaponLocal *= XMMatrixScaling(0.45f, 0.45f, 0.45f);
 		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(180.0f));
 		weaponLocal *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
-		weaponLocal.pos.x += 0.08f;
-		weaponLocal.pos.y -= 0.02f;
-		weaponLocal.pos.z += 0.02f;
+		weaponLocal.pos.x += 0.04f;
+		weaponLocal.pos.y -= 0.05f;
+		weaponLocal.pos.z += 0.10f;
 		break;
 	case WeaponType::Shotgun:
 		weaponLocal *= XMMatrixScaling(0.7f, 0.7f, 0.7f);
 		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(90.0f));
-		weaponLocal.pos.x += 0.12f;
-		weaponLocal.pos.y -= 0.06f;
-		weaponLocal.pos.z += 0.02f;
+		weaponLocal.pos.x += 0.06f;
+		weaponLocal.pos.y -= 0.05f;
+		weaponLocal.pos.z += 0.11f;
 		break;
 	case WeaponType::Rifle:
 		weaponLocal *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
 		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
-		weaponLocal.pos.x += 0.10f;
-		weaponLocal.pos.y -= 0.05f;
-		weaponLocal.pos.z += 0.03f;
+		weaponLocal.pos.x += 0.06f;
+		weaponLocal.pos.y -= 0.06f;
+		weaponLocal.pos.z += 0.12f;
 		break;
 	case WeaponType::Pistol:
 		weaponLocal *= XMMatrixScaling(0.7f, 0.7f, 0.7f);
-		weaponLocal.pos.x += 0.06f;
-		weaponLocal.pos.y -= 0.03f;
-		weaponLocal.pos.z += 0.01f;
+		weaponLocal.pos.x += 0.03f;
+		weaponLocal.pos.y -= 0.14f;
+		weaponLocal.pos.z += 0.08f;
 		break;
 	}
 

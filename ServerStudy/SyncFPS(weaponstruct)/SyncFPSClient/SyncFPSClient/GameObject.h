@@ -493,9 +493,10 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	vector<GPUResource> NodeToBone;
 	vector<DescIndex> NodeToBone_SRVDescIndex;
 	float HitFlashTimer = 0.0f;
-	float HitFlashDuration = 0.14f;
+	float HitFlashDuration = 0.18f;
+	vec4 StatusTint = vec4(0.0f, 1.0f, 1.0f, 1.0f);
 
-	__forceinline void TriggerHitFlash(float duration = 0.14f) {
+	__forceinline void TriggerHitFlash(float duration = 0.18f) {
 		HitFlashDuration = duration;
 		HitFlashTimer = duration;
 	}
@@ -506,6 +507,16 @@ struct SkinMeshGameObject : public DynamicGameObject {
 		if (rate < 0.0f) return 0.0f;
 		if (rate > 1.0f) return 1.0f;
 		return rate;
+	}
+
+	__forceinline void SetStatusTint(vec4 tint) {
+		StatusTint = tint;
+	}
+
+	__forceinline vec4 GetRenderTint() const {
+		float hitFlashRate = GetHitFlashRate();
+		if (hitFlashRate > 0.0f) return vec4(hitFlashRate * 1.35f, 1.0f, 0.0f, 0.0f);
+		return StatusTint;
 	}
 
 // 이름에서 ShapeIndex를 얻는 map

@@ -210,6 +210,7 @@ READ_START:
 		CTS_SyncRotation_Header& header = *(CTS_SyncRotation_Header*)currentPivot;
 		p->m_yaw = header.yaw;
 		p->m_pitch = header.pitch;
+		p->bFirstPersonVision = header.bFirstPersonVision;
 		currentPivot += header.size;
 		offset += header.size;
 	}

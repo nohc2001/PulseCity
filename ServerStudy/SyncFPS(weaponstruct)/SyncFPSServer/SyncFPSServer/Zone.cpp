@@ -939,8 +939,27 @@ static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& 
         return StatusEffectType::None;
     }
 }
+static bool IsCrowdControlStatus(StatusEffectType type)
+{
+    switch (type) {
+    case StatusEffectType::Freeze:
+    case StatusEffectType::Slow:
+    case StatusEffectType::Taunt:
+    case StatusEffectType::Stun:
+    case StatusEffectType::Paralyze:
+        return true;
+    default:
+        return false;
+    }
+}
 int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage) {
-    if (caster == nullptr || damage <= 0.0f || radius <= 0.0f) return 0;
+    float statusDuration = 0.0f;
+    float statusPower = 0.0f;
+    StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
+    if (IsCrowdControlStatus(statusType)) statusDuration *= 2.0f;
+
+    if (caster == nullptr || radius <= 0.0f) return 0;
+    if (damage <= 0.0f && statusType == StatusEffectType::None) return 0;
 
     bool selfOnly = effectType == SkillEffectType::Healer_HealAura ||
         effectType == SkillEffectType::Frost_IceBlock ||
@@ -991,10 +1010,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
         if (hit == false) continue;
 
         currentIndex = i;
-        monster->ApplyDamage(caster, damage);
-        float statusDuration = 0.0f;
-        float statusPower = 0.0f;
-        StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
+        if (damage > 0.0f) monster->ApplyDamage(caster, damage);
         if (statusType != StatusEffectType::None) {
             monster->ApplyStatusEffect(caster, statusType, statusDuration, statusPower);
         }
