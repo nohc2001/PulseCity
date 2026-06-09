@@ -839,23 +839,23 @@ static JobData GJobTable[] = {
 	} },
 	{ PlayerJob::Aegis, 100.0f, 20.0f, 9.0f, WeaponType::Pistol, {
 		{ SkillEffectType::Aegis_ShieldCharge, 7.0f, 0.0f, 8.0f, 2.0f, 25.0f, 0.8f },
-		{ SkillEffectType::Aegis_Barrier, 14.0f, 0.0f, 8.0f, 4.0f, 0.0f, 3.0f },
-		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 0.0f, 0.0f, 7.0f, 50.0f, 6.0f },
+		{ SkillEffectType::Aegis_Barrier, 14.0f, 0.0f, 0.0f, 1.5f, 30.0f, 5.0f },
+		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 0.0f, 0.0f, 7.0f, 50.0f, 5.0f },
 	} },
-	{ PlayerJob::Mage, 100.0f, 20.0f, 9.0f,WeaponType::Pistol, {
-		{ SkillEffectType::Mage_FireBall, 4.0f, 0.0f, 30.0f, 1.0f, 35.0f, 1.0f },
-		{ SkillEffectType::Fire_Ring, 8.0f, 0.0f, 8.0f, 4.0f, 20.0f, 1.5f },
-		{ SkillEffectType::Fire_Pillar, 25.0f, 0.0f, 20.0f, 5.0f, 80.0f, 2.5f },
+	{ PlayerJob::Mage, 105.0f, 18.0f, 8.0f, WeaponType::Rifle, {
+		{ SkillEffectType::Rifle_TacticalGrenade, 7.0f, 0.0f, 16.0f, 4.0f, 50.0f, 3.0f },
+		{ SkillEffectType::Rifle_StimPack, 14.0f, 0.0f, 0.0f, 1.0f, 10.0f, 7.0f },
+		{ SkillEffectType::Rifle_MissileBarrage, 32.0f, 0.0f, 25.0f, 5.5f, 45.0f, 3.0f },
 	} },
-	{ PlayerJob::Healer, 100.0f, 20.0f, 9.0f,WeaponType::Pistol, {
-		{ SkillEffectType::Healer_HealAura, 10.0f, 0.0f, 0.0f, 3.5f, 0.0f, 1.5f },
-		{ SkillEffectType::Electric_Arc, 8.0f, 0.0f, 18.0f, 1.0f, 15.0f, 1.0f },
-		{ SkillEffectType::Healer_HealAura, 30.0f, 0.0f, 0.0f, 7.0f, 100.0f, 3.0f },
+	{ PlayerJob::Healer, 90.0f, 24.0f, 5.0f, WeaponType::Sniper, {
+		{ SkillEffectType::Sniper_GrappleHook, 7.0f, 0.0f, 18.0f, 1.0f, 0.0f, 0.35f },
+		{ SkillEffectType::Sniper_ModeSwitch, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+		{ SkillEffectType::Sniper_Railgun, 32.0f, 0.0f, 70.0f, 0.8f, 120.0f, 10.0f },
 	} },
-	{ PlayerJob::Gunner, 100.0f, 20.0f, 9.0f,WeaponType::Rifle, {
-		{ SkillEffectType::Gunner_Muzzle, 5.0f, 0.0f, 30.0f, 1.0f, 20.0f, 0.5f },
-		{ SkillEffectType::Electric_Burst, 9.0f, 0.0f, 12.0f, 3.0f, 25.0f, 1.0f },
-		{ SkillEffectType::Ember_Shower, 28.0f, 0.0f, 25.0f, 5.0f, 60.0f, 3.0f },
+	{ PlayerJob::Gunner, 100.0f, 20.0f, 7.0f, WeaponType::Pistol, {
+		{ SkillEffectType::DualPistol_DeathDash, 3.5f, 0.0f, 0.0f, 5.0f, 20.0f, 0.45f },
+		{ SkillEffectType::DualPistol_BladeMode, 20.0f, 0.0f, 2.4f, 1.5f, 35.0f, 10.0f },
+		{ SkillEffectType::DualPistol_Awaken, 32.0f, 0.0f, 0.0f, 1.0f, 0.0f, 10.0f },
 	} },
 	{ PlayerJob::Tank, 100.0f, 20.0f, 9.0f, WeaponType::Shotgun, {
 		{ SkillEffectType::Tank_ShockWave, 7.0f, 0.0f, 0.0f, 5.0f, 20.0f, 1.0f },
@@ -891,6 +891,10 @@ struct Player : public SkinMeshGameObject {
 	STCDef(float, HeatGauge);// = 0;
 	// OBB.Center
 	STCDef(float, MaxHeatGauge);// = 100;
+	//STC aegis shield durability
+	STCDef(float, ShieldDurability);
+	//STC aegis max shield durability
+	STCDef(float, MaxShieldDurability);
 	//STC player job
 	STCDef(int, m_currentJob);
 	//STC skill cooldown duration by slot
@@ -916,6 +920,38 @@ struct Player : public SkinMeshGameObject {
 	float m_juggernautFlameRange = 0.0f;
 	float m_juggernautFlameRadius = 0.0f;
 	float m_juggernautFlameDps = 0.0f;
+	float m_rifleGrenadeTimer = 0.0f;
+	float m_rifleGrenadeDuration = 0.0f;
+	float m_rifleGrenadeEffectFlow = 0.0f;
+	float m_rifleGrenadeRadius = 0.0f;
+	float m_rifleGrenadeDamage = 0.0f;
+	vec4 m_rifleGrenadeOrigin = vec4(0, 0, 0, 1);
+	vec4 m_rifleGrenadePosition = vec4(0, 0, 0, 1);
+	float m_rifleStimTimer = 0.0f;
+	float m_rifleStimRegenFlow = 0.0f;
+	float m_rifleStimEffectFlow = 0.0f;
+	float m_rifleMissileTimer = 0.0f;
+	float m_rifleMissileTickFlow = 0.0f;
+	int m_rifleMissileCount = 0;
+	vec4 m_rifleMissileOrigin = vec4(0, 0, 0, 1);
+	vec4 m_rifleMissileDirection = vec4(0, 0, 1, 0);
+	float m_rifleMissileRadius = 0.0f;
+	float m_rifleMissileDamage = 0.0f;
+	bool m_sniperDmrMode = false;
+	float m_railgunTimer = 0.0f;
+	int m_railgunShots = 0;
+	float m_dualBladeTimer = 0.0f;
+	float m_dualAwakenTimer = 0.0f;
+	bool m_aegisShieldActive = false;
+	bool m_aegisShieldPrevInput = false;
+	float m_aegisShieldCooldownTimer = 0.0f;
+	float m_aegisShieldInactiveTimer = 0.0f;
+	float m_aegisShieldEffectFlow = 0.0f;
+	float m_aegisRepairTimer = 0.0f;
+	float m_aegisInvincibleTimer = 0.0f;
+	float m_aegisAuraEffectFlow = 0.0f;
+	float m_aegisChargeTimer = 0.0f;
+	float m_dualDashTimer = 0.0f;
 
 	// OBB.Center
 	float zoneMoveCooldownRemain = 0.0f;
@@ -1019,6 +1055,8 @@ struct Player : public SkinMeshGameObject {
 		float HeatGauge = 0;
 		// OBB.Center
 		float MaxHeatGauge = 100;
+		float ShieldDurability = 0;
+		float MaxShieldDurability = 100;
 		//STC player job
 		int m_currentJob = (int)PlayerJob::Healer;
 		//STC skill cooldown duration by slot
@@ -1093,7 +1131,7 @@ struct MonsterData {
 static MonsterData GMonsterTable[] = {
 	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f },
 	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f },
-	{ MonsterType::Tower, "Tower", "Monster001", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f },
+	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f },
 };
 
 inline const MonsterData& GetMonsterData(MonsterType type) {

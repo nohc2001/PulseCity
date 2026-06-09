@@ -2124,6 +2124,8 @@ Player::Player() {
 	DeathCount = 0;
 	HeatGauge = 0;
 	MaxHeatGauge = 200;
+	ShieldDurability = 0;
+	MaxShieldDurability = 100;
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
 		SkillCooldownFlow[i] = 0.0f;
 	}
@@ -2164,7 +2166,33 @@ void Player::ApplyJob(PlayerJob job)
 	m_juggernautFlameRange = 0.0f;
 	m_juggernautFlameRadius = 0.0f;
 	m_juggernautFlameDps = 0.0f;
+	m_rifleGrenadeTimer = 0.0f;
+	m_rifleGrenadeDuration = 0.0f;
+	m_rifleGrenadeEffectFlow = 0.0f;
+	m_rifleStimTimer = 0.0f;
+	m_rifleStimRegenFlow = 0.0f;
+	m_rifleStimEffectFlow = 0.0f;
+	m_rifleMissileTimer = 0.0f;
+	m_rifleMissileTickFlow = 0.0f;
+	m_rifleMissileCount = 0;
+	m_sniperDmrMode = false;
+	m_railgunTimer = 0.0f;
+	m_railgunShots = 0;
+	m_dualBladeTimer = 0.0f;
+	m_dualAwakenTimer = 0.0f;
+	m_aegisShieldActive = false;
+	m_aegisShieldPrevInput = false;
+	m_aegisShieldCooldownTimer = 0.0f;
+	m_aegisShieldInactiveTimer = 0.0f;
+	m_aegisShieldEffectFlow = 0.0f;
+	m_aegisRepairTimer = 0.0f;
+	m_aegisInvincibleTimer = 0.0f;
+	m_aegisAuraEffectFlow = 0.0f;
+	m_aegisChargeTimer = 0.0f;
+	m_dualDashTimer = 0.0f;
 	m_frostPassiveUsed = false;
+	MaxShieldDurability = ((PlayerJob)m_currentJob == PlayerJob::Aegis) ? 100.0f : 0.0f;
+	ShieldDurability = MaxShieldDurability;
 
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
 		SkillCooldown[i] = jobData.skills[i].cooldown;
@@ -2195,6 +2223,10 @@ void Player::SyncJobState(Zone* zones)
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Attack);
 	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Defense);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ShieldDurability);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxShieldDurability);
 	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldown)>(gameworld.clients[clientIndex].PersonalSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldown);
 	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(gameworld.clients[clientIndex].PersonalSDS,
@@ -2277,6 +2309,185 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 				m_juggernautFlameRadius, m_juggernautFlameDps, 0.35f);
 		}
 	}
+	if (m_rifleGrenadeTimer > 0.0f) {
+		m_rifleGrenadeTimer -= deltaTime;
+		if (m_rifleGrenadeTimer < 0.0f) m_rifleGrenadeTimer = 0.0f;
+
+		float duration = max(m_rifleGrenadeDuration, 0.01f);
+		float t = 1.0f - (m_rifleGrenadeTimer / duration);
+		if (t < 0.0f) t = 0.0f;
+		if (t > 1.0f) t = 1.0f;
+		vec4 grenadePosition = m_rifleGrenadeOrigin + (m_rifleGrenadePosition - m_rifleGrenadeOrigin) * t;
+		grenadePosition.y += sinf(t * XM_PI) * 5.2f + 1.0f;
+
+		m_rifleGrenadeEffectFlow += deltaTime;
+		if (m_rifleGrenadeEffectFlow >= 0.08f && m_rifleGrenadeTimer > 0.0f) {
+			m_rifleGrenadeEffectFlow = 0.0f;
+			vec4 trailDirection = m_rifleGrenadePosition - grenadePosition;
+			if (trailDirection.len3 <= 0.0001f) trailDirection = vec4(0, -1, 0, 0);
+			trailDirection.len3 = 1.0f;
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Skill1, SkillEffectType::Rifle_GrenadeTrail, grenadePosition, trailDirection,
+				0.65f, 1.0f, 0.22f);
+		}
+
+		if (m_rifleGrenadeTimer <= 0.0f) {
+			zones->ApplySkillDamage(this, SkillEffectType::Rifle_TacticalGrenade, m_rifleGrenadePosition, vec4(0, 1, 0, 0),
+				0.0f, m_rifleGrenadeRadius, m_rifleGrenadeDamage);
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Skill1, SkillEffectType::Explosion_Blast, m_rifleGrenadePosition, vec4(0, 1, 0, 0),
+				m_rifleGrenadeRadius, m_rifleGrenadeDamage, 0.9f);
+		}
+	}
+
+	if (m_rifleStimTimer > 0.0f) {
+		m_rifleStimTimer -= deltaTime;
+		if (m_rifleStimTimer < 0.0f) m_rifleStimTimer = 0.0f;
+
+		m_rifleStimRegenFlow += deltaTime;
+		constexpr float stimHealTickDelay = 0.5f;
+		while (m_rifleStimRegenFlow >= stimHealTickDelay && m_rifleStimTimer > 0.0f) {
+			m_rifleStimRegenFlow -= stimHealTickDelay;
+			HP += 10.0f * stimHealTickDelay;
+			if (HP > MaxHP) HP = MaxHP;
+			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+				gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+		}
+
+		m_rifleStimEffectFlow += deltaTime;
+		if (m_rifleStimEffectFlow >= 0.20f && m_rifleStimTimer > 0.0f) {
+			m_rifleStimEffectFlow = 0.0f;
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Skill2, SkillEffectType::Rifle_StimField, worldMat.pos, vec4(0, 1, 0, 0),
+				1.45f, 1.0f, 0.35f);
+		}
+	}
+
+	if (m_rifleMissileTimer > 0.0f) {
+		m_rifleMissileTimer -= deltaTime;
+		if (m_rifleMissileTimer < 0.0f) m_rifleMissileTimer = 0.0f;
+
+		m_rifleMissileTickFlow += deltaTime;
+		constexpr float missileTickDelay = 1.0f;
+		while (m_rifleMissileTickFlow >= missileTickDelay && m_rifleMissileCount < 3) {
+			m_rifleMissileTickFlow -= missileTickDelay;
+			float dropDistance = 8.0f + 8.0f * (float)m_rifleMissileCount;
+			vec4 dropPosition = m_rifleMissileOrigin + m_rifleMissileDirection * dropDistance;
+			dropPosition.y = m_rifleMissileOrigin.y;
+			vec4 skyPosition = dropPosition + vec4(0.0f, 12.0f, 0.0f, 0.0f);
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Ultimate, SkillEffectType::Rifle_AirStrikeTrail, skyPosition, vec4(0, -1, 0, 0),
+				1.2f, m_rifleMissileDamage, 0.65f);
+			zones->ApplySkillDamage(this, SkillEffectType::Rifle_MissileBarrage, dropPosition, vec4(0, 1, 0, 0),
+				0.0f, m_rifleMissileRadius, m_rifleMissileDamage);
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Ultimate, SkillEffectType::Explosion_Blast, dropPosition, vec4(0, 1, 0, 0),
+				m_rifleMissileRadius, m_rifleMissileDamage, 0.9f);
+			++m_rifleMissileCount;
+		}
+
+		if (m_rifleMissileCount >= 3) m_rifleMissileTimer = 0.0f;
+	}
+
+	if (m_railgunTimer > 0.0f) {
+		m_railgunTimer -= deltaTime;
+		if (m_railgunTimer <= 0.0f) {
+			m_railgunTimer = 0.0f;
+			m_railgunShots = 0;
+		}
+	}
+
+	if (m_dualBladeTimer > 0.0f) {
+		m_dualBladeTimer -= deltaTime;
+		if (m_dualBladeTimer < 0.0f) m_dualBladeTimer = 0.0f;
+	}
+
+	if (m_dualAwakenTimer > 0.0f) {
+		m_dualAwakenTimer -= deltaTime;
+		if (m_dualAwakenTimer < 0.0f) m_dualAwakenTimer = 0.0f;
+	}
+
+	if (m_aegisRepairTimer > 0.0f) {
+		m_aegisRepairTimer -= deltaTime;
+		if (m_aegisRepairTimer < 0.0f) m_aegisRepairTimer = 0.0f;
+	}
+
+	if (m_aegisInvincibleTimer > 0.0f) {
+		m_aegisInvincibleTimer -= deltaTime;
+		if (m_aegisInvincibleTimer < 0.0f) m_aegisInvincibleTimer = 0.0f;
+
+		m_aegisAuraEffectFlow += deltaTime;
+		if (m_aegisAuraEffectFlow >= 0.25f && m_aegisInvincibleTimer > 0.0f) {
+			m_aegisAuraEffectFlow = 0.0f;
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Ultimate, SkillEffectType::Aegis_ShieldAura, worldMat.pos, vec4(0, 1, 0, 0),
+				2.2f, 1.0f, 0.55f);
+		}
+	}
+
+	if (m_aegisChargeTimer > 0.0f) {
+		m_aegisChargeTimer -= deltaTime;
+		if (m_aegisChargeTimer <= 0.0f) {
+			m_aegisChargeTimer = 0.0f;
+			LVelocity.x = 0.0f;
+			LVelocity.z = 0.0f;
+		}
+	}
+
+	if (m_dualDashTimer > 0.0f) {
+		m_dualDashTimer -= deltaTime;
+		if (m_dualDashTimer <= 0.0f) {
+			m_dualDashTimer = 0.0f;
+			LVelocity.x = 0.0f;
+			LVelocity.z = 0.0f;
+		}
+	}
+
+	if ((PlayerJob)m_currentJob == PlayerJob::Aegis) {
+		if (m_aegisShieldCooldownTimer > 0.0f) {
+			m_aegisShieldCooldownTimer -= deltaTime;
+			if (m_aegisShieldCooldownTimer < 0.0f) m_aegisShieldCooldownTimer = 0.0f;
+		}
+
+		bool shieldInput = InputBuffer[InputID::MouseRbutton] == true;
+		bool shieldPressed = shieldInput && m_aegisShieldPrevInput == false;
+		m_aegisShieldPrevInput = shieldInput;
+
+		bool canActivateShield = m_aegisShieldCooldownTimer <= 0.0f && ShieldDurability > 0.0f;
+		if (shieldPressed) {
+			m_aegisShieldActive = m_aegisShieldActive ? false : canActivateShield;
+		}
+		if (canActivateShield == false) {
+			m_aegisShieldActive = false;
+		}
+
+		if (m_aegisShieldActive) {
+			m_aegisShieldInactiveTimer = 0.0f;
+			m_aegisShieldEffectFlow += deltaTime;
+			if (m_aegisShieldEffectFlow >= 0.24f) {
+				m_aegisShieldEffectFlow = 0.0f;
+				XMVECTOR quaternion = XMQuaternionRotationRollPitchYaw(0.0f, m_yaw, 0.0f);
+				vec4 shieldDirection = XMVector3Rotate(vec4(0, 0, 1, 0), quaternion);
+				vec4 shieldRight = XMVector3Rotate(vec4(1, 0, 0, 0), quaternion);
+				vec4 shieldPosition = worldMat.pos + shieldDirection * 0.95f - shieldRight * 0.82f + vec4(0.0f, 1.02f, 0.0f, 0.0f);
+				zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+					SkillSlot::Skill2, SkillEffectType::Aegis_Barrier, shieldPosition, shieldDirection,
+					1.15f, ShieldDurability, 0.30f);
+			}
+		}
+		else {
+			m_aegisShieldEffectFlow = 0.24f;
+			m_aegisShieldInactiveTimer += deltaTime;
+			if (m_aegisShieldInactiveTimer >= 3.0f && ShieldDurability < MaxShieldDurability && m_aegisShieldCooldownTimer <= 0.0f) {
+				ShieldDurability += 10.0f * deltaTime;
+				if (ShieldDurability > MaxShieldDurability) ShieldDurability = MaxShieldDurability;
+			}
+		}
+	}
+	else {
+		m_aegisShieldActive = false;
+		m_aegisShieldPrevInput = false;
+	}
 }
 
 bool Player::TryUseSkill(SkillSlot slot)
@@ -2290,6 +2501,15 @@ bool Player::TryUseSkill(SkillSlot slot)
 	const SkillData& skill = jobData.skills[slotIndex];
 
 	if (skill.heatCost > 0.0f && HeatGauge < skill.heatCost) return false;
+	if ((PlayerJob)m_currentJob == PlayerJob::Aegis &&
+		ShieldDurability <= 0.0f &&
+		skill.effectType != SkillEffectType::Aegis_Barrier) {
+		return false;
+	}
+	if (skill.effectType == SkillEffectType::Aegis_ShieldCharge &&
+		(m_aegisShieldActive == false || ShieldDurability <= 0.0f || m_aegisShieldCooldownTimer > 0.0f)) {
+		return false;
+	}
 
 	bool applied = true;
 	if (skill.effectType == SkillEffectType::Healer_HealAura) {
@@ -2321,7 +2541,7 @@ bool Player::TryUseSkill(SkillSlot slot)
 		m_iceBlockTimer = skill.duration;
 		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
 	}
-	else if (skill.effectType == SkillEffectType::Juggernaut_UltimateFire || skill.effectType == SkillEffectType::Aegis_ShieldAura) {
+	else if (skill.effectType == SkillEffectType::Juggernaut_UltimateFire) {
 		float bonus = skill.power;
 		if (bonus > m_tempMaxHpBonus) {
 			MaxHP += bonus - m_tempMaxHpBonus;
@@ -2332,7 +2552,36 @@ bool Player::TryUseSkill(SkillSlot slot)
 		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxHP);
 		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
 	}
+	else if (skill.effectType == SkillEffectType::Aegis_ShieldAura) {
+		float radiusSq = skill.radius * skill.radius;
+		int casterObjIndex = gameworld.clients[clientIndex].objindex;
+		for (int i = 0; i < gameworld.clients.size; ++i) {
+			if (gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
+			Player* ally = gameworld.clients[i].pObjData;
+			if (ally == nullptr) continue;
 
+			vec4 toAlly = ally->worldMat.pos - worldMat.pos;
+			if (toAlly.fast_square_of_len3 > radiusSq) continue;
+
+			float bonus = skill.power;
+			if (bonus > ally->m_tempMaxHpBonus) {
+				ally->MaxHP += bonus - ally->m_tempMaxHpBonus;
+				ally->HP += bonus - ally->m_tempMaxHpBonus;
+				ally->m_tempMaxHpBonus = bonus;
+			}
+			ally->m_tempMaxHpTimer = skill.duration;
+			ally->m_aegisInvincibleTimer = 5.0f;
+			ally->m_aegisAuraEffectFlow = 0.25f;
+
+			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[i].PersonalSDS,
+				gameworld.clients[i].objindex, ally, GameObjectType::_Player, &ally->MaxHP);
+			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[i].PersonalSDS,
+				gameworld.clients[i].objindex, ally, GameObjectType::_Player, &ally->HP);
+			zones->Sending_SkillCast(zones->CommonSDS, casterObjIndex, (PlayerJob)m_currentJob,
+				SkillSlot::Ultimate, SkillEffectType::Aegis_ShieldAura, ally->worldMat.pos, vec4(0, 1, 0, 0),
+				2.2f, bonus, 0.8f);
+		}
+	}
 	if (applied == false) return false;
 
 	SkillCooldownFlow[slotIndex] = skill.cooldown;
@@ -2356,10 +2605,111 @@ bool Player::TryUseSkill(SkillSlot slot)
 		m_juggernautFlameRadius = max(skill.radius, 2.4f);
 		m_juggernautFlameDps = max(18.0f, skill.power * 0.35f);
 	}
-	else {
+	else if (skill.effectType == SkillEffectType::Aegis_ShieldCharge) {
+		LVelocity.x = direction.x * 22.0f;
+		LVelocity.z = direction.z * 22.0f;
+		m_aegisChargeTimer = max(0.18f, skill.duration);
 		zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, direction, skill.range, skill.radius, skill.power);
 	}
-	zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob, slot, skill.effectType, worldMat.pos, direction, skill.radius, skill.power, skill.duration);
+	else if (skill.effectType == SkillEffectType::Aegis_Barrier) {
+		ShieldDurability += 30.0f;
+		if (ShieldDurability > MaxShieldDurability) ShieldDurability = MaxShieldDurability;
+		HP += 30.0f;
+		if (HP > MaxHP) HP = MaxHP;
+		m_aegisRepairTimer = max(m_aegisRepairTimer, skill.duration);
+		m_aegisShieldCooldownTimer = 0.0f;
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+			gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ShieldDurability);
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+			gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+	}
+	else if (skill.effectType == SkillEffectType::Rifle_TacticalGrenade) {
+		m_rifleGrenadeTimer = skill.duration;
+		m_rifleGrenadeDuration = skill.duration;
+		m_rifleGrenadeEffectFlow = 0.08f;
+		m_rifleGrenadeRadius = skill.radius;
+		m_rifleGrenadeDamage = skill.power;
+		m_rifleGrenadeOrigin = worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0.0f);
+		m_rifleGrenadePosition = worldMat.pos + direction * min(skill.range, 14.0f);
+	}
+	else if (skill.effectType == SkillEffectType::Rifle_StimPack) {
+		m_rifleStimTimer = skill.duration;
+		m_rifleStimRegenFlow = 0.0f;
+		m_rifleStimEffectFlow = 0.20f;
+	}
+	else if (skill.effectType == SkillEffectType::Rifle_MissileBarrage) {
+		m_rifleMissileTimer = skill.duration;
+		m_rifleMissileTickFlow = 1.0f;
+		m_rifleMissileCount = 0;
+		m_rifleMissileOrigin = worldMat.pos;
+		m_rifleMissileDirection = direction;
+		m_rifleMissileRadius = skill.radius;
+		m_rifleMissileDamage = skill.power;
+	}
+	else if (skill.effectType == SkillEffectType::Sniper_GrappleHook) {
+		LVelocity += direction * 22.0f;
+		LVelocity.y = max(LVelocity.y, 4.0f);
+	}
+	else if (skill.effectType == SkillEffectType::Sniper_ModeSwitch) {
+		m_sniperDmrMode = !m_sniperDmrMode;
+		if ((WeaponType)m_currentWeaponType == WeaponType::Sniper) {
+			weapon.m_info.shootDelay = m_sniperDmrMode ? 0.35f : 1.5f;
+			weapon.m_info.damage = m_sniperDmrMode ? 35.0f : 100.0f;
+			weapon.m_info.maxBullets = m_sniperDmrMode ? 10 : 5;
+			weapon.m_info.reloadTime = m_sniperDmrMode ? 1.4f : 2.0f;
+			if (bullets > weapon.m_info.maxBullets) bullets = weapon.m_info.maxBullets;
+			zones->Sending_ChangeGameObjectMember<Weapon>(gameworld.clients[clientIndex].PersonalSDS,
+				gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &weapon);
+			zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+				gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
+		}
+	}
+	else if (skill.effectType == SkillEffectType::Sniper_Railgun) {
+		m_railgunTimer = skill.duration;
+		m_railgunShots = 10;
+	}
+	else if (skill.effectType == SkillEffectType::DualPistol_DeathDash) {
+		LVelocity.x = direction.x * 20.0f;
+		LVelocity.z = direction.z * 20.0f;
+		m_dualDashTimer = max(0.18f, skill.duration);
+		bullets = weapon.m_info.maxBullets;
+		zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, direction, skill.range, skill.radius, skill.power);
+		zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+			gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
+	}
+	else if (skill.effectType == SkillEffectType::DualPistol_BladeMode) {
+		m_dualBladeTimer = skill.duration;
+	}
+	else if (skill.effectType == SkillEffectType::DualPistol_Awaken) {
+		m_dualAwakenTimer = skill.duration;
+	}	else {
+		zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, direction, skill.range, skill.radius, skill.power);
+	}
+	SkillEffectType castEffectType = skill.effectType;
+	vec4 castPosition = worldMat.pos;
+	vec4 castDirection = direction;
+	float castRadius = skill.radius;
+	float castDuration = skill.duration;
+	if (skill.effectType == SkillEffectType::Rifle_TacticalGrenade) {
+		castEffectType = SkillEffectType::Rifle_GrenadeTrail;
+		castPosition = m_rifleGrenadeOrigin;
+		castRadius = 0.65f;
+		castDuration = 0.22f;
+	}
+	else if (skill.effectType == SkillEffectType::Rifle_StimPack) {
+		castEffectType = SkillEffectType::Rifle_StimField;
+		castDirection = vec4(0, 1, 0, 0);
+		castRadius = 1.45f;
+		castDuration = 0.35f;
+	}
+	else if (skill.effectType == SkillEffectType::Rifle_MissileBarrage) {
+		castEffectType = SkillEffectType::Rifle_AirStrikeTrail;
+		castPosition = worldMat.pos + direction * 8.0f + vec4(0.0f, 12.0f, 0.0f, 0.0f);
+		castDirection = vec4(0, -1, 0, 0);
+		castRadius = 1.2f;
+		castDuration = 0.65f;
+	}
+	zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob, slot, castEffectType, castPosition, castDirection, castRadius, skill.power, castDuration);
 	return true;
 }
 void Player::Update(float deltaTime)
@@ -2380,9 +2730,13 @@ void Player::Update(float deltaTime)
 	}
 
 	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
-	constexpr float speed = 6.0f;
+	float speed = 6.0f;
+	if (m_rifleStimTimer > 0.0f) speed *= 1.35f;
+	if (m_aegisRepairTimer > 0.0f) speed *= 1.30f;
+	if (m_dualAwakenTimer > 0.0f) speed *= 1.40f;
+	const bool iceBlocked = m_iceBlockTimer > 0.0f;
 
-	if (isGround) {
+	if (isGround && iceBlocked == false) {
 		if (InputBuffer[InputID::KeyboardSpace]) {
 			LVelocity.y = JumpVelocity;
 			isGround = false;
@@ -2434,10 +2788,10 @@ void Player::Update(float deltaTime)
 		pat += 10.0f * clook;
 	}
 	else {
-		peye -= 3.0f * clook;
-		pat += 10.0f * clook;
-		peye += 0.5f * worldMat.up;
-		peye += 0.5f * worldMat.right;
+		peye += 1.35f * worldMat.up;
+		peye -= 4.0f * clook;
+		peye += 1.10f * worldMat.right;
+		pat = peye + 10.0f * clook;
 	}
 
 	XMVECTOR vUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
@@ -2450,9 +2804,44 @@ void Player::Update(float deltaTime)
 	if (InputBuffer[InputID::MouseLbutton] == true) {
 		bool isHeatWeapon = ((PlayerJob)m_currentJob == PlayerJob::Juggernaut && (WeaponType)m_currentWeaponType == WeaponType::MachineGun);
 		bool isOverheated = (isHeatWeapon && HeatGauge >= MaxHeatGauge);
-		if (weapon.m_shootFlow >= weapon.m_info.shootDelay && bullets > 0 && isOverheated == false) {
+		bool isBladeAttack = (m_dualBladeTimer > 0.0f && (PlayerJob)m_currentJob == PlayerJob::Gunner);
+		bool isRailgunAttack = (m_railgunTimer > 0.0f && m_railgunShots > 0);
+		float effectiveShootDelay = weapon.m_info.shootDelay;
+		float effectiveDamage = weapon.m_info.damage;
+		float effectiveRayDistance = 50.0f;
+		if (m_rifleStimTimer > 0.0f) effectiveShootDelay *= 0.70f;
+		if (m_dualAwakenTimer > 0.0f) effectiveShootDelay *= 0.50f;
+		if ((WeaponType)m_currentWeaponType == WeaponType::Sniper && m_sniperDmrMode) {
+			effectiveShootDelay = min(effectiveShootDelay, 0.35f);
+			effectiveDamage = 35.0f;
+		}
+		if (isRailgunAttack) {
+			effectiveShootDelay = 1.0f;
+			effectiveDamage = 120.0f;
+			effectiveRayDistance = 90.0f;
+		}
 
-			bullets -= 1;
+		if (isBladeAttack && weapon.m_shootFlow >= 0.55f) {
+			weapon.OnFire();
+			int hitCount = zones->ApplySkillDamage(this, SkillEffectType::DualPistol_BladeMode, worldMat.pos, clook, 2.4f, 1.5f, 35.0f);
+			if (hitCount > 0) {
+				HP += 35.0f * 0.7f * (float)hitCount;
+				if (HP > MaxHP) HP = MaxHP;
+				zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+					gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+			}
+			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+				SkillSlot::Skill2, SkillEffectType::DualPistol_BladeMode, worldMat.pos, clook, 1.5f, 35.0f, 0.25f);
+		}
+		else if (weapon.m_shootFlow >= effectiveShootDelay && (bullets > 0 || isRailgunAttack) && isOverheated == false) {
+
+			if (isRailgunAttack) {
+				--m_railgunShots;
+				if (m_railgunShots <= 0) m_railgunTimer = 0.0f;
+			}
+			else {
+				bullets -= 1;
+			}
 			if (isHeatWeapon) {
 				HeatGauge += 2;
 				if (HeatGauge > MaxHeatGauge) HeatGauge = MaxHeatGauge;
@@ -2461,16 +2850,14 @@ void Player::Update(float deltaTime)
 			weapon.OnFire();
 
 			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
-			vec4 rayStart = shootOrigin + clook * 1.5f;
-			vec4 cameraPos = worldMat.pos + vec4(0, 1.55f, 0, 0);
-			vec4 aimPoint = cameraPos + clook * 50.0f;
-			vec4 aimDirection = aimPoint - rayStart;
-			if (aimDirection.fast_square_of_len3 < 0.0001f) {
-				aimDirection = clook;
+			vec4 rayStart;
+			if (bFirstPersonVision) {
+				rayStart = shootOrigin + clook * 1.5f;
 			}
 			else {
-				aimDirection.len3 = 1.0f;
+				rayStart = peye;
 			}
+			vec4 aimDirection = clook;
 			if ((WeaponType)m_currentWeaponType == WeaponType::Shotgun) {
 				constexpr int shotgunPelletCount = 9;
 				constexpr float shotgunRayDistance = 35.0f;
@@ -2481,11 +2868,15 @@ void Player::Update(float deltaTime)
 					float jitterYaw = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.4f;
 					float jitterPitch = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.0f;
 					vec4 pelletDirection = ApplyShotgunSpread(aimDirection, yawOffsets[pelletIndex] + jitterYaw, pitchOffsets[pelletIndex] + jitterPitch);
-					zones->FireRaycast((GameObject*)this, rayStart, pelletDirection, shotgunRayDistance, weapon.m_info.damage);
+					zones->FireRaycast((GameObject*)this, rayStart, pelletDirection, shotgunRayDistance, effectiveDamage);
 				}
 			}
 			else {
-				zones->FireRaycast((GameObject*)this, rayStart, aimDirection, 50.0f, weapon.m_info.damage);
+				zones->FireRaycast((GameObject*)this, rayStart, aimDirection, effectiveRayDistance, effectiveDamage);
+				if (isRailgunAttack) {
+					zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
+						SkillSlot::Ultimate, SkillEffectType::Sniper_Railgun, rayStart, aimDirection, 0.8f, effectiveDamage, 0.25f);
+				}
 			}
 
 			// fix �̰� �̷��� �ϸ� �ȵɰ� ������? Update �ɶ����� ��Ŷ�� ����. 
@@ -2494,7 +2885,7 @@ void Player::Update(float deltaTime)
 			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
 			zones->Sending_PlayerFire(zones->CommonSDS, gameworld.clients[clientIndex].objindex);
 
-			if (bullets <= 0) {
+			if (isRailgunAttack == false && bullets <= 0) {
 				weapon.m_shootFlow = -weapon.m_info.reloadTime;
 
 				bullets = weapon.m_info.maxBullets;
@@ -2559,6 +2950,8 @@ void Player::Update(float deltaTime)
 
 		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS
 			, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS
+			, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ShieldDurability);
 	}
 
 }
@@ -2616,12 +3009,19 @@ void Player::TakeDamage(float damage)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
 
+	if (m_aegisInvincibleTimer > 0.0f) {
+		return;
+	}
+
 	float defense = Defense;
 	// All Job Reduce Damage With Defense
 	damage *= 100.0f / (100.0f + defense);
 
 	if (m_iceBlockTimer > 0.0f) {
 		damage *= 0.1f;
+	}
+	else if (m_dualAwakenTimer > 0.0f) {
+		damage *= 0.5f;
 	}
 	else if ((PlayerJob)m_currentJob == PlayerJob::Aegis) {
 		damage *= 0.9f;
@@ -2632,6 +3032,24 @@ void Player::TakeDamage(float damage)
 		if (heatRate > 1.0f) heatRate = 1.0f;
 		damage *= 1.0f - (0.35f * heatRate);
 	}
+
+	if ((PlayerJob)m_currentJob == PlayerJob::Aegis && m_aegisShieldActive && ShieldDurability > 0.0f) {
+		float shieldDamage = min(ShieldDurability, damage);
+		ShieldDurability -= shieldDamage;
+		damage -= shieldDamage;
+
+		if (ShieldDurability <= 0.0f) {
+			ShieldDurability = 0.0f;
+			m_aegisShieldActive = false;
+			m_aegisShieldCooldownTimer = 10.0f;
+			m_aegisShieldInactiveTimer = 0.0f;
+		}
+
+		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+			gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ShieldDurability);
+		if (damage <= 0.0f) return;
+	}
+
 	HP -= damage;
 
 	if ((PlayerJob)m_currentJob == PlayerJob::Frost && m_frostPassiveUsed == false && HP > 0.0f && HP <= MaxHP * 0.3f) {
@@ -2702,6 +3120,8 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	static_data.DeathCount = DeathCount;
 	static_data.HeatGauge = HeatGauge;
 	static_data.MaxHeatGauge = MaxHeatGauge;
+	static_data.ShieldDurability = ShieldDurability;
+	static_data.MaxShieldDurability = MaxShieldDurability;
 	static_data.m_currentJob = m_currentJob;
 	memcpy(static_data.SkillCooldown, SkillCooldown, sizeof(SkillCooldown));
 	memcpy(static_data.SkillCooldownFlow, SkillCooldownFlow, sizeof(SkillCooldownFlow));
@@ -3802,6 +4222,10 @@ void World::Init() {
 		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
 		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
 
+		Model* TurretModel = new Model();
+		TurretModel->LoadModelFile2("Resources/Model/Exo.model");
+		int turretMesh_index = Shape::AddModel("MonsterTurret", TurretModel);
+
 		Mesh* portalMesh = new Mesh();
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
 		Shape::AddMesh("Portal", portalMesh);
@@ -4356,6 +4780,8 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->DeathCount = data.DeathCount;
 	p->HeatGauge = data.HeatGauge;
 	p->MaxHeatGauge = data.MaxHeatGauge;
+	p->ShieldDurability = data.ShieldDurability;
+	p->MaxShieldDurability = data.MaxShieldDurability;
 	p->zoneMoveCooldownRemain = data.zoneMoveCooldownRemain;
 	p->lastBoundaryIndex = data.lastBoundaryIndex;
 	p->wasInsideBoundary = data.wasInsideBoundary;
@@ -4542,6 +4968,8 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		data.DeathCount = player->DeathCount;
 		data.HeatGauge = player->HeatGauge;
 		data.MaxHeatGauge = player->MaxHeatGauge;
+		data.ShieldDurability = player->ShieldDurability;
+		data.MaxShieldDurability = player->MaxShieldDurability;
 		data.zoneMoveCooldownRemain = max(player->zoneMoveCooldownRemain, 0.75f);
 		data.lastBoundaryIndex = player->lastBoundaryIndex;
 		data.wasInsideBoundary = player->wasInsideBoundary;

@@ -457,12 +457,18 @@ namespace
 		FireFlipbook,
 		Electric,
 		Ice,
+		Blood,
+		Explosion,
+		Energy,
 	};
 
 	GPUResource gParticleSecondaryTexture;
 	GPUResource gParticleFlipbookTexture;
 	GPUResource gParticleElectricTexture;
 	GPUResource gParticleIceTexture;
+	GPUResource gParticleBloodTexture;
+	GPUResource gParticleExplosionTexture;
+	GPUResource gParticleEnergyTexture;
 
 	constexpr UINT ELECTRIC_COUNT = 120;
 	constexpr UINT ELECTRIC_BURST_COUNT = 72;
@@ -483,6 +489,13 @@ namespace
 	ParticlePool gFrostConePool;
 	ParticlePool gFrostIceBlockPool;
 	ParticlePool gFrostBlizzardPool;
+	ParticlePool gBloodHitPool;
+	ParticlePool gExplosionBlastPool;
+	ParticlePool gAegisShieldEnergyPool;
+	ParticlePool gAegisShieldOrbitPool;
+	ParticlePool gRifleGrenadeTrailPool;
+	ParticlePool gRifleAirStrikeTrailPool;
+	ParticlePool gRifleStimFieldPool;
 	ParticlePool gMuzzleFlashPool;
 	ParticlePool gBulletTracerPool;
 	ParticlePool gIceProjectilePool;
@@ -492,6 +505,13 @@ namespace
 	ParticleCompute* gFrostConeCS = nullptr;
 	ParticleCompute* gFrostIceBlockCS = nullptr;
 	ParticleCompute* gFrostBlizzardCS = nullptr;
+	ParticleCompute* gBloodHitCS = nullptr;
+	ParticleCompute* gExplosionBlastCS = nullptr;
+	ParticleCompute* gAegisShieldEnergyCS = nullptr;
+	ParticleCompute* gAegisShieldOrbitCS = nullptr;
+	ParticleCompute* gRifleGrenadeTrailCS = nullptr;
+	ParticleCompute* gRifleAirStrikeTrailCS = nullptr;
+	ParticleCompute* gRifleStimFieldCS = nullptr;
 	GPUResource gMuzzleFlashUpload;
 	GPUResource gBulletTracerUpload;
 	GPUResource gIceProjectileUpload;
@@ -508,6 +528,13 @@ namespace
 	ParticleSpriteSlot gFrostConeSpriteSlot = ParticleSpriteSlot::Ice;
 	ParticleSpriteSlot gFrostIceBlockSpriteSlot = ParticleSpriteSlot::Ice;
 	ParticleSpriteSlot gFrostBlizzardSpriteSlot = ParticleSpriteSlot::Ice;
+	ParticleSpriteSlot gBloodHitSpriteSlot = ParticleSpriteSlot::Blood;
+	ParticleSpriteSlot gExplosionBlastSpriteSlot = ParticleSpriteSlot::Explosion;
+	ParticleSpriteSlot gAegisShieldEnergySpriteSlot = ParticleSpriteSlot::Energy;
+	ParticleSpriteSlot gAegisShieldOrbitSpriteSlot = ParticleSpriteSlot::Energy;
+	ParticleSpriteSlot gRifleGrenadeTrailSpriteSlot = ParticleSpriteSlot::Explosion;
+	ParticleSpriteSlot gRifleAirStrikeTrailSpriteSlot = ParticleSpriteSlot::Explosion;
+	ParticleSpriteSlot gRifleStimFieldSpriteSlot = ParticleSpriteSlot::Electric;
 	ParticleSpriteSlot gMuzzleFlashSpriteSlot = ParticleSpriteSlot::FirePrimary;
 	ParticleSpriteSlot gBulletTracerSpriteSlot = ParticleSpriteSlot::Electric;
 	UINT gTransientParticleSeed = 1u;
@@ -536,6 +563,7 @@ namespace
 		float Duration = 0.0f;
 		float RemainTime = 0.0f;
 		float Power = 0.0f;
+		float VisualPulseTimer = 0.0f;
 		vec4 Position = vec4(0, 0, 0, 1);
 		vec4 Extents = vec4(0.3f, 1.0f, 0.3f, 0.0f);
 	};
@@ -584,13 +612,8 @@ namespace
 		}
 	}
 
-	void RefreshMonsterStatusTint(int targetObjIndex)
+	StatusEffectType GetActiveStatusEffectType(int targetObjIndex)
 	{
-		if (targetObjIndex < 0 || targetObjIndex >= (int)game.DynmaicGameObjects.size()) return;
-
-		Monster* monster = dynamic_cast<Monster*>(game.DynmaicGameObjects[targetObjIndex]);
-		if (monster == nullptr) return;
-
 		StatusEffectType selectedType = StatusEffectType::None;
 		int selectedPriority = 0;
 		for (const StatusEffectVisual& visual : gStatusEffectVisuals) {
@@ -603,7 +626,72 @@ namespace
 			}
 		}
 
-		monster->SetStatusTint(GetStatusEffectTint(selectedType));
+		return selectedType;
+	}
+
+	vec4 GetStatusEffectHudColor(StatusEffectType type)
+	{
+		switch (type) {
+		case StatusEffectType::Freeze:
+			return vec4(0.06f, 0.74f, 1.00f, 1.00f);
+		case StatusEffectType::Slow:
+			return vec4(0.34f, 0.88f, 1.00f, 1.00f);
+		case StatusEffectType::Burn:
+			return vec4(1.00f, 0.19f, 0.04f, 1.00f);
+		case StatusEffectType::Taunt:
+			return vec4(1.00f, 0.88f, 0.06f, 1.00f);
+		case StatusEffectType::Stun:
+			return vec4(1.00f, 0.68f, 0.02f, 1.00f);
+		case StatusEffectType::Paralyze:
+			return vec4(0.78f, 0.28f, 1.00f, 1.00f);
+		case StatusEffectType::None:
+		default:
+			return vec4(0.94f, 0.06f, 0.10f, 1.00f);
+		}
+	}
+
+	void RefreshMonsterStatusTint(int targetObjIndex)
+	{
+		if (targetObjIndex < 0 || targetObjIndex >= (int)game.DynmaicGameObjects.size()) return;
+
+		Monster* monster = dynamic_cast<Monster*>(game.DynmaicGameObjects[targetObjIndex]);
+		if (monster == nullptr) return;
+
+		monster->SetStatusTint(GetStatusEffectTint(GetActiveStatusEffectType(targetObjIndex)));
+	}
+
+	void UpdateStatusEffectVisuals(float deltaTime)
+	{
+		const float dt = max(0.0f, deltaTime);
+
+		for (StatusEffectVisual& visual : gStatusEffectVisuals) {
+			if (visual.Active == false) continue;
+
+			if (visual.RemainTime > 0.0f) {
+				visual.RemainTime = max(0.0f, visual.RemainTime - dt);
+				if (visual.RemainTime <= 0.0f) {
+					visual.Active = false;
+					RefreshMonsterStatusTint(visual.TargetObjIndex);
+					continue;
+				}
+			}
+
+			if (visual.TargetObjIndex >= 0 && visual.TargetObjIndex < (int)game.DynmaicGameObjects.size() &&
+				game.DynmaicGameObjects[visual.TargetObjIndex] != nullptr) {
+				visual.Position = game.DynmaicGameObjects[visual.TargetObjIndex]->worldMat.pos;
+				visual.Position.y += max(0.6f, visual.Extents.y * 0.5f);
+			}
+
+			if (visual.Type != StatusEffectType::Burn) continue;
+
+			visual.VisualPulseTimer -= dt;
+			if (visual.VisualPulseTimer > 0.0f) continue;
+
+			float radius = max(max(visual.Extents.x, visual.Extents.z) * 2.6f, 1.35f);
+			game.SpawnSkillEffect(SkillEffectType::Ember_Shower, visual.Position, vec4(0, 1, 0, 0),
+				(UINT)visual.TargetObjIndex, radius, max(visual.Power, 1.0f), 0.75f);
+			visual.VisualPulseTimer = 0.42f;
+		}
 	}
 
 	GPUResource* GetParticleSpriteResource(ParticleSpriteSlot slot)
@@ -617,6 +705,12 @@ namespace
 			return &gParticleElectricTexture;
 		case ParticleSpriteSlot::Ice:
 			return &gParticleIceTexture;
+		case ParticleSpriteSlot::Blood:
+			return &gParticleBloodTexture;
+		case ParticleSpriteSlot::Explosion:
+			return &gParticleExplosionTexture;
+		case ParticleSpriteSlot::Energy:
+			return &gParticleEnergyTexture;
 		case ParticleSpriteSlot::FirePrimary:
 		default:
 			return &game.FireTextureRes;
@@ -649,7 +743,7 @@ namespace
 		static std::vector<ParticleEffectRuntime> effects;
 		if (!effects.empty()) return effects;
 
-		effects.reserve(9);
+		effects.reserve(16);
 		ParticleEmitterCB idleEmitter = MakeParticleEmitter(vec4(0.0f, 0.0f, 0.0f, 1.0f), vec4(0, 1, 0, 0), 1.0f, 1.0f, 0.0f, 0);
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Mage_FireBall, &game.FirePool, &game.FireCS, &gFireSpriteSlot, "FireCS", Game::FIRE_COUNT, idleEmitter, false, false });
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Fire_Pillar, &game.FirePillarPool, &game.FirePillarCS, &gFirePillarSpriteSlot, "FirePillarCS", Game::FIRE_PILLAR_COUNT, idleEmitter, false, false });
@@ -660,6 +754,13 @@ namespace
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Frost_Cone, &gFrostConePool, &gFrostConeCS, &gFrostConeSpriteSlot, "FrostConeCS", FROST_CONE_COUNT, idleEmitter, false, false });
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Frost_IceBlock, &gFrostIceBlockPool, &gFrostIceBlockCS, &gFrostIceBlockSpriteSlot, "FrostIceBlockCS", FROST_ICE_BLOCK_COUNT, idleEmitter, false, false });
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Frost_Blizzard, &gFrostBlizzardPool, &gFrostBlizzardCS, &gFrostBlizzardSpriteSlot, "FrostBlizzardCS", FROST_BLIZZARD_COUNT, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Blood_Hit, &gBloodHitPool, &gBloodHitCS, &gBloodHitSpriteSlot, "BloodHitCS", 96, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Explosion_Blast, &gExplosionBlastPool, &gExplosionBlastCS, &gExplosionBlastSpriteSlot, "ExplosionBlastCS", 112, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Aegis_ShieldEnergy, &gAegisShieldEnergyPool, &gAegisShieldEnergyCS, &gAegisShieldEnergySpriteSlot, "AegisShieldEnergyCS", 48, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Aegis_ShieldAura, &gAegisShieldOrbitPool, &gAegisShieldOrbitCS, &gAegisShieldOrbitSpriteSlot, "AegisShieldOrbitCS", 64, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Rifle_GrenadeTrail, &gRifleGrenadeTrailPool, &gRifleGrenadeTrailCS, &gRifleGrenadeTrailSpriteSlot, "RifleGrenadeTrailCS", 48, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Rifle_AirStrikeTrail, &gRifleAirStrikeTrailPool, &gRifleAirStrikeTrailCS, &gRifleAirStrikeTrailSpriteSlot, "RifleAirStrikeTrailCS", 80, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Rifle_StimField, &gRifleStimFieldPool, &gRifleStimFieldCS, &gRifleStimFieldSpriteSlot, "RifleStimFieldCS", 72, idleEmitter, false, false });
 		return effects;
 	}
 
@@ -1224,10 +1325,45 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 		runtimeType = SkillEffectType::Fire_Ring;
 		break;
 	case SkillEffectType::Aegis_Barrier:
+		runtimeType = SkillEffectType::Aegis_ShieldEnergy;
+		break;
 	case SkillEffectType::Aegis_ShieldAura:
-		runtimeType = SkillEffectType::Electric_Burst;
+		runtimeType = SkillEffectType::Aegis_ShieldAura;
 		break;
 	case SkillEffectType::Aegis_ShieldCharge:
+		runtimeType = SkillEffectType::Electric_Arc;
+		break;
+	case SkillEffectType::Rifle_TacticalGrenade:
+	case SkillEffectType::Rifle_MissileBarrage:
+		runtimeType = SkillEffectType::Explosion_Blast;
+		break;
+	case SkillEffectType::Rifle_GrenadeTrail:
+		runtimeType = SkillEffectType::Rifle_GrenadeTrail;
+		break;
+	case SkillEffectType::Rifle_AirStrikeTrail:
+		runtimeType = SkillEffectType::Rifle_AirStrikeTrail;
+		break;
+	case SkillEffectType::Rifle_StimField:
+		runtimeType = SkillEffectType::Rifle_StimField;
+		break;
+	case SkillEffectType::Blood_Hit:
+		runtimeType = SkillEffectType::Blood_Hit;
+		break;
+	case SkillEffectType::Explosion_Blast:
+		runtimeType = SkillEffectType::Explosion_Blast;
+		break;
+	case SkillEffectType::Aegis_ShieldEnergy:
+		runtimeType = SkillEffectType::Aegis_ShieldEnergy;
+		break;
+	case SkillEffectType::Rifle_StimPack:
+	case SkillEffectType::Sniper_ModeSwitch:
+	case SkillEffectType::DualPistol_DeathDash:
+	case SkillEffectType::DualPistol_Awaken:
+		runtimeType = SkillEffectType::Electric_Burst;
+		break;
+	case SkillEffectType::Sniper_GrappleHook:
+	case SkillEffectType::Sniper_Railgun:
+	case SkillEffectType::DualPistol_BladeMode:
 		runtimeType = SkillEffectType::Electric_Arc;
 		break;
 	default:
@@ -1250,6 +1386,33 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 		*effect->SpriteSlot = ParticleSpriteSlot::Ice;
 	}
 	else if (type == SkillEffectType::Aegis_ShieldCharge || type == SkillEffectType::Aegis_Barrier || type == SkillEffectType::Aegis_ShieldAura) {
+		*effect->SpriteSlot = (type == SkillEffectType::Aegis_ShieldCharge) ? ParticleSpriteSlot::Electric : ParticleSpriteSlot::Energy;
+	}
+	else if (type == SkillEffectType::Rifle_TacticalGrenade || type == SkillEffectType::Rifle_MissileBarrage) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
+	}
+	else if (type == SkillEffectType::Rifle_GrenadeTrail || type == SkillEffectType::Rifle_AirStrikeTrail) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
+	}
+	else if (type == SkillEffectType::Rifle_StimField) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
+	}
+	else if (type == SkillEffectType::Blood_Hit) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Blood;
+	}
+	else if (type == SkillEffectType::Explosion_Blast) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
+	}
+	else if (type == SkillEffectType::Aegis_ShieldEnergy) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Energy;
+	}
+	else if (type == SkillEffectType::Rifle_StimPack ||
+		type == SkillEffectType::Sniper_GrappleHook ||
+		type == SkillEffectType::Sniper_ModeSwitch ||
+		type == SkillEffectType::Sniper_Railgun ||
+		type == SkillEffectType::DualPistol_DeathDash ||
+		type == SkillEffectType::DualPistol_BladeMode ||
+		type == SkillEffectType::DualPistol_Awaken) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
 	}
 
@@ -1296,6 +1459,9 @@ void Game::SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sour
 	visual.Duration = duration;
 	visual.RemainTime = remainTime;
 	visual.Power = power;
+	if (shouldSpawnVisual) {
+		visual.VisualPulseTimer = 0.0f;
+	}
 	visual.Position = position;
 	visual.Extents = extents;
 	RefreshMonsterStatusTint(targetObjIndex);
@@ -1460,6 +1626,9 @@ void Game::Init()
 		gParticleFlipbookTexture.CreateTexture_fromFile(L"Resources/fire.dds", game.basicTexFormat, game.basicTexMip, true);
 		gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.jpg", game.basicTexFormat, game.basicTexMip, true);
 		gParticleIceTexture.CreateTexture_fromFile(L"Resources/ice.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleBloodTexture.CreateTexture_fromFile(L"Resources/blood.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleExplosionTexture.CreateTexture_fromFile(L"Resources/explosion.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleEnergyTexture.CreateTexture_fromFile(L"Resources/energy.jpg", game.basicTexFormat, game.basicTexMip, true);
 
 		//텍스트 출력에 사용할 메쉬를 가져온다.
 		TextMesh = new UVMesh();
@@ -1552,6 +1721,10 @@ void Game::Init()
 		Model* DroneModel = new Model();
 		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
 		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
+
+		Model* TurretModel = new Model();
+		TurretModel->LoadModelFile2("Resources/Model/turret.model");
+		int turretMesh_index = Shape::AddModel("MonsterTurret", TurretModel);
 
 		Mesh* portalMesh = new Mesh();
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
@@ -2447,20 +2620,6 @@ void Game::Render() {
 	}
 
 
-	//23. NPC 들의 HP 바를 빌보드 출력
-	for (int i = 0; i < game.NpcHPBars.size; ++i)
-	{
-		if (game.NpcHPBars.isAlloc(i))
-		{
-			matrix& hpBarWorldMat = game.NpcHPBars[i];
-			hpBarWorldMat.transpose();
-			gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
-			game.HPBarMesh->Render(gd.gpucmd, 1);
-		}
-	}
-
-
-
 	if (game.DebugCollisions) {
 		using OCSRP = OnlyColorShader::RootParamId;
 		gd.gpucmd.SetShader(MyOnlyColorShader, ShaderType::Debug_OBB);
@@ -2603,6 +2762,9 @@ void Game::Render() {
 
 
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	RenderGameplayStatusHUD();
+	RenderMonsterHealthPlates();
+	RenderFloatingDamageTexts();
 	RenderGameplaySkillHUD();
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
@@ -3054,6 +3216,8 @@ void Game::Update()
 	AutoLOD_ProcessRuntimeQueue(1);
 	BoxLOD_DebugUpdate(DeltaTime);
 	UpdateGameplaySkillHUD(DeltaTime);
+	UpdateStatusEffectVisuals(DeltaTime);
+	UpdateFloatingDamageTexts(DeltaTime);
 
 	static bool wasLODKeyDown = false;
 	const bool isLODKeyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
@@ -4131,6 +4295,53 @@ void Game::UpdateGameplaySkillHUD(float deltaTime)
 	UltimateChargePercent = min(100.0f, max(0.0f, UltimateChargePercent));
 }
 
+void Game::UpdateFloatingDamageTexts(float deltaTime)
+{
+	for (FloatingDamageText& text : FloatingDamageTexts) {
+		if (!text.Active) continue;
+		text.Age += deltaTime;
+		if (text.Age >= text.Duration) text.Active = false;
+	}
+}
+
+void Game::SpawnFloatingDamageText(vec4 worldPosition, float damage)
+{
+	if (damage < 0.5f) return;
+
+	constexpr size_t MaxFloatingDamageTextCount = 64;
+	FloatingDamageText* slot = nullptr;
+	for (FloatingDamageText& text : FloatingDamageTexts) {
+		if (!text.Active) {
+			slot = &text;
+			break;
+		}
+	}
+
+	if (slot == nullptr) {
+		if (FloatingDamageTexts.size() < MaxFloatingDamageTextCount) {
+			FloatingDamageTexts.push_back(FloatingDamageText{});
+			slot = &FloatingDamageTexts.back();
+		}
+		else {
+			slot = &FloatingDamageTexts[0];
+			for (FloatingDamageText& text : FloatingDamageTexts) {
+				if (text.Age > slot->Age) slot = &text;
+			}
+		}
+	}
+
+	static int spawnCounter = 0;
+	float sidePattern = (float)((spawnCounter % 5) - 2);
+	spawnCounter++;
+
+	slot->WorldPosition = worldPosition + vec4(0.0f, 1.85f, 0.0f, 0.0f);
+	slot->Damage = damage;
+	slot->Age = 0.0f;
+	slot->Duration = 0.78f;
+	slot->SideOffset = sidePattern * 9.0f;
+	slot->Active = true;
+}
+
 static vec4 GetUltimateHUDColor(int job)
 {
 	switch (job % 7) {
@@ -4141,6 +4352,200 @@ static vec4 GetUltimateHUDColor(int job)
 	case 4: return vec4(0.70f, 0.50f, 1.00f, 1.00f);
 	case 5: return vec4(1.00f, 0.82f, 0.22f, 1.00f);
 	default: return vec4(0.35f, 0.95f, 0.82f, 1.00f);
+	}
+}
+
+void Game::RenderGameplayStatusHUD()
+{
+	if (player == nullptr || UITextureTable.empty()) return;
+
+	constexpr int FillTexture = 0; // temp: DefaultTex
+	constexpr int FirstJobIndex = 0;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.75f, screenHeight / 960.0f);
+	const float depth = 0.021f;
+	const float left = -screenWidth * 0.5f + 44.0f * scale;
+	const float panelBottom = -screenHeight * 0.5f + 170.0f * scale;
+	const float panelWidth = 330.0f * scale;
+	const float panelHeight = 92.0f * scale;
+
+	float maxHP = max(player->MaxHP, 1.0f);
+	float hpRate = min(1.0f, max(0.0f, player->HP / maxHP));
+	vec4 panel = vec4(left, panelBottom, left + panelWidth, panelBottom + panelHeight);
+	vec4 shadow = panel + vec4(5.0f, -5.0f, 5.0f, -5.0f) * scale;
+	UIDraw_TextureRect(shadow, vec4(0.0f, 0.0f, 0.0f, 0.45f), depth + ui_depth_epsilon, FillTexture);
+	UIDraw_TextureRect(panel, vec4(0.04f, 0.05f, 0.06f, 0.82f), depth, FillTexture);
+
+	vec4 hpBack = vec4(panel.x + 18.0f * scale, panel.y + 26.0f * scale, panel.z - 18.0f * scale, panel.y + 56.0f * scale);
+	vec4 hpFill = hpBack;
+	hpFill.z = hpFill.x + (hpBack.z - hpBack.x) * hpRate;
+	UIDraw_TextureRect(hpBack, vec4(0.11f, 0.03f, 0.04f, 0.96f), depth - ui_depth_epsilon, FillTexture);
+	UIDraw_TextureRect(hpFill, vec4(0.95f, 0.08f, 0.16f, 1.0f), depth - ui_depth_epsilon * 2, FillTexture);
+	UIDraw_TextureRect(vec4(hpBack.x, hpBack.w - 4.0f * scale, hpFill.z, hpBack.w), vec4(1.0f, 0.28f, 0.36f, 0.88f), depth - ui_depth_epsilon * 3, FillTexture);
+
+	wchar_t hpText[32] = {};
+	swprintf_s(hpText, L"%.0f / %.0f", max(0.0f, player->HP), maxHP);
+	vec4 hpTextRt = vec4(hpBack.x + 8.0f * scale, panel.y + 54.0f * scale, hpBack.z, panel.w - 8.0f * scale);
+	RenderSDFText(hpText, (int)wcslen(hpText), hpTextRt, 21.0f * scale, vec4(1.0f, 1.0f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+
+	vec4 labelRt = vec4(panel.x + 18.0f * scale, panel.y + 5.0f * scale, panel.x + 120.0f * scale, panel.y + 30.0f * scale);
+	RenderSDFText(L"HP", 2, labelRt, 18.0f * scale, vec4(1.0f, 0.24f, 0.32f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+
+	constexpr int AegisJobIndex = 2;
+	const float gaugeWidth = 176.0f * scale;
+	const float gaugeHeight = 9.0f * scale;
+	const float gaugeCenterX = 0.0f;
+	const float gaugeY = -58.0f * scale;
+	vec4 gaugeBack = vec4(gaugeCenterX - gaugeWidth * 0.5f, gaugeY, gaugeCenterX + gaugeWidth * 0.5f, gaugeY + gaugeHeight);
+	vec4 gaugeFill = gaugeBack;
+
+	if (player->m_currentJob == FirstJobIndex) {
+		float maxHeat = max(player->MaxHeatGauge, 1.0f);
+		float heatRate = min(1.0f, max(0.0f, player->HeatGauge / maxHeat));
+		gaugeFill.z = gaugeFill.x + (gaugeBack.z - gaugeBack.x) * heatRate;
+		UIDraw_TextureRect(gaugeBack, vec4(0.08f, 0.0f, 0.0f, 0.72f), depth - ui_depth_epsilon, FillTexture);
+		UIDraw_TextureRect(gaugeFill, vec4(1.0f, 0.10f, 0.06f, 0.98f), depth - ui_depth_epsilon * 2, FillTexture);
+	}
+	else if (player->m_currentJob == AegisJobIndex) {
+		float maxShield = max(player->MaxShieldDurability, 1.0f);
+		float shieldRate = min(1.0f, max(0.0f, player->ShieldDurability / maxShield));
+		gaugeFill.z = gaugeFill.x + (gaugeBack.z - gaugeBack.x) * shieldRate;
+		UIDraw_TextureRect(gaugeBack, vec4(0.0f, 0.03f, 0.10f, 0.76f), depth - ui_depth_epsilon, FillTexture);
+		UIDraw_TextureRect(gaugeFill, vec4(0.12f, 0.58f, 1.0f, 0.98f), depth - ui_depth_epsilon * 2, FillTexture);
+		UIDraw_TextureRect(vec4(gaugeBack.x, gaugeBack.w - 2.0f * scale, gaugeFill.z, gaugeBack.w),
+			vec4(0.68f, 0.92f, 1.0f, 0.72f), depth - ui_depth_epsilon * 3, FillTexture);
+	}
+}
+
+void Game::RenderMonsterHealthPlates()
+{
+	if (UITextureTable.empty()) return;
+
+	constexpr int FillTexture = 0; // temp: DefaultTex
+	constexpr float DamagedVisibleDistance = 42.0f;
+	constexpr float HitVisibleDistance = 62.0f;
+	constexpr float HeadOffsetY = 1.92f;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float baseScale = max(0.75f, screenHeight / 960.0f);
+	const float depth = 0.019f;
+	matrix cameraWorld = gd.viewportArr[0].ViewMatrix.RTInverse;
+	vec4 cameraPos = cameraWorld.pos;
+
+	for (int i = 0; i < (int)DynmaicGameObjects.size(); ++i) {
+		DynamicGameObject* dgo = DynmaicGameObjects[i];
+		if (dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) continue;
+
+		Monster* monster = dynamic_cast<Monster*>(dgo);
+		if (monster == nullptr || monster->isDead || monster->MaxHP <= 0.0f || monster->HP <= 0.0f) continue;
+
+		vec4 anchor = monster->worldMat.pos + vec4(0.0f, HeadOffsetY, 0.0f, 0.0f);
+		float dx = anchor.x - cameraPos.x;
+		float dy = anchor.y - cameraPos.y;
+		float dz = anchor.z - cameraPos.z;
+		float distance = sqrtf(dx * dx + dy * dy + dz * dz);
+		float hpRate = min(1.0f, max(0.0f, monster->HP / monster->MaxHP));
+		bool isDamaged = hpRate < 0.995f;
+		bool wasRecentlyHit = monster->HitFlashTimer > 0.0f;
+		if (!wasRecentlyHit && !isDamaged) continue;
+		if (wasRecentlyHit) {
+			if (distance > HitVisibleDistance) continue;
+		}
+		else if (isDamaged) {
+			if (distance > DamagedVisibleDistance) continue;
+		}
+
+		XMFLOAT3 screenPos = {};
+		XMStoreFloat3(&screenPos, gd.viewportArr[0].project(anchor));
+		if (screenPos.z < 0.0f || screenPos.z > 1.0f) continue;
+		if (screenPos.x < -80.0f || screenPos.x > screenWidth + 80.0f || screenPos.y < -60.0f || screenPos.y > screenHeight + 60.0f) continue;
+
+		float visibleDistance = wasRecentlyHit ? HitVisibleDistance : DamagedVisibleDistance;
+		float distanceRate = min(1.0f, max(0.0f, (distance - 14.0f) / max(1.0f, visibleDistance - 14.0f)));
+		float plateScale = baseScale * (0.84f - distanceRate * 0.28f);
+		float hitRate = monster->GetHitFlashRate();
+		float alpha = (0.72f - distanceRate * 0.28f) + hitRate * 0.24f;
+		alpha = min(0.92f, max(0.32f, alpha));
+		StatusEffectType statusType = GetActiveStatusEffectType(i);
+		bool hasStatusEffect = statusType != StatusEffectType::None;
+		vec4 statusColor = GetStatusEffectHudColor(statusType);
+		vec4 backColor = hasStatusEffect ? vec4(statusColor.r * 0.10f, statusColor.g * 0.10f, statusColor.b * 0.10f, 0.68f * alpha) : vec4(0.18f, 0.03f, 0.035f, 0.62f * alpha);
+		vec4 fillColor = hasStatusEffect
+			? vec4(statusColor.r, statusColor.g, statusColor.b, min(1.0f, alpha + 0.08f))
+			: vec4(0.94f, 0.06f + hitRate * 0.12f, 0.10f + hitRate * 0.10f, alpha);
+
+		float uiX = screenPos.x - screenWidth * 0.5f;
+		float uiY = screenHeight * 0.5f - screenPos.y;
+		float barWidth = 74.0f * plateScale;
+		float barHeight = 4.0f * plateScale;
+		float platePad = 2.0f * plateScale;
+		vec4 plate = vec4(uiX - barWidth * 0.5f - platePad, uiY - barHeight * 0.5f - platePad,
+			uiX + barWidth * 0.5f + platePad, uiY + barHeight * 0.5f + platePad);
+		vec4 barBack = vec4(uiX - barWidth * 0.5f, uiY - barHeight * 0.5f, uiX + barWidth * 0.5f, uiY + barHeight * 0.5f);
+		vec4 barFill = barBack;
+		barFill.z = barFill.x + (barBack.z - barBack.x) * hpRate;
+
+		UIDraw_TextureRect(plate + vec4(1.0f, -1.0f, 1.0f, -1.0f) * plateScale, vec4(0.0f, 0.0f, 0.0f, 0.24f * alpha), depth + ui_depth_epsilon, FillTexture);
+		UIDraw_TextureRect(plate, vec4(0.015f, 0.012f, 0.012f, 0.50f * alpha), depth, FillTexture);
+		if (hasStatusEffect) {
+			UIDraw_TextureRect(plate + vec4(-1.0f, -1.0f, 1.0f, 1.0f) * plateScale, vec4(statusColor.r, statusColor.g, statusColor.b, 0.18f * alpha), depth + ui_depth_epsilon * 0.5f, FillTexture);
+		}
+		UIDraw_TextureRect(barBack, backColor, depth - ui_depth_epsilon, FillTexture);
+		UIDraw_TextureRect(barFill, fillColor, depth - ui_depth_epsilon * 2, FillTexture);
+		if (hasStatusEffect) {
+			UIDraw_TextureRect(vec4(barBack.x, barBack.w - 1.0f * plateScale, barFill.z, barBack.w), vec4(1.0f, 1.0f, 1.0f, 0.18f * alpha), depth - ui_depth_epsilon * 3, FillTexture);
+		}
+	}
+}
+
+void Game::RenderFloatingDamageTexts()
+{
+	if (FloatingDamageTexts.empty()) return;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float baseScale = max(0.75f, screenHeight / 960.0f);
+	const float depth = 0.017f;
+	matrix cameraWorld = gd.viewportArr[0].ViewMatrix.RTInverse;
+	vec4 cameraPos = cameraWorld.pos;
+
+	for (FloatingDamageText& text : FloatingDamageTexts) {
+		if (!text.Active) continue;
+
+		float rate = min(1.0f, max(0.0f, text.Age / max(0.01f, text.Duration)));
+		float rise = 0.55f * rate;
+		vec4 anchor = text.WorldPosition + vec4(0.0f, rise, 0.0f, 0.0f);
+
+		float dx = anchor.x - cameraPos.x;
+		float dy = anchor.y - cameraPos.y;
+		float dz = anchor.z - cameraPos.z;
+		float distance = sqrtf(dx * dx + dy * dy + dz * dz);
+		if (distance > 72.0f) continue;
+
+		XMFLOAT3 screenPos = {};
+		XMStoreFloat3(&screenPos, gd.viewportArr[0].project(anchor));
+		if (screenPos.z < 0.0f || screenPos.z > 1.0f) continue;
+		if (screenPos.x < -100.0f || screenPos.x > screenWidth + 100.0f || screenPos.y < -80.0f || screenPos.y > screenHeight + 80.0f) continue;
+
+		float distanceRate = min(1.0f, max(0.0f, (distance - 12.0f) / 60.0f));
+		float alpha = min(1.0f, rate < 0.18f ? rate / 0.18f : (1.0f - rate) / 0.82f);
+		alpha = max(0.0f, alpha) * (1.0f - distanceRate * 0.35f);
+		float scale = baseScale * (1.0f - distanceRate * 0.30f) * (1.0f + (1.0f - rate) * 0.12f);
+
+		float uiX = screenPos.x - screenWidth * 0.5f + text.SideOffset * (1.0f - rate * 0.35f) * scale;
+		float uiY = screenHeight * 0.5f - screenPos.y + 12.0f * rate * scale;
+		float width = 82.0f * scale;
+		float height = 34.0f * scale;
+		vec4 textRt = vec4(uiX - width * 0.5f, uiY - height * 0.5f, uiX + width * 0.5f, uiY + height * 0.5f);
+		vec4 shadowRt = textRt + vec4(1.5f, -1.5f, 1.5f, -1.5f) * scale;
+
+		wchar_t damageText[16] = {};
+		swprintf_s(damageText, L"%.0f", text.Damage);
+		RenderSDFText(damageText, (int)wcslen(damageText), shadowRt, 22.0f * scale, vec4(0.0f, 0.0f, 0.0f, 0.62f * alpha), nullptr, nullptr, depth - ui_depth_epsilon);
+		RenderSDFText(damageText, (int)wcslen(damageText), textRt, 22.0f * scale, vec4(1.0f, 0.88f, 0.34f, alpha), nullptr, nullptr, depth - ui_depth_epsilon * 2);
 	}
 }
 

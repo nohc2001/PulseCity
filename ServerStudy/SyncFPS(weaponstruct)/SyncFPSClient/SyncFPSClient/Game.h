@@ -340,12 +340,26 @@ public:
 	void UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float LineWidth, int uitextureid);
 	void UI_Init();
 	void UpdateGameplaySkillHUD(float deltaTime);
+	void UpdateFloatingDamageTexts(float deltaTime);
+	void SpawnFloatingDamageText(vec4 worldPosition, float damage);
+	void RenderGameplayStatusHUD();
+	void RenderMonsterHealthPlates();
+	void RenderFloatingDamageTexts();
 	void RenderGameplaySkillHUD();
 	float UltimateChargePercent = 0.0f;
 	float UltimateChargePassiveFlow = 0.0f;
 	float LastUltimateCooldownFlow = 0.0f;
 	int LastUltimateKillCount = 0;
 	int LastUltimateJob = -1;
+	struct FloatingDamageText {
+		vec4 WorldPosition = vec4(0, 0, 0, 1);
+		float Damage = 0.0f;
+		float Age = 0.0f;
+		float Duration = 0.85f;
+		float SideOffset = 0.0f;
+		bool Active = false;
+	};
+	std::vector<FloatingDamageText> FloatingDamageTexts;
 
 	float depth_min = 0.9999f;
 	float depth_max = 0;

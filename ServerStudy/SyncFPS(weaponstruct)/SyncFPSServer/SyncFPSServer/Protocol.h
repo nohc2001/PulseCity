@@ -247,6 +247,21 @@ enum class SkillEffectType : int {
 	Aegis_ShieldCharge,
 	Aegis_Barrier,
 	Aegis_ShieldAura,
+	Rifle_TacticalGrenade,
+	Rifle_StimPack,
+	Rifle_MissileBarrage,
+	Sniper_GrappleHook,
+	Sniper_ModeSwitch,
+	Sniper_Railgun,
+	DualPistol_DeathDash,
+	DualPistol_BladeMode,
+	DualPistol_Awaken,
+	Blood_Hit,
+	Explosion_Blast,
+	Aegis_ShieldEnergy,
+	Rifle_GrenadeTrail,
+	Rifle_AirStrikeTrail,
+	Rifle_StimField,
 };
 enum class StatusEffectType : int {
 	None,
@@ -368,6 +383,8 @@ struct PlayerTransferData {
 	int DeathCount = 0;
 	float HeatGauge = 0.0f;
 	float MaxHeatGauge = 100.0f;
+	float ShieldDurability = 0.0f;
+	float MaxShieldDurability = 100.0f;
 	float zoneMoveCooldownRemain = 0.0f;
 	int lastBoundaryIndex = -1;
 	bool wasInsideBoundary = false;

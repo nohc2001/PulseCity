@@ -1121,6 +1121,10 @@ public:
 	STCDef(float, HeatGauge);// = 0;
 	// 이름에서 ShapeIndex를 얻는 map
 	STCDef(float, MaxHeatGauge);// = 100;
+	//STC aegis shield durability
+	STCDef(float, ShieldDurability);
+	//STC aegis max shield durability
+	STCDef(float, MaxShieldDurability);
 	//STC player job
 	STCDef(int, m_currentJob);
 	//STC skill cooldown duration by slot
@@ -1220,6 +1224,8 @@ public:
 		float HeatGauge = 0;
 	// 이름에서 ShapeIndex를 얻는 map
 		float MaxHeatGauge = 100;
+		float ShieldDurability = 0;
+		float MaxShieldDurability = 100;
 		//STC player job
 		int m_currentJob = (int)PlayerJob::Healer;
 		//STC skill cooldown duration by slot

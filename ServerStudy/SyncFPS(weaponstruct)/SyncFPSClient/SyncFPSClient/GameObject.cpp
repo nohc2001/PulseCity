@@ -35,6 +35,29 @@ namespace {
 	BumpMesh* gBoxLODProxyMesh = nullptr;
 	int gBoxLODProxyMaterialIndex = -1;
 
+	bool IsTurretRenderModel(Model* model)
+	{
+		static Model* turretModel = nullptr;
+		static bool initialized = false;
+		if (!initialized) {
+			int turretShapeIndex = Shape::GetShapeIndex("MonsterTurret");
+			if (turretShapeIndex >= 0 && turretShapeIndex < (int)Shape::ShapeTable.size()) {
+				turretModel = Shape::ShapeTable[turretShapeIndex].GetModel();
+			}
+			initialized = true;
+		}
+		return model != nullptr && model == turretModel;
+	}
+
+	matrix GetModelRenderWorld(Model* model, const matrix& world)
+	{
+		if (IsTurretRenderModel(model)) {
+			matrix modelFix = XMMatrixRotationX(XM_PI);
+			return modelFix * (XMMATRIX)world;
+		}
+		return world;
+	}
+
 	int GetBoxLODProxyMaterialIndex()
 	{
 		if (gBoxLODProxyMaterialIndex < 0) {
@@ -2433,10 +2456,6 @@ void SkinMeshGameObject::Update(float delatTime)
 }
 
 void SkinMeshGameObject::Render(matrix parent) {
-	if (BoneToWorldMatrixCB.size() == 0) {
-		return;
-	}
-
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	BoundingOrientedBox obb_local, obb;
@@ -2450,16 +2469,51 @@ void SkinMeshGameObject::Render(matrix parent) {
 	else return;
 
 	if (mesh == nullptr) {
-		model->Render<true>(gd.gpucmd, world, this);
+		if (model->mNumSkinMesh == 0) {
+			matrix pbrView = gd.viewportArr[0].ViewMatrix;
+			pbrView *= gd.viewportArr[0].ProjectMatrix;
+			pbrView.transpose();
+
+			gd.gpucmd.SetShader(game.MyPBRShader1, ShaderType::RenderWithShadow);
+			game.PresentShaderType = ShaderType::RenderWithShadow;
+			gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+			{
+				using PRID = PBRShader1::RootParamId;
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &pbrView, 0);
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+				gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+				if (game.Current_Zone->bReqireBakeLight_Raster == false) {
+					gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+				}
+			}
+			matrix renderWorld = GetModelRenderWorld(model, world);
+			model->Render<false>(gd.gpucmd, renderWorld, this);
+
+			gd.gpucmd.SetShader(game.MyPBRShader1, ShaderType::SkinMeshRender);
+			game.PresentShaderType = ShaderType::SkinMeshRender;
+			gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+			{
+				using PRID = PBRShader1::RootParamId;
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &pbrView, 0);
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].descindex.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight[0].descindex.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMeshEnvironmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+				if (game.Current_Zone->bReqireBakeLight_Raster == false) {
+					gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+				}
+			}
+		}
+		else if (BoneToWorldMatrixCB.size() != 0) {
+			model->Render<true>(gd.gpucmd, world, this);
+		}
 	}
 }
 
 void SkinMeshGameObject::RenderShadow(matrix parent)
 {
-	if (BoneToWorldMatrixCB.size() == 0) {
-		return;
-	}
-
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	BoundingOrientedBox obb_local, obb;
@@ -2475,12 +2529,26 @@ void SkinMeshGameObject::RenderShadow(matrix parent)
 	obb_local.Transform(obb, world);
 
 	if (mesh == nullptr) {
-		model->Render<true>(gd.gpucmd, world, this);
+		if (model->mNumSkinMesh == 0) {
+			return;
+		}
+		else if (BoneToWorldMatrixCB.size() != 0) {
+			model->Render<true>(gd.gpucmd, world, this);
+		}
 	}
 }
 
 void SkinMeshGameObject::PushRenderBatch(matrix parent)
 {
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (model != nullptr && model->mNumSkinMesh == 0) {
+		matrix world = GetWorld();
+		world *= parent;
+		matrix renderWorld = GetModelRenderWorld(model, world);
+		model->PushRenderBatch(renderWorld, this);
+	}
 }
 
 void SkinMeshGameObject::ModifyVertexs(matrix parent)
@@ -3043,10 +3111,7 @@ void Monster::Render(matrix parent)
 	if (isDead) {
 		return;
 	}
-	if (BoneToWorldMatrixCB.size() == 0) {
-		return;
-	}
-	SkinMeshGameObject::Render();
+	SkinMeshGameObject::Render(parent);
 }
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
@@ -3074,7 +3139,10 @@ void Monster::RecvSTC_SyncObj(char* data) {
 	Defense = stcsod.Defense;
 	isDead = stcsod.isDead;
 	if (HP < prevHP && !isDead) {
-		TriggerHitFlash();
+		TriggerHitFlash(1.4f);
+		game.SpawnFloatingDamageText(worldMat.pos, prevHP - HP);
+		game.SpawnSkillEffect(SkillEffectType::Blood_Hit, worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0.0f),
+			vec4(0, 1, 0, 0), 0, 1.25f, max(prevHP - HP, 1.0f), 0.45f);
 	}
 	offset += sizeof(STC_SyncObjData);
 
@@ -3117,7 +3185,10 @@ void Monster::SyncHP(GameObject* go, char* data, int len)
 	Monster* monster = (Monster*)go;
 	float newHP = *(float*)data;
 	if (newHP < monster->HP && !monster->isDead) {
-		monster->TriggerHitFlash();
+		monster->TriggerHitFlash(1.4f);
+		game.SpawnFloatingDamageText(monster->worldMat.pos, monster->HP - newHP);
+		game.SpawnSkillEffect(SkillEffectType::Blood_Hit, monster->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0.0f),
+			vec4(0, 1, 0, 0), 0, 1.25f, max(monster->HP - newHP, 1.0f), 0.45f);
 	}
 	monster->HP = newHP;
 }
@@ -3166,6 +3237,8 @@ Player::Player() : HP{ 100 } {
 	DeathCount = 0;
 	HeatGauge = 0;
 	MaxHeatGauge = 200;
+	ShieldDurability = 0;
+	MaxShieldDurability = 0;
 	m_currentJob = (int)PlayerJob::Healer;
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
 		SkillCooldown[i] = 0.0f;
@@ -3645,29 +3718,7 @@ void Player::Render_AfterDepthClear()
 	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
 	ShootPointMesh->Render(gd.gpucmd, 1);
 
-	//HP = (ShootFlow / ShootDelay) * MaxHP;
-	matrix hpmat;
-	hpmat.pos.x = -6;
-	hpmat.pos.y = 2;
-	hpmat.pos.z = 6;
-	hpmat.LookAt(vec4(1, 0, 0));
-	hpmat.look *= 2 * HP / MaxHP;
-	hpmat *= viewmat;
-	hpmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
-	HPBarMesh->Render(gd.gpucmd, 1);
-
-	//Heat Bar
-	matrix heatmat;
-	heatmat.pos.x = -5;
-	heatmat.pos.y = 1.5f;
-	heatmat.pos.z = 5;
-	heatmat.LookAt(vec4(1, 0, 0));
-	heatmat.look *= 2 * HeatGauge / 200;
-	heatmat *= viewmat;
-	heatmat.transpose();
-	gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
-	HeatBarMesh->Render(gd.gpucmd, 1);
+	// Player HP/heat is rendered by the 2D gameplay HUD.
 }
 
 void Player::UpdateGunBarrelNodes()
@@ -3782,11 +3833,10 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponTyp
 	switch (weaponType)
 	{
 	case WeaponType::Sniper:
-		weaponLocal *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
-		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
-		weaponLocal.pos.x += 0.05f;
-		weaponLocal.pos.y -= 0.04f;
-		weaponLocal.pos.z += 0.16f;
+		weaponLocal *= XMMatrixScaling(0.42f, 0.42f, 0.42f);
+		weaponLocal.pos.x += 0.10f;
+		weaponLocal.pos.y += 0.02f;
+		weaponLocal.pos.z += 0.38f;
 		break;
 	case WeaponType::MachineGun:
 		weaponLocal *= XMMatrixScaling(0.45f, 0.45f, 0.45f);
@@ -3843,6 +3893,8 @@ void Player::RecvSTC_SyncObj(char* data) {
 	DeathCount = stcsod.DeathCount;
 	HeatGauge = stcsod.HeatGauge;
 	MaxHeatGauge = stcsod.MaxHeatGauge;
+	ShieldDurability = stcsod.ShieldDurability;
+	MaxShieldDurability = stcsod.MaxShieldDurability;
 	m_currentJob = stcsod.m_currentJob;
 	memcpy(SkillCooldown, stcsod.SkillCooldown, sizeof(SkillCooldown));
 	memcpy(SkillCooldownFlow, stcsod.SkillCooldownFlow, sizeof(SkillCooldownFlow));

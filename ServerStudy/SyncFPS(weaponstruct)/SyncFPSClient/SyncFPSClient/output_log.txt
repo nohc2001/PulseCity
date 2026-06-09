@@ -1,9 +1,5 @@
 Microsoft (R) DirectX Texture Converter [DirectXTex] Version 208 (library)
 Copyright (C) Microsoft Corp.
 
-reading Resources\ice.png (946x1116 B8G8R8A8_UNORM 2D) as
-WARNING: Image is not using premultipled alpha
- (946x1116,11 BC3_UNORM 2D ес:NonPM)
-writing ice.dds
-
-WARNING: Direct3D requires BC image to be multiple of 4 in width & height
+reading Resources\Model\turret1.bmp (2048x2048 B8G8R8X8_UNORM 2D) as (2048x2048,12 BC3_UNORM 2D ес:Opaque)
+writing turret1.dds

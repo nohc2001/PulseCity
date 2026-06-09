@@ -5481,12 +5481,10 @@ void Model::LoadModelFile2(string filename)
 
 	RootNode = &Nodes[0];
 
-	//calcul normal Node Local Tr Mats (WhenSkinMesh enabled)
-	if (mNumSkinMesh > 0) {
-		DefaultNodelocalTr = new matrix[nodeCount];
-		for (int i = 0; i < nodeCount; ++i) {
-			DefaultNodelocalTr[i].Id();
-		}
+	// GPU animation resources read this for every model shape. Static models keep identity T-pose.
+	DefaultNodelocalTr = new matrix[nodeCount];
+	for (int i = 0; i < nodeCount; ++i) {
+		DefaultNodelocalTr[i].Id();
 	}
 
 	NodeOffsetMatrixArr = new matrix[nodeCount];
