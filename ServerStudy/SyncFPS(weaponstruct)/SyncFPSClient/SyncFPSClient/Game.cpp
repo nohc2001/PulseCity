@@ -1929,6 +1929,13 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 
 void Game::ResendHeldMovementKeys()
 {
+	// [transfer] While a server transfer froze the main thread (~1s), key-down/up
+	// messages piled up in the OS message queue. If left, the main loop replays
+	// them all at once after the freeze (the "stale inputs fire in a burst" bug).
+	// Drain them here; the correct current key state is resent right below.
+	MSG _km;
+	while (PeekMessage(&_km, nullptr, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {}
+
 	GetKeyboardState(pKeyBuffer);
 	const int keys[] = { 'W', 'A', 'S', 'D', VK_SPACE };
 	for (int i = 0; i < _countof(keys); ++i) {
@@ -1973,9 +1980,20 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 		}
 	}
 	DynmaicGameObjects.clear();
+	// [seamless-B] The objects these queues referenced were just deleted; drop the stale net indices
+	// so ProcessPendingSkinBoneInit never touches freed/reused slots after a transfer.
+	m_pendingSkinBoneInit.clear();
+	m_pendingSkinRenderEnable.clear();
 
-	if (prevZone != nullptr) {
-		for (auto& chunkPair : prevZone->chunck) {
+	// [seamless-B] Every DynmaicGameObject was just deleted above, so ANY dynamic/skinmesh pointer
+	// still sitting in ANY loaded zone's chunks is now dangling. Previously only prevZone's chunks
+	// were cleared, so other zones kept stale pointers that accumulated across transfers and were
+	// eventually dereferenced by the shadow pass (SkinMeshShadowRender -> garbage descindex crash).
+	// Clear the dynamic + skinmesh chunk arrays for every zone. Static objects are untouched here.
+	for (size_t z = 0; z < ZoneTable.size(); ++z) {
+		Zone* zone = ZoneTable[z];
+		if (zone == nullptr) continue;
+		for (auto& chunkPair : zone->chunck) {
 			GameChunk* chunk = chunkPair.second;
 			if (chunk == nullptr) continue;
 			chunk->Dynamic_gameobjects.Release();
@@ -2984,6 +3002,23 @@ void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
 // freezes the main thread. The local player's own object is built first (camera/controls need it
 // immediately); other objects pop in over a few frames. Built objects are then enabled and pushed.
 void Game::ProcessPendingSkinBoneInit() {
+	// Stage 2: objects whose bone buffers were built last frame have now been skinned at least once
+	// by the per-frame Update loop, so they are safe to draw. Push them into the render list now.
+	for (size_t i = 0; i < m_pendingSkinRenderEnable.size(); ++i) {
+		int netIdx = m_pendingSkinRenderEnable[i];
+		if (netIdx < 0 || netIdx >= (int)DynmaicGameObjects.size()) continue;
+		DynamicGameObject* obj = DynmaicGameObjects[netIdx];
+		if (obj == nullptr) continue;
+		if (obj->tag[GameObjectTag::Tag_Enable] == false) continue;   // disabled/cleaned meanwhile
+		// If this slot was deleted and reused by a not-yet-built skinmesh, its bone buffers are empty;
+		// don't push it (it will be pushed properly once its own queue entry builds it).
+		if (obj->tag[GameObjectTag::Tag_SkinMeshObject] && ((SkinMeshGameObject*)obj)->BoneToWorldMatrixCB.empty()) continue;
+		int zid = obj->zoneId;
+		Zone* rz = (zid >= 0 && zid < (int)ZoneTable.size()) ? ZoneTable[zid] : Current_Zone;
+		if (rz) rz->PushGameObject(obj);
+	}
+	m_pendingSkinRenderEnable.clear();
+
 	if (m_pendingSkinBoneInit.empty()) return;
 	// Bring the local player's own object to the front (needed without delay).
 	for (size_t i = 1; i < m_pendingSkinBoneInit.size(); ++i) {
@@ -3007,10 +3042,10 @@ void Game::ProcessPendingSkinBoneInit() {
 		if (obj->tag[GameObjectTag::Tag_SkinMeshObject]) {
 			((SkinMeshGameObject*)obj)->InitRootBoneMatrixs();
 		}
+		// Stage 1: enable now so THIS frame's Update loop skins it; defer the render-list push to
+		// next frame (Stage 2 above) so the object is never drawn before it has been skinned once.
 		obj->tag[GameObjectTag::Tag_Enable] = true;
-		int zid = obj->zoneId;
-		Zone* rz = (zid >= 0 && zid < (int)ZoneTable.size()) ? ZoneTable[zid] : Current_Zone;
-		if (rz) rz->PushGameObject(obj);
+		m_pendingSkinRenderEnable.push_back(netIdx);
 	}
 }
 
@@ -3416,14 +3451,22 @@ READ_START:
 			game.ApplyZoneOffsetToDynamicObject(DynmaicGameObjects[netObjIndex]);
 			if (DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
 				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[netObjIndex];
-				// [seamless] Building GPU bone buffers here is heavy (many fence waits). On a server
-				// transfer ~20 skinmesh objects arrive in one frame and freeze the thread ~1s.
-				// If this object has no bone buffers yet (newly received), hide it and queue it so
-				// ProcessPendingSkinBoneInit builds a few per frame. Already-built objects are left as-is.
-				smgo->InitRootBoneMatrixs();   // [revert] inline build; deferred build caused all skinmesh to render black
-					if (false) {   // [disabled] old amortized-defer path (reworked later in seamless refactor)
-					smgo->tag[GameObjectTag::Tag_Enable] = false;   // not renderable until buffers exist
-					game.m_pendingSkinBoneInit.push_back(netObjIndex);
+				// [seamless-B] Building GPU bone buffers (InitRootBoneMatrixs) does several full GPU
+				// flushes. On a server transfer ~20 skinmesh objects arrive in ONE frame; building all
+				// at once freezes the main thread ~1s and starves the input pump. Instead, disable the
+				// object now (so it is neither updated nor rendered, and cannot crash without bone
+				// buffers) and queue it. ProcessPendingSkinBoneInit builds a few per frame, then enables
+				// and renders them once their buffers exist.
+				// Only defer objects that have NOT been built yet (empty bone buffers); an already-built
+				// object that re-syncs through this path is left enabled. Dedup the queue so the same
+				// object is never enqueued (and later render-pushed) twice.
+				if (smgo->BoneToWorldMatrixCB.empty()) {
+					smgo->tag[GameObjectTag::Tag_Enable] = false;
+					bool alreadyQueued = false;
+					for (size_t k = 0; k < game.m_pendingSkinBoneInit.size(); ++k) {
+						if (game.m_pendingSkinBoneInit[k] == netObjIndex) { alreadyQueued = true; break; }
+					}
+					if (!alreadyQueued) game.m_pendingSkinBoneInit.push_back(netObjIndex);
 				}
 			}
 			// [seamless] Skip push for objects we just deferred (Enable turned off); rendering a
@@ -3643,6 +3686,16 @@ READ_START:
 		if (DynmaicGameObjects[netObjIndex] != nullptr) {
 			DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable] = false;
 		}
+		// [seamless-B] If this object is still waiting in the deferred bone-init queues, drop it so
+		// ProcessPendingSkinBoneInit doesn't later re-enable/re-render a deleted object (clone artifact).
+		for (size_t k = 0; k < game.m_pendingSkinBoneInit.size(); ) {
+			if (game.m_pendingSkinBoneInit[k] == netObjIndex) game.m_pendingSkinBoneInit.erase(game.m_pendingSkinBoneInit.begin() + k);
+			else ++k;
+		}
+		for (size_t k = 0; k < game.m_pendingSkinRenderEnable.size(); ) {
+			if (game.m_pendingSkinRenderEnable[k] == netObjIndex) game.m_pendingSkinRenderEnable.erase(game.m_pendingSkinRenderEnable.begin() + k);
+			else ++k;
+		}
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -3711,6 +3764,13 @@ READ_START:
 				if (pTarget) {
 					pTarget->weapon.OnFire();
 					SpawnMuzzleFlash(pTarget);
+					// [sfx] This is the server-authoritative "a bullet actually fired" event (fire-rate
+					// and ammo already validated server-side). Play the gunshot only for the local
+					// player's own shots here, instead of on every mouse click. Audio lives in main.cpp.
+					if (pTarget == game.player) {
+						extern bool g_playGunSound;
+						g_playGunSound = true;
+					}
 				}
 			}
 		}

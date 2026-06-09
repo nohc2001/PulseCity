@@ -20,6 +20,7 @@ LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
 int resolutionLevel = 3;
 bool g_playReloadSound = false;   // [sfx] set in GameObject.cpp when local player's reload starts; played in the main loop
+bool g_playGunSound = false;      // [sfx] set in Game.cpp on STC_PlayerFire for the local player (an actual shot); played in the main loop
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
@@ -201,6 +202,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 					static WaveDataStruct s_reload = CreateWaveFromFile(L"Resources/Sound/reload.wav");
 					static WaveChannel* s_reloadCh = NewChannel();
 					if (s_reloadCh) s_reloadCh->pushWave(s_reload);
+				}
+				// [sfx] gunshot: flag is set in Game.cpp on STC_PlayerFire for the local player (a real shot)
+				if (g_playGunSound) {
+					g_playGunSound = false;
+					static WaveDataStruct s_gunshot = CreateWaveFromFile(L"Resources/Sound/gun.wav");
+					static WaveChannel* s_gunCh = NewChannel();
+					if (s_gunCh) s_gunCh->pushWave(s_gunshot);
 				}
 				const double updateMs = 1000.0 * double(GetTicks() - perfUpdateStart) / double(QUERYPERFORMANCE_HZ);
 				//gd.AverageSecPer60End(1);
@@ -581,7 +589,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			static WaveDataStruct s_gunshot = CreateWaveFromFile(L"Resources/Sound/gun.wav");
 			static WaveChannel* s_sfxChannel = NewChannel();
 			static WaveDataStruct s_dryReload = CreateWaveFromFile(L"Resources/Sound/reload.wav");
-			if (s_sfxChannel) {
+			if (false) {   // [sfx] disabled: gunshot now plays on the real-fire event STC_PlayerFire (Game.cpp, g_playGunSound), not on every click
 				if (game.player != nullptr && game.player->weapon.m_shootFlow >= 0)
 					s_sfxChannel->pushWave(s_gunshot);    // 발사 가능(장전 중 아님) -> 총소리
 				else

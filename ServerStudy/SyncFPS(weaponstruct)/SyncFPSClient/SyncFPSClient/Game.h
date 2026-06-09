@@ -192,6 +192,10 @@ public:
 	// We queue the net indices of newly received (unbuilt) skinmesh objects and build only a
 	// few per frame in ProcessPendingSkinBoneInit().
 	std::vector<int> m_pendingSkinBoneInit;
+	// [seamless-B] Objects whose bone buffers were just built. They are enabled (so the per-frame
+	// Update skins them) but held out of the render list for one frame, then pushed here. This
+	// guarantees a skinmesh is skinned at least once before its first draw, preventing a black flash.
+	std::vector<int> m_pendingSkinRenderEnable;
 	void ProcessPendingSkinBoneInit();
 
 	int GetDynamicObjectNetIndex(int zoneId, int objIndex) const {
