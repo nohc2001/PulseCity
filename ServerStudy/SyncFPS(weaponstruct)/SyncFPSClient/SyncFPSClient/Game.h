@@ -101,6 +101,15 @@ public:
 	Zone* Current_Zone = nullptr;
 	int currentZoneId = 0;
 
+	// [seamless] Zone-transfer state. During a transfer we keep the old world visible, take the new
+	// server's sync, then remove only objects that were NOT re-sent this transfer (by generation).
+	bool isZoneTransfering = false;
+	int  transferToZoneId = -1;
+	int  transferGeneration = 0;
+	// Per-dynamic-object: the transferGeneration in which it was last received. Parallel to
+	// DynmaicGameObjects (kept as separate metadata so server/client object layout is untouched).
+	std::vector<int> DynamicObjectLastSeenGeneration;
+
 	vec4 LightDirection = vec4(-1, -2, -1);
 	BoundingOrientedBox LightOBB;
 
@@ -174,6 +183,28 @@ public:
 	int clientIndexInServer = -1;
 
 	int playerGameObjectIndex = -1;
+	int DynamicGameObjectCapacityPerZone = 0;
+	int DropedItemCapacityPerZone = 4096;
+
+	// [seamless] Defer heavy GPU bone-buffer creation (InitRootBoneMatrixs) across frames.
+	// On a server transfer dozens of skinmesh objects arrive in one frame; building all their
+	// bone buffers at once stalls the main thread (~1s) and starves the input message pump.
+	// We queue the net indices of newly received (unbuilt) skinmesh objects and build only a
+	// few per frame in ProcessPendingSkinBoneInit().
+	std::vector<int> m_pendingSkinBoneInit;
+	void ProcessPendingSkinBoneInit();
+
+	int GetDynamicObjectNetIndex(int zoneId, int objIndex) const {
+		if (zoneId < 0 || objIndex < 0) return -1;
+		if (DynamicGameObjectCapacityPerZone <= 0) return objIndex;
+		return zoneId * DynamicGameObjectCapacityPerZone + objIndex;
+	}
+
+	int GetDropItemNetIndex(int zoneId, int dropIndex) const {
+		if (zoneId < 0 || dropIndex < 0) return -1;
+		if (DropedItemCapacityPerZone <= 0) return dropIndex;
+		return zoneId * DropedItemCapacityPerZone + dropIndex;
+	}
 
 	Mesh* GunMesh;
 	GPUResource GunTexture;
@@ -334,7 +365,7 @@ public:
 #pragma endregion
 
 	// 기존 맵을 모두 해제한 후, 새로운 맵을 로드하는것.
-	void MoveZone(int zoneid);
+	void MoveZone(int zoneid, bool keepObjects = false);   // keepObjects=true: seamless transfer path (keeps objects/player); default false = original full reload
 	bool BeginServerTransfer(const char* ip, unsigned short port, int dstZoneId, int transferToken);
 	void ResendHeldMovementKeys();
 	void SetCurrentZoneStaticObjects(int zoneId);

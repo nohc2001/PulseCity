@@ -41,6 +41,7 @@ int main() {
 	gameworld.serverId = serverId;
 	gameworld.listenPort = listenPort;
 	gameworld.ownedZoneId = ownedZoneId;
+	gameworld.singleProcessAllZones = (__argc < 4);
 
 	server.Init("127.0.0.1", listenPort);
 
@@ -59,6 +60,9 @@ int main() {
 	gameworld.Init();
 	cout << "Server Init Complete" << " | serverId=" << serverId << " | ownedZoneId=" << ownedZoneId << endl;
 
+	// [4단계-STEP1] 기동 직후 이웃 서버 상시 링크 1차 시도(아직 안 떠 있으면 루프에서 재시도).
+	gameworld.TryConnectPeers();
+
 	ui64 ft, st;
 	ui64 TimeStack = 0;
 	st = GetTicks();
@@ -66,10 +70,20 @@ int main() {
 	while (true) {
 		ft = GetTicks();
 		DeltaFlow += (double)(ft - st) * InvHZ;
-		if (DeltaFlow >= 0.016) { // limiting fps.
+		if (DeltaFlow >= 0.008) { // [지연 개선] 틱 주기 16ms -> 8ms (이동은 DeltaTime 기반이라 속도 불변, 플러시만 빨라짐)
 			DeltaTime = (float)DeltaFlow;
 			gameworld.Update();
 			DeltaFlow = 0;
+
+			// [4단계-STEP2] 매 틱 내 존 플레이어 상태를 이웃 서버로 복제.
+			gameworld.SendGhostToPeers();
+
+			// [4단계-STEP1] 약 1초마다 아직 연결 안 된 이웃에 재접속 시도.
+			static int peerRetryCounter = 0;
+			if (++peerRetryCounter >= 60) {
+				peerRetryCounter = 0;
+				gameworld.TryConnectPeers();
+			}
 		}
 
 		// fix : vector 의 공간 할당이 매 프레임마다 있다. 개느릴듯.
@@ -91,7 +105,7 @@ int main() {
 		}
 
 		// I/O 가능 이벤트가 있을 때까지 기다립니다.
-		WSAPoll(readFds.data(), (int)readFds.size(), 50);
+		WSAPoll(readFds.data(), (int)readFds.size(), 4);
 
 		int num = 0;
 		constexpr int listenSockIndex = 0;
@@ -188,7 +202,11 @@ READ_START:
 	if (p == nullptr
 		&& type.n != CTS_Protocol::ClientHello
 		&& type.n != CTS_Protocol::TransferConnect
-		&& type.n != CTS_Protocol::ServerPlayerTransfer) {
+		&& type.n != CTS_Protocol::ServerPlayerTransfer
+		&& type.n != CTS_Protocol::ServerLink
+		&& type.n != CTS_Protocol::GhostSync
+		&& type.n != CTS_Protocol::GhostDamage
+		&& type.n != CTS_Protocol::MonsterHandoff) {   // [4단계] peer 링크 메시지는 pObjData 없이도 통과
 		currentPivot += size;
 		offset += size;
 		goto READ_START;
@@ -235,6 +253,56 @@ READ_START:
 	{
 		CTS_ServerPlayerTransfer_Header& header = *(CTS_ServerPlayerTransfer_Header*)currentPivot;
 		StoreIncomingPlayerTransfer(header.data);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::ServerLink:
+	{
+		// [4단계-STEP1] 이웃 서버가 connect 후 보낸 핸드셰이크 -> 이 소켓을 peer 링크로 확정.
+		CTS_ServerLink_Header& header = *(CTS_ServerLink_Header*)currentPivot;
+		OnPeerLinkEstablished(clientIndex, header.fromServerId);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::GhostSync:
+	{
+		// [4단계-STEP2] 이웃 서버가 보낸 플레이어 목록 -> 고스트 갱신 + 내 클라에 중계.
+		CTS_GhostSync_Header& header = *(CTS_GhostSync_Header*)currentPivot;
+		OnGhostSync(currentPivot);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::GhostDamage:
+	{
+		// [4단계-STEP4] 이웃이 내 객체(고스트)를 맞혔다 -> 진짜 객체에 데미지 적용.
+		CTS_GhostDamage_Header& header = *(CTS_GhostDamage_Header*)currentPivot;
+		int tz = header.targetZoneId;
+		if (tz >= 0 && tz < zoneCount && IsZoneOwned(tz)) {
+			Zone& z = zones[tz];
+			int ti = header.targetObjIndex;
+			if (ti >= 0 && ti < z.Dynamic_gameObjects.size && z.Dynamic_gameObjects.isnull(ti) == false) {
+				DynamicGameObject* obj = z.Dynamic_gameObjects[ti];
+				if (obj != nullptr) {
+					short ot = (short)GameObjectType::VptrToTypeTable[*(void**)obj];
+					if (ot == GameObjectType::_Monster) {
+						z.currentIndex = ti;
+						((Monster*)obj)->ApplyDamage(nullptr, header.damage);
+					}
+				}
+			}
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::MonsterHandoff:
+	{
+		// [4단계-STEP5] 이웃이 넘긴 몬스터를 내 존에 진짜 몬스터로 생성(소유권 인수).
+		CTS_MonsterHandoff_Header& header = *(CTS_MonsterHandoff_Header*)currentPivot;
+		SpawnHandoffMonster(header.monsterType, header.pos, header.HP, header.MaxHP);
 		currentPivot += header.size;
 		offset += header.size;
 	}

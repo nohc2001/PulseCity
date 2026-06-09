@@ -1774,7 +1774,7 @@ vec4 Game::GetRenderedZoneOffset(int zoneId) const
 void Game::ApplyZoneOffsetToStaticObject(GameObject* go)
 {
 	if (go == nullptr) return;
-	vec4 offset = GetRenderedZoneOffset(currentZoneId);
+	vec4 offset = GetRenderedZoneOffset(go->zoneId);
 	go->worldMat.pos += offset;
 	go->worldMat.pos.w = 1.0f;
 }
@@ -1782,7 +1782,7 @@ void Game::ApplyZoneOffsetToStaticObject(GameObject* go)
 void Game::ApplyZoneOffsetToDynamicObject(DynamicGameObject* go)
 {
 	if (go == nullptr) return;
-	vec4 offset = GetRenderedZoneOffset(currentZoneId);
+	vec4 offset = GetRenderedZoneOffset(go->zoneId);
 	go->DestPos += offset;
 	go->DestPos.w = 1.0f;
 	go->worldMat.pos = go->DestPos;
@@ -1792,7 +1792,7 @@ void Game::ApplyZoneOffsetToDynamicObject(DynamicGameObject* go)
 void Game::ApplyZoneOffsetToPortal(Portal* portal)
 {
 	if (portal == nullptr) return;
-	vec4 offset = GetRenderedZoneOffset(currentZoneId);
+	vec4 offset = GetRenderedZoneOffset(portal->zoneId);
 	portal->worldMat.pos += offset;
 	portal->worldMat.pos.w = 1.0f;
 }
@@ -1941,10 +1941,23 @@ void Game::ResendHeldMovementKeys()
 	}
 }
 
-void Game::MoveZone(int zoneid) {
+void Game::MoveZone(int zoneid, bool keepObjects) {
 	if (zoneid < 0 || zoneid >= (int)ZoneTable.size()) return;
 	Zone* prevZone = Current_Zone;
 	Zone* nextZone = ZoneTable[zoneid];
+
+	// [seamless] Light transfer path: keep all dynamic objects + the player, just switch the active
+	// zone and load any not-yet-loaded neighbor maps (LoadLinkedZoneMaps skips already-loaded ones).
+	// Old-zone objects are removed afterward by generation-based cleanup. This path is currently only
+	// reached when a caller passes keepObjects=true; default callers still use the full reload below,
+	// so existing behavior is unchanged until the transfer code opts in.
+	if (keepObjects) {
+		Current_Zone = nextZone;
+		currentZoneId = zoneid;
+		LoadLinkedZoneMaps();
+		isMapInit = true;
+		return;
+	}
 
 	bool CmdInitStateIsClose = gd.gpucmd.isClose;
 	if (CmdInitStateIsClose) {
@@ -2918,6 +2931,10 @@ void Game::Render_ShadowPass()
 			Mesh* mesh = nullptr;
 			Model* model = nullptr;
 			ShadowRenderSkinMeshObjArr[i]->shape.GetRealShape(mesh, model);
+			// [crash-guard] GetRealShape only writes 'model' when the shape is a Model; if the shape is a
+			// Mesh or unset (FlagPtr==0) it stays null, and model->RootNode below would dereference null.
+			// Such an object cannot be skinmesh-shadow-rendered, so skip it instead of crashing.
+			if (model == nullptr || model->RootNode == nullptr) continue;
 			model->RootNode->SkinMeshShadowRender(model, gd.gpucmd, XMMatrixIdentity(), ShadowRenderSkinMeshObjArr[i]);
 		}
 		AutoLOD_SetModelLODRenderLevel(previousAutoLODRenderLevel);
@@ -2960,6 +2977,40 @@ void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
 {
 	for (int i = 0; i < MeshTable.size(); ++i) {
 		MeshTable[i]->BatchRender(cmd);
+	}
+}
+
+// [seamless] Build queued skinmesh GPU bone buffers a few per frame so a server transfer never
+// freezes the main thread. The local player's own object is built first (camera/controls need it
+// immediately); other objects pop in over a few frames. Built objects are then enabled and pushed.
+void Game::ProcessPendingSkinBoneInit() {
+	if (m_pendingSkinBoneInit.empty()) return;
+	// Bring the local player's own object to the front (needed without delay).
+	for (size_t i = 1; i < m_pendingSkinBoneInit.size(); ++i) {
+		if (m_pendingSkinBoneInit[i] == playerGameObjectIndex) {
+			int t = m_pendingSkinBoneInit[0];
+			m_pendingSkinBoneInit[0] = m_pendingSkinBoneInit[i];
+			m_pendingSkinBoneInit[i] = t;
+			break;
+		}
+	}
+	int budget = 2;   // per-frame cap so one frame never stalls long
+	if (m_pendingSkinBoneInit[0] == playerGameObjectIndex) budget += 1;
+	int done = 0;
+	while (!m_pendingSkinBoneInit.empty() && done < budget) {
+		int netIdx = m_pendingSkinBoneInit.front();
+		m_pendingSkinBoneInit.erase(m_pendingSkinBoneInit.begin());
+		done++;
+		if (netIdx < 0 || netIdx >= (int)DynmaicGameObjects.size()) continue;
+		DynamicGameObject* obj = DynmaicGameObjects[netIdx];
+		if (obj == nullptr) continue;
+		if (obj->tag[GameObjectTag::Tag_SkinMeshObject]) {
+			((SkinMeshGameObject*)obj)->InitRootBoneMatrixs();
+		}
+		obj->tag[GameObjectTag::Tag_Enable] = true;
+		int zid = obj->zoneId;
+		Zone* rz = (zid >= 0 && zid < (int)ZoneTable.size()) ? ZoneTable[zid] : Current_Zone;
+		if (rz) rz->PushGameObject(obj);
 	}
 }
 
@@ -3051,6 +3102,9 @@ void Game::Update()
 		else break; // 더 읽을 패킷이 없으면 종료
 	}
 	//gd.AverageSecPer60End(Update_ClientRecv);
+
+	// [seamless] Spread heavy GPU bone-buffer creation across frames (prevents the ~1s transfer freeze).
+	ProcessPendingSkinBoneInit();
 
 	if (player == nullptr && playerGameObjectIndex >= 0 && playerGameObjectIndex < DynmaicGameObjects.size()) {
 		Player* localPlayer = dynamic_cast<Player*>(DynmaicGameObjects[playerGameObjectIndex]);
@@ -3272,6 +3326,10 @@ READ_START:
 			if (header.objindex >= StaticGameObjects.size()) {
 				break;
 			}
+			Zone* renderZone = game.Current_Zone;
+			if (header.zoneId >= 0 && header.zoneId < (int)game.ZoneTable.size()) {
+				renderZone = game.ZoneTable[header.zoneId];
+			}
 
 			if (StaticGameObjects[header.objindex]) {
 				if (*(void**)StaticGameObjects[header.objindex] != GameObjectType::vptr[header.type]) {
@@ -3289,9 +3347,12 @@ READ_START:
 					break;
 				}
 			}
+			StaticGameObjects[header.objindex]->zoneId = header.zoneId;
 			StaticGameObjects[header.objindex]->RecvSTC_SyncObj(datapivot);
 			game.ApplyZoneOffsetToStaticObject(StaticGameObjects[header.objindex]);
-			game.Current_Zone->PushGameObject(StaticGameObjects[header.objindex]);
+			if (renderZone) {
+				renderZone->PushGameObject(StaticGameObjects[header.objindex]);
+			}
 		}
 			break;
 		case GameObjectType::_DynamicGameObject:
@@ -3299,28 +3360,36 @@ READ_START:
 		case GameObjectType::_Player:
 		case GameObjectType::_Monster:
 		{
-			if (header.objindex >= DynmaicGameObjects.size()) {
+			int netObjIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.objindex);
+			if (netObjIndex < 0) {
+				break;
+			}
+			Zone* renderZone = game.Current_Zone;
+			if (header.zoneId >= 0 && header.zoneId < (int)game.ZoneTable.size()) {
+				renderZone = game.ZoneTable[header.zoneId];
+			}
+			if (netObjIndex >= DynmaicGameObjects.size()) {
 				// 이 코드는 실행되지 말아야 함. 최대한. 하지만 오류가 났을때 대처하기 위해 일단 넣어놓는다.
-				DynmaicGameObjects.reserve(header.objindex + 1);
-				DynmaicGameObjects.resize(header.objindex + 1);
+				DynmaicGameObjects.reserve(netObjIndex + 1);
+				DynmaicGameObjects.resize(netObjIndex + 1);
 			}
 
-			if (DynmaicGameObjects[header.objindex]) {
-				if (*(void**)DynmaicGameObjects[header.objindex] != GameObjectType::vptr[header.type]) {
-					delete DynmaicGameObjects[header.objindex];
-					DynmaicGameObjects[header.objindex] = nullptr;
+			if (DynmaicGameObjects[netObjIndex]) {
+				if (*(void**)DynmaicGameObjects[netObjIndex] != GameObjectType::vptr[header.type]) {
+					delete DynmaicGameObjects[netObjIndex];
+					DynmaicGameObjects[netObjIndex] = nullptr;
 					switch (header.type) {
 					case GameObjectType::_DynamicGameObject:
-						DynmaicGameObjects[header.objindex] = new DynamicGameObject();
+						DynmaicGameObjects[netObjIndex] = new DynamicGameObject();
 						break;
 					case GameObjectType::_SkinMeshGameObject:
-						DynmaicGameObjects[header.objindex] = new SkinMeshGameObject();
+						DynmaicGameObjects[netObjIndex] = new SkinMeshGameObject();
 						break;
 					case GameObjectType::_Player:
-						DynmaicGameObjects[header.objindex] = new Player();
+						DynmaicGameObjects[netObjIndex] = new Player();
 						break;
 					case GameObjectType::_Monster:
-						DynmaicGameObjects[header.objindex] = new Monster();
+						DynmaicGameObjects[netObjIndex] = new Monster();
 						break;
 					}
 				}
@@ -3328,40 +3397,53 @@ READ_START:
 			else {
 				switch (header.type) {
 				case GameObjectType::_DynamicGameObject:
-					DynmaicGameObjects[header.objindex] = new DynamicGameObject();
+					DynmaicGameObjects[netObjIndex] = new DynamicGameObject();
 					break;
 				case GameObjectType::_SkinMeshGameObject:
-					DynmaicGameObjects[header.objindex] = new SkinMeshGameObject();
+					DynmaicGameObjects[netObjIndex] = new SkinMeshGameObject();
 					break;
 				case GameObjectType::_Player:
-					DynmaicGameObjects[header.objindex] = new Player();
+					DynmaicGameObjects[netObjIndex] = new Player();
 					break;
 				case GameObjectType::_Monster:
-					DynmaicGameObjects[header.objindex] = new Monster();
+					DynmaicGameObjects[netObjIndex] = new Monster();
 					break;
 				}
 			}
 
-			DynmaicGameObjects[header.objindex]->RecvSTC_SyncObj(datapivot);
-			game.ApplyZoneOffsetToDynamicObject(DynmaicGameObjects[header.objindex]);
-			if (DynmaicGameObjects[header.objindex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
-				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[header.objindex];
-				smgo->InitRootBoneMatrixs();
+			DynmaicGameObjects[netObjIndex]->zoneId = header.zoneId;
+			DynmaicGameObjects[netObjIndex]->RecvSTC_SyncObj(datapivot);
+			game.ApplyZoneOffsetToDynamicObject(DynmaicGameObjects[netObjIndex]);
+			if (DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
+				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[netObjIndex];
+				// [seamless] Building GPU bone buffers here is heavy (many fence waits). On a server
+				// transfer ~20 skinmesh objects arrive in one frame and freeze the thread ~1s.
+				// If this object has no bone buffers yet (newly received), hide it and queue it so
+				// ProcessPendingSkinBoneInit builds a few per frame. Already-built objects are left as-is.
+				smgo->InitRootBoneMatrixs();   // [revert] inline build; deferred build caused all skinmesh to render black
+					if (false) {   // [disabled] old amortized-defer path (reworked later in seamless refactor)
+					smgo->tag[GameObjectTag::Tag_Enable] = false;   // not renderable until buffers exist
+					game.m_pendingSkinBoneInit.push_back(netObjIndex);
+				}
 			}
-			game.Current_Zone->PushGameObject(DynmaicGameObjects[header.objindex]);
+			// [seamless] Skip push for objects we just deferred (Enable turned off); rendering a
+			// skinmesh without bone buffers crashes. ProcessPendingSkinBoneInit pushes them once built.
+			if (renderZone && DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable]) {
+				renderZone->PushGameObject(DynmaicGameObjects[netObjIndex]);
+			}
 			{
-				DynamicGameObject* _dgo = DynmaicGameObjects[header.objindex];
+				DynamicGameObject* _dgo = DynmaicGameObjects[netObjIndex];
 				char _dbg[256] = {};
-				sprintf_s(_dbg, "[Dyn] idx=%d type=%d enable=%d shapeFlag=%p pos=(%.2f,%.2f,%.2f)\n",
-					header.objindex, (int)header.type,
+				sprintf_s(_dbg, "[Dyn] zone=%d idx=%d net=%d type=%d enable=%d shapeFlag=%p pos=(%.2f,%.2f,%.2f)\n",
+					header.zoneId, header.objindex, netObjIndex, (int)header.type,
 					(int)_dgo->tag[GameObjectTag::Tag_Enable], _dgo->shape.FlagPtr,
 					_dgo->worldMat.pos.f3.x, _dgo->worldMat.pos.f3.y, _dgo->worldMat.pos.f3.z);
 				OutputDebugStringA(_dbg);
 				printf("%s", _dbg);
 				fflush(stdout);
 			}
-			if (header.type == GameObjectType::_Player && game.playerGameObjectIndex == header.objindex) {
-				game.player = (Player*)DynmaicGameObjects[header.objindex];
+			if (header.type == GameObjectType::_Player && game.playerGameObjectIndex == netObjIndex) {
+				game.player = (Player*)DynmaicGameObjects[netObjIndex];
 				game.player->GunModel = game.GunModel;
 				if (game.player->GunModel) {
 					game.player->gunBarrelNodeIndices.clear();
@@ -3395,6 +3477,7 @@ READ_START:
 		case GameObjectType::_Portal:
 		{
 			Portal* portal = new Portal();
+			portal->zoneId = header.zoneId;
 			portal->RecvSTC_SyncObj(datapivot);
 			game.ApplyZoneOffsetToPortal(portal);
 			game.Portals.push_back(portal);
@@ -3409,22 +3492,23 @@ READ_START:
 	{
 		STC_ChangeMemberOfGameObject_Header& header = *(STC_ChangeMemberOfGameObject_Header*)currentPivot;
 		char* datapivot = currentPivot + sizeof(STC_ChangeMemberOfGameObject_Header);
+		int netObjIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.objindex);
 
 		short _typeShort = (short)header.type;
 		if (_typeShort < 0 || _typeShort >= GameObjectType::ObjectTypeCount) {
 			char _dbg[192] = {};
-			sprintf_s(_dbg, "[ChangeMember] BAD type=%d objidx=%d srvoff=%d datasiz=%d size=%u\n",
-				(int)_typeShort, header.objindex, header.serveroffset, header.datasize, header.size);
+			sprintf_s(_dbg, "[ChangeMember] BAD type=%d zone=%d objidx=%d net=%d srvoff=%d datasiz=%d size=%u\n",
+				(int)_typeShort, header.zoneId, header.objindex, netObjIndex, header.serveroffset, header.datasize, header.size);
 			OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
 		}
-		else if (header.objindex < 0 || header.objindex >= (int)DynmaicGameObjects.size()
-			|| DynmaicGameObjects[header.objindex] == nullptr) {
+		else if (netObjIndex < 0 || netObjIndex >= (int)DynmaicGameObjects.size()
+			|| DynmaicGameObjects[netObjIndex] == nullptr) {
 			static int _badIdxCnt = 0;
 			if ((_badIdxCnt++ % 60) == 0) {
 				char _dbg[192] = {};
-				sprintf_s(_dbg, "[ChangeMember] BAD objidx=%d (size=%zu null=%d) type=%d srvoff=%d\n",
-					header.objindex, DynmaicGameObjects.size(),
-					(header.objindex >= 0 && header.objindex < (int)DynmaicGameObjects.size()) ? (DynmaicGameObjects[header.objindex] == nullptr ? 1 : 0) : -1,
+				sprintf_s(_dbg, "[ChangeMember] BAD zone=%d objidx=%d net=%d (size=%zu null=%d) type=%d srvoff=%d\n",
+					header.zoneId, header.objindex, netObjIndex, DynmaicGameObjects.size(),
+					(netObjIndex >= 0 && netObjIndex < (int)DynmaicGameObjects.size()) ? (DynmaicGameObjects[netObjIndex] == nullptr ? 1 : 0) : -1,
 					(int)_typeShort, header.serveroffset);
 				OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
 			}
@@ -3437,11 +3521,11 @@ READ_START:
 				char* source = datapivot;
 				if (sw.clientOffset == -1) {
 					if (sw.syncfunc) {
-						sw.syncfunc(DynmaicGameObjects[header.objindex], source, header.datasize);
+						sw.syncfunc(DynmaicGameObjects[netObjIndex], source, header.datasize);
 					}
 				}
 				else {
-					char* dest = (((char*)DynmaicGameObjects[header.objindex]) + sw.clientOffset);
+					char* dest = (((char*)DynmaicGameObjects[netObjIndex]) + sw.clientOffset);
 					memcpy(dest, source, header.datasize);
 				}
 			}
@@ -3483,48 +3567,50 @@ READ_START:
 		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)currentPivot;
 
 		game.clientIndexInServer = header.clientindex;
-		game.playerGameObjectIndex = header.server_obj_index;
+		game.playerGameObjectIndex = game.GetDynamicObjectNetIndex(game.currentZoneId, header.server_obj_index);
 
-		if (header.server_obj_index >= 0 && game.DynmaicGameObjects.size() > header.server_obj_index) {
+		if (game.playerGameObjectIndex >= 0 && game.DynmaicGameObjects.size() > game.playerGameObjectIndex) {
 			player = (Player*)DynmaicGameObjects[playerGameObjectIndex];
 			//player->Gun = game.GunMesh;
 			//
-			if (game.isPreparedClientIndex) {
+			if (player != nullptr && game.isPreparedClientIndex) {
 				player->worldMat.pos = player->DestPos;
 				player->worldMat.pos.w = 1;
 			}
 
-			player->GunModel = game.GunModel;
+			if (player != nullptr) {
+				player->GunModel = game.GunModel;
 
-			if (player->GunModel) {
-				player->gunBarrelNodeIndices.clear();
-				auto addBarrel = [&](const char* name) {
-					int idx = player->GunModel->FindNodeIndexByName(name);
-					if (idx >= 0) player->gunBarrelNodeIndices.push_back(idx);
-					};
+				if (player->GunModel) {
+					player->gunBarrelNodeIndices.clear();
+					auto addBarrel = [&](const char* name) {
+						int idx = player->GunModel->FindNodeIndexByName(name);
+						if (idx >= 0) player->gunBarrelNodeIndices.push_back(idx);
+						};
 
-				addBarrel("Cylinder.107");
-				addBarrel("Cylinder.108");
-				addBarrel("Cylinder.109");
-				addBarrel("Cylinder.110");
+					addBarrel("Cylinder.107");
+					addBarrel("Cylinder.108");
+					addBarrel("Cylinder.109");
+					addBarrel("Cylinder.110");
+				}
+
+				player->gunMatrix_thirdPersonView.Id();
+				player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
+
+				player->gunMatrix_firstPersonView.Id();
+				player->gunMatrix_firstPersonView.pos = vec4(0.13f, -0.15f, 0.5f, 1);
+				player->gunMatrix_firstPersonView.LookAt(vec4(0, 0, 5) - player->gunMatrix_firstPersonView.pos);
+
+				player->ShootPointMesh = game.ShootPointMesh;
+
+				player->HPBarMesh = game.HPBarMesh;
+				player->HPMatrix.pos = vec4(-1, 1, 1, 1);
+				player->HPMatrix.LookAt(vec4(-1, 0, 0));
+
+				player->HeatBarMesh = game.HeatBarMesh;
+				player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
+				player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
 			}
-
-			player->gunMatrix_thirdPersonView.Id();
-			player->gunMatrix_thirdPersonView.pos = vec4(0.35f, 0.5f, 0, 1);
-
-			player->gunMatrix_firstPersonView.Id();
-			player->gunMatrix_firstPersonView.pos = vec4(0.13f, -0.15f, 0.5f, 1);
-			player->gunMatrix_firstPersonView.LookAt(vec4(0, 0, 5) - player->gunMatrix_firstPersonView.pos);
-
-			player->ShootPointMesh = game.ShootPointMesh;
-
-			player->HPBarMesh = game.HPBarMesh;
-			player->HPMatrix.pos = vec4(-1, 1, 1, 1);
-			player->HPMatrix.LookAt(vec4(-1, 0, 0));
-
-			player->HeatBarMesh = game.HeatBarMesh;
-			player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
-			player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
 
 			//for (int i = 0; i < 36; ++i) {
 			//	player->Inventory[i].id = 0;
@@ -3537,6 +3623,12 @@ READ_START:
 			game.isPrepared = true;
 		}
 
+		// [seamless] The new server just bound this player. If a movement key (W/A/S/D/Space) is
+		// being held, the new server never saw a key-down for it, so the player sits still until
+		// Windows key-repeat fires (~1s). Resend the currently-held keys now so the new server
+		// resumes movement immediately instead of waiting for the next key-repeat.
+		game.ResendHeldMovementKeys();
+
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -3544,11 +3636,12 @@ READ_START:
 	case STC_Protocol::DeleteGameObject:
 	{
 		STC_DeleteGameObject_Header& header = *(STC_DeleteGameObject_Header*)currentPivot;
-		if (game.DynmaicGameObjects.size() <= header.obj_index || header.obj_index < 0) {
+		int netObjIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.obj_index);
+		if (netObjIndex < 0 || game.DynmaicGameObjects.size() <= netObjIndex) {
 			return 2;
 		}
-		if (DynmaicGameObjects[header.obj_index] != nullptr) {
-			DynmaicGameObjects[header.obj_index]->tag[GameObjectTag::Tag_Enable] = false;
+		if (DynmaicGameObjects[netObjIndex] != nullptr) {
+			DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable] = false;
 		}
 		currentPivot += header.size;
 		offset += header.size;
@@ -3557,18 +3650,19 @@ READ_START:
 	case STC_Protocol::ItemDrop:
 	{
 		STC_ItemDrop_Header& header = *(STC_ItemDrop_Header*)currentPivot;
-		if (header.dropindex >= game.DropedItems.size()) {
-			while (header.dropindex >= game.DropedItems.size()) {
+		int netDropIndex = game.GetDropItemNetIndex(header.zoneId, header.dropindex);
+		if (netDropIndex >= 0 && netDropIndex >= game.DropedItems.size()) {
+			while (netDropIndex >= game.DropedItems.size()) {
 				ItemLoot til;
 				til.pos = 0;
 				til.itemDrop.id = 0;
 				til.itemDrop.ItemCount = 0;
 				game.DropedItems.push_back(til);
 			}
-			game.DropedItems[header.dropindex] = header.lootData;
+			game.DropedItems[netDropIndex] = header.lootData;
 		}
-		else {
-			game.DropedItems[header.dropindex] = header.lootData;
+		else if (netDropIndex >= 0) {
+			game.DropedItems[netDropIndex] = header.lootData;
 		}
 		currentPivot += header.size;
 		offset += header.size;
@@ -3577,9 +3671,12 @@ READ_START:
 	case STC_Protocol::ItemDropRemove:
 	{
 		STC_ItemDropRemove_Header& header = *(STC_ItemDropRemove_Header*)currentPivot;
-		game.DropedItems[header.dropindex].itemDrop.id = 0;
-		game.DropedItems[header.dropindex].itemDrop.ItemCount = 0;
-		game.DropedItems[header.dropindex].pos = vec4(0, 0, 0, 0);
+		int netDropIndex = game.GetDropItemNetIndex(header.zoneId, header.dropindex);
+		if (netDropIndex >= 0 && netDropIndex < (int)game.DropedItems.size()) {
+			game.DropedItems[netDropIndex].itemDrop.id = 0;
+			game.DropedItems[netDropIndex].itemDrop.ItemCount = 0;
+			game.DropedItems[netDropIndex].pos = vec4(0, 0, 0, 0);
+		}
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -3602,8 +3699,9 @@ READ_START:
 	case STC_Protocol::PlayerFire:
 	{
 		STC_PlayerFire_Header& header = *(STC_PlayerFire_Header*)currentPivot;
-		if (header.objindex >= 0 && header.objindex < DynmaicGameObjects.size() && DynmaicGameObjects[header.objindex] != nullptr) {
-			GameObject* pObj = DynmaicGameObjects[header.objindex];
+		int netObjIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.objindex);
+		if (netObjIndex >= 0 && netObjIndex < DynmaicGameObjects.size() && DynmaicGameObjects[netObjIndex] != nullptr) {
+			GameObject* pObj = DynmaicGameObjects[netObjIndex];
 
 			void* objVptr = *(void**)pObj;
 
@@ -3623,7 +3721,8 @@ READ_START:
 	case STC_Protocol::SkillCast:
 	{
 		STC_SkillCast_Header& header = *(STC_SkillCast_Header*)currentPivot;
-		SpawnSkillEffect(header.effectType, header.position, header.direction, (UINT)header.ownerObjIndex, header.radius, header.power, header.duration);
+		int netOwnerIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.ownerObjIndex);
+		SpawnSkillEffect(header.effectType, header.position, header.direction, (UINT)netOwnerIndex, header.radius, header.power, header.duration);
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -3631,14 +3730,18 @@ READ_START:
 	case STC_Protocol::StatusEffect:
 	{
 		STC_StatusEffect_Header& header = *(STC_StatusEffect_Header*)currentPivot;
-		SpawnStatusEffect(header.statusType, header.targetObjIndex, header.sourceObjIndex, header.active, header.position, header.extents, header.duration, header.remainTime, header.power);
+		int netTargetIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.targetObjIndex);
+		int netSourceIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.sourceObjIndex);
+		SpawnStatusEffect(header.statusType, netTargetIndex, netSourceIndex, header.active, header.position, header.extents, header.duration, header.remainTime, header.power);
 		currentPivot += header.size;
 		offset += header.size;
 	}
-	break;	case STC_Protocol::SyncGameState:
+	break;
+	case STC_Protocol::SyncGameState:
 	{
         //OutputDebugStringA("[ClientReceiving] SyncGameState\n");
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)currentPivot;
+		game.DynamicGameObjectCapacityPerZone = header.DynamicGameObjectCapacityPerZone > 0 ? header.DynamicGameObjectCapacityPerZone : header.DynamicGameObjectCapacity;
 		game.DynmaicGameObjects.reserve(header.DynamicGameObjectCapacity);
 		game.DynmaicGameObjects.resize(header.DynamicGameObjectCapacity);
 		currentPivot += header.size;

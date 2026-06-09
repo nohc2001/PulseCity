@@ -19,6 +19,7 @@ HWND hWnd;
 LPCTSTR lpszClass = L"Pulse City Client 001";
 LPCTSTR lpszWindowName = L"Pulse City Client 001";
 int resolutionLevel = 3;
+bool g_playReloadSound = false;   // [sfx] set in GameObject.cpp when local player's reload starts; played in the main loop
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
@@ -32,11 +33,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	GameObject::StaticInit();
 	PrintOffset();
 
-	//Audio Init
-	//wave_master_channel.Init(23);
-	//WaveDataStruct wd = CreateWaveFromFile(L"Resources/Sound/Soundtrack002.wav");
-	//WaveChannel* channel0 = NewChannel();
-	//channel0->pushWave(wd);
+	//Audio Init + BGM
+	wave_master_channel.Init(23);
+	waveOutSetVolume(wave_master_channel.hWaveDev, 0x40004000);   // [audio] master volume ~25%. Louder: raise (0x80008000=50%, 0xC000C000=75%, 0xFFFFFFFF=100%). Quieter: lower (0x20002000≈12%).
+	WaveDataStruct wd = CreateWaveFromFile(L"Resources/Sound/Soundtrack002.wav");
+	WaveChannel* channel0 = NewChannel();
+	channel0->pushWave(wd);
 
 	gd.Factory_Adaptor_Output_Init();
 	
@@ -193,6 +195,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 				//gd.AverageSecPer60Start(1);
 				const ui64 perfUpdateStart = GetTicks();
 				game.Update();
+				// [sfx] reload sound: flag is set in GameObject.cpp when the local player's reload starts
+				if (g_playReloadSound) {
+					g_playReloadSound = false;
+					static WaveDataStruct s_reload = CreateWaveFromFile(L"Resources/Sound/reload.wav");
+					static WaveChannel* s_reloadCh = NewChannel();
+					if (s_reloadCh) s_reloadCh->pushWave(s_reload);
+				}
 				const double updateMs = 1000.0 * double(GetTicks() - perfUpdateStart) / double(QUERYPERFORMANCE_HZ);
 				//gd.AverageSecPer60End(1);
 				if (didRender) {
@@ -567,6 +576,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			header.Key = InputID::MouseLbutton;
 			header.isdown = true;
 			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			// [sfx] gunshot on fire. Add Resources/Sound/gunshot.wav (PCM, stereo, 16-bit, 44100Hz).
+			// If the file is missing, CreateWaveFromFile returns empty and pushWave is a no-op (safe).
+			static WaveDataStruct s_gunshot = CreateWaveFromFile(L"Resources/Sound/gun.wav");
+			static WaveChannel* s_sfxChannel = NewChannel();
+			static WaveDataStruct s_dryReload = CreateWaveFromFile(L"Resources/Sound/reload.wav");
+			if (s_sfxChannel) {
+				if (game.player != nullptr && game.player->weapon.m_shootFlow >= 0)
+					s_sfxChannel->pushWave(s_gunshot);    // 발사 가능(장전 중 아님) -> 총소리
+				else
+					s_sfxChannel->pushWave(s_dryReload);  // 장전 중(탄약 없음) -> 장전소리
+			}
 		}
 		break;
 		case WM_LBUTTONUP:

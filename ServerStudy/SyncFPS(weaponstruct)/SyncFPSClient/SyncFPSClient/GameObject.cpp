@@ -1023,7 +1023,7 @@ void GameObject::RaytracingUpdateTransform(Model* model, ModelNode* node, matrix
 void GameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
-	shape = Shape::ShapeTable[stcsod.shapeindex];
+	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
 	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
 	childs = (stcsod.childs >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
@@ -1214,7 +1214,7 @@ void StaticGameObject::Release() {
 void StaticGameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
-	shape = Shape::ShapeTable[stcsod.shapeindex];
+	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
 	parent = (stcsod.parent >= 0) ? game.StaticGameObjects[stcsod.parent] : nullptr;
 	childs = (stcsod.childs >= 0) ? game.StaticGameObjects[stcsod.childs] : nullptr;
@@ -1799,7 +1799,7 @@ void DynamicGameObject::MoveChunck(const matrix& afterMat, const GameObjectInclu
 void DynamicGameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
-	shape = Shape::ShapeTable[stcsod.shapeindex];
+	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
 	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr; // fix
 	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
@@ -2646,7 +2646,7 @@ void SkinMeshGameObject::AnimationComputeDispatch(matrix parent)
 void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
-	shape = Shape::ShapeTable[stcsod.shapeindex];
+	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
 	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
 	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
@@ -3058,7 +3058,7 @@ void Monster::Init(const XMMATRIX& initialWorldMatrix)
 void Monster::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
-	shape = Shape::ShapeTable[stcsod.shapeindex];
+	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
 	//dbglog1(L"parent : %d \n", stcsod.parent);
 	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
@@ -3474,6 +3474,17 @@ void Player::ClientUpdate(float deltaTime)
 	break;
 	}
 
+	// [sfx] detect reload START for the local player (m_shootFlow goes < 0) and request the reload sound.
+	// Audio is played in main.cpp (Utill_Wave.h is a single-TU header); here we only set a global flag.
+	{
+		extern bool g_playReloadSound;
+		if (this == game.player) {
+			static bool s_wasReloading = false;
+			bool nowReloading = (weapon.m_shootFlow < 0);
+			if (nowReloading && !s_wasReloading) g_playReloadSound = true;
+			s_wasReloading = nowReloading;
+		}
+	}
 	if (weapon.m_shootFlow < 0) {
 		float reloadProgress = 1.0f - (abs(weapon.m_shootFlow) / weapon.m_info.reloadTime);
 		float drop = sinf(reloadProgress * XM_PI) * 0.5f;
@@ -3814,7 +3825,7 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponTyp
 void Player::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
-	shape = Shape::ShapeTable[stcsod.shapeindex];
+	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
 	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
 	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
@@ -3922,7 +3933,7 @@ void Player::Release() {
 
 void Portal::RecvSTC_SyncObj(char* data) {
 	Portal::STC_SyncObjData& d = *(Portal::STC_SyncObjData*)data;
-	shape = Shape::ShapeTable[d.shapeindex];
+	if (d.shapeindex >= 0 && d.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[d.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape
 	worldMat = d.DestWorld;
 	spawnX = d.spawnX;
 	spawnY = d.spawnY;

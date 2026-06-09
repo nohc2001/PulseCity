@@ -192,6 +192,7 @@ struct GameObject {
 	};
 
 	// transform
+	int zoneId = 0;
 	matrix worldMat;
 
 	// 이름에서 ShapeIndex를 얻는 map
@@ -560,7 +561,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	DescIndex HumanoidToNodeIndexSRVIndex;
 
 	GPUResource AnimationBlendConstantUploadBuffer;
-	AnimationBlendingCBStruct* AnimBlendingCB_Mapped;
+	AnimationBlendingCBStruct* AnimBlendingCB_Mapped = nullptr;   // [crash-fix] must start null; uninitialized garbage passed the (cbData != nullptr) guard and crashed in BlendingAnimation on zone re-entry
 	DescIndex AnimBlendingCBVDescIndex;
 #pragma endregion
 

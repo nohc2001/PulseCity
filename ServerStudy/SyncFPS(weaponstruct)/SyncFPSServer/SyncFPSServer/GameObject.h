@@ -910,10 +910,6 @@ struct Player : public SkinMeshGameObject {
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
 	float m_iceBlockTimer = 0.0f;
-	float m_frostBlizzardTimer = 0.0f;
-	float m_frostBlizzardTickFlow = 0.0f;
-	float m_frostBlizzardEffectFlow = 0.0f;
-	float m_frostBlizzardRadius = 0.0f;
 	float m_juggernautFlameTimer = 0.0f;
 	float m_juggernautFlameTickFlow = 0.0f;
 	float m_juggernautFlameEffectFlow = 0.0f;
@@ -1135,6 +1131,7 @@ struct Monster : public SkinMeshGameObject {
 	float m_patrolRange = 20.0f;
 	// OBB.Center
 	float m_chaseRange = 10.0f;
+	float handoffCooldown = 0.0f;
 	// ServerOnly 상태
 	float m_patrolTimer = 0.0f;
 	// OBB.Center
@@ -1187,6 +1184,7 @@ struct Monster : public SkinMeshGameObject {
 	vector<AstarNode*> AstarSearch(AstarNode* start, AstarNode* destination, std::vector<AstarNode*>& allNodes);
 	AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
 	void MoveByAstar(float deltaTime);
+	bool TryChaseGhost(float deltaTime, vec4 monsterPos);
 	std::vector<AstarNode*> path; // 현재 따라가야 할 경로
 	size_t currentPathIndex = 0;
 
@@ -1368,6 +1366,11 @@ struct ClientData {
 	int zoneId = 0;
 
 	int pendingTransferToken = 0;
+
+	// [4단계-STEP1] 이 소켓이 게임 클라이언트가 아니라 '이웃 서버와의 상시 복제 링크'인지 표시.
+	// true면 플레이어 로직(이동/전송/게임데이터 송신)에서 제외하고, 서버 간 메시지만 주고받는다.
+	bool isServerPeer = false;
+	int peerServerId = -1;
 
 	// OBB.Center
 	SendDataSaver PersonalSDS;
@@ -1555,7 +1558,9 @@ struct Zone {
 	/*
 	* 설명 : 기존 Zone에 플레이어를 배치한다.
 	*/
-	int AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_Map = true);
+	// fullWorldSnapshot: true=최초 입장/서버전송(클라가 빈 상태 → 전체 객체 전송)
+	//                    false=심리스 로컬 이동(클라가 이미 인접 존 객체 보유 → 무거운 동적객체 재전송 생략)
+	int AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_Map = true, bool fullWorldSnapshot = true);
 
 	// OBB.Center
 
@@ -1574,7 +1579,9 @@ struct Zone {
 	/*
 	// 글로벌 휴머노이드 애니메이션 카운트
 	*/
-	void SendingAllObjectForNewClient(SendDataSaver& sds);
+	// includeDynamicObjects: false면 동적 객체(몬스터/플레이어 등) 재전송을 생략한다.
+	// (심리스 이동 시 클라가 이미 보유 → 끊김 유발하는 스킨메시 버스트를 막음. 아이템/포탈은 가벼우니 항상 전송)
+	void SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects = true);
 
 	// OBB.Center
 
@@ -1590,6 +1597,7 @@ struct Zone {
 		header.size = reqsiz;
 		header.st = STC_Protocol::ChangeMemberOfGameObject;
 		header.type = gotype;
+		header.zoneId = zoneId;
 		header.objindex = objindex;
 		header.serveroffset = ((char*)memberAddr) - (char*)ptrobj;
 		header.datasize = memberSize;
@@ -1662,15 +1670,61 @@ struct World {
 		"The_Port",
 	};
 	vector<Zone> zones;
+	GameMap commonMap;
 	int serverId = 0;
 	unsigned short listenPort = 9000;
 	int ownedZoneId = 0;
+	bool singleProcessAllZones = true;
     unordered_map<int, PlayerTransferData> pendingTransfers;
     int nextTransferToken = 1;
 
+	// [4단계-STEP1] 이웃 존 서버와의 상시 복제 링크 상태. 인덱스 = 이웃 zoneId(=serverId).
+	// true면 그 이웃과 링크가 연결돼 있다는 뜻. (멀티 프로세스에서만 사용)
+	bool peerLinkUp[zoneCount] = {};
+
+	// 아직 연결 안 된 이웃에 주기적으로 재접속 시도. (이웃 서버가 늦게 떠도 따라잡음)
+	void TryConnectPeers();
+	// 이웃이 보낸 ServerLink 핸드셰이크를 받았을 때 그 소켓을 peer 링크로 확정.
+	void OnPeerLinkEstablished(int clientIndex, int fromServerId);
+
+	// [4단계-STEP2] 이웃 존에서 받아 둔 플레이어 고스트(읽기 전용 사본). 키 = 이웃 존에서의 objindex.
+	unordered_map<int, DynamicGameObject*> ghostPlayers;
+	// 내 존 플레이어들의 상태를 peer 링크로 이웃에 전송(매 틱).
+	void SendGhostToPeers();
+	// 이웃이 보낸 GhostSync 를 받아 고스트를 갱신/생성/제거하고, 그 변화를 내 클라들에게 중계.
+	void OnGhostSync(char* data);
+	// 고스트를 맞혔을 때, 그 객체를 소유한 서버로 데미지 적용 요청을 보낸다.
+	void SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage);
+	// 몬스터가 경계를 넘었을 때 소유권을 이웃 서버로 넘긴다.
+	void SendMonsterHandoff(int dstZoneId, Monster* m);
+	// 이웃이 넘긴 몬스터를 내 존에 진짜 몬스터로 생성한다.
+	void SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp);
+
 	bool IsZoneOwned(int zoneId) const {
+		if (zoneId < 0 || zoneId >= zoneCount) return false;
+		if (singleProcessAllZones) return true;
 		return zoneId == ownedZoneId;
 	}
+
+	bool IsAdjacentZone(int zoneA, int zoneB) const {
+		if (zoneA < 0 || zoneA >= zoneCount) return false;
+		if (zoneB < 0 || zoneB >= zoneCount) return false;
+		if (zoneA == zoneB) return true;
+		return abs(zoneA - zoneB) == 1;
+	}
+
+	Zone* GetStaticChunkZone() {
+		if (zones.empty()) return nullptr;
+		int staticZoneId = singleProcessAllZones ? 0 : ownedZoneId;
+		if (staticZoneId < 0 || staticZoneId >= (int)zones.size()) return nullptr;
+		return &zones[staticZoneId];
+	}
+
+	GameMap& GetCommonMap() {
+		return commonMap;
+	}
+
+	void InitCommonMap();
 
 
 
@@ -1742,8 +1796,11 @@ struct World {
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)sds.ofbuff;
 		header.size = reqsiz;
 		header.st = STC_Protocol::SyncGameState;
-		header.DynamicGameObjectCapacity = zones[ownedZoneId].Dynamic_gameObjects.Capacity;
-		header.StaticGameObjectCapacity = zones[ownedZoneId].Static_gameObjects.Capacity;
+		header.DynamicGameObjectCapacityPerZone = zones[ownedZoneId].Dynamic_gameObjects.Capacity;
+		header.ZoneCount = zoneCount;
+		header.DynamicGameObjectCapacity = header.DynamicGameObjectCapacityPerZone * header.ZoneCount;
+		Zone* staticZone = GetStaticChunkZone();
+		header.StaticGameObjectCapacity = staticZone != nullptr ? staticZone->Static_gameObjects.Capacity : 0;
 		sds.postpush_end();
 	}
 

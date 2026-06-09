@@ -15,17 +15,6 @@ Shape& Zone::GetShape(int shapeindex)
 }
 
 void Zone::Init() {
-    /*if (zoneId != 0) {
-        Dynamic_gameObjects.Init(128);
-        Static_gameObjects.Init(128);
-        DropedItems.Init(4096);
-        CommonSDS.Init(4096);
-        map.ownerzone = this;
-        cout << "Zone " << zoneId << " Init end (no map)" << endl;
-        return;
-    }*/
-
-    // Astar �׸��� �ʱ�ȭ
     const int gridWidth = 80;
     const int gridHeight = 80;
     const float cellSize = 1.0f;
@@ -51,59 +40,13 @@ void Zone::Init() {
         }
     }
 
-    // �迭 �ʱ�ȭ
     Dynamic_gameObjects.Init(128);
     Static_gameObjects.Init(128);
     DropedItems.Init(4096);
     CommonSDS.Init(4096);
 
-    //�� ���� �� ���� ���� �ִ�
-    map.ownerzone = this;
-
-    // �� �ε�
-    LoadMapForZone(zoneId);
-    if (map.MapObjects.empty()) {
-        cout << "Zone " << zoneId << " map load failed!" << endl;
-        return;
-    }
-
-    map.AABB[0] = INFINITY;
-    map.AABB[1] = -INFINITY;
-    for (int i = 0; i < map.MapObjects.size(); ++i) {
-        PushGameObject(map.MapObjects[i]);
-        BoundingOrientedBox obb = map.MapObjects[i]->GetOBB();
-        XMFLOAT3 corners[8];
-        obb.GetCorners(corners);
-        for (int k = 0; k < 8; ++k) {
-            vec4 c = corners[k];
-            map.AABB[0] = _mm_min_ps(c, map.AABB[0]);
-            map.AABB[1] = _mm_max_ps(c, map.AABB[1]);
-        }
-    }
-    map.AABB[0].w = -INFINITY;
-    map.AABB[1].w = INFINITY;
-
-    // === DEBUG : Zone ¸Ê AABB ·Î±× ===
-    cout << "[Zone " << zoneId << "] map=" << gameworld.ZoneMapName[zoneId]
-        << " AABB.min=(" << map.AABB[0].f3.x << ", " << map.AABB[0].f3.y << ", " << map.AABB[0].f3.z << ")"
-        << " AABB.max=(" << map.AABB[1].f3.x << ", " << map.AABB[1].f3.y << ", " << map.AABB[1].f3.z << ")"
-        << " size=(" << (map.AABB[1].f3.x - map.AABB[0].f3.x) << ", "
-                     << (map.AABB[1].f3.y - map.AABB[0].f3.y) << ", "
-                     << (map.AABB[1].f3.z - map.AABB[0].f3.z) << ")"
-        << " MapObjectCount=" << map.MapObjects.size() << endl;
-
-    // ������Ʈ ����
-    //SpawnObjects();
-
-    // �׸��� �浹 üũ
-    GridCollisionCheck();
-
-    // ��Ż ����
-    //SpawnPortal();
-
-    cout << "Zone " << zoneId << " Init end" << endl;
+    cout << "Zone " << zoneId << " Init end (dynamic only)" << endl;
 }
-
 void Zone::Update(float deltaTime) {
     // �� ���� ������Ʈ
     lowFrequencyFlow += deltaTime;
@@ -214,31 +157,78 @@ void Zone::Update(float deltaTime) {
                             }
                         }
 
-                        for (int k = 0; k < c->Static_gameobjects.size; ++k) {
-                            StaticGameObject* sgo = c->Static_gameobjects[k];
+                        for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
+                            if (zi == zoneId) continue;
+                            if (gameworld.IsZoneOwned(zi) == false) continue;
+                            if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
+                            Zone& nearZone = gameworld.zones[zi];
+                            auto nearChunkIt = nearZone.chunck.find(ci);
+                            if (nearChunkIt == nearZone.chunck.end()) continue;
+                            GameChunk* nearChunk = nearChunkIt->second;
+                            if (nearChunk == nullptr) continue;
 
-                            if (sgo->obbArr.size() == 0) {
-                                //// Skip fallback collision when a static object has no OBB data.
-                                //BoundingOrientedBox staticobb = c->Static_gameobjects[k]->GetOBB();
+                            for (int u = 0; u < nearChunk->Dynamic_gameobjects.size; ++u) {
+                                if (nearChunk->Dynamic_gameobjects.isnull(u)) continue;
+                                DynamicGameObject* gbj2 = nearChunk->Dynamic_gameobjects[u];
+                                if (gbj2 == nullptr) continue;
+                                if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
+                                if (gbj2 == gbj1) continue;
 
-                                //if (obb_after.Intersects(staticobb)) {
-                                //    gbj1->OnStaticCollision(staticobb);
-                                //    DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+                                BoundingOrientedBox obb2 = gbj2->GetOBB();
+                                float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
+                                vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+                                if (fsl1 + fsl2 > dist.fast_square_of_len3) {
+                                    DynamicGameObject::CollisionMove(gbj1, gbj2);
 
-                                //    if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-                                //        goto GOTO_NEXTOBJ;
-                                //    }
-                                //}
+                                    if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+                                        goto GOTO_NEXTOBJ;
+                                    }
+                                }
                             }
-                            else {
-                                for (int u = 0; u < sgo->obbArr.size(); ++u) {
-                                    BoundingOrientedBox staticobb = sgo->obbArr[u];
-                                    if (obb_after.Intersects(staticobb)) {
-                                        gbj1->OnStaticCollision(staticobb);
-                                        DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
 
-                                        if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
-                                            goto GOTO_NEXTOBJ;
+                            for (int u = 0; u < nearChunk->SkinMesh_gameobjects.size; ++u) {
+                                if (nearChunk->SkinMesh_gameobjects.isnull(u)) continue;
+                                SkinMeshGameObject* gbj2 = nearChunk->SkinMesh_gameobjects[u];
+                                if (gbj2 == nullptr) continue;
+                                if (gbj2->tag[GameObjectTag::Tag_Enable] == false) continue;
+                                if (gbj2 == gbj1) continue;
+
+                                BoundingOrientedBox obb2 = gbj2->GetOBB();
+                                float fsl2 = vec4(obb2.Extents).fast_square_of_len3;
+                                vec4 dist = lastpos1 - (gbj2->worldMat.pos + gbj2->tickLVelocity);
+                                if (fsl1 + fsl2 > dist.fast_square_of_len3) {
+                                    DynamicGameObject::CollisionMove(gbj1, gbj2);
+
+                                    if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+                                        goto GOTO_NEXTOBJ;
+                                    }
+                                }
+                            }
+                        }
+
+                        Zone* staticZone = gameworld.GetStaticChunkZone();
+                        if (staticZone != nullptr) {
+                            auto sf = staticZone->chunck.find(ci);
+                            if (sf == staticZone->chunck.end()) continue;
+                            GameChunk* staticChunk = sf->second;
+                            for (int k = 0; k < staticChunk->Static_gameobjects.size; ++k) {
+                                if (staticChunk->Static_gameobjects.isnull(k)) continue;
+                                StaticGameObject* sgo = staticChunk->Static_gameobjects[k];
+                                if (sgo == nullptr) continue;
+
+                                if (sgo->obbArr.size() == 0) {
+                                    // Skip fallback collision when a static object has no OBB data.
+                                }
+                                else {
+                                    for (int u = 0; u < sgo->obbArr.size(); ++u) {
+                                        BoundingOrientedBox staticobb = sgo->obbArr[u];
+                                        if (obb_after.Intersects(staticobb)) {
+                                            gbj1->OnStaticCollision(staticobb);
+                                            DynamicGameObject::CollisionMove_DivideBaseline_StaticOBB(gbj1, staticobb);
+
+                                            if (gbj1->tickLVelocity.fast_square_of_len3 <= 0.001f) {
+                                                goto GOTO_NEXTOBJ;
+                                            }
                                         }
                                     }
                                 }
@@ -265,10 +255,10 @@ void Zone::Update(float deltaTime) {
                 }
                 else {
                     vec4 pos = gbj1->worldMat.pos + gbj1->tickLVelocity;
-                    vec4 minpos = _mm_min_ps(pos, map.AABB[0]);
-                    vec4 maxpos = _mm_max_ps(pos, map.AABB[1]);
-                    if (map.AABB[0] == minpos &&
-                        map.AABB[1] == maxpos) {
+                    vec4 minpos = _mm_min_ps(pos, gameworld.commonMap.AABB[0]);
+                    vec4 maxpos = _mm_max_ps(pos, gameworld.commonMap.AABB[1]);
+                    if (gameworld.commonMap.AABB[0] == minpos &&
+                        gameworld.commonMap.AABB[1] == maxpos) {
                         gbj1->MoveChunck(gbj1->tickLVelocity, vec4(0, 0, 0, 1), goic_before, goic_after);
                     }
                     else {
@@ -303,6 +293,8 @@ void Zone::Update(float deltaTime) {
     //    DynamicGameObject* gbj1 = Dynamic_gameObjects[i];
     //    if (!(gbj1->tag[Tag_Enable])) continue;
 
+
+
     //    if (gbj1->tickLVelocity.fast_square_of_len3 > 0.001f) {
     //        gbj1->worldMat.pos += gbj1->tickLVelocity;
     //        gbj1->tickLVelocity = XMVectorZero();
@@ -319,6 +311,39 @@ void Zone::Update(float deltaTime) {
         if (gameworld.clients[i].zoneId != this->zoneId) continue;
         Player* p = (Player*)gameworld.clients[i].pObjData;
         if (p) CheckBoundaryCrossing(p, deltaTime);
+    }
+
+    // [4단계-STEP5] 핸드오프는 '플레이어가 옆 서버로 넘어가 고스트로 보일 때'만 수행한다.
+    // (고스트 '플레이어'가 없으면 = 아무도 안 넘어감 -> 스폰/유휴 몬스터가 위치만으로 넘어가는 churn 방지)
+    bool hasGhostPlayer = false;
+    for (auto& g : gameworld.ghostPlayers) {
+        if (g.second == nullptr) continue;
+        if ((short)GameObjectType::VptrToTypeTable[*(void**)g.second] == GameObjectType::_Player) { hasGhostPlayer = true; break; }
+    }
+    if (false && hasGhostPlayer)   // [임시 비활성화] step5b 몬스터 핸드오프 크래시 격리용
+    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+        if (Dynamic_gameObjects.isnull(i)) continue;
+        DynamicGameObject* o = Dynamic_gameObjects[i];
+        if (o == nullptr || o->tag[GameObjectTag::Tag_Enable] == false) continue;
+        if ((short)GameObjectType::VptrToTypeTable[*(void**)o] != GameObjectType::_Monster) continue;
+        Monster* m = (Monster*)o;
+        if (m->handoffCooldown > 0.0f) { m->handoffCooldown -= deltaTime; continue; }
+
+        for (int bi = 0; bi < (int)boundaries.size(); ++bi) {
+            Zoneboundary& b = boundaries[bi];
+            if (b.enabled == false) continue;
+            if (gameworld.IsZoneOwned(b.dstzoneId)) continue;
+            float centerZ = (b.minPos.f3.z + b.maxPos.f3.z) * 0.5f;
+            bool dstPlusZ = (b.spawnPos.f3.z > centerZ);
+            bool crossed = dstPlusZ ? (m->worldMat.pos.f3.z > b.maxPos.f3.z)
+                                    : (m->worldMat.pos.f3.z < b.minPos.f3.z);
+            if (crossed == false) continue;
+
+            gameworld.SendMonsterHandoff(b.dstzoneId, m);
+            m->tag[GameObjectTag::Tag_Enable] = false;
+            Sending_DeleteGameObject(CommonSDS, i);
+            break;
+        }
     }
 
     // �� ���� ����
@@ -341,6 +366,8 @@ int Zone::NewObject(DynamicGameObject* obj, GameObjectType gotype) {
     int newindex = Dynamic_gameObjects.Alloc();
     Dynamic_gameObjects[newindex] = obj;
     obj->tag[GameObjectTag::Tag_Enable] = true;
+    // [FIX] 직렬???�에 zoneId ?�정 (AddPlayer?� ?�일???�유).
+    obj->zoneId = this->zoneId;
 
     // CommonSDS�� ��Ŷ �ױ�
     Sending_NewGameObject(CommonSDS, newindex, obj);
@@ -352,6 +379,8 @@ int Zone::NewPlayer(SendDataSaver& sds, Player* obj, int clientIndex) {
     int newindex = Dynamic_gameObjects.Alloc();
     Dynamic_gameObjects[newindex] = obj;
     obj->tag[GameObjectTag::Tag_Enable] = true;
+    // [FIX] 직렬???�에 zoneId ?�정 (AddPlayer?� ?�일???�유).
+    obj->zoneId = this->zoneId;
 
     // ���� Ŭ���̾�Ʈ�鿡�Դ� CommonSDS��
     obj->SendGameObject(newindex, CommonSDS);
@@ -363,7 +392,15 @@ void Zone::RemovePlayer(int clientIndex) {
     Zone* zone = gameworld.GetClientZone(clientIndex);
     int objindex = gameworld.clients[clientIndex].objindex;
     Player* go = gameworld.clients[clientIndex].pObjData;
-
+    cout << "[RemovePlayer] client=" << clientIndex
+        << " zone=" << zoneId
+        << " clientZone=" << gameworld.clients[clientIndex].zoneId
+        << " objindex=" << objindex
+        << " playerZoneId=" << (go ? go->zoneId : -1)
+        << " pos=(" << (go ? go->worldMat.pos.f3.x : 0.0f)
+        << ", " << (go ? go->worldMat.pos.f3.y : 0.0f)
+        << ", " << (go ? go->worldMat.pos.f3.z : 0.0f)
+        << ")" << endl;
     // ���� Zone�� ûũ���� �� �÷��̾ ����.
     int n = 0;
     ChunkIndex ci = ChunkIndex(go->IncludeChunks.xmin, go->IncludeChunks.ymin, go->IncludeChunks.zmin);
@@ -386,11 +423,17 @@ void Zone::RemovePlayer(int clientIndex) {
     Dynamic_gameObjects.Free(objindex);
 }
 
-int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_Map) {
+int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_Map, bool fullWorldSnapshot) {
     cout << "[Zone " << zoneId << "] AddPlayer clientIndex=" << clientIndex << endl;
 
     //�� ����
     player->zone = this;
+    // [FIX] ??줄을 SendGameObject 보다 먼�? ?�야 ?�다.
+    // SendGameObject(GameObject.cpp:262)??header.zoneId = this->zoneId �?직렬?�하?�데,
+    // 기존?�는 zoneId가 �???PushGameObject ?�서??dst�?갱신?�어,
+    // ???�레?�어 ?�킷??'?�전(src) zoneId'�??�송 -> ?�라가 ?�못??zone 버킷???�성 ->
+    // AllocPlayerIndexes(dst 버킷)?� ?�덱??불일�?-> ??player ?�바?�딩 ?�패(조작/카메??멈춤).
+    player->zoneId = this->zoneId;
 
     // ��ġ ����
     player->worldMat.pos = spawnPos;
@@ -419,16 +462,32 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // Send current zone data to the new client. (PersonalSDS)
     SendDataSaver& personalSDS = gameworld.clients[clientIndex].PersonalSDS;
 
+    // [PERF/FIX ?? ?�어 ?�드?�프 ?�킷??'?�드 ?�냅??버스??'보다 먼�? 보낸??
+    // 멈춤???�인: ?�라가 SyncPlayerMoveZone ?�로 isPrepared=false 가 ????
+    // AllocPlayerIndexes �?처리?�야 isPrepared 가 복구?�어 조작/카메?��? ?�아?�다.
+    // 기존??AllocPlayerIndexes 가 20??객체(~?�십KB) 버스??'?????�잉?�어,
+    // �?버스?��? ???�착/처리???�까지 ?�레?�어가 ?�어붙었??=체감 ?�레??.
+    // ?�라???�서�?(1)MoveZone -> (2)???�레?�어 객체 -> (3)AllocPlayerIndexes �?바꿔
+    // 조작??'즉시' 복구?�고, ?�머지 객체??�??�에 ?�트리밍?�다.
+    // 주의: (2)가 반드??(3)보다 먼�??�야 ?�다. ??그러�?AllocPlayer 가 바인?�할
+    //       dst 버킷 ?�롯??비어 ?�어 ?�바?�딩???�패(?�전 멈춤 버그 ?�현)?�다.
+
+    // (1) zone move packet -> ?�라 currentZoneId �?dst �?맞춤
     if (update_Map) {
-        //// Send zone move packet so the client can load the zone map.
         gameworld.Sending_PlayerMoveZone(personalSDS, clientIndex, zoneId);
     }
 
-    // Send all objects in this zone to the new client.
-    SendingAllObjectForNewClient(personalSDS);
+    // (2) ???�레?�어 객체 먼�? -> AllocPlayer ?�점??dst 버킷 ?�롯??채워???�게 ??
+    player->SendGameObject(newIdx, personalSDS);
 
-    // Send allocated player index.
+    // (3) ?�당???�레?�어 ?�덱??-> ?�기??isPrepared 복구?�어 조작 즉시 가??
     gameworld.Sending_AllocPlayerIndex(personalSDS, clientIndex, newIdx);
+
+    // ?�제 ?�머지 ?�드 ?�냅?�을 ?�송?�다. (조작?� ?��? ?�아?�음)
+    // [PERF/FIX ?? ?�리???�동(fullWorldSnapshot=false)?�서???�적 객체(몬스????�??�전?�하지 ?�는??
+    // ?�라???�접 �?객체�??��? 보유?�고 ?�고(지???�기??, 가?�성 기반 cleanup??그걸 ?��??��?�?
+    // ?�전?��? 불필?�한 ?�킨메시 버스??=?��?)??뿐이?? ?�이???�탈?� 가벼워????�� ?�송?�다.
+    SendingAllObjectForNewClient(personalSDS, fullWorldSnapshot);
 
     // Send player inventory data.
     // Load player data from database here when needed.
@@ -653,13 +712,15 @@ void Zone::FlushSendToClients() {
     bool keepCommonSDS = false;
     for (int i = 0; i < gameworld.clients.size; ++i) {
         if (gameworld.clients.isnull(i)) continue;
-        if (gameworld.clients[i].zoneId != this->zoneId) continue;
+        if (gameworld.clients[i].isServerPeer) continue;   // [4단계-STEP1] peer 링크엔 게임 데이터 안 보냄
+        bool isOwnerZoneFlush = (gameworld.clients[i].zoneId == this->zoneId);
+        if (gameworld.IsAdjacentZone(gameworld.clients[i].zoneId, this->zoneId) == false) continue;
         bool isTransferring = (gameworld.clients[i].pObjData == nullptr);
-        if (gameworld.clients[i].PersonalSDS.size <= 0 && (CommonSDS.size <= 0 || isTransferring)) continue;
+        if ((isOwnerZoneFlush == false || gameworld.clients[i].PersonalSDS.size <= 0) && (CommonSDS.size <= 0 || isTransferring)) continue;
 
         WSABUF sendbuf[2];
         DWORD sendbufCount = 0;
-        if (gameworld.clients[i].PersonalSDS.size > 0) {
+        if (isOwnerZoneFlush && gameworld.clients[i].PersonalSDS.size > 0) {
             sendbuf[sendbufCount].buf = gameworld.clients[i].PersonalSDS.buffer;
             sendbuf[sendbufCount].len = gameworld.clients[i].PersonalSDS.size;
             sendbufCount += 1;
@@ -682,7 +743,9 @@ void Zone::FlushSendToClients() {
             continue;
         }
 
-        gameworld.clients[i].PersonalSDS.Clear();
+        if (isOwnerZoneFlush) {
+            gameworld.clients[i].PersonalSDS.Clear();
+        }
     }
 
     if (keepCommonSDS == false) {
@@ -715,20 +778,35 @@ void Zone::FlushSendToClients() {
 
 //Sending 
 
-void Zone::SendingAllObjectForNewClient(SendDataSaver& sds)
+void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects)
 {
-    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-        if (Dynamic_gameObjects.isnull(i)) continue;
-        Sending_NewGameObject(sds, i, (GameObject*)Dynamic_gameObjects[i]);
+    for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
+        if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
+        Zone& syncZone = gameworld.zones[zi];
+
+        // [PERF/FIX ?? ?�리???�동?�서???�적 객체(?�킨메시) ?�전?�을 ?�략 -> ?�환 ?��? ?�거.
+        if (includeDynamicObjects) {
+            for (int i = 0; i < syncZone.Dynamic_gameObjects.size; ++i) {
+                if (syncZone.Dynamic_gameObjects.isnull(i)) continue;
+                syncZone.Sending_NewGameObject(sds, i, (GameObject*)syncZone.Dynamic_gameObjects[i]);
+            }
+        }
+
+        for (int i = 0; i < syncZone.DropedItems.size; ++i) {
+            if (syncZone.DropedItems.isnull(i)) continue;
+            syncZone.Sending_ItemDrop(sds, i, syncZone.DropedItems[i]);
+        }
+
+        for (int i = 0; i < syncZone.portals.size(); ++i) {
+            syncZone.portals[i]->SendGameObject(i, sds);
+        }
     }
 
-    for (int i = 0; i < DropedItems.size; ++i) {
-        if (DropedItems.isnull(i)) continue;
-        Sending_ItemDrop(sds, i, DropedItems[i]);
-    }
-
-    for (int i = 0; i < portals.size(); ++i) {
-        portals[i]->SendGameObject(i, sds);
+    // [4단계-STEP2] 이웃 서버에서 받아 둔 플레이어 고스트도 신규 클라에게 전송(중간 접속자 대응).
+    for (auto& g : gameworld.ghostPlayers) {
+        if (g.second == nullptr) continue;
+        g.second->SendGameObject(g.first, sds);
     }
 }
 
@@ -743,6 +821,7 @@ void Zone::Sending_DeleteGameObject(SendDataSaver& sds, int objindex) {
     STC_DeleteGameObject_Header& header = *(STC_DeleteGameObject_Header*)sds.ofbuff;
     header.size = reqsiz;
     header.st = STC_Protocol::DeleteGameObject;
+    header.zoneId = zoneId;
     header.obj_index = objindex;
     sds.postpush_end();
 }
@@ -754,6 +833,7 @@ void Zone::Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdata
     STC_ItemDrop_Header& header = *(STC_ItemDrop_Header*)sds.ofbuff;
     header.size = reqsiz;
     header.st = STC_Protocol::ItemDrop;
+    header.zoneId = zoneId;
     header.dropindex = dropindex;
     header.lootData = lootdata;
     sds.postpush_end();
@@ -766,18 +846,14 @@ void Zone::Sending_ItemRemove(SendDataSaver& sds, int dropindex) {
     STC_ItemDropRemove_Header& header = *(STC_ItemDropRemove_Header*)sds.ofbuff;
     header.size = reqsiz;
     header.st = STC_Protocol::ItemDropRemove;
+    header.zoneId = zoneId;
     header.dropindex = dropindex;
     sds.postpush_end();
 }
 
 //��/����
 void Zone::LoadMapForZone(int zid) {
-    if (zid < gameworld.zoneCount) {
-        map.LoadMap(gameworld.ZoneMapName[zid]);
-    }
-    else {
-        map.LoadMap(gameworld.ZoneMapName[0]);
-    }
+    // Map loading is owned by World::InitCommonMap().
 }
 
 void Zone::SpawnObjects() {
@@ -803,7 +879,7 @@ void Zone::SpawnObjects() {
         }
 
         mon->Init(XMMatrixTranslation((float)(rand() % range - (range/2)), spawnY, (float)(rand() % range - (range / 2))));
-        while (map.isStaticCollision(mon->GetOBB())) {
+        while (gameworld.commonMap.isStaticCollision(mon->GetOBB())) {
             mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
         }
 
@@ -822,19 +898,24 @@ void Zone::GridCollisionCheck() {
         BoundingOrientedBox obb = BoundingOrientedBox(nodePos.f3, { radius , radius , radius }, vec4(0, 0, 0, 1));
         bool blocked = false;
 
-        GameObjectIncludeChunks goic = GetChunks_Include_OBB(obb);
-        ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
-        int chunckLen = goic.GetChunckSize();
-        for (; ci.extra < chunckLen; goic.Inc(ci)) {
-            auto f = chunck.find(ci);
-            if (f != chunck.end()) {
-                GameChunk* gc = f->second;
-                for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
-                    StaticGameObject* obj = Static_gameObjects[i];
-                    BoundingOrientedBox sobb = obj->GetOBB();
-                    if (sobb.Intersects(obb)) {
-                        blocked = true;
-                        goto COLLISION_CHECK_END;
+        Zone* staticZone = gameworld.GetStaticChunkZone();
+        if (staticZone != nullptr) {
+            GameObjectIncludeChunks goic = GetChunks_Include_OBB(obb);
+            ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
+            int chunckLen = goic.GetChunckSize();
+            for (; ci.extra < chunckLen; goic.Inc(ci)) {
+                auto f = staticZone->chunck.find(ci);
+                if (f != staticZone->chunck.end()) {
+                    GameChunk* gc = f->second;
+                    for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
+                        if (gc->Static_gameobjects.isnull(i)) continue;
+                        StaticGameObject* obj = gc->Static_gameobjects[i];
+                        if (obj == nullptr) continue;
+                        BoundingOrientedBox sobb = obj->GetOBB();
+                        if (sobb.Intersects(obb)) {
+                            blocked = true;
+                            goto COLLISION_CHECK_END;
+                        }
                     }
                 }
             }
@@ -866,28 +947,56 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     float closestDistance = rayDistance;
     DynamicGameObject* hitObject = nullptr;
     int hitObjectIndex = -1;
+    Zone* hitZone = nullptr;
 
     int lastcurrentindex = currentIndex;
 
-    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-        if (Dynamic_gameObjects.isnull(i)) continue;
-        if (shooter == (GameObject*)Dynamic_gameObjects[i]) continue;
+    for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
+        if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
+        Zone& testZone = gameworld.zones[zi];
+        for (int i = 0; i < testZone.Dynamic_gameObjects.size; ++i) {
+            if (testZone.Dynamic_gameObjects.isnull(i)) continue;
+            if (shooter == (GameObject*)testZone.Dynamic_gameObjects[i]) continue;
 
-        currentIndex = i;
-        BoundingOrientedBox obb = Dynamic_gameObjects[i]->GetOBB();
-        float distance;
+            testZone.currentIndex = i;
+            BoundingOrientedBox obb = testZone.Dynamic_gameObjects[i]->GetOBB();
+            float distance;
 
-        if (obb.Intersects(rayOrigin, rayDirection, distance)) {
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                hitObject = Dynamic_gameObjects[i];
-                hitObjectIndex = i;
+            if (obb.Intersects(rayOrigin, rayDirection, distance)) {
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    hitObject = testZone.Dynamic_gameObjects[i];
+                    hitObjectIndex = i;
+                    hitZone = &testZone;
+                }
             }
         }
     }
 
-    if (hitObject != nullptr) {
-        currentIndex = hitObjectIndex;
+    int ghostHitIndex = -1;
+    int ghostHitZone = -1;
+    for (auto& g : gameworld.ghostPlayers) {
+        DynamicGameObject* gh = g.second;
+        if (gh == nullptr) continue;
+        if (gh->tag[GameObjectTag::Tag_Enable] == false) continue;
+        if (shooter == (GameObject*)gh) continue;
+        BoundingOrientedBox obb = gh->GetOBB();
+        float distance;
+        if (obb.Intersects(rayOrigin, rayDirection, distance)) {
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                ghostHitIndex = g.first;
+                ghostHitZone = gh->zoneId;
+            }
+        }
+    }
+
+    if (ghostHitIndex >= 0) {
+        gameworld.SendGhostDamageToOwner(ghostHitZone, ghostHitIndex, damage);
+    }
+    else if (hitObject != nullptr) {
+        hitZone->currentIndex = hitObjectIndex;
         hitObject->OnCollisionRayWithBullet(shooter, damage);
     }
 
@@ -939,27 +1048,8 @@ static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& 
         return StatusEffectType::None;
     }
 }
-static bool IsCrowdControlStatus(StatusEffectType type)
-{
-    switch (type) {
-    case StatusEffectType::Freeze:
-    case StatusEffectType::Slow:
-    case StatusEffectType::Taunt:
-    case StatusEffectType::Stun:
-    case StatusEffectType::Paralyze:
-        return true;
-    default:
-        return false;
-    }
-}
 int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage) {
-    float statusDuration = 0.0f;
-    float statusPower = 0.0f;
-    StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
-    if (IsCrowdControlStatus(statusType)) statusDuration *= 2.0f;
-
-    if (caster == nullptr || radius <= 0.0f) return 0;
-    if (damage <= 0.0f && statusType == StatusEffectType::None) return 0;
+    if (caster == nullptr || damage <= 0.0f || radius <= 0.0f) return 0;
 
     bool selfOnly = effectType == SkillEffectType::Healer_HealAura ||
         effectType == SkillEffectType::Frost_IceBlock ||
@@ -994,27 +1084,35 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
     int hitCount = 0;
     int lastCurrentIndex = currentIndex;
 
-    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-        if (Dynamic_gameObjects.isnull(i)) continue;
-        GameObject* object = (GameObject*)Dynamic_gameObjects[i];
-        if (object == caster) continue;
+    for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
+        if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
+        Zone& testZone = gameworld.zones[zi];
+        for (int i = 0; i < testZone.Dynamic_gameObjects.size; ++i) {
+            if (testZone.Dynamic_gameObjects.isnull(i)) continue;
+            GameObject* object = (GameObject*)testZone.Dynamic_gameObjects[i];
+            if (object == caster) continue;
 
-        void* vptr = *(void**)object;
-        if (GameObjectType::VptrToTypeTable[vptr] != GameObjectType::_Monster) continue;
+            void* vptr = *(void**)object;
+            if (GameObjectType::VptrToTypeTable[vptr] != GameObjectType::_Monster) continue;
 
-        Monster* monster = (Monster*)object;
-        if (monster->isDead) continue;
+            Monster* monster = (Monster*)object;
+            if (monster->isDead) continue;
 
-        BoundingOrientedBox monsterOBB = monster->GetOBB();
-        bool hit = directional ? skillBox.Intersects(monsterOBB) : skillSphere.Intersects(monsterOBB);
-        if (hit == false) continue;
+            BoundingOrientedBox monsterOBB = monster->GetOBB();
+            bool hit = directional ? skillBox.Intersects(monsterOBB) : skillSphere.Intersects(monsterOBB);
+            if (hit == false) continue;
 
-        currentIndex = i;
-        if (damage > 0.0f) monster->ApplyDamage(caster, damage);
-        if (statusType != StatusEffectType::None) {
-            monster->ApplyStatusEffect(caster, statusType, statusDuration, statusPower);
+            testZone.currentIndex = i;
+            monster->ApplyDamage(caster, damage);
+            float statusDuration = 0.0f;
+            float statusPower = 0.0f;
+            StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
+            if (statusType != StatusEffectType::None) {
+                monster->ApplyStatusEffect(caster, statusType, statusDuration, statusPower);
+            }
+            ++hitCount;
         }
-        ++hitCount;
     }
 
     currentIndex = lastCurrentIndex;
@@ -1061,6 +1159,7 @@ void Zone::Sending_PlayerFire(SendDataSaver& sds, int objIndex) {
     STC_PlayerFire_Header& header = *(STC_PlayerFire_Header*)sds.ofbuff;
     header.size = reqsiz;
     header.st = STC_Protocol::PlayerFire;
+    header.zoneId = zoneId;
     header.objindex = objIndex;
     sds.postpush_end();
 }
@@ -1072,6 +1171,7 @@ void Zone::Sending_SkillCast(SendDataSaver& sds, int ownerObjIndex, PlayerJob jo
     STC_SkillCast_Header& header = *(STC_SkillCast_Header*)sds.ofbuff;
     header.size = reqsiz;
     header.st = STC_Protocol::SkillCast;
+    header.zoneId = zoneId;
     header.ownerObjIndex = ownerObjIndex;
     header.job = job;
     header.slot = slot;
@@ -1090,6 +1190,7 @@ void Zone::Sending_StatusEffect(SendDataSaver& sds, int targetObjIndex, int sour
     STC_StatusEffect_Header& header = *(STC_StatusEffect_Header*)sds.ofbuff;
     header.size = reqsiz;
     header.st = STC_Protocol::StatusEffect;
+    header.zoneId = zoneId;
     header.targetObjIndex = targetObjIndex;
     header.sourceObjIndex = sourceObjIndex;
     header.statusType = statusType;
