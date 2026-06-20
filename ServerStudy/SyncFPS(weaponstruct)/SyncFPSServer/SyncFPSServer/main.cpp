@@ -17,13 +17,10 @@ void dbgbreak(bool condition) {
 }
 
 int main() {
-	
-
-	int serverId = 0;
-	unsigned short listenPort = 9000;
-
 	// 개발시 존 아이디 지정.
-	constexpr int testZoneID = 73; // Zone_4_8
+	constexpr int testZoneID = 74; // Zone_4_7
+	int serverId = testZoneID;
+	unsigned short listenPort = 9000 + testZoneID;
 	int ownedZoneId = testZoneID;
 
 	if (__argc >= 2) serverId = atoi(__argv[1]);

@@ -3608,7 +3608,7 @@ void Game::Update()
 		}
 		else if (result == 0) {
             OutputDebugStringA("[ClientRecv] server closed connection\n");
-			//client.DisConnectToServer();
+			//client.Disconnect();
 			break;
 		}
 		else break; // 더 읽을 패킷이 없으면 종료
@@ -3805,6 +3805,7 @@ void Game::Update()
 	}
 }
 
+#pragma optimize( "", off )
 int Game::Receiving(char* ptr, int totallen)
 {
 	char* currentPivot = ptr;
@@ -4317,9 +4318,9 @@ READ_START:
 		//	OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
 		//}
 		game.BeginServerTransfer(header.ip, header.port, header.dstZoneId, header.transferToken);
-		currentPivot += header.size;
-		offset += header.size;
-		//return totallen;
+		/*currentPivot += header.size;
+		offset += header.size;*/
+		return totallen;
 	}
 		break;
 	case STC_Protocol::NPCTalkStart:
@@ -4387,6 +4388,7 @@ READ_START:
 
 	return offset;
 }
+#pragma optimize( "", on )
 
 void Game::AddMouseInput(int deltaX, int deltaY)
 {

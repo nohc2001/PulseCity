@@ -2206,8 +2206,8 @@ void Player::ApplyJob(PlayerJob job)
 		SkillCooldownFlow[i] = 0.0f;
 	}
 
-	cout << "Applied job: " << endl
-	<< "MaxHP: " << jobData.MaxHP << "Attack" << jobData.Attack << "Defense : " << jobData.Defense << endl;
+	/*cout << "Applied job: " << endl
+	<< "MaxHP: " << jobData.MaxHP << "Attack" << jobData.Attack << "Defense : " << jobData.Defense << endl;*/
 }
 
 void Player::SyncJobState(Zone* zones)
@@ -5197,7 +5197,7 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = data.dstZoneId;
-	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, false);
+	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, false, false);
 	clients[clientIndex].objindex = objindex;
 	return true;
 }
