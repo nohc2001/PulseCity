@@ -293,6 +293,11 @@ template <int n> struct BitBoolArr {
 		d.bitindex = index & 63;
 		return d;
 	}
+
+	// other 과 N이 같아야 한다.
+	void operator=(BitBoolArr<n>& other) {
+		memcpy_s(buffer, sizeof(ui64) * n, other.buffer, sizeof(ui64) * n);
+	}
 };
 
 /*
@@ -368,6 +373,7 @@ union GameObjectType {
 		_Player = 4,
 		_Monster = 5,
 		_Portal = 6,
+		_PeacefulNPC = 7,
 	};
 
 	GameObjectType() {}
@@ -424,8 +430,16 @@ struct Item
 	// only client
 	//vec4 color;
 	//Mesh* MeshInInventory;
+	void* ItemData = nullptr;
 
-	Item(int i, ItemType t, const wchar_t* desc) : id{ i }, type{ t }, description{ desc } {}
+	Item(int i, ItemType t, const wchar_t* desc, void* dataptr) : id{ i }, type{ t }, description{ desc } {
+		ItemData = dataptr;
+	}
+};
+
+struct Item_ConsumableData {
+	float inchp;
+	float incmp;
 };
 
 typedef int ItemID;
@@ -462,6 +476,14 @@ struct SendDataSaver {
 	int capacity = 0;
 	int postsiz = 0;
 	char* ofbuff = nullptr;
+
+	SendDataSaver() {
+		size = 0;
+		capacity = 0;
+		postsiz = 0;
+		buffer = nullptr;
+		ofbuff = nullptr;
+	}
 
 	__forceinline void Init(int _capacity) {
 		capacity = _capacity;
@@ -574,6 +596,7 @@ enum InputID {
 	MouseLbutton = 5,
 	MouseRbutton = 6,
 	RotationSync = 7,
+	KeyboardE = 'E',
 };
 
 /*
@@ -586,5 +609,67 @@ struct RotationPacket {
 	float pitch;
 };
 #pragma pack(pop)
+
+enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
+
+struct WeaponData {
+	WeaponType type;
+	float shootDelay;     // 연사 속도
+	float recoilVelocity; // 반동 세기
+	float recoilDelay;    // 반동 회복 시간
+	float damage;         // 기본 데미지
+	int maxBullets;       // 탄창 용량
+	float reloadTime;     // 장전 시간
+};
+
+static WeaponData GWeaponTable[] = {
+	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
+	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
+	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
+	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
+	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
+	{ WeaponType::Max, 10000.0f, 0.0f, 0.0f, 0.0f, 0, 10000.0f },
+};
+
+class Weapon {
+public:
+	WeaponData m_info;      // GWeaponTable에서 가져온 수치
+	float m_shootFlow = 0;  // 다음 발사까지 남은 시간 계산
+	float m_recoilFlow = 0; // 반동 애니메이션/에임 상승 진행률
+
+	Weapon() {
+
+	}
+
+	Weapon(WeaponType type) : m_info(GWeaponTable[(int)type]) {
+		m_shootFlow = m_info.shootDelay;
+		m_recoilFlow = m_info.recoilDelay;
+	}
+
+	Weapon(const Weapon& ref) {
+		m_info = ref.m_info;
+		m_shootFlow = ref.m_shootFlow;
+		m_recoilFlow = ref.m_recoilFlow;
+	}
+
+	virtual void Update(float deltaTime) {
+		if (m_shootFlow < m_info.shootDelay) m_shootFlow += deltaTime;
+		if (m_recoilFlow < m_info.recoilDelay) m_recoilFlow += deltaTime;
+	}
+
+	virtual void OnFire() {
+		m_shootFlow = 0.0f;
+		m_recoilFlow = 0.0f;
+	}
+
+	/*
+	* 설명 : obb를 맵 청크 내에 담는다.
+	* 현재 반동이 얼마나 진행되었는지 0~1 사이 값으로 반환
+	*/
+	float GetRecoilAlpha() const {
+		float alpha = 1.0f - (m_recoilFlow / m_info.recoilDelay);
+		return (alpha < 0) ? 0 : alpha;
+	}
+};
 
 #include "Protocol.h"

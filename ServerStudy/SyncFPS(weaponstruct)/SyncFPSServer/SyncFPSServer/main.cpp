@@ -19,7 +19,11 @@ void dbgbreak(bool condition) {
 int main() {
 	int serverId = 0;
 	unsigned short listenPort = 9000;
-	int ownedZoneId = 0;
+
+	// 개발시 존 아이디 지정.
+	constexpr int testZoneID = 73; // Zone_4_8
+	int ownedZoneId = testZoneID;
+
 	if (__argc >= 2) serverId = atoi(__argv[1]);
 	if (__argc >= 3) listenPort = (unsigned short)atoi(__argv[2]);
 	if (__argc >= 4) ownedZoneId = atoi(__argv[3]);
@@ -213,7 +217,6 @@ READ_START:
 	}
 
 	switch (type) {
-	
 	case CTS_Protocol::KeyInput:
 	{
 		CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
@@ -280,15 +283,15 @@ READ_START:
 		// [4단계-STEP4] 이웃이 내 객체(고스트)를 맞혔다 -> 진짜 객체에 데미지 적용.
 		CTS_GhostDamage_Header& header = *(CTS_GhostDamage_Header*)currentPivot;
 		int tz = header.targetZoneId;
-		if (tz >= 0 && tz < zoneCount && IsZoneOwned(tz)) {
-			Zone& z = zones[tz];
+		if (tz >= 0 && tz < ZoneTable.size() && IsZoneOwned(tz)) {
+			Zone* z = ZoneTable[tz];
 			int ti = header.targetObjIndex;
-			if (ti >= 0 && ti < z.Dynamic_gameObjects.size && z.Dynamic_gameObjects.isnull(ti) == false) {
-				DynamicGameObject* obj = z.Dynamic_gameObjects[ti];
+			if (ti >= 0 && ti < z->Dynamic_gameObjects.size && z->Dynamic_gameObjects.isnull(ti) == false) {
+				DynamicGameObject* obj = z->Dynamic_gameObjects[ti];
 				if (obj != nullptr) {
 					short ot = (short)GameObjectType::VptrToTypeTable[*(void**)obj];
 					if (ot == GameObjectType::_Monster) {
-						z.currentIndex = ti;
+						z->currentIndex = ti;
 						((Monster*)obj)->ApplyDamage(nullptr, header.damage);
 					}
 				}
@@ -370,6 +373,55 @@ READ_START:
 		}
 		break;
 		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::CTS_ChangeEquipSlotWithInventorySlot:
+	{
+		CTS_ChangeEquipSlotWithInventorySlot_Header& header = *(CTS_ChangeEquipSlotWithInventorySlot_Header*)currentPivot;
+		header.size = sizeof(CTS_ChangeEquipSlotWithInventorySlot_Header);
+		header.st = CTS_Protocol::CTS_ChangeEquipSlotWithInventorySlot;
+		if (header.EquipIndex >= 4) {
+			int weaponeindex = header.EquipIndex - 4;
+			if (weaponeindex >= 3) weaponeindex = 2;
+			if (weaponeindex < 0) weaponeindex = 0;
+			dbgbreak(header.InventoryIndex >= 49);
+			Item& item = ItemTable[p->Inventory[header.InventoryIndex].id];
+			p->weapon[weaponeindex] = *(Weapon*)item.ItemData;
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::Client_NPCTalkSelection: 
+	{
+		CTS_Client_NPCTalkSelection_Header& header = *(CTS_Client_NPCTalkSelection_Header*)currentPivot;
+		header.size = sizeof(CTS_Client_NPCTalkSelection_Header);
+		header.st = CTS_Protocol::Client_NPCTalkSelection;
+		
+		if (p->PresentTalkID >= 0) {
+			// 플레이어가 선택지를 선택했을때.
+			TalkSelection& ts = gameworld.NPCTalkTable[p->PresentTalkID].sel[header.selectionID];
+			if (ts.mod == 't') {
+				// 다음 대화로 넘어가는 경우
+				p->PresentTalkID = ts.goto_otherTalkID;
+				zone->Sending_NPCStartTalk(gameworld.clients[p->clientIndex].PersonalSDS, PeacefulNPCType::PNT_Quest, ts.goto_otherTalkID);
+			}
+			else if(ts.mod == 'f') {
+				// 선택지의 결과 동작을 실행하는 경우
+				ts.Function(p);
+				p->PresentTalkID = -1;
+			}
+			else if (ts.mod == 'q') {
+				p->QuestArr.push_back(ts.AddQuest);
+				zone->Sending_AddQuest(gameworld.clients[p->clientIndex].PersonalSDS, ts.AddQuest);
+				p->PrograssQuestBitArr[ts.AddQuest] = true;
+				p->QuestPrograss.push_back(gameworld.QuestTable[ts.AddQuest]);
+				p->PresentTalkID = -1;
+			}
+		}
+
 		currentPivot += header.size;
 		offset += header.size;
 	}

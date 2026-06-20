@@ -338,7 +338,7 @@ float4 PBRPS(VS_OUTPUT input, float isShadow)
     TBNnormal = 2.0 * (TBNnormal - 0.5);
     float AmbientOculusion = PBR_Tex[2].Sample(StaticSampler, input.uv).r;
     float Metalic = PBR_Tex[3].Sample(StaticSampler, input.uv).r;
-    float Roughness = max(min(0.5f + PBR_Tex[4].Sample(StaticSampler, input.uv).r, 1.0), 0.02f);
+    float Roughness = max(min(smoothness + PBR_Tex[4].SampleLevel(StaticSampler, input.uv, 0).r, 1.0), 0.02f);
     
     float fValue = 0.2f;
     //(1.0f - 0.02f) * Metalic + 0.02f;

@@ -291,14 +291,17 @@ union Tag {
 		Tag* t;
 		int index;
 
-		operator bool() { return t->tag; }
+		operator bool() {
+			UINT tb = (t->tag & (1 << index));
+			return (tb != 0);
+		}
 
 		void operator=(bool b) {
 			if (b) {
-				t->tag |= index;
+				t->tag |= (1 << index);
 			}
 			else {
-				t->tag &= ~index;
+				t->tag &= ~(1 << index);
 			}
 		}
 	};
@@ -313,11 +316,10 @@ union Tag {
 };
 
 enum GameObjectTag {
-	Tag_Enable = 1, // 게임오브젝트 활성화 여부
-	Tag_Dynamic = 2, // 게임오브젝트가 움직일 수 있는지 여부
-	// OBB.Center
-	Tag_SkinMeshObject = 3,
-	// OBB.Center
+	Tag_Enable = 0, 
+	Tag_Dynamic = 1, 
+	Tag_SkinMeshObject = 2,
+	Tag_Player = 3,
 };
 
 struct GameObject {
@@ -740,65 +742,122 @@ struct SkinMeshGameObject : public DynamicGameObject {
 #undef STC_CurrentStruct
 };
 
-enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
-
-struct WeaponData {
-	WeaponType type;
-	float shootDelay;     // 연사 속도
-	float recoilVelocity; // 반동 세기
-	float recoilDelay;    // 반동 회복 시간
-	float damage;         // 기본 데미지
-	int maxBullets;       // 탄창 용량
-	float reloadTime;     // 장전 시간
+enum QuestType {
+	CollectItem,
+	KillMonster
 };
 
-static WeaponData GWeaponTable[] = {
-	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
-	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
-	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
-	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
-	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
-	//
+struct QuestRequirement {
+	QuestType type;
+	int ObjID = -1; // ������ �����̸� �������� ���̵�, ���� óġ�� ������ ���̵�
+	int Cnt = 0; // �ؾ��ϴ� ��ǥ�� ����
+	int PresentCnt = 0; // ���� ����� ����
+	int PastCnt = 0; // ������ ����� ���� - ���� ���̿� ���.
+
+	QuestRequirement() {}
+	QuestRequirement(QuestType t, int objid, int count) {
+		type = t;
+		ObjID = objid;
+		Cnt = count;
+		PresentCnt = 0;
+		PastCnt = 0;
+	}
+
+	void Copy(QuestRequirement* dest) {
+		dest->type = type;
+		dest->ObjID = ObjID;
+		dest->Cnt = Cnt;
+		dest->PresentCnt = PresentCnt;
+		dest->PastCnt = PastCnt;
+	}
+
+	bool isComplete() {
+		return PresentCnt >= Cnt;
+	}
 };
 
-class Weapon {
-public:
-	WeaponData m_info;      // GWeaponTable에서 가져온 수치
-	float m_shootFlow = 0;  // 다음 발사까지 남은 시간 계산
-	float m_recoilFlow = 0; // 반동 애니메이션/에임 상승 진행률
+enum QuestRewardType {
+	QRT_Money = 0,
+	QRT_Item = 1,
+	QRT_Exp = 2,
+};
 
-	Weapon() {
+struct QuestReward {
+	QuestRewardType type;
+	int objid = 0;
+	int count = 0;
 
+	QuestReward(){}
+	QuestReward(QuestRewardType t, int obj, int cnt) {
+		type = t;
+		objid = obj;
+		count = cnt;
 	}
 
-	Weapon(WeaponType type) : m_info(GWeaponTable[(int)type]) {
-		m_shootFlow = m_info.shootDelay;
-		m_recoilFlow = m_info.recoilDelay;
+	void Copy(QuestReward* dest) {
+		dest->type = type;
+		dest->objid = objid;
+		dest->count = count;
+	}
+};
+
+struct Quest {
+	const wchar_t* QuestName;
+	const wchar_t* QuestDesc;
+	static constexpr int MaxRequire = 16;
+	int requp = 0;
+	QuestRequirement ReqArr[MaxRequire];
+	
+	static constexpr int MaxReward = 16;
+	int rewardUp = 0;
+	QuestReward RewardArr[MaxReward];
+
+	Quest(){}
+	Quest(const wchar_t* qName, const wchar_t* qDesc) {
+		QuestName = qName;
+		QuestDesc = qDesc;
 	}
 
-	Weapon(const Weapon& ref) {
-		m_info = ref.m_info;
-		m_shootFlow = ref.m_shootFlow;
-		m_recoilFlow = ref.m_recoilFlow;
+	void PushReq(QuestType type, int objid, int Cnt) {
+		if (requp < MaxRequire) {
+			ReqArr[requp] = QuestRequirement(type, objid, Cnt);
+			requp += 1;
+		}
 	}
 
-	virtual void Update(float deltaTime) {
-		if (m_shootFlow < m_info.shootDelay) m_shootFlow += deltaTime;
-		if (m_recoilFlow < m_info.recoilDelay) m_recoilFlow += deltaTime;
+	void PushReward(QuestRewardType t, int obj, int cnt) {
+		if (rewardUp < MaxReward) {
+			RewardArr[rewardUp] = QuestReward(t, obj, cnt);
+			rewardUp += 1;
+		}
 	}
 
-	virtual void OnFire() {
-		m_shootFlow = 0.0f;
-		m_recoilFlow = 0.0f;
+	void Copy(Quest* dest) {
+		dest->QuestName = QuestName;
+		dest->QuestDesc = QuestDesc;
+		dest->requp = requp;
+		for (int i = 0; i < dest->requp; ++i) {
+			ReqArr[i].Copy(&dest->ReqArr[i]);
+		}
+		for (int i = 0; i < dest->rewardUp; ++i) {
+			RewardArr[i].Copy(&dest->RewardArr[i]);
+		}
 	}
 
-	/*
-	* 설명 : obb를 맵 청크 내에 담는다.
-	* 현재 반동이 얼마나 진행되었는지 0~1 사이 값으로 반환
-	*/
-	float GetRecoilAlpha() const {
-		float alpha = 1.0f - (m_recoilFlow / m_info.recoilDelay);
-		return (alpha < 0) ? 0 : alpha;
+	bool isSameQuest(Quest* q) {
+		bool b = q->QuestName == QuestName;
+		b = b && q->QuestDesc == QuestDesc;
+		b = b && q->requp == requp;
+		b = b && q->rewardUp == rewardUp;
+		return b;
+	}
+
+	bool isComplete() {
+		bool b = true;
+		for (int i = 0; i < requp; ++i) {
+			b = b && ReqArr[i].isComplete();
+		}
+		return b;
 	}
 };
 
@@ -906,9 +965,11 @@ struct Player : public SkinMeshGameObject {
 	// OBB.Center
 	static constexpr int maxItem = 49;
 	STCDefArr(ItemStack, Inventory, maxItem);
-	// OBB.Center
-	STCDef(Weapon, weapon);
-	// OBB.Center
+	//STC ����ִ� ����
+	STCDefArr(Weapon, weapon, 3);
+	STCDef(int, SelectedWeapon);
+
+	//STC �÷��̾��� �� �� �̵� ��ٿ�
 	STCDef(float, ZoneMoveCooldown);
 	bool m_frostPassiveUsed = false;
 	float m_tempMaxHpBonus = 0.0f;
@@ -952,8 +1013,34 @@ struct Player : public SkinMeshGameObject {
 	float m_aegisAuraEffectFlow = 0.0f;
 	float m_aegisChargeTimer = 0.0f;
 	float m_dualDashTimer = 0.0f;
+	//STC �÷��̾��� ��
+	STCDef(int, Gold);
 
-	// OBB.Center
+	//STC �÷��̾��� ����ġ
+	STCDef(int, Exp);
+
+	//STC �÷��̾��� ����
+	STCDef(int, Level);
+
+	static constexpr int ExpLimit[100] = {
+		100, 105, 110, 116, 122, 128, 134, 141, 148, 155, 163, 171, 180, 189, 198, 208, 218, 229, 241, 253, 265, 279, 293, 307, 323, 339, 356, 373, 392, 412, 432, 454, 476, 500, 525, 552, 579, 608, 639, 670, 704, 739, 776, 815, 856, 899, 943, 991, 1040, 1092, 1147, 1204, 1264, 1327, 1394, 1464, 1537, 1614, 1694, 1779, 1868, 1961, 2059, 2162, 2270, 2384, 2503, 2628, 2760, 2898, 3043, 3195, 3355, 3522, 3698, 3883, 4077, 4281, 4495, 4720, 4956, 5204, 5464, 5737, 6024, 6325, 6642, 6974, 7322, 7689, 8073, 8477, 8901, 9346, 9813, 10303, 10819, 11360, 11928, 12524
+	};
+
+	//STC �÷��̾ Ư�� ����Ʈ�� �ϼ��ߴ��� ��Ÿ���� ��Ʈ�迭 (�ִ� 4096���� ����Ʈ ���밡��.)
+	BitBoolArr<64> CompleteQuestBitArr;
+	//STC �÷��̾ Ư�� ����Ʈ�� ���������� ��Ÿ���� ��Ʈ�迭 (�ִ� 4096���� ����Ʈ ���밡��.)
+	BitBoolArr<64> PrograssQuestBitArr;
+
+	//STC Quest List - Index�� ���� (���� ����Ʈ)
+	vector<int> QuestArr;
+	// ���� ����ǰ� �ִ� ����Ʈ ���� (��������)
+	vector<Quest*> QuestPrograss;
+	void EraseQuest(int index);
+
+	//STC
+	int PresentTalkID = -1;
+
+	//ServerOnly �÷��̾ �� �� �̵��� �� ��, �ٽ� �̵��ϱ� ���� ���� ��ٿ� �ð��� ��Ÿ����. �̵��ϰ� ��� ���� ���������� ��� �̵��ϴ� ������ �߻��� �� ������.
 	float zoneMoveCooldownRemain = 0.0f;
 	int lastBoundaryIndex = -1;
 	bool wasInsideBoundary = false;
@@ -1027,6 +1114,14 @@ struct Player : public SkinMeshGameObject {
 	virtual void OnCollisionRayWithBullet(GameObject* shooter, float damage);
 	void ApplyDamage(GameObject* source, float damage);
 
+	bool LootItem(ItemStack is);
+
+	bool AddGold(int delta);
+
+	void AddExp(int delta);
+
+	void RewardQuest(Quest* completeQuest);
+
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
 		Tag tag;
@@ -1055,6 +1150,7 @@ struct Player : public SkinMeshGameObject {
 		float HeatGauge = 0;
 		// OBB.Center
 		float MaxHeatGauge = 100;
+
 		float ShieldDurability = 0;
 		float MaxShieldDurability = 100;
 		//STC player job
@@ -1068,11 +1164,12 @@ struct Player : public SkinMeshGameObject {
 		float m_yaw = 0.0f;
 		float m_pitch = 0.0f;
 
-		// OBB.Center
-		//static constexpr int maxItem = 36;
-		//ItemStack Inventory[maxItem];
-		// OBB.Center
-		Weapon weapon;
+		Weapon weapon[3];
+		int SelectedWeapone;
+
+		int Gold = 0;
+		int Exp = 0;
+		int Level = 0;
 	};
 #pragma pack(pop)
 
@@ -1460,7 +1557,126 @@ struct collisionchecksphere {
 	float radius;
 };
 
-// OBB.Center
+
+struct TalkSelection {
+	const wchar_t* selectionText;
+	char mod = 't'; // t : goto talk, q : quest, f : function
+	void (*Function)(Player*) = nullptr; // gotoOtherTalk == false �̸�, ���ý� �� �Լ��� �����Ѵ�. (����������)
+	int AddQuest = 0;
+	size_t goto_otherTalkID; // gotoOtherTalk == true �̸�, ���ý� �ش� Id�� ��ȭ�� ��ȯ�ȴ�.
+
+	TalkSelection() {
+		selectionText = nullptr;
+		mod = 't';
+		Function = nullptr;
+		goto_otherTalkID = -1;
+		AddQuest = 0;
+	}
+	TalkSelection(const wchar_t* txt, char _mod, ui64 gotoData) {
+		selectionText = txt;
+		mod = _mod;
+		if (mod == 't') {
+			goto_otherTalkID = gotoData;
+		}
+		else if (mod == 'f') {
+			Function = reinterpret_cast<void(*)(Player*)>(gotoData);
+		}
+		else if (mod == 'q') {
+			AddQuest = (int)gotoData;
+		}
+	}
+	TalkSelection(const TalkSelection& ref) {
+		selectionText = ref.selectionText;
+		mod = ref.mod;
+		goto_otherTalkID = ref.goto_otherTalkID;
+		Function = ref.Function;
+		AddQuest = ref.AddQuest;
+	}
+};
+
+struct NPCTalkData {
+	// ����� �ؽ�Ʈ
+	const wchar_t* text;
+	int selectCnt = 0;
+	bool NextEscape = false;
+	TalkSelection sel[4];
+	NPCTalkData();
+	NPCTalkData(const wchar_t* txt, bool nxtEsc = false, TalkSelection sel1 = TalkSelection(), TalkSelection sel2 = TalkSelection(), TalkSelection sel3 = TalkSelection(), TalkSelection sel4 = TalkSelection());
+};
+
+class PeacefulNPC : public SkinMeshGameObject {
+#define STC_CurrentStruct PeacefulNPC
+	STC_STATICINIT_innerStruct;
+public:
+	// �� Ŭ���̾�Ʈ���� �� NPC�� ���̴��� ����
+	STCDef(PeacefulNPCType, NPCType);
+
+	// �����̸� ������ ID
+	// ����Ʈ�� ��ȭâ�̸� ���۴�ȭ�� ID�� �����Ѵ�.
+	STCDef(int, NPCID);
+
+	//ServerOnly ���� ���� ����ִ����� ��Ÿ����.
+	bool isGround = false;
+	//ServerOnly �󸶳� ���� ���� ������Ʈ�� �浹�Ǿ������� ��Ÿ����.
+	int collideCount = 0;
+
+	vector<int> NPCQuestList;
+
+	PeacefulNPC();
+	virtual ~PeacefulNPC() {}
+
+	/*
+	* ���� : ���ӿ�����Ʈ�� ������Ʈ�� ������.
+	* �Ű����� :
+	* float deltaTime : ���� ������Ʈ ���� ���� ��������� �ð� ����.
+	*/
+	virtual void Update(float deltaTime);
+
+	virtual void Release();
+
+	/*
+	* ���� : ���ӿ�����Ʈ�� �浹�������� ȣ��Ǵ� �Լ�.
+	* �Ű����� :
+	* GameObject* other : �浹�� ������Ʈ
+	*/
+	virtual void OnCollision(GameObject* other) override;
+
+	/*
+	* ���� : ���ӿ�����Ʈ�� �������� �ʴ� Static �浹ü�� �浹�������� ȣ��Ǵ� �Լ�.
+	* �Ű����� :
+	* BoundingOrientedBox other : �浹�� OBB.
+	*/
+	virtual void OnStaticCollision(BoundingOrientedBox obb) override;
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		vec4 LVelocity;
+		float AnimationFlowTime;
+		int PlayingAnimationIndex;
+
+		PeacefulNPCType npctype;
+		int NPCID;
+	};
+#pragma pack(pop)
+
+	virtual void SendGameObject(int objindex, SendDataSaver& sds);
+
+	static void PrintOffset(ofstream& ofs) {
+		SkinMeshGameObject::PrintOffset(ofs);
+		for (int i = 0; i < g_member.size(); ++i) {
+			g_member[i].offset = g_member[i].get_offset();
+			ofs << g_member[i].name << " " << g_member[i].offset << " " << g_member[i].size << endl;
+		}
+	}
+#undef STC_CurrentStruct
+};
+
 struct World;
 struct Zone;
 struct Portal;
@@ -1475,7 +1691,7 @@ struct Zoneboundary {
 
 	vec4 minPos = {};
 	vec4 maxPos = {};
-
+	
 	vec4 spawnPos = {};
     float spawnYaw = 0.0f;
 	float cooldownSec = 2.0f;
@@ -1488,11 +1704,48 @@ struct Zoneboundary {
 * 동적/정적 오브젝트, 맵, 청크, Astar 데이터와 포탈 정보를 가진다.
 */
 struct Zone {
+	static constexpr int OffsetMulArr[3][3] = {
+		{ 5, 1, 6 },
+		{ 2, 0, 3 },
+		{ 7, 4, 8 } };
+
 	// OBB.Center
 	World* world = nullptr;
 
+	// 존의 이름
+	char zoneName[128] = {};
+	
+	//존 좌표
+	int x;
+	int y;
+
+	Zone(int id, const char* name, int _x, int _y) {
+		zoneId = id;
+		strcpy_s(zoneName, 128, name);
+		x = _x;
+		y = _y;
+	}
+
 	// OBB.Center
 	int zoneId = 0;
+	Zone* nearZones[9] = {};
+	Zone* AssetOffsetToNearZone[9] = {};
+	int Asset_OffsetMul = 0;
+
+	// 주변 존 관련 데이터를 구성함.
+	void BakeNear() {
+		for (int i = 0; i < 9; ++i) {
+			AssetOffsetToNearZone[i] = 0;
+		}
+
+		for (int i = 0; i < 9; ++i) {
+			Zone* zone = nearZones[i];
+			if (zone != nullptr) {
+				int key = zone->Asset_OffsetMul;
+				AssetOffsetToNearZone[key] = zone;
+			}
+		}
+	}
 
 	// OBB.Center
 	vecset<DynamicGameObject*> Dynamic_gameObjects;
@@ -1523,20 +1776,20 @@ struct Zone {
 	// OBB.Center
 	int currentIndex = 0;
 
-	// OBB.Center
-	static constexpr float lowFrequencyDelay = 0.2f;
+	// �� ����
+	static constexpr float lowFrequencyDelay = 3.0f;
 	float lowFrequencyFlow = 0.0f;
 	__forceinline bool lowHit() {
 		return lowFrequencyFlow > lowFrequencyDelay;
 	}
 
-	static constexpr float midFrequencyDelay = 0.05f;
+	static constexpr float midFrequencyDelay = 0.2f;
 	float midFrequencyFlow = 0.0f;
 	__forceinline bool midHit() {
 		return midFrequencyFlow > midFrequencyDelay;
 	}
 
-	static constexpr float highFrequencyDelay = 0.01f;
+	static constexpr float highFrequencyDelay = 0.05f;
 	float highFrequencyFlow = 0.0f;
 	__forceinline bool highHit() {
 		return highFrequencyFlow > highFrequencyDelay;
@@ -1560,9 +1813,22 @@ struct Zone {
 	int ZoneTextureCount = 0;
 	int ZoneMaterialCount = 0;
 
-	// OBB.Center
+	vec4 BasicAABB_onlyXZ = 0;
+
+	static constexpr float MinimumCenter = -1575;
+	static constexpr float ZoneWidth = 350;
+	static constexpr float ZoneHalfWidth = ZoneWidth / 2;
+
 	Zone() : world(nullptr), zoneId(0) {}
-	Zone(World* w, int id) : world(w), zoneId(id) {}
+	Zone(World* w, int id, int _x, int _y) : world(w), zoneId(id), x{ _x }, y{_y} {
+		BasicAABB_onlyXZ = vec4(
+			MinimumCenter + ZoneWidth * _x - ZoneHalfWidth,
+			MinimumCenter + ZoneWidth * _y - ZoneHalfWidth,
+			MinimumCenter + ZoneWidth * _x + ZoneHalfWidth,
+			MinimumCenter + ZoneWidth * _y + ZoneHalfWidth);
+	}
+
+	void Set_world_id_pos(World* w, int id, int _x, int _y);
 
 	/*
 	* 설명 : Zone을 초기화한다.
@@ -1652,7 +1918,10 @@ struct Zone {
 	void Sending_PlayerFire(SendDataSaver& sds, int objIndex);
 	void Sending_SkillCast(SendDataSaver& sds, int ownerObjIndex, PlayerJob job, SkillSlot slot, SkillEffectType effectType, vec4 position, vec4 direction, float radius, float power, float duration);
 	void Sending_StatusEffect(SendDataSaver& sds, int targetObjIndex, int sourceObjIndex, StatusEffectType statusType, bool active, float duration, float remainTime, float power, vec4 position, vec4 extents);
-
+	void Sending_NPCStartTalk(SendDataSaver& sds, PeacefulNPCType npctype, int StartID);
+	void Sending_AddQuest(SendDataSaver& sds, int questID);
+	void Sending_DeleteQuest(SendDataSaver& sds, int questID);
+	void Sending_SyncQuestPrograss(SendDataSaver& sds, int questID, Quest* prograss);
 
 	// OBB.Center
 
@@ -1702,23 +1971,25 @@ struct World {
 	vector<HumanoidAnimation> HumanoidAnimationTable;
 
 	// OBB.Center
-	static constexpr int zoneCount = 2;
-	const char* ZoneMapName[zoneCount] = {
-		"The_Port",
-		"The_Port",
-	};
-	vector<Zone> zones;
+	//static constexpr int zoneCount = 2;
+	//const char* ZoneMapName[zoneCount] = {
+	//	"Zone_4_8",
+	//	"OfficeDungeon_1floor",
+	//};
+	vector<Zone*> ZoneTable;
 	GameMap commonMap;
 	int serverId = 0;
 	unsigned short listenPort = 9000;
 	int ownedZoneId = 0;
+
 	bool singleProcessAllZones = true;
-    unordered_map<int, PlayerTransferData> pendingTransfers;
+    
+	unordered_map<int, PlayerTransferData> pendingTransfers;
     int nextTransferToken = 1;
 
 	// [4단계-STEP1] 이웃 존 서버와의 상시 복제 링크 상태. 인덱스 = 이웃 zoneId(=serverId).
 	// true면 그 이웃과 링크가 연결돼 있다는 뜻. (멀티 프로세스에서만 사용)
-	bool peerLinkUp[zoneCount] = {};
+	bool peerLinkUp[256] = {};
 
 	// 아직 연결 안 된 이웃에 주기적으로 재접속 시도. (이웃 서버가 늦게 떠도 따라잡음)
 	void TryConnectPeers();
@@ -1738,24 +2009,36 @@ struct World {
 	// 이웃이 넘긴 몬스터를 내 존에 진짜 몬스터로 생성한다.
 	void SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp);
 
+	// 서버에서 돌아갈 Zone의 포함영역. singleProcessAllZones == true 일때 만 적용됨.
+	static constexpr int minx = 3, miny = 7;
+	static constexpr int maxx = 4, maxy = 8;
+	// 존이 서버에서 돌아가고 있는지 체크
 	bool IsZoneOwned(int zoneId) const {
-		if (zoneId < 0 || zoneId >= zoneCount) return false;
-		if (singleProcessAllZones) return true;
+		if (zoneId < 0 || zoneId >= ZoneTable.size()) return false;
+		if (singleProcessAllZones) {
+			Zone* zptr = ZoneTable[zoneId];
+			bool b = (minx <= zptr->x && zptr->x <= maxx);
+			b = b && (miny <= zptr->y && zptr->y <= maxy);
+			return b;
+		}
 		return zoneId == ownedZoneId;
 	}
 
+	// A, B의 ID를 가진 두 존이 인접해 있는지를 체크
 	bool IsAdjacentZone(int zoneA, int zoneB) const {
-		if (zoneA < 0 || zoneA >= zoneCount) return false;
-		if (zoneB < 0 || zoneB >= zoneCount) return false;
+		if (zoneA < 0 || zoneA >= ZoneTable.size()) return false;
+		if (zoneB < 0 || zoneB >= ZoneTable.size()) return false;
 		if (zoneA == zoneB) return true;
-		return abs(zoneA - zoneB) == 1;
+		bool b = abs(ZoneTable[zoneA]->x - ZoneTable[zoneB]->x) <= 1;
+		b = b && (abs(ZoneTable[zoneA]->y - ZoneTable[zoneB]->y) <= 1);
+		return b;
 	}
 
 	Zone* GetStaticChunkZone() {
-		if (zones.empty()) return nullptr;
+		if (ZoneTable.empty()) return nullptr;
 		int staticZoneId = singleProcessAllZones ? 0 : ownedZoneId;
-		if (staticZoneId < 0 || staticZoneId >= (int)zones.size()) return nullptr;
-		return &zones[staticZoneId];
+		if (staticZoneId < 0 || staticZoneId >= (int)ZoneTable.size()) return nullptr;
+		return ZoneTable[staticZoneId];
 	}
 
 	GameMap& GetCommonMap() {
@@ -1763,8 +2046,6 @@ struct World {
 	}
 
 	void InitCommonMap();
-
-
 
 	/*
 	* 설명 : 게임 월드를 초기화한다.
@@ -1834,8 +2115,8 @@ struct World {
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)sds.ofbuff;
 		header.size = reqsiz;
 		header.st = STC_Protocol::SyncGameState;
-		header.DynamicGameObjectCapacityPerZone = zones[ownedZoneId].Dynamic_gameObjects.Capacity;
-		header.ZoneCount = zoneCount;
+		header.DynamicGameObjectCapacityPerZone = ZoneTable[ownedZoneId]->Dynamic_gameObjects.Capacity;
+		header.ZoneCount = ZoneTable.size();
 		header.DynamicGameObjectCapacity = header.DynamicGameObjectCapacityPerZone * header.ZoneCount;
 		Zone* staticZone = GetStaticChunkZone();
 		header.StaticGameObjectCapacity = staticZone != nullptr ? staticZone->Static_gameObjects.Capacity : 0;
@@ -1856,9 +2137,9 @@ struct World {
 	* 설명 : zoneId에 해당하는 Zone을 얻는다.
 	*/
 	Zone* GetZone(int zoneId) {
-		if (zoneId < 0 || zoneId >= zoneCount) return nullptr;
+		if (zoneId < 0 || zoneId >= ZoneTable.size()) return nullptr;
 		if (IsZoneOwned(zoneId) == false) return nullptr;
-		return &zones[zoneId];
+		return ZoneTable[zoneId];
 	}
 
 	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
@@ -1870,6 +2151,14 @@ struct World {
 	void StoreIncomingPlayerTransfer(const PlayerTransferData& data);
 
 	void PrintOffset();
+	
+	//NPC Talk Data
+	vector<NPCTalkData> NPCTalkTable;
+
+	//Quest Table
+	vector<Quest*> QuestTable;
+
+	int GetStartTalk(Player* p, PeacefulNPC* npc);
 };
 
 struct Portal : public GameObject {
@@ -1916,4 +2205,6 @@ struct Portal : public GameObject {
 	}
 #undef STC_CurrentStruct
 };
+
+
 

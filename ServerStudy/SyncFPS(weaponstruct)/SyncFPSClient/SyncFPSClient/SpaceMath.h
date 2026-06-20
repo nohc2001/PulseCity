@@ -302,6 +302,12 @@ struct matrix {
 	matrix(const XMMATRIX& ref) {
 		mat = ref;
 	}
+	matrix(float f) {
+		right = vec4(f, f, f, f);
+		up = vec4(f, f, f, f);
+		look = vec4(f, f, f, f);
+		pos = vec4(f, f, f, f);
+	}
 
 	void Id() { mat = XMMatrixIdentity(); }
 
@@ -311,6 +317,8 @@ struct matrix {
 	void operator*=(const matrix& ref) {
 		mat = XMMatrixMultiply(mat, ref);
 	}
+
+	
 
 	void LookAt(const vec4& look, const vec4& up = { 0, 1, 0, 0 }) {
 		matrix xmf4x4View = XMMatrixLookAtLH(pos, pos + look, up);

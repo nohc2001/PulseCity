@@ -46,7 +46,7 @@ namespace {
 	}
 
 	constexpr float BULLET_RAY_MISS_DISTANCE = 49.95f;
-	constexpr bool SHOW_BULLET_RAY_DEBUG_MESH = false;
+	constexpr bool SHOW_BULLET_RAY_DEBUG_MESH = true;
 
 	// StaticGameObjects에 등록된 Mesh/Model을 Auto LOD 프리로드 대상으로 수집한다.
 	void PrebuildStaticObjectAutoLOD()
@@ -152,6 +152,7 @@ void GameObjectType::STATICINIT() {
 	Player::STATICINIT();
 	Monster::STATICINIT();
 	Portal::STATICINIT();
+	PeacefulNPC::STATICINIT();
 
 	//이름이 같은 것 끼리 링크한다.
 	for (int i = 0;i < ObjectTypeCount;++i) {
@@ -244,6 +245,24 @@ void Game::GameTableArrangeMent()
 
 }
 
+void Zone::GetZoneChunkGOIC()
+{
+	BoundingOrientedBox MapObb;
+	vec4 minpos = vec4(BasicAABB_onlyXZ.x, 0, BasicAABB_onlyXZ.y);
+	vec4 maxpos = vec4(BasicAABB_onlyXZ.z, 0, BasicAABB_onlyXZ.w);
+	vec4 centerpos = minpos + maxpos;
+	centerpos *= 0.5f;
+	vec4 Center = Map->AABB[0] + Map->AABB[1];
+	Center *= 0.5f;
+	Center.x = centerpos.x;
+	Center.z = centerpos.z;
+	MapObb.Center = Center.f3;
+	vec4 Ext = vec4(ZoneHalfWidth, Map->AABB[1].y - Center.y, ZoneHalfWidth);
+	MapObb.Extents = Ext.f3;
+	MapObb.Orientation = vec4(0, 0, 0, 1);
+	ZoneChunk_goic = GetChunks_Include_OBB(MapObb);
+}
+
 GameObjectIncludeChunks Zone::GetChunks_Include_OBB(BoundingOrientedBox obb)
 {
 	GameObjectIncludeChunks ret;
@@ -295,6 +314,7 @@ void Zone::PushGameObject(GameObject* go)
 	if (GameObject::IsType<Portal>(go)) {
 		// static game object
 		StaticGameObject* sgo = (StaticGameObject*)go;
+		sgo->zoneid = zoneid;
 		GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(sgo->GetOBB());
 		int xmax = chunkIds.xmin + chunkIds.xlen;
 		int ymax = chunkIds.ymin + chunkIds.ylen;
@@ -322,6 +342,7 @@ void Zone::PushGameObject(GameObject* go)
 	if (GameObject::IsType<StaticGameObject>(go)) {
 		// static game object
 		StaticGameObject* sgo = (StaticGameObject*)go;
+		sgo->zoneid = zoneid;
 		GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(sgo->GetOBB());
 		int xmax = chunkIds.xmin + chunkIds.xlen;
 		int ymax = chunkIds.ymin + chunkIds.ylen;
@@ -350,6 +371,7 @@ void Zone::PushGameObject(GameObject* go)
 	else {
 		if (go->tag[GameObjectTag::Tag_SkinMeshObject]) {
 			SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
+			smgo->zoneid = zoneid;
 			smgo->InitialChunkSetting();
 			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
 			int xmax = chunkIds.xmin + chunkIds.xlen;
@@ -380,6 +402,7 @@ void Zone::PushGameObject(GameObject* go)
 		else {
 			// dynamic game object
 			DynamicGameObject* dgo = (DynamicGameObject*)go;
+			dgo->zoneid = zoneid;
 			dgo->InitialChunkSetting();
 			GameObjectIncludeChunks chunkIds = GetChunks_Include_OBB(go->GetOBB());
 			int xmax = chunkIds.xmin + chunkIds.xlen;
@@ -1551,25 +1574,100 @@ void Game::InitParticlePool(ParticlePool& pool, UINT count)
 	);
 }
 
+Zone* Game::GetZoneByPosition(int x, int y) {
+	for (int i = 0; i < ZoneTable.size(); ++i) {
+		Zone* zone = ZoneTable[i];
+		if (zone->x == x && zone->y == y) {
+			return zone;
+		}
+	}
+	return nullptr;
+}
+
 void Game::Init()
 {
 	GameObjectType::STATICINIT();
+
+	//Quest Table
+	{
+		Quest* q = new Quest(L"ù��° ����Ʈ", L"������ 7���� ��ƿ���! �׷� 1000��带 �ٰ�!");
+		q->PushReq(QuestType::CollectItem, 1, 7);
+		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
+
+		QuestTable.push_back(q);
+	}
+
+	//NPC Talk Table
+	{
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"�ȳ�? �ݰ���!"));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"���� �ſ� ����� ���¾�."));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"��Ź�� �ִµ� ����� �� ������?", false, TalkSelection(L"�翬����! ����ٰ�!", false, 0), TalkSelection(L"������ �ٺ�. ���߿�.", true, 3)));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"�׷�����. �ƽ���.", true));
+	}
 
 	StaticGameObjects.reserve(Zone::MaxStaticObjectCount * 9); // 1MB
 	StaticGameObjects.resize(Zone::MaxStaticObjectCount * 9); // 1MB
 	//1. Zone Init. - //fix - planning . unity map exporter export zone info. and client and server use it.
 
+	game.RenderMaterialTable.reserve(Zone::MaxMaterialZoneMargin * 10);
+	game.RenderTextureTable.reserve(Zone::MaxTextureZoneMargin * 10);
+	game.RenderMaterialTable.resize(Zone::MaxMaterialZoneMargin * 10);
+	game.RenderTextureTable.resize(Zone::MaxTextureZoneMargin * 10);
+	
 	{
-		Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
+//<<<<<<< Updated upstream
+//		Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
+//		game.ZoneTable.push_back(Zone_ThePort);
+//
+//		Zone* Zone_ThePort_Zone1 = new Zone(1, "The_Port", 1, 0);
+//		game.ZoneTable.push_back(Zone_ThePort_Zone1);
+//
+//		Zone_ThePort->nearZones[1] = Zone_ThePort_Zone1;
+//		Zone_ThePort_Zone1->nearZones[1] = Zone_ThePort;
+//=======
+		char ZoneName[128] = "Zone_0_0";
+		for (int iz = 0; iz < 10; ++iz) {
+			for (int ix = 0; ix < 10; ++ix) {
+				ZoneName[7] = '0' + iz;
+				ZoneName[5] = '0' + ix;
+
+				// Make Zone
+				Zone* tempZone = new Zone(iz * 10 + ix, ZoneName, ix, iz);
+				game.ZoneTable.push_back(tempZone);
+			}
+		}
+
+		//Set Near Zones
+		for (int i = 0; i < game.ZoneTable.size(); ++i) {
+			Zone* tempZone = game.ZoneTable[i];
+			int nearSiz = 1;
+			int nearSiz_5 = 5;
+			for (int k = 0; k < game.ZoneTable.size(); ++k) {
+				Zone* tempZone2 = game.ZoneTable[k];
+				if (tempZone == tempZone2) {
+					continue;
+				}
+				if (abs(tempZone2->x - tempZone->x) + abs(tempZone2->y - tempZone->y) <= 1) {
+					tempZone->nearZones[nearSiz] = tempZone2;
+					nearSiz += 1;
+					continue;
+				}
+				if (abs(tempZone2->x - tempZone->x) <= 1 && abs(tempZone2->y - tempZone->y) <= 1) {
+					tempZone->nearZones[nearSiz_5] = tempZone2;
+					nearSiz_5 += 1;
+				}
+			}
+			tempZone->BakeNear();
+		}
+
+		/*Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
 		game.ZoneTable.push_back(Zone_ThePort);
-
-		Zone* Zone_ThePort_Zone1 = new Zone(1, "The_Port", 1, 0);
-		game.ZoneTable.push_back(Zone_ThePort_Zone1);
-
-		Zone_ThePort->nearZones[1] = Zone_ThePort_Zone1;
-		Zone_ThePort_Zone1->nearZones[1] = Zone_ThePort;
+		Zone* Zone_OfficeDungeon_1floor = new Zone(1, "OfficeDungeon_1floor", 1, 0);
+		game.ZoneTable.push_back(Zone_OfficeDungeon_1floor);*/
+		//Zone_ThePort->nearZones[1] = Zone_OfficeDungeon_1floor;
+//>>>>>>> Stashed changes
 	}
-	Current_Zone = game.ZoneTable[0];
+	Current_Zone = game.GetZoneByPosition(4, 8);
 
 	// 2. DirLight를 초기화한다.
 	InitDirLightGPURes();
@@ -1737,13 +1835,13 @@ void Game::Init()
 			ItemTable.push_back(Item(globalitem_index, ItemType::_NULL, vec4(1, 1, 1, 1), BlackShape, nullptr, nullptr, L"")); // blank space in inventory.
 			globalitem_index += 1;
 
-			auto AddItemFunc = [&](int id, ItemType t, const char* ItemName, const char* modelfilepath, const wchar_t* ItemIconPath, const wchar_t* ItemDescription) -> Model* {
+			auto AddItemFunc = [&](int id, ItemType t, const char* ItemName, const char* modelfilepath, const wchar_t* ItemIconPath, const wchar_t* ItemDescription, void* data) -> Model* {
 				Model* ItemModel = new Model();
 				ItemModel->LoadModelFile2(modelfilepath);
 				int Item_shapeindex = Shape::AddModel(ItemName, ItemModel);
 				GPUResource* ItemIcon = new GPUResource();
 				ItemIcon->CreateTexture_fromFile(ItemIconPath, game.basicTexFormat, game.basicTexMip, false);
-				ItemTable.push_back(Item(globalitem_index, t, vec4(1, 1, 1, 1), Shape::ShapeTable[Item_shapeindex], nullptr, ItemIcon, ItemDescription));
+				ItemTable.push_back(Item(globalitem_index, t, vec4(1, 1, 1, 1), Shape::ShapeTable[Item_shapeindex], nullptr, ItemIcon, ItemDescription, data));
 				return ItemModel;
 				};
 
@@ -1751,35 +1849,44 @@ void Game::Init()
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
 				"Resources/Model/ItemModel/BioFix.model",
 				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",
-				L"[바이오픽스] : 신체 조직을 재생하는 가성비 의료 주사기! \n HP+20");
+				L"[바이오픽스] : 신체 조직을 재생하는 가성비 의료 주사기! \n HP+20", nullptr);
 			globalitem_index += 1;
 
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
 				"Resources/Model/ItemModel/Tier4Gear.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Tier4Gear.png",
-				L"[티어4 부품] : 티어 4 도구 제작에 사용되는 주요재료. 많이 모으면 무기나 도구를 제작하는데 도움이 된다.");
+				L"[티어4 부품] : 티어 4 도구 제작에 사용되는 주요재료. 많이 모으면 무기나 도구를 제작하는데 도움이 된다.", nullptr);
 			globalitem_index += 1;
 
 			Model* Sniper_IronSight = AddItemFunc(globalitem_index, ItemType::_Weapon, "Sniper_IronSight",
 				"Resources/Model/sniper.model",
 				L"Resources/UI/ItemIcons/ItemIcon_IronSight.png",
-				L"[스나이퍼 - 아이언사이트] : 광학 장비조차 제대로 달리지 않은 구식 실탄 저격소총.");
+				L"[스나이퍼 - 아이언사이트] : 광학 장비조차 제대로 달리지 않은 구식 실탄 저격소총.", new Weapon(WeaponType::Sniper));
 			globalitem_index += 1;
 			game.SniperModel = Sniper_IronSight;
+			PlayerWeaponObj[(int)WeaponType::Sniper] = new GameObject();
+			PlayerWeaponObj[(int)WeaponType::Sniper]->worldMat = 0;
+			PlayerWeaponObj[(int)WeaponType::Sniper]->SetShape(game.SniperModel);
 
 			Model* Rifle_StreetSweeper = AddItemFunc(globalitem_index, ItemType::_Weapon, "Rifle_StreetSweeper",
 				"Resources/Model/Rifle.model",
 				L"Resources/UI/ItemIcons/ItemIcon_StreetSweeper.png",
-				L"[돌격소총 - 스트리트스위퍼] : 한때 거리를 쓸어버렸던 클래식 돌격소총. 이제는 흔해 빠진 모델이다.");
+				L"[돌격소총 - 스트리트스위퍼] : 한때 거리를 쓸어버렸던 클래식 돌격소총. 이제는 흔해 빠진 모델이다.", new Weapon(WeaponType::Rifle));
 			globalitem_index += 1;
 			game.RifleModel = Rifle_StreetSweeper;
+			PlayerWeaponObj[(int)WeaponType::Rifle] = new GameObject();
+			PlayerWeaponObj[(int)WeaponType::Rifle]->worldMat = 0;
+			PlayerWeaponObj[(int)WeaponType::Rifle]->SetShape(game.RifleModel);
 
 			Model* Pistol_DoubleTroble = AddItemFunc(globalitem_index, ItemType::_Weapon, "Pistol_DoubleTroble",
 				"Resources/Model/pistol.model",
 				L"Resources/UI/ItemIcons/ItemIcon_DoubleTroble.png",
-				L"[쌍권총 - 더블트러블] : 성능은 낮지만 두 배로 쏘아붙이는 저가형 쌍권총.");
+				L"[쌍권총 - 더블트러블] : 성능은 낮지만 두 배로 쏘아붙이는 저가형 쌍권총.", new Weapon(WeaponType::Pistol));
 			globalitem_index += 1;
 			game.PistolModel = Pistol_DoubleTroble;
+			PlayerWeaponObj[(int)WeaponType::Pistol] = new GameObject();
+			PlayerWeaponObj[(int)WeaponType::Pistol]->worldMat = 0;
+			PlayerWeaponObj[(int)WeaponType::Pistol]->SetShape(game.PistolModel);
 			/*game.Pistol_SlideIndices.clear();
 			{
 				int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
@@ -1792,9 +1899,12 @@ void Game::Init()
 			Model* ShotGun_SlagShot = AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
 				"Resources/Model/shootgun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_SlagShot.png",
-				L"[샷건 - 슬래그슛] : 제련 찌꺼기를 쏘는 듯한 거칠고 어려운 총. 구형 모델이라 성능도 그다지 좋지 않다.");
+				L"[샷건 - 슬래그슛] : 제련 찌꺼기를 쏘는 듯한 거칠고 어려운 총. 구형 모델이라 성능도 그다지 좋지 않다.", new Weapon(WeaponType::Shotgun));
 			globalitem_index += 1;
 			game.ShotGunModel = ShotGun_SlagShot;
+			PlayerWeaponObj[(int)WeaponType::Shotgun] = new GameObject();
+			PlayerWeaponObj[(int)WeaponType::Shotgun]->worldMat = 0;
+			PlayerWeaponObj[(int)WeaponType::Shotgun]->SetShape(game.ShotGunModel);
 			/*game.SG_PumpIndices.clear();
 			{
 				int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
@@ -1807,9 +1917,12 @@ void Game::Init()
 			Model* MachineGun_Ratler = AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
 				"Resources/Model/minigun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Ratler.png",
-				L"[머신건 - 라틀러] : 낡은 부품이 덜덜거리는 소리에서 따온 이름. 언제 만들어졌는지 알 수 없다.");
+				L"[머신건 - 라틀러] : 낡은 부품이 덜덜거리는 소리에서 따온 이름. 언제 만들어졌는지 알 수 없다.", new Weapon(WeaponType::MachineGun));
 			globalitem_index += 1;
 			game.MachineGunModel = MachineGun_Ratler;
+			PlayerWeaponObj[(int)WeaponType::MachineGun] = new GameObject();
+			PlayerWeaponObj[(int)WeaponType::MachineGun]->worldMat = 0;
+			PlayerWeaponObj[(int)WeaponType::MachineGun]->SetShape(game.MachineGunModel);
 			/*game.MG_BarrelIndices.clear();
 			{
 				auto addBarrel = [&](const char* name) {
@@ -2021,35 +2134,48 @@ void Game::LoadLinkedZoneMaps()
 		Zone* nearzone = game.Current_Zone->nearZones[i];
 		if (nearzone == nullptr) continue;
 		if (nearzone->Map != nullptr) continue;
-		loadingMap = true;
-		nearzone->Map = new GameMap();
-		nearzone->Map->LoadMap(nearzone->Load_MapName, nearzone->zoneid);
 
-		//push object to chunck and bake aabb
-		nearzone->Map->AABB[0] = INFINITY;
-		nearzone->Map->AABB[1] = -INFINITY;
-		for (int u = 0; u < nearzone->Map->MapObjects.size(); ++u) {
-			nearzone->PushGameObject(nearzone->Map->MapObjects[u]);
-			game.StaticGameObjects[Zone::MaxStaticObjectCount * i + u] = nearzone->Map->MapObjects[u];
-			BoundingOrientedBox obb = nearzone->Map->MapObjects[u]->GetOBB();
-			XMFLOAT3 corners[8];
-			obb.GetCorners(corners);
-			for (int k = 0; k < 8; ++k) {
-				vec4 c = corners[k];
-				nearzone->Map->AABB[0] = _mm_min_ps(c, nearzone->Map->AABB[0]);
-				nearzone->Map->AABB[1] = _mm_max_ps(c, nearzone->Map->AABB[1]);
+		if (nearzone->isMapLoaded == false) {
+			loadingMap = true;
+			nearzone->Map = new GameMap();
+			bool isLoadSuccess = nearzone->Map->LoadMap(nearzone->Load_MapName, nearzone->zoneid);
+			if (isLoadSuccess == false) {
+				continue;
 			}
-		}
-		nearzone->Map->AABB[0].w = -INFINITY;
-		nearzone->Map->AABB[1].w = INFINITY;
 
-		for (int u = 0; u < nearzone->LightTable.size(); ++u) {
-			nearzone->PushLight(nearzone->LightTable[u]);
-		}
+			//push object to chunck and bake aabb
+			nearzone->Map->AABB[0] = INFINITY;
+			nearzone->Map->AABB[1] = -INFINITY;
+			for (int u = 0; u < nearzone->Map->MapObjects.size(); ++u) {
+				nearzone->PushGameObject(nearzone->Map->MapObjects[u]);
+				int off = nearzone->Asset_OffsetMul;
+				game.StaticGameObjects[Zone::MaxStaticObjectCount * off + u] = nearzone->Map->MapObjects[u];
+				BoundingOrientedBox obb = nearzone->Map->MapObjects[u]->GetOBB();
+				XMFLOAT3 corners[8];
+				obb.GetCorners(corners);
+				for (int k = 0; k < 8; ++k) {
+					vec4 c = corners[k];
+					nearzone->Map->AABB[0] = _mm_min_ps(c, nearzone->Map->AABB[0]);
+					nearzone->Map->AABB[1] = _mm_max_ps(c, nearzone->Map->AABB[1]);
+				}
+			}
+			nearzone->Map->AABB[0].w = -INFINITY;
+			nearzone->Map->AABB[1].w = INFINITY;
 
+			for (int u = 0; u < nearzone->LightTable.size(); ++u) {
+				nearzone->PushLight(nearzone->LightTable[u]);
+			}
+
+			nearzone->GetZoneChunkGOIC();
+
+			nearzone->isMapLoaded = true;
+		}
+	}
+
+	if (loadingMap == false) return;
+	else {
 		PrebuildStaticObjectAutoLOD();
 	}
-	if (loadingMap == false) return;
 }
 
 bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneId, int transferToken)
@@ -2153,6 +2279,7 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 		}
 	}
 	DynmaicGameObjects.clear();
+
 	// [seamless-B] The objects these queues referenced were just deleted; drop the stale net indices
 	// so ProcessPendingSkinBoneInit never touches freed/reused slots after a transfer.
 	m_pendingSkinBoneInit.clear();
@@ -2224,8 +2351,8 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 	for (int i = 0; i < GlobalMaterialCount; ++i) {
 		Material* mat = MaterialTable[i];
 		if (isAssetAddingInGlobal == false) {
-			mat->SetDescTable();
-			RenderMaterialTable.push_back(mat);
+			mat->SetDescTable(-1);
+			RenderMaterialTable[i] = mat;
 		}
 	}
 
@@ -2249,7 +2376,7 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 
 	isMapInit = true;
 	isAssetAddingInGlobal = true;
-	ResendHeldMovementKeys();
+	//ResendHeldMovementKeys();
 }
 
 void Game::InitDirLightGPURes() {
@@ -2278,7 +2405,7 @@ void Game::Render() {
 	for (int i = 0; i < 9; ++i) {
 		Zone* nearzone = game.Current_Zone->nearZones[i];
 		if (nearzone == nullptr) continue;
-		if (nearzone->bReqireBakeLight_Raster) {
+		if (nearzone->isMapLoaded && nearzone->bReqireBakeLight_Raster) {
 			if (nearzone->ZoneLightChuncks.resource) nearzone->ZoneLightChuncks.Release();
 			if (nearzone->ZoneLightChuncks_Mapped) nearzone->ZoneLightChuncks_Mapped = nullptr;
 
@@ -2334,7 +2461,6 @@ void Game::Render() {
 		}
 	}
 
-
 	for (int i = 0;i < gd.addSDFTextureStack.size();++i) {
 		gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
 	}
@@ -2349,7 +2475,8 @@ void Game::Render() {
 	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
 	//2. 프러스텀 업데이트
 	gd.viewportArr[0].UpdateFrustum();
-	BoxLOD_BeginFrame();
+	
+	//BoxLOD_BeginFrame();
 
 	//2.5. 인스턴싱 이름 수집
 	if (SceneRenderBatch) {
@@ -2452,90 +2579,91 @@ void Game::Render() {
 			if(game.Current_Zone->bReqireBakeLight_Raster == false) gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
 		}
 	};
-
-
 	// 16 ~ 17. 터레인 테셀레이션 생략
 
 	// 18. 모든 게임오브젝트들을 출력한다.
 	dbgc[0] = 0;
-	//gd.AverageTimerStart();
-	matrix idmat;
-	idmat.Id();
-	if (!SceneRenderBatch) BoxLOD_BeginFrame();
-	SetRenderMod(SceneRenderBatch);
-	if (CurrentRenderBatch) {
-		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::InstancingWithShadow);
-		game.PresentShaderType = ShaderType::InstancingWithShadow;
-		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-		{
-			using PRID = PBRShader1::RootParamId;
-			// 18-1. 카메라 정보
-			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
-			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			// 18-2. dirlight 정보
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_Instancing_DirLightData, game.DirLightResCBV.hRender.hgpu);
-			// 18-3. Material Structured Buffer
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialPool, Material::MaterialStructuredBufferSRV.hRender.hgpu);
-			// 18-4. ShadowMap
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
-			// 18-5. TextureArr[]
-			DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialTexturePool, texarrSRV.hRender.hgpu);
+
+	if (true) {
+		//gd.AverageTimerStart();
+		matrix idmat;
+		idmat.Id();
+		SetRenderMod(SceneRenderBatch);
+		if (CurrentRenderBatch) {
+			gd.gpucmd.SetShader(MyPBRShader1, ShaderType::InstancingWithShadow);
+			game.PresentShaderType = ShaderType::InstancingWithShadow;
+			gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+			{
+				using PRID = PBRShader1::RootParamId;
+				// 18-1. 카메라 정보
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+				// 18-2. dirlight 정보
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_Instancing_DirLightData, game.DirLightResCBV.hRender.hgpu);
+				// 18-3. Material Structured Buffer
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialPool, Material::MaterialStructuredBufferSRV.hRender.hgpu);
+				// 18-4. ShadowMap
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+				// 18-5. TextureArr[]
+				DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialTexturePool, texarrSRV.hRender.hgpu);
+			}
+			BatchRender(gd.gpucmd);
+			BoxLOD_FlushQueued();
+			SetRenderMod(false);
 		}
-		BatchRender(gd.gpucmd);
-		BoxLOD_FlushQueued();
-		SetRenderMod(false);
+		else {
+			//18-1. 그림자와 함께 출력하기 위해 PBRShader Set, Root 변수중 기본 고정되는 정보를 Set
+			gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
+			game.PresentShaderType = ShaderType::RenderWithShadow;
+			gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+			{
+				using PRID = PBRShader1::RootParamId;
+				// 18-1. 카메라 정보
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+				gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
+				// 18-3. Direction Light
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+				if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+			}
+			RenderTour<false>();
+
+			// 18-2. 스킨 메쉬들을 출력하기 위해 Shader를 Set.
+			gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
+			game.PresentShaderType = ShaderType::SkinMeshRender;
+			gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+			{
+				using PRID = PBRShader1::RootParamId;
+				// 18-1. 카메라 정보
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].descindex.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight[0].descindex.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMeshEnvironmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+				if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+			}
+			RenderTour<true>();
+
+			//for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
+			//	SkinMeshGameObject* smgo = dynamic_cast<SkinMeshGameObject*>(DynmaicGameObjects[i]);
+			//	if (smgo == nullptr) continue;
+			//	if (smgo->tag[GameObjectTag::Tag_Enable] == false) continue;
+			//	if (smgo->tag[GameObjectTag::Tag_SkinMeshObject] == false) continue;
+			//	if (smgo->TourID == TourID) continue;
+			//	(smgo->*SkinMeshGameObject::CurrentRenderFunc)(idmat);
+			//	smgo->TourID = TourID;
+			//}
+
+			if (game.player != nullptr && game.bFirstPersonVision == false) {
+				BindStaticPBRRenderState();
+				game.player->Render_ThirdPersonWeapon();
+			}
+			BoxLOD_FlushQueued();
+		}
 	}
-	else {
-		//18-1. 그림자와 함께 출력하기 위해 PBRShader Set, Root 변수중 기본 고정되는 정보를 Set
-		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
-		game.PresentShaderType = ShaderType::RenderWithShadow;
-		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-		{
-			using PRID = PBRShader1::RootParamId;
-			// 18-1. 카메라 정보
-			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
-			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
-			// 18-3. Direction Light
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
-			if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
-		}
-
-		RenderTour<false>();
-
-		// 18-2. 스킨 메쉬들을 출력하기 위해 Shader를 Set.
-		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
-		game.PresentShaderType = ShaderType::SkinMeshRender;
-		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-		{
-			using PRID = PBRShader1::RootParamId;
-			// 18-1. 카메라 정보
-			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
-			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_SkinMeshLightData, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].descindex.hRender.hgpu);
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SkinMeshShadowMaps, game.MyDirLight[0].descindex.hRender.hgpu);
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMeshEnvironmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
-			if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_SKinMesh_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
-		}
-		RenderTour<true>();
-		for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
-			SkinMeshGameObject* smgo = dynamic_cast<SkinMeshGameObject*>(DynmaicGameObjects[i]);
-			if (smgo == nullptr) continue;
-			if (smgo->tag[GameObjectTag::Tag_Enable] == false) continue;
-			if (smgo->tag[GameObjectTag::Tag_SkinMeshObject] == false) continue;
-			if (smgo->TourID == TourID) continue;
-			(smgo->*SkinMeshGameObject::CurrentRenderFunc)(idmat);
-			smgo->TourID = TourID;
-		}
-
-		if (game.player != nullptr && game.bFirstPersonVision == false) {
-			BindStaticPBRRenderState();
-			game.player->Render_ThirdPersonWeapon();
-		}
-		BoxLOD_FlushQueued();
-	}
+	
 
 	//Render Items
 	// already droped items. (non move..)
@@ -2554,6 +2682,7 @@ void Game::Render() {
 	//	}
 	//}
 
+	if(true)
 	{
 		auto& effects = GetParticleEffectRuntimes();
 		for (ParticleEffectRuntime& effect : effects) {
@@ -2591,7 +2720,6 @@ void Game::Render() {
 		ParticleDraw->Render(gd.gpucmd, &gIceProjectilePool.Buffer, gIceProjectilePool.Count);
 	}
 
-
 	{
 		gd.gpucmd.SetShader(MyOnlyColorShader);
 		view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
@@ -2618,7 +2746,6 @@ void Game::Render() {
 			mesh->Render(gd.gpucmd, 1);
 		}
 	}
-
 
 	if (game.DebugCollisions) {
 		using OCSRP = OnlyColorShader::RootParamId;
@@ -2760,7 +2887,6 @@ void Game::Render() {
 	float Rate = gd.ClientFrameHeight / 960.0f;
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
 
-
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
 	RenderGameplayStatusHUD();
 	RenderMonsterHealthPlates();
@@ -2772,6 +2898,25 @@ void Game::Render() {
 		DXPage* page = game.CurrentPageStack->at(i);
 		page->Render();
 	}
+	//render Current Grab Slot
+	if(game.CurrentPageStack->size() > 0 && CurrentGrabSlotData.itemCnt > 0 && CurrentGrabSlotData.objid > 0)
+	{
+		constexpr float margin = 40.0f;
+		vec4 renderLoc = CurrentCursorPos;
+		renderLoc.z = renderLoc.x;
+		renderLoc.w = renderLoc.y;
+		renderLoc.z += 2*margin;
+		renderLoc.w += 2*margin;
+		wchar_t NumText[64] = {};
+		if (CurrentGrabSlotData.itemCnt > 0) {
+			Item& item = ItemTable[CurrentGrabSlotData.objid];
+			game.UIDraw_TextureRect(renderLoc, vec4(1, 1, 1, 1), 0.01f, item.icon);
+		}
+
+		_itow_s(CurrentGrabSlotData.itemCnt, NumText, 64, 10);
+		game.RenderSDFText(NumText, wcslen(NumText), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
+	}
+	
 	// 27.
 	MyScreenShader->RenderAllSDFTexts();
 
@@ -2811,6 +2956,13 @@ void Game::Render_RayTracing()
 	PerfGPUComputeWaitMs = 0.0;
 	PerfGPUFinalWaitMs = 0.0;
 	PerfPresentMs = 0.0;
+
+	game.player->Render_ThirdPersonWeapon();
+	game.player->Render_AfterDepthClear();
+
+	game.MyScreenShader->ClearSDFInstance();
+	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+
 	for (int i = 0; i < 9; ++i) {
 		gd.raytracing.MappedCB[i]->DirLight_invDirection = vec4(vec4(0) - LightDirection).f3;
 	}
@@ -2818,7 +2970,7 @@ void Game::Render_RayTracing()
 	for (int i = 0; i < 9; ++i) {
 		Zone* nearZone = game.Current_Zone->nearZones[i];
 		if (nearZone == nullptr) continue;
-		if (nearZone->bReqireBakeLight_Raytracing) {
+		if (nearZone->isMapLoaded && nearZone->bReqireBakeLight_Raytracing) {
 			vec4 Counts = (nearZone->Map->AABB[1] - nearZone->Map->AABB[0]) / Zone::chunck_divide_Width;
 			nearZone->ChunckCountX = floor(Counts.x + 1);
 			nearZone->ChunckCountY = floor(Counts.y + 1);
@@ -2902,9 +3054,85 @@ void Game::Render_RayTracing()
 	dispatchDesc.Depth = 1;
 	commandList->DispatchRays(&dispatchDesc);
 
+	// 3D UI ���
+	{
+		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		//9. ����Ʈ/������Ʈ ����
+		gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
+		gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
+		game.renderViewPort = &gd.viewportArr[0];
+		//10. ���� ���ٽ� ���۸� ����Ű�� �ڵ��� �����´�.
+		D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
+			gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+		//11. ���귻��Ÿ������ ����Ÿ���� ����
+		gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE,
+			&d3dDsvCPUDescriptorHandle);
+		//22 Ray ���
+		{
+			gd.gpucmd.SetShader(MyOnlyColorShader);
+			matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+			view.transpose();
+			gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &view, 0);
+
+			for (int i = 0; i < bulletRays.size; ++i) {
+				if (bulletRays.isnull(i)) continue;
+				bulletRays[i].Render();
+			}
+		}
+
+		//23. NPC ���� HP �ٸ� ����� ���
+		for (int i = 0; i < game.NpcHPBars.size; ++i)
+		{
+			if (game.NpcHPBars.isAlloc(i))
+			{
+				matrix& hpBarWorldMat = game.NpcHPBars[i];
+				hpBarWorldMat.transpose();
+				gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
+				game.HPBarMesh->Render(gd.gpucmd, 1);
+			}
+		}
+
+		matrix vmat = gd.viewportArr[0].ViewMatrix;
+		vmat *= gd.viewportArr[0].ProjectMatrix;
+		vmat.transpose();
+		gd.gpucmd->SetGraphicsRoot32BitConstants(0, 16, &vmat, 0);
+
+		matrix viewmat = gd.viewportArr[0].ViewMatrix.RTInverse;
+		matrix spmat = viewmat;
+		spmat.pos += spmat.look * 10;
+		spmat.transpose();
+		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
+		ShootPointMesh->Render(gd.gpucmd, 1);
+
+		//HP = (ShootFlow / ShootDelay) * MaxHP;
+		matrix hpmat;
+		hpmat.pos.x = -6;
+		hpmat.pos.y = 2;
+		hpmat.pos.z = 6;
+		hpmat.LookAt(vec4(1, 0, 0));
+		hpmat.look *= 2 * game.player->HP / game.player->MaxHP;
+		hpmat *= viewmat;
+		hpmat.transpose();
+		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
+		HPBarMesh->Render(gd.gpucmd, 1);
+
+		//Heat Bar
+		matrix heatmat;
+		heatmat.pos.x = -5;
+		heatmat.pos.y = 1.5f;
+		heatmat.pos.z = 5;
+		heatmat.LookAt(vec4(1, 0, 0));
+		heatmat.look *= 2 * game.player->HeatGauge / 200;
+		heatmat *= viewmat;
+		heatmat.transpose();
+		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
+		HeatBarMesh->Render(gd.gpucmd, 1);
+	}
 	gd.gpucmd.Close(true);
 	gd.gpucmd.Execute(true);
-	MeasureGPUWait(PerfGPUMainWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
+	//MeasureGPUWait(PerfGPUMainWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); }); // ?
+	gd.gpucmd.WaitGPUComplete();
 
 	HRESULT hResult;
 	//Blur
@@ -2929,11 +3157,77 @@ void Game::Render_RayTracing()
 
 		//gd.DeviceRemoveResonDebug();
 	}
-
-	// retuen to graphic command list. to copy resource to render back buffer;
+	
 	hResult = gd.gpucmd.Reset(true);
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	//gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	//9. ����Ʈ/������Ʈ ����
+	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
+	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
+	game.renderViewPort = &gd.viewportArr[0];
+
+	//10. ���� ���ٽ� ���۸� ����Ű�� �ڵ��� �����´�.
+	D3D12_CPU_DESCRIPTOR_HANDLE d3dDsvCPUDescriptorHandle =
+		gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+
+	//11. ���귻��Ÿ������ ����Ÿ���� ����
+	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE,
+		&d3dDsvCPUDescriptorHandle);
+
+	// 24. UI ????? ???? DepthStencil?? Clear???. (??? UI?? ?????? ???? ??? ?? ???? ??????? ??? ????)
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+	float hhpp = 0;
+	float HeatGauge = 0;
+	int kill = 0;
+	int death = 0;
+	int bulletCount = 0;
+	float HealSkillCooldownFlow = 0;
+	if (game.player != nullptr) {
+		hhpp = game.player->HP;
+		HeatGauge = game.player->HeatGauge;
+		kill = game.player->KillCount;
+		death = game.player->DeathCount;
+		bulletCount = game.player->bullets;
+		//HealSkillCooldownFlow = game.player->HealSkillCooldownFlow;
+	}
+
+	float Rate = gd.ClientFrameHeight / 960.0f;
+	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
+
+	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	vector<DXPage*>* savePageStack = game.CurrentPageStack;
+	game.CurrentPageStack = &game.mainPageStack;
+	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
+		DXPage* page = game.CurrentPageStack->at(i);
+		page->Render();
+	}
+	//render Current Grab Slot
+	if (game.CurrentPageStack->size() > 0 && CurrentGrabSlotData.itemCnt > 0 && CurrentGrabSlotData.objid > 0)
+	{
+		constexpr float margin = 40.0f;
+		vec4 renderLoc = CurrentCursorPos;
+		renderLoc.z = renderLoc.x;
+		renderLoc.w = renderLoc.y;
+		renderLoc.z += 2 * margin;
+		renderLoc.w += 2 * margin;
+		wchar_t NumText[64] = {};
+		if (CurrentGrabSlotData.itemCnt > 0) {
+			Item& item = ItemTable[CurrentGrabSlotData.objid];
+			game.UIDraw_TextureRect(renderLoc, vec4(1, 1, 1, 1), 0.01f, item.icon);
+		}
+
+		_itow_s(CurrentGrabSlotData.itemCnt, NumText, 64, 10);
+		game.RenderSDFText(NumText, wcslen(NumText), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, 0.001f);
+	}
+
+	// 27.
+	MyScreenShader->RenderAllSDFTexts();
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
 
 	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
@@ -2944,8 +3238,10 @@ void Game::Render_RayTracing()
 	//Execute
 	gd.gpucmd.Close(true);
 	gd.gpucmd.Execute(true);
-	MeasureGPUWait(PerfGPUFinalWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
-	MeasurePresent([&]() { gd.pSwapChain->Present(1, 0); });
+	/*MeasureGPUWait(PerfGPUFinalWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); });
+	MeasurePresent([&]() { gd.pSwapChain->Present(1, 0); });*/
+	gd.gpucmd.WaitGPUComplete();
+	gd.pSwapChain->Present(1, 0);
 
 	//Get Present RenderTarget Index
 	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
@@ -2953,13 +3249,11 @@ void Game::Render_RayTracing()
 
 void Game::Render_ShadowPass()
 {
-
 	static vector<SkinMeshGameObject*> ShadowRenderSkinMeshObjArr;
 	static bool shadowCascadeInitialized[3] = { false, false, false };
 	static const void* previousShadowZone = nullptr;
 	static ui64 shadowFrameIndex = 0;
 	constexpr float CascadeRange[4] = { 0.01f, 50.0f, 200.0f, 1000.0f };
-
 
 	// 2. 렌더링을 시작한다.
 	HRESULT hResult = gd.gpucmd.Reset();
@@ -2971,7 +3265,6 @@ void Game::Render_ShadowPass()
 		shadowCascadeInitialized[2] = false;
 		previousShadowZone = game.Current_Zone;
 	}
-
 
 	for (int i = 0; i < 3; ++i) {
 		const bool updateShadowCascade =
@@ -3061,39 +3354,45 @@ void Game::Render_ShadowPass()
 		AutoLOD_SetModelLODRenderLevel(0);
 
 		ShadowRenderSkinMeshObjArr.clear();
-		game.TourID += 1;
-		GameObjectIncludeChunks goic = game.Current_Zone->GetChunks_Include_OBB(LightOBB);
-		//goic.ylen -= (1 + game.Map->AABB[1].y / game.chunck_divide_Width) - goic.ymin;
-		ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
-		int ChunckSiz = goic.GetChunckSize();
-		for (; ci.extra < ChunckSiz; goic.Inc(ci)) {
-			auto f = game.Current_Zone->chunck.find(ci);
-			if (f != game.Current_Zone->chunck.end()) {
-				GameChunk* gc = f->second;
 
-				for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
-					if (gc->Static_gameobjects.isnull(i)) continue;
-					StaticGameObject* sgo = gc->Static_gameobjects[i];
-					if (sgo == nullptr || sgo->TourID == game.TourID) continue;
-					sgo->Render();
-					sgo->TourID = game.TourID;
-				}
+		for (int zi = 0; zi < 9; ++zi) {
+			Zone* nearZone = game.Current_Zone->nearZones[zi];
+			if (nearZone == nullptr) continue;
+			if (nearZone->isMapLoaded == false) continue;
+			game.TourID += 1;
+			GameObjectIncludeChunks goic = nearZone->GetChunks_Include_OBB(LightOBB);
+			GameObjectIncludeChunks Zone_goic = nearZone->ZoneChunk_goic;
+			goic &= Zone_goic;
 
-				for (int i = 0; i < gc->Dynamic_gameobjects.size; ++i) {
-					if (gc->Dynamic_gameobjects.isnull(i)) continue;
-					DynamicGameObject* dgo = gc->Dynamic_gameobjects[i];
-					if ((dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) || dgo->TourID == game.TourID) continue;
-					dgo->Render();
-					dgo->TourID = game.TourID;
-				}
+			//goic.ylen -= (1 + game.Map->AABB[1].y / game.chunck_divide_Width) - goic.ymin;
+			ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
+			int ChunckSiz = goic.GetChunckSize();
+			for (; ci.extra < ChunckSiz; goic.Inc(ci)) {
+				GameChunk* gc = game.GameChunckFind(ci);
+				if (gc != nullptr) {
+					for (int i = 0; i < gc->Static_gameobjects.size; ++i) {
+						if (gc->Static_gameobjects.isnull(i)) continue;
+						StaticGameObject* sgo = gc->Static_gameobjects[i];
+						if (sgo == nullptr || sgo->TourID == game.TourID) continue;
+						sgo->Render();
+						sgo->TourID = game.TourID;
+					}
 
-				for (int i = 0; i < gc->SkinMesh_gameobjects.size; ++i) {
-					if (gc->SkinMesh_gameobjects.isnull(i)) continue;
-					SkinMeshGameObject* smgo = gc->SkinMesh_gameobjects[i];
-					if ((smgo == nullptr || smgo->tag[GameObjectTag::Tag_Enable] == false) || smgo->TourID == game.TourID) continue;
-					if (smgo->BoneToWorldMatrixCB_Default.size() == 0) continue;
-					ShadowRenderSkinMeshObjArr.push_back(smgo);
-					smgo->TourID = game.TourID;
+					for (int i = 0; i < gc->Dynamic_gameobjects.size; ++i) {
+						if (gc->Dynamic_gameobjects.isnull(i)) continue;
+						DynamicGameObject* dgo = gc->Dynamic_gameobjects[i];
+						if ((dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) || dgo->TourID == game.TourID) continue;
+						dgo->Render();
+						dgo->TourID = game.TourID;
+					}
+
+					for (int i = 0; i < gc->SkinMesh_gameobjects.size; ++i) {
+						if (gc->SkinMesh_gameobjects.isnull(i)) continue;
+						SkinMeshGameObject* smgo = gc->SkinMesh_gameobjects[i];
+						if ((smgo == nullptr || smgo->tag[GameObjectTag::Tag_Enable] == false) || smgo->TourID == game.TourID) continue;
+						ShadowRenderSkinMeshObjArr.push_back(smgo);
+						smgo->TourID = game.TourID;
+					}
 				}
 			}
 		}
@@ -3151,6 +3450,16 @@ void Game::ClearAllMeshInstancing()
 			MeshTable[i]->InstanceData[k].ClearInstancing();
 		}
 	}
+}
+
+GameChunk* Game::GetChunckFromPos(vec4 pos)
+{
+	int ix = floor(pos.x / Zone::chunck_divide_Width);
+	int iy = floor(pos.y / Zone::chunck_divide_Width);
+	int iz = floor(pos.z / Zone::chunck_divide_Width);
+	ChunkIndex ci = ChunkIndex(ix, iy, iz);
+	GameChunk* gc = GameChunckFind(ci);
+	return gc;
 }
 
 void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
@@ -3211,6 +3520,7 @@ void Game::ProcessPendingSkinBoneInit() {
 	}
 }
 
+int stackPacket = 0;
 void Game::Update()
 {
 	AutoLOD_ProcessRuntimeQueue(1);
@@ -3272,10 +3582,13 @@ void Game::Update()
 		ClipCursor(NULL);
 	}
 
+	
 	//gd.AverageSecPer60Start(Update_ClientRecv);
 	while (true) {
+		//dbgbreak(stackPacket < 1458);
 		int result = client.recv(client.rBuf + client.rbufOffset, client.rbufMax - client.rbufOffset);
 		if (result > 0) {
+			stackPacket += result;
 			char* cptr = client.rBuf;
 			result += client.rbufOffset;
 			int offset = game.Receiving(cptr, result);
@@ -3558,6 +3871,7 @@ READ_START:
 		case GameObjectType::_SkinMeshGameObject:
 		case GameObjectType::_Player:
 		case GameObjectType::_Monster:
+		case GameObjectType::_PeacefulNPC:
 		{
 			int netObjIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.objindex);
 			if (netObjIndex < 0) {
@@ -3590,7 +3904,10 @@ READ_START:
 					case GameObjectType::_Monster:
 						DynmaicGameObjects[netObjIndex] = new Monster();
 						break;
-					}
+					case GameObjectType::_PeacefulNPC:
+						DynmaicGameObjects[header.objindex] = new PeacefulNPC();
+						break;
+					} 
 				}
 			}
 			else {
@@ -3606,6 +3923,9 @@ READ_START:
 					break;
 				case GameObjectType::_Monster:
 					DynmaicGameObjects[netObjIndex] = new Monster();
+					break;
+				case GameObjectType::_PeacefulNPC:
+					DynmaicGameObjects[header.objindex] = new PeacefulNPC();
 					break;
 				}
 			}
@@ -3771,6 +4091,7 @@ READ_START:
 	case STC_Protocol::AllocPlayerIndexes:
 	{
         //OutputDebugStringA("[ClientReceiving] AllocPlayerIndexes\n");
+		stackPacket = 0;
 		STC_AllocPlayerIndexes_Header& header = *(STC_AllocPlayerIndexes_Header*)currentPivot;
 
 		game.clientIndexInServer = header.clientindex;
@@ -3926,7 +4247,7 @@ READ_START:
 				Player* pTarget = (Player*)pObj;
 
 				if (pTarget) {
-					pTarget->weapon.OnFire();
+					pTarget->weapon[pTarget->SelectedWeapon].OnFire();
 					SpawnMuzzleFlash(pTarget);
 					// [sfx] This is the server-authoritative "a bullet actually fired" event (fire-rate
 					// and ammo already validated server-side). Play the gunshot only for the local
@@ -3996,9 +4317,70 @@ READ_START:
 		//	OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
 		//}
 		game.BeginServerTransfer(header.ip, header.port, header.dstZoneId, header.transferToken);
-		return totallen;
+		currentPivot += header.size;
+		offset += header.size;
+		//return totallen;
 	}
 		break;
+	case STC_Protocol::NPCTalkStart:
+	{
+		STC_NPCTalkStart_Header& header = *(STC_NPCTalkStart_Header*)currentPivot;
+		if (header.NPCType == PNT_Quest) {
+			PresentShowedTalkID = header.StartID;
+			game.mainPageStack.push_back(game.UIPageTable[1]);
+			UITourID += 1;
+		}
+		else if(header.NPCType == PNT_Shop){
+			PresentShopID = header.StartID;
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+		break;
+	case STC_Protocol::AddQuest:
+	{
+		STC_AddQuest_Header& header = *(STC_AddQuest_Header*)currentPivot;
+		game.UITourID += 1;
+		game.QuestArr.push_back(header.QuestID);
+		Quest* prograss = new Quest();
+		game.QuestTable[header.QuestID]->Copy(prograss);
+		game.QuestPrograss.push_back(prograss);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+		break;
+	case STC_Protocol::DeleteQuest:
+	{
+		STC_AddQuest_Header& header = *(STC_AddQuest_Header*)currentPivot;
+		game.UITourID += 1;
+		for (int i = 0; i < game.QuestArr.size(); ++i) {
+			if (game.QuestArr[i] == header.QuestID) {
+				game.QuestArr.erase(game.QuestArr.begin() + i);
+				game.QuestPrograss.erase(game.QuestPrograss.begin() + i);
+			}
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::SyncQuestPrograss:
+	{
+		STC_SyncQuestPrograss_Header& header = *(STC_SyncQuestPrograss_Header*)currentPivot;
+		game.UITourID += 1;
+		char* ptr = currentPivot + sizeof(STC_SyncQuestPrograss_Header);
+		for (int i = 0; i < game.QuestArr.size(); ++i) {
+			if (game.QuestArr[i] == header.questID) {
+				Quest* prograss = game.QuestPrograss[i];
+				for (int k = 0; k < prograss->requp; ++k) {
+					prograss->ReqArr[k].PresentCnt = *(int*)ptr;
+					ptr += sizeof(int);
+				}
+			}
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
 	}
 
 	goto READ_START;
@@ -4227,6 +4609,26 @@ void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid
 	DescHandle di;
 	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
 	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
+	game.TextMesh->Render(gd.gpucmd, 1);
+}
+
+void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, GPUResource* tex) {
+	if (tex == nullptr) return;
+	vec4 line = vec4(loc.x, (loc.y + loc.w) * 0.5f, loc.z, (loc.y + loc.w) * 0.5f);
+	float wid = gd.ClientFrameWidth;
+	float hei = gd.ClientFrameHeight;
+	float lineWidth = loc.w - loc.y;
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &wid, 0);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &hei, 1);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &depth, 2);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &lineWidth, 3);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &line, 4);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 4, &color, 8);
+
+	DescHandle di;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
+	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, tex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
 	game.TextMesh->Render(gd.gpucmd, 1);
 }
@@ -4634,6 +5036,8 @@ void Game::RenderGameplaySkillHUD()
 }
 
 #pragma region UICode
+
+#pragma region UIDesign_GlobalUIs
 void UIRenderDefaultBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	GPUResource* baseTex = game.UITextureTable[pbtn->Base_UITextureIndex];
@@ -5216,7 +5620,8 @@ void UIRenderDefaultWindow(DXUI* ui) {
 
 void UIRenderCyberWindow(DXUI* ui) {
 	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
-	game.UIDraw_TextureRect(ui->location, vec4(1, 1, 1, 1), ui->depth, pWindow->WindowImageIndex);
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	game.UIDraw_TextureRect(renderLoc, vec4(1, 1, 1, 1), ui->depth, pWindow->WindowImageIndex);
 
 	if (pWindow->page_stack.size() > 0) {
 		//PageRender
@@ -5226,6 +5631,7 @@ void UIRenderCyberWindow(DXUI* ui) {
 		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
 		game.CurrentUICenter *= 0.5f;
 		game.CurrentUICenter += SaveCenter;
+
 		float lastDepth = 0;
 		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
 			DXPage* page = pWindow->page_stack[i];
@@ -5246,6 +5652,7 @@ void UIUpdateDefaultWindow(DXUI* ui, float deltaTime) {
 		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
 		game.CurrentUICenter *= 0.5f;
 		game.CurrentUICenter += SaveCenter;
+
 		game.CurrentPageStack = &pWindow->page_stack;
 		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
 			DXPage* page = pWindow->page_stack[i];
@@ -5332,7 +5739,9 @@ void UIInitDefaultWindow(DXUI* ui) {
 	}
 	pWindow->page_stack.push_back(sample_page);
 }
+#pragma endregion
 
+#pragma region UIDesign_Inventory
 void UIEvent_InventoryCloseBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	vec4 evtloc = ui->location + game.CurrentUICenter;
@@ -5384,11 +5793,17 @@ void UIRender_InventoryItemSlot(DXUI* ui) {
 		renderLoc.y += margin * rate;
 		renderLoc.z -= margin * rate;
 		renderLoc.w -= margin * rate;
-
+		
 		game.UIDraw_TextureRect(renderLoc, color, depth, pslot->Base_UITextureIndex);
 		wchar_t NumText[64] = {};
+
+		if (pslot->itemCount > 0) {
+			Item& item = ItemTable[pslot->objid];
+			game.UIDraw_TextureRect(renderLoc, color, depth - 0.01f, item.icon);
+		}
+
 		_itow_s(pslot->itemCount, NumText, 64, 10);
-		game.RenderSDFText(NumText, wcslen(NumText), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+		game.RenderSDFText(NumText, wcslen(NumText), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.02f + depth);
 	}
 }
 
@@ -5527,8 +5942,7 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 				}
 			}
 		}
-
-		if (game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		else if (game.RectContainPos(evtloc, game.CurrentCursorPos)) {
 			// grab logic
 			if (game.evt.uMsg == WM_LBUTTONDOWN && game.CurrentGrabSlotData.itemCnt == 0 && pslot->itemCount > 0) {
 				pslot->flow = 0;
@@ -5536,9 +5950,8 @@ void UIEvent_InventoryItemSlot(DXUI* ui) {
 				game.CurrentGrabSlotData.itemCnt = pslot->itemCount;
 				game.CurrentGrabSlotData.selectedSlot = ui;
 			}
-
 			// divide logic
-			if (game.evt.uMsg == WM_RBUTTONDOWN && game.CurrentGrabSlotData.itemCnt == 0 && pslot->itemCount > 0) {
+			else if (game.evt.uMsg == WM_RBUTTONDOWN && game.CurrentGrabSlotData.itemCnt == 0 && pslot->itemCount > 0) {
 				pslot->flow = 0;
 				game.CurrentGrabSlotData.objid = pslot->objid;
 				game.CurrentGrabSlotData.itemCnt = (int)ceilf((float)pslot->itemCount / 2.0f);
@@ -5668,6 +6081,95 @@ void UIInitInventoryWindow(DXUI* ui) {
 	}
 	pWindow->page_stack.push_back(sample_page);
 }
+#pragma endregion
+
+#pragma region UIDesign_Equip
+void UIRender_EquipItemSlot(DXUI* ui) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pslot->flow / pslot->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+
+	renderLoc.x += margin * rate;
+	renderLoc.y += margin * rate;
+	renderLoc.z -= margin * rate;
+	renderLoc.w -= margin * rate;
+
+	game.UIDraw_TextureRect(renderLoc, color, depth, pslot->Base_UITextureIndex);
+
+	if (pslot->itemCount > 0 && pslot->objid > 0) {
+		Item& item = ItemTable[pslot->objid];
+		game.UIDraw_TextureRect(renderLoc, vec4(1, 1, 1, 1), depth - 0.01f, item.icon);
+	}
+}
+
+void UIUpdate_EquipItemSlot(DXUI* ui, float deltaTime) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	pslot->flow += deltaTime;
+	if (pslot->flow > pslot->maxtime) {
+		pslot->flow = pslot->maxtime;
+	}
+}
+
+void UIEvent_EquipItemSlot(DXUI* ui) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	Item& grabItem = ItemTable[game.CurrentGrabSlotData.objid];
+	if (pslot->slotObType == SlotKind::_Item_Weapone) {
+		if (game.CurrentGrabSlotData.itemCnt != 0 && grabItem.itemtype == ItemType::_Weapon) {
+			if (game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+				if (game.evt.uMsg == WM_LBUTTONDOWN)
+				{
+					pslot->objid = game.CurrentGrabSlotData.objid;
+					pslot->itemCount = 1;
+
+					game.CurrentGrabSlotData.itemCnt = 0;
+
+					DXUI* Inv_slotUI = game.CurrentGrabSlotData.selectedSlot;
+					DXSlotParam* invslot = (DXSlotParam*)Inv_slotUI->pParamterData;
+
+					// ����
+					CTS_ChangeEquipSlotWithInventorySlot_Header header;
+					header.size = sizeof(CTS_ChangeEquipSlotWithInventorySlot_Header);
+					header.st = CTS_Protocol::CTS_ChangeEquipSlotWithInventorySlot;
+					header.EquipIndex = pslot->addtionalParams_int[0];
+					header.InventoryIndex = invslot->addtionalParams_int[7];
+					client.send((char*)&header, sizeof(CTS_ChangeEquipSlotWithInventorySlot_Header), 0);
+
+					//Ŭ���̾�Ʈ ����
+					game.player->weapon[pslot->addtionalParams_int[0] - 4] = *(Weapon*)(ItemTable[invslot->objid].pItemData);
+				}
+			}
+		}
+	}
+	else if(pslot->slotObType == SlotKind::_Item_Equipment) {
+		if (game.CurrentGrabSlotData.itemCnt != 0 && grabItem.itemtype == ItemType::_Equipment) {
+			if (game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+				if (game.evt.uMsg == WM_LBUTTONDOWN)
+				{
+					pslot->objid = game.CurrentGrabSlotData.objid;
+					pslot->itemCount = 1;
+
+					game.CurrentGrabSlotData.itemCnt = 0;
+
+					DXUI* Inv_slotUI = game.CurrentGrabSlotData.selectedSlot;
+					DXSlotParam* invslot = (DXSlotParam*)Inv_slotUI->pParamterData;
+
+					// ����
+					CTS_ChangeEquipSlotWithInventorySlot_Header header;
+					header.size = sizeof(CTS_ChangeEquipSlotWithInventorySlot_Header);
+					header.st = CTS_Protocol::CTS_ChangeEquipSlotWithInventorySlot;
+					header.EquipIndex = pslot->addtionalParams_int[0];
+					header.InventoryIndex = invslot->addtionalParams_int[7];
+					client.send((char*)&header, sizeof(CTS_ChangeEquipSlotWithInventorySlot_Header), 0);
+				}
+			}
+		}
+	}
+}
 
 void UIInitEquipWindow(DXUI* ui) {
 	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
@@ -5692,10 +6194,1078 @@ void UIInitEquipWindow(DXUI* ui) {
 		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
 		sample_page->uiArr.push_back(CloseBtn);
 
+		//2. Equip Slots
+		//2-1. Head Equip
+		rateloc = sample_page->location;
+		rateloc.x += 150;
+		rateloc.w -= 70;
+		rateloc.z = rateloc.x + 80;
+		rateloc.y = rateloc.w - 80;
+		DXUI* EquipSlot_Head = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Head = (DXSlotParam*)EquipSlot_Head->pParamterData;
+		pslot_Head->Set(0, 1, SlotKind::_Item, 10);
+		pslot_Head->addtionalParams_int[0] = 0;
+		EquipSlot_Head->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Head);
 
+		//2-2. Chest Equip
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* EquipSlot_Chest = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Chest = (DXSlotParam*)EquipSlot_Chest->pParamterData;
+		pslot_Chest->Set(0, 1, SlotKind::_Item, 10);
+		pslot_Chest->addtionalParams_int[0] = 1;
+		EquipSlot_Chest->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Chest);
+
+		//2-3. Leg Equip
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* EquipSlot_Leg = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Leg = (DXSlotParam*)EquipSlot_Leg->pParamterData;
+		pslot_Leg->Set(0, 1, SlotKind::_Item, 10);
+		pslot_Leg->addtionalParams_int[0] = 2;
+		EquipSlot_Leg->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Leg);
+
+		//2-4. Shoes Equip
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* EquipSlot_Shoe = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Shoe = (DXSlotParam*)EquipSlot_Shoe->pParamterData;
+		pslot_Shoe->Set(0, 1, SlotKind::_Item, 10);
+		pslot_Shoe->addtionalParams_int[0] = 3;
+		EquipSlot_Shoe->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Shoe);
+
+		//2-5. Wepone0 Equip
+		rateloc = sample_page->location;
+		rateloc.x += 237;
+		rateloc.w -= 110;
+		rateloc.z = rateloc.x + 80;
+		rateloc.y = rateloc.w - 80;
+		DXUI* EquipSlot_Weapone0 = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Weapone0 = (DXSlotParam*)EquipSlot_Weapone0->pParamterData;
+		pslot_Weapone0->Set(0, 1, SlotKind::_Item_Weapone, 10);
+		pslot_Weapone0->addtionalParams_int[0] = 4;
+		EquipSlot_Weapone0->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Weapone0);
+
+		//2-5. Wepone1 Equip
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* EquipSlot_Weapone1 = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Weapone1 = (DXSlotParam*)EquipSlot_Weapone1->pParamterData;
+		pslot_Weapone1->Set(0, 1, SlotKind::_Item_Weapone, 10);
+		pslot_Weapone1->addtionalParams_int[0] = 5;
+		EquipSlot_Weapone1->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Weapone1);
+
+		//2-5. Wepone2 Equip
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* EquipSlot_Weapone2 = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc, 0, new DXSlotParam());
+		DXSlotParam* pslot_Weapone2 = (DXSlotParam*)EquipSlot_Weapone2->pParamterData;
+		pslot_Weapone2->Set(0, 1, SlotKind::_Item_Weapone, 10);
+		pslot_Weapone2->addtionalParams_int[0] = 6;
+		EquipSlot_Weapone2->SetFunctions(UIRender_EquipItemSlot, UIUpdate_EquipItemSlot, UIEvent_EquipItemSlot);
+		sample_page->uiArr.push_back(EquipSlot_Weapone2);
+
+		// 2-6. Wepone0 Desc Dumy Btn
+		rateloc = sample_page->location;
+		rateloc.x += 320;
+		rateloc.w -= 110;
+		rateloc.z = rateloc.x + 225;
+		rateloc.y = rateloc.w - 75;
+		DXUI* DescDumyBtn_Weapone0 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_desc_Weapone0 = (DXBtnParam*)DescDumyBtn_Weapone0->pParamterData;
+		pbtn_desc_Weapone0->Set(0, 1, 11, L"");
+		DescDumyBtn_Weapone0->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, nullptr);
+		sample_page->uiArr.push_back(DescDumyBtn_Weapone0);
+
+		// 2-7. Wepone1 Desc Dumy Btn
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* DescDumyBtn_Weapone1 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_desc_Weapone1 = (DXBtnParam*)DescDumyBtn_Weapone1->pParamterData;
+		pbtn_desc_Weapone1->Set(0, 1, 11, L"");
+		DescDumyBtn_Weapone1->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, nullptr);
+		sample_page->uiArr.push_back(DescDumyBtn_Weapone1);
+
+		// 2-8. Wepone2 Desc Dumy Btn
+		rateloc.w -= 80;
+		rateloc.y -= 80;
+		DXUI* DescDumyBtn_Weapone2 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_desc_Weapone2 = (DXBtnParam*)DescDumyBtn_Weapone2->pParamterData;
+		pbtn_desc_Weapone2->Set(0, 1, 11, L"");
+		DescDumyBtn_Weapone2->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, nullptr);
+		sample_page->uiArr.push_back(DescDumyBtn_Weapone2);
 	}
 	pWindow->page_stack.push_back(sample_page);
 }
+#pragma endregion
+
+#pragma region UIDesign_Shop
+void UIEvent_ShopTabBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//change TabType
+	}
+}
+
+void UIRender_ShopItemObject(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4& slotShowRt = *(vec4*)pbtn->addtionalPtr[2];
+	if (game.RectContainRect(slotShowRt, ui->location)) {
+		vec4 color = vec4(1, 1, 1, 1);
+		float depth = ui->depth - game.ui_depth_epsilon;
+		float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+		constexpr float margin = 10.0f;
+		vec4 renderLoc = ui->location + game.CurrentUICenter;
+		renderLoc.x += margin * rate;
+		renderLoc.y += margin * rate;
+		renderLoc.z -= margin * rate;
+		renderLoc.w -= margin * rate;
+		game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+
+		renderLoc.x += 10;
+		renderLoc.w -= 5;
+		game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+	}
+}
+
+void UIUpdate_ShopItemObject(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	pbtn->flow += deltaTime;
+	if (pbtn->flow > pbtn->maxtime) {
+		pbtn->flow = pbtn->maxtime;
+	}
+	constexpr float slot_Margin = 80;
+	//�����̴��� �Ķ���Ϳ� ���� Y ���� �����Ѵ�.
+	float SliderY = *(float*)pbtn->addtionalPtr[1];
+	float StartY = pbtn->addtionalParams[1];
+	float MAXY = StartY + 7 * slot_Margin;
+	float present_w = SliderY * (MAXY - StartY) + StartY;
+	float height = ui->location.w - ui->location.y;
+	ui->location.w = present_w;
+	ui->location.y = ui->location.w - height;
+}
+
+void UIEvent_ShopItemObject(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4& slotShowRt = *(vec4*)pbtn->addtionalPtr[2];
+	if (game.RectContainRect(slotShowRt, ui->location))
+	{
+		vec4 evtloc = ui->location + game.CurrentUICenter;
+		if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+			pbtn->flow = 0;
+
+			//open Buy/Sell Window
+			DXWindowParam* pWindow = (DXWindowParam*)pbtn->addtionalPtr[3];
+			pWindow->page_stack.push_back((DXPage*)pbtn->addtionalPtr[4]);
+		}
+	}
+}
+
+void UIEvent_SellBuyCloseBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//close currentPage
+		DXWindowParam* pWin = (DXWindowParam*)pbtn->addtionalPtr[0];
+		pWin->page_stack.pop_back();
+	}
+}
+
+void UIEvent_SellBuyConfimBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//close currentPage
+		DXWindowParam* pWin = (DXWindowParam*)pbtn->addtionalPtr[0];
+		pWin->page_stack.pop_back();
+	}
+}
+
+void UIRenderBuySellWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	game.UIDraw_TextureRect(renderLoc, vec4(1, 1, 1, 1), ui->depth, pWindow->WindowImageIndex);
+
+	if (pWindow->page_stack.size() > 0) {
+		//PageRender
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		game.CurrentPageStack = &pWindow->page_stack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+
+		vec4 renderLoc = ui->location + game.CurrentUICenter;
+		game.UIDraw_TextureRect(renderLoc, vec4(1, 1, 1, 1), ui->depth, pWindow->WindowImageIndex);
+
+		float lastDepth = 0;
+		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
+			DXPage* page = pWindow->page_stack[i];
+			lastDepth = page->GetDepth(0);
+			page->Render();
+		}
+
+		// �� ��ġ�� ������ ��
+		wchar_t NumText[64] = L"-5000G";
+		renderLoc.x += 8;
+		renderLoc.w -= 203;
+		renderLoc.z = renderLoc.x + 198;
+		renderLoc.y = renderLoc.w - 97;
+		game.RenderSDFText(NumText, wcslen(NumText), renderLoc, 20, vec4(1, 1, 0, 1), nullptr, nullptr, pWindow->page_stack[0]->GetDepth(0) - game.uipage_depth_epsilon, nullptr);
+
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+	}
+}
+
+void UIUpdateBuySellWindow(DXUI* ui, float deltaTime) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	if (pWindow->page_stack.size() > 0) {
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+		game.CurrentPageStack = &pWindow->page_stack;
+		for (int i = 0; i < pWindow->page_stack.size(); ++i) {
+			DXPage* page = pWindow->page_stack[i];
+			page->Update(deltaTime);
+		}
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+	}
+}
+
+void UIEventBuySellWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	if (pWindow->page_stack.size() > 0) {
+		vector<DXPage*>* savePageStack = game.CurrentPageStack;
+		game.CurrentPageStack = &pWindow->page_stack;
+		vec4 SaveCenter = game.CurrentUICenter;
+		game.CurrentUICenter = vec4(ui->location.x + ui->location.z, ui->location.y + ui->location.w, ui->location.x + ui->location.z, ui->location.y + ui->location.w);
+		game.CurrentUICenter *= 0.5f;
+		game.CurrentUICenter += SaveCenter;
+		// ������ ���������� ������� UI�� Event �� ó���Ѵ�.
+		if (pWindow->page_stack.size() >= 1) {
+			DXPage* page = pWindow->page_stack[pWindow->page_stack.size() - 1];
+			page->Event();
+		}
+
+		game.CurrentUICenter = SaveCenter;
+		game.CurrentPageStack = savePageStack;
+
+		if (ui->enable) {
+			//Window Event
+			vec4 uiloc = ui->location + game.CurrentUICenter;
+			if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(uiloc, game.CurrentCursorPos)) {
+				if (ui->isFocus == false) {
+					ui->isFocus = true;
+					pWindow->LastFocusedTime = chrono::system_clock::now();
+					game.hasToAlginUIDepth = true;
+				}
+			}
+
+			if (game.evt.uMsg == WM_LBUTTONUP) {
+				ui->isFocus = false;
+				pWindow->Focus_Move = false;
+			}
+
+			if (ui->isFocus) {
+				vec4 headerloc = uiloc;
+				constexpr float headerMargin = 50;
+				headerloc.y = headerloc.w - headerMargin;
+				if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(headerloc, game.CurrentCursorPos)) {
+					if (pWindow->Focus_Move == false) {
+						pWindow->Focus_Move = true;
+						pWindow->MovePivot = game.CurrentCursorPos;
+					}
+				}
+
+				if (pWindow->Focus_Move) {
+					vec4 MoveVector = pWindow->MovePivot - game.CurrentCursorPos;
+					ui->location.x -= MoveVector.x;
+					ui->location.z -= MoveVector.x;
+					ui->location.y -= MoveVector.y;
+					ui->location.w -= MoveVector.y;
+					pWindow->MovePivot = game.CurrentCursorPos;
+				}
+			}
+		}
+	}
+}
+
+void UIInitBuySellWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		//���� / �Ǹ�â
+
+		//1. Close Btn (371, 11, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 371;
+		rateloc.w -= 11;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = pWindow->addtionalPtr[0];
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_SellBuyCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
+
+		//2. Dumy Item Slot (12, 77, 100, 100)
+		rateloc = sample_page->location;
+		rateloc.x += 12;
+		rateloc.w -= 77;
+		rateloc.z = rateloc.x + 100;
+		rateloc.y = rateloc.w - 100;
+		DXUI* DescDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_desc = (DXBtnParam*)DescDumyBtn->pParamterData;
+		pbtn_desc->Set(0, 1, 16, L"");
+		DescDumyBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, nullptr);
+		sample_page->uiArr.push_back(DescDumyBtn);
+
+		// Slider (125, 160, 165, 20)
+		rateloc = sample_page->location;
+		rateloc.x += 125;
+		rateloc.w -= 160;
+		rateloc.z = rateloc.x + 165;
+		rateloc.y = rateloc.w - 20;
+		DXUI* CostSelectSlider = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		CostSelectSlider->SetFunctions(UIRenderCyberSlider, UIUpdateDefaultSlider, UIEventDefaultSlider);
+		DXSliderParam* pCostSelectSlider = (DXSliderParam*)CostSelectSlider->pParamterData;
+		pCostSelectSlider->Set(true, 'f', false, 0, 1, '\0', &pWindow->addtionalParams[0], 18, vec4(-8, -30, 8, 30));
+		sample_page->uiArr.push_back(CostSelectSlider);
+
+		// Edit Box 17 : (302, 135, 92, 60)
+		rateloc = sample_page->location;
+		rateloc.x += 302;
+		rateloc.w -= 135;
+		rateloc.z = rateloc.x + 92;
+		rateloc.y = rateloc.w - 60;
+		DXUI* ItemCountEditBox = new DXUI(DXUI_TYPE::DXUI_Edit, sizeof(DXEditParam), rateloc, 0, new DXEditParam());
+		DXEditParam* pEdit;
+		pEdit = (DXEditParam*)ItemCountEditBox->pParamterData;
+		pEdit->Set(0, 1, 1, 17, L"ItemNum"); // ������ �޴´�.
+		ItemCountEditBox->SetFunctions(UIRenderDefaultEdit, UIUpdateDefaultEdit, UIEventDefaultEdit);
+		sample_page->uiArr.push_back(ItemCountEditBox);
+
+		// Confim Btn 20 : (214, 214, 82, 46)
+		rateloc = sample_page->location;
+		rateloc.x += 214;
+		rateloc.w -= 214;
+		rateloc.z = rateloc.x + 82;
+		rateloc.y = rateloc.w - 46;
+		DXUI* ConfimBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_confim = (DXBtnParam*)ConfimBtn->pParamterData;
+		pbtn_confim->Set(0, 1, 20, L"Ȯ��");
+		ConfimBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_SellBuyConfimBtn);
+		pbtn_confim->addtionalPtr[0] = pWindow->addtionalPtr[0];
+		sample_page->uiArr.push_back(ConfimBtn);
+
+		// Cancel Btn 20 : (306, 214, 82, 46)
+		rateloc = sample_page->location;
+		rateloc.x += 306;
+		rateloc.w -= 214;
+		rateloc.z = rateloc.x + 82;
+		rateloc.y = rateloc.w - 46;
+		DXUI* CancelBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_cancel = (DXBtnParam*)CancelBtn->pParamterData;
+		pbtn_cancel->Set(0, 1, 20, L"���");
+		pbtn_cancel->addtionalPtr[0] = pWindow->addtionalPtr[0];
+		CancelBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_SellBuyCloseBtn);
+		sample_page->uiArr.push_back(CancelBtn);
+	}
+	pWindow->page_stack.push_back(sample_page);
+}
+
+void UIInitShopWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+
+	DXPage* BuySell_page = new DXPage();
+	BuySell_page->BackGroundColor = vec4(0, 0, 0, 0.5f);
+	BuySell_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(BuySell_page);
+	{
+		//����/�Ǹ� ������ 12 : (405, 275)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 0;
+		rateloc.w -= 0;
+		rateloc.z = rateloc.x + 405;
+		rateloc.y = rateloc.w - 405;
+		DXUI* BuySell_Window = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		BuySell_Window->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pBuySellWindow = (DXWindowParam*)BuySell_Window->pParamterData;
+		pBuySellWindow->Set(BuySell_Window, 42);
+		pBuySellWindow->LastFocusedTime = chrono::system_clock::now();
+		pBuySellWindow->addtionalPtr[0] = pWindow; // �θ� ������
+		UIInitBuySellWindow(BuySell_Window);
+		BuySell_Window->enable = true;
+		BuySell_page->uiArr.push_back(BuySell_Window);
+	}
+
+	{
+		// ���â UI
+
+		//1. Close Btn (568, 11, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 568;
+		rateloc.w -= 11;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = ui;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
+
+		//2. Shop Buy Tab Btn 13 : (10, 50, 123, 35)
+		rateloc = sample_page->location;
+		rateloc.x += 10;
+		rateloc.w -= 50;
+		rateloc.z = rateloc.x + 123;
+		rateloc.y = rateloc.w - 35;
+		DXUI* ShopBuyTabBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_ShopBuyTabBtn = (DXBtnParam*)ShopBuyTabBtn->pParamterData;
+		pbtn_ShopBuyTabBtn->Set(0, 1, 13, L"����");
+		pbtn_ShopBuyTabBtn->addtionalPtr[0] = ui;
+		ShopBuyTabBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_ShopTabBtn);
+		sample_page->uiArr.push_back(ShopBuyTabBtn);
+
+		rateloc.x += 127;
+		rateloc.z += 127;
+		DXUI* ShopSellTabBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_ShopSellTabBtn = (DXBtnParam*)ShopSellTabBtn->pParamterData;
+		pbtn_ShopSellTabBtn->Set(0, 1, 13, L"�Ǹ�");
+		pbtn_ShopSellTabBtn->addtionalPtr[0] = ui;
+		ShopSellTabBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_ShopTabBtn);
+		sample_page->uiArr.push_back(ShopSellTabBtn);
+
+		//3. Show Range Select Slider (570, 88, W32, H614)
+		rateloc = sample_page->location;
+		rateloc.x += 570;
+		rateloc.w -= 88;
+		rateloc.z = rateloc.x + 32;
+		rateloc.y = rateloc.w - 614;
+		DXUI* RangeSelectSlider = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		RangeSelectSlider->SetFunctions(UIRenderCyberSlider, UIUpdateDefaultSlider, UIEventDefaultSlider);
+		DXSliderParam* pRangeSelectSlider = (DXSliderParam*)RangeSelectSlider->pParamterData;
+		pRangeSelectSlider->Set(false, 'f', true, 0, 1, '\0', &pWindow->addtionalParams[0], 7, vec4(-15, -15, 25, 15));
+		sample_page->uiArr.push_back(RangeSelectSlider);
+
+		// ȭ�鿡 ��Ÿ�� �� �ִ� �ִ��� ��ǰ ����
+		constexpr int Max_Item = 50;
+		// 14 : (10, 90, 556, 75)
+		rateloc = sample_page->location;
+		rateloc.x += 10;
+		rateloc.w -= 90;
+		rateloc.z = rateloc.x + 556;
+		rateloc.y = rateloc.w - 80;
+		*(vec4*)(pWindow->addtionalPtr[1]) = rateloc;
+		vec4& ItemShowRange = *(vec4*)(pWindow->addtionalPtr[1]);
+		ItemShowRange.w += 20;
+		ItemShowRange.y -= 80 * 7;
+		for (int i = 0; i < Max_Item; ++i) {
+			DXUI* ShopItemObject = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+			DXBtnParam* pbtn_ShopItemObject = (DXBtnParam*)ShopItemObject->pParamterData;
+			pbtn_ShopItemObject->Set(0, 1, 14, L"");
+			pbtn_ShopItemObject->addtionalParams_int[0] = i; // ���� �������� �ε����� ��� �ִ�.
+			pbtn_ShopItemObject->addtionalParams[1] = rateloc.w; // ������ ������Ʈ�� ���� y ��
+			pbtn_ShopItemObject->addtionalPtr[1] = &pWindow->addtionalParams[0]; // �����̴� �� ������
+			pbtn_ShopItemObject->addtionalPtr[2] = &ItemShowRange; // ������ ������Ʈ�� ������ ����
+			pbtn_ShopItemObject->addtionalPtr[3] = pWindow;
+				// ���� ������ ������ �������� �߰��� ���� ������
+			pbtn_ShopItemObject->addtionalPtr[4] = BuySell_page;
+				// �߰��� �������� ��ȣ
+			ShopItemObject->SetFunctions(UIRender_ShopItemObject, UIUpdate_ShopItemObject, UIEvent_ShopItemObject);
+			sample_page->uiArr.push_back(ShopItemObject);
+			rateloc.y -= 80;
+			rateloc.w -= 80;
+		}
+	}
+
+	pWindow->page_stack.push_back(sample_page);
+}
+#pragma endregion
+
+#pragma region UIDesign_Quest
+
+void UIRender_QuestItemObject(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4& slotShowRt = *(vec4*)pbtn->addtionalPtr[2];
+	if (game.RectContainRect(slotShowRt, ui->location)) {
+		vec4 color = vec4(1, 1, 1, 1);
+		float depth = ui->depth - game.ui_depth_epsilon;
+		float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+		constexpr float margin = 10.0f;
+		vec4 renderLoc = ui->location + game.CurrentUICenter;
+		renderLoc.x += margin * rate;
+		renderLoc.y += margin * rate;
+		renderLoc.z -= margin * rate;
+		renderLoc.w -= margin * rate;
+		game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+
+		renderLoc.x += 10;
+		renderLoc.w -= 5;
+		game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+	}
+}
+
+void UIUpdate_QuestItemObject(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+
+	static int TourID = 0;
+	if (TourID != game.UITourID) {
+		if (0 <= pbtn->addtionalParams_int[0] && pbtn->addtionalParams_int[0] < game.QuestArr.size()) {
+			int questindex = game.QuestArr[pbtn->addtionalParams_int[0]];
+			Quest* q = game.QuestTable[questindex];
+			wcscpy_s(pbtn->text, 256, q->QuestName);
+		}
+	}
+
+	pbtn->flow += deltaTime;
+	if (pbtn->flow > pbtn->maxtime) {
+		pbtn->flow = pbtn->maxtime;
+	}
+	constexpr float slot_Margin = 100;
+	//�����̴��� �Ķ���Ϳ� ���� Y ���� �����Ѵ�.
+	float SliderY = *(float*)pbtn->addtionalPtr[1];
+	float StartY = pbtn->addtionalParams[1];
+	float MAXY = StartY + 7 * slot_Margin;
+	float present_w = SliderY * (MAXY - StartY) + StartY;
+	float height = ui->location.w - ui->location.y;
+	ui->location.w = present_w;
+	ui->location.y = ui->location.w - height;
+}
+
+void UIUpdate_QuestDescObject(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+
+	static int TourID = 0;
+	if (TourID != game.UITourID) {
+		if (0 <= pbtn->addtionalParams_int[0] && pbtn->addtionalParams_int[0] < game.QuestArr.size()) {
+			int questindex = game.QuestArr[pbtn->addtionalParams_int[0]];
+			Quest* q = game.QuestTable[questindex];
+			wcscpy_s(pbtn->text, 256, q->QuestDesc);
+		}
+	}
+}
+
+void UIEvent_QuestItemObject(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4& slotShowRt = *(vec4*)pbtn->addtionalPtr[2];
+	if (game.RectContainRect(slotShowRt, ui->location))
+	{
+		vec4 evtloc = ui->location + game.CurrentUICenter;
+		if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+			pbtn->flow = 0;
+
+			// push quest desc page
+			DXWindowParam* pWin = (DXWindowParam*)pbtn->addtionalPtr[3];
+			pWin->page_stack.push_back((DXPage*)pbtn->addtionalPtr[4]);
+			game.presentShowQuestOffset = pbtn->addtionalParams_int[0];
+		}
+	}
+}
+
+void UIEvent_QuestDescCloseBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//close currentPage
+		DXWindowParam* pWin = (DXWindowParam*)pbtn->addtionalPtr[0];
+		pWin->page_stack.pop_back();
+	}
+}
+
+void UIInitQuestWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+
+	// ����Ʈ �ڼ��� ���� â
+	DXPage* DescPage = new DXPage();
+	DescPage->BackGroundColor = vec4(0, 0, 0, 0.5f);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	DescPage->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(DescPage);
+	{
+		//1. Close Btn (568, 61, W27, H27)
+		vec4 rateloc = DescPage->location;
+		rateloc.x += 568;
+		rateloc.w -= 61;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = pWindow;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_QuestDescCloseBtn);
+		DescPage->uiArr.push_back(CloseBtn);
+
+		//3. Show Range Select Slider (570, 88, W32, H614)
+		rateloc = DescPage->location;
+		rateloc.x += 570;
+		rateloc.w -= 100;
+		rateloc.z = rateloc.x + 32;
+		rateloc.y = rateloc.w - 623;
+		DXUI* RangeSelectSlider = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		RangeSelectSlider->SetFunctions(UIRenderCyberSlider, UIUpdateDefaultSlider, UIEventDefaultSlider);
+		DXSliderParam* pRangeSelectSlider = (DXSliderParam*)RangeSelectSlider->pParamterData;
+		pRangeSelectSlider->Set(false, 'f', true, 0, 1, '\0', &pWindow->addtionalParams[0], 7, vec4(-15, -15, 25, 15));
+		DescPage->uiArr.push_back(RangeSelectSlider);
+
+		//1. Desc Btn (23, 106, W535, H619)
+		rateloc = DescPage->location;
+		rateloc.x += 23;
+		rateloc.w -= 106;
+		rateloc.z = rateloc.x + 535;
+		rateloc.y = rateloc.w - 619;
+		DXUI* DescDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_DescDumyBtn = (DXBtnParam*)DescDumyBtn->pParamterData;
+		pbtn_DescDumyBtn->Set(0, 1, 25, L"");
+		pbtn_DescDumyBtn->addtionalParams_int[0] = 0; // â�� �������� ���⿡ ���õ� �������� �ε����� �����ؾ� ��.
+		DescDumyBtn->SetFunctions(UIRender_CyberBtn001, UIUpdate_QuestDescObject, nullptr);
+		DescPage->uiArr.push_back(DescDumyBtn);
+	}
+
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		// ����Ʈ UI
+
+		//1. Close Btn (568, 11, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 568;
+		rateloc.w -= 11;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = ui;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
+
+		//3. Show Range Select Slider (570, 88, W32, H614)
+		rateloc = sample_page->location;
+		rateloc.x += 570;
+		rateloc.w -= 100;
+		rateloc.z = rateloc.x + 32;
+		rateloc.y = rateloc.w - 623;
+		DXUI* RangeSelectSlider = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
+		RangeSelectSlider->SetFunctions(UIRenderCyberSlider, UIUpdateDefaultSlider, UIEventDefaultSlider);
+		DXSliderParam* pRangeSelectSlider = (DXSliderParam*)RangeSelectSlider->pParamterData;
+		pRangeSelectSlider->Set(false, 'f', true, 0, 1, '\0', &pWindow->addtionalParams[0], 7, vec4(-15, -15, 25, 15));
+		sample_page->uiArr.push_back(RangeSelectSlider);
+
+		// ȭ�鿡 ��Ÿ�� �� �ִ� �ִ��� ��ǰ ����
+		constexpr int Max_Item = 50;
+		// 14 : (10, 90, 556, 75)
+		rateloc = sample_page->location;
+		rateloc.x += 23;
+		rateloc.w -= 105;
+		rateloc.z = rateloc.x + 535;
+		rateloc.y = rateloc.w - 97;
+		*(vec4*)(pWindow->addtionalPtr[1]) = rateloc;
+		vec4& ItemShowRange = *(vec4*)(pWindow->addtionalPtr[1]);
+		ItemShowRange.w += 20;
+		ItemShowRange.y -= 100 * 6;
+		for (int i = 0; i < Max_Item; ++i) {
+			DXUI* QuestItemObject = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+			DXBtnParam* pbtn_QuestItemObject = (DXBtnParam*)QuestItemObject->pParamterData;
+			pbtn_QuestItemObject->Set(0, 1, 21, L"");
+			pbtn_QuestItemObject->addtionalParams_int[0] = i; // ���� �������� �ε����� ��� �ִ�.
+			pbtn_QuestItemObject->addtionalParams[1] = rateloc.w; // ������ ������Ʈ�� ���� y ��
+			pbtn_QuestItemObject->addtionalPtr[1] = &pWindow->addtionalParams[0]; // �����̴� �� ������
+			pbtn_QuestItemObject->addtionalPtr[2] = &ItemShowRange; // ������ ������Ʈ�� ������ ����
+			pbtn_QuestItemObject->addtionalPtr[3] = pWindow;
+			// ����Ʈ ������ ������ �������� �߰��� ���� ������
+			pbtn_QuestItemObject->addtionalPtr[4] = DescPage;
+
+			QuestItemObject->SetFunctions(UIRender_QuestItemObject, UIUpdate_QuestItemObject, UIEvent_QuestItemObject);
+			sample_page->uiArr.push_back(QuestItemObject);
+			rateloc.y -= 100;
+			rateloc.w -= 100;
+		}
+	}
+
+	
+
+	pWindow->page_stack.push_back(sample_page);
+}
+
+#pragma endregion
+
+#pragma region UIDesign_KeyBinding
+
+void UIRender_KeyDumyBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	renderLoc.x += margin * rate;
+	renderLoc.y += margin * rate;
+	renderLoc.z -= margin * rate;
+	renderLoc.w -= margin * rate;
+	game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+
+	renderLoc.x += 2;
+	game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 10, vec4(1, 0, 0, 1), nullptr, nullptr, -0.01f + depth);
+}
+
+void UIRender_KeyBindingSlot(DXUI* ui) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pslot->flow / pslot->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+
+	renderLoc.x += margin * rate;
+	renderLoc.y += margin * rate;
+	renderLoc.z -= margin * rate;
+	renderLoc.w -= margin * rate;
+
+	game.UIDraw_TextureRect(renderLoc, color, depth, pslot->Base_UITextureIndex);
+}
+
+void UIUpdate_KeyBindingSlot(DXUI* ui, float deltaTime) {
+	DXSlotParam* pslot = (DXSlotParam*)ui->pParamterData;
+	pslot->flow += deltaTime;
+	if (pslot->flow > pslot->maxtime) {
+		pslot->flow = pslot->maxtime;
+	}
+}
+
+void UIEvent_KeyBindingSlot(DXUI* ui) {
+}
+
+void UIInitKeyBindingWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		// ����Ʈ UI
+
+		//1. Close Btn (336, 11, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 336;
+		rateloc.w -= 11;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = ui;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
+
+		wchar_t KeyBindStr[12][16] = {
+			L"Q",
+			L"E",
+			L"Shift",
+			L"RBtn",
+			L"T",
+			L"F",
+			L"G",
+			L"Z",
+			L"X",
+			L"C",
+			L"V",
+			L"Ctrl"
+		};
+
+		vec4 rateloc_Slot;
+		vec4 rateloc_KeyBtn;
+		rateloc_Slot = sample_page->location;
+		rateloc_Slot.x += sample_page->location.x + 22;
+		rateloc_Slot.w -= 101;
+		rateloc_Slot.z = rateloc_Slot.x + 75;
+		rateloc_Slot.y = rateloc_Slot.w - 75;
+
+		rateloc_KeyBtn = sample_page->location;
+		rateloc_KeyBtn.x += 39;
+		rateloc_KeyBtn.w -= 73;
+		rateloc_KeyBtn.z = rateloc_KeyBtn.x + 38;
+		rateloc_KeyBtn.y = rateloc_KeyBtn.w - 25;
+		for (int iy = 0; iy < 3; ++iy) {
+			rateloc_Slot.x = sample_page->location.x + 22;
+			rateloc_Slot.z = rateloc_Slot.x + 75;
+			rateloc_KeyBtn.x = sample_page->location.x + 39;
+			rateloc_KeyBtn.z = rateloc_KeyBtn.x + 38;
+
+			for (int ix = 0; ix < 4; ++ix) {
+				int keyindex = iy * 4 + ix;
+
+				//Ű ���� ��ư (336, 11, W27, H27)
+				DXUI* KeyDumy = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc_KeyBtn, 0, new DXBtnParam());
+				DXBtnParam* pbtn_KeyDumy = (DXBtnParam*)KeyDumy->pParamterData;
+				pbtn_KeyDumy->Set(0, 1, 29, KeyBindStr[keyindex]);
+				KeyDumy->SetFunctions(UIRender_KeyDumyBtn, UIUpdateDefaultBtn, nullptr);
+				sample_page->uiArr.push_back(KeyDumy);
+
+				//���ε� ����
+				DXUI* KeyBindingSlot = new DXUI(DXUI_TYPE::DXUI_Slot, sizeof(DXSlotParam), rateloc_Slot, 0, new DXSlotParam());
+				DXSlotParam* pslot_KeyBinding = (DXSlotParam*)KeyBindingSlot->pParamterData;
+				pslot_KeyBinding->Set(0, 1, (SlotKind)(SlotKind::_Item_Consumable | SlotKind::_Skill), 10);
+				KeyBindingSlot->SetFunctions(UIRender_KeyBindingSlot, UIUpdate_KeyBindingSlot, UIEvent_KeyBindingSlot);
+				sample_page->uiArr.push_back(KeyBindingSlot);
+
+				rateloc_Slot.x += 85;
+				rateloc_Slot.z += 85;
+				rateloc_KeyBtn.x += 85;
+				rateloc_KeyBtn.z += 85;
+			}
+
+			rateloc_Slot.y -= 134;
+			rateloc_Slot.w -= 134;
+			rateloc_KeyBtn.y -= 134;
+			rateloc_KeyBtn.w -= 134;
+		}
+	}
+
+	pWindow->page_stack.push_back(sample_page);
+}
+#pragma endregion
+
+#pragma region UIDesign_Social
+void UIInitSocialWindow(DXUI* ui) {
+	DXWindowParam* pWindow = (DXWindowParam*)ui->pParamterData;
+	DXPage* sample_page = new DXPage();
+	sample_page->BackGroundColor = vec4(0, 0, 0, 0);
+	float WindowW = ui->location.z - ui->location.x;
+	float WindowH = ui->location.w - ui->location.y;
+	sample_page->location = vec4(-((float)WindowW * 0.5f), -((float)WindowH * 0.5f), (float)WindowW * 0.5f, (float)WindowH * 0.5f);
+	pWindow->page_table.push_back(sample_page);
+	{
+		// ����Ʈ UI
+
+		//1. Close Btn (336, 11, W27, H27)
+		vec4 rateloc = sample_page->location;
+		rateloc.x += 336;
+		rateloc.w -= 11;
+		rateloc.z = rateloc.x + 27;
+		rateloc.y = rateloc.w - 27;
+		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn = (DXBtnParam*)CloseBtn->pParamterData;
+		pbtn->Set(0, 1, 3, L"");
+		pbtn->addtionalPtr[0] = ui;
+		CloseBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_InventoryCloseBtn);
+		sample_page->uiArr.push_back(CloseBtn);
+	}
+
+	pWindow->page_stack.push_back(sample_page);
+}
+#pragma endregion
+
+#pragma region UIDesign_NPCTalk
+void UIRender_NPCTalkDummyBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+	renderLoc.x += margin;
+	renderLoc.w -= margin;
+	game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+}
+
+void UIUpdate_NPCTalkDummyBtn(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	static int TourId = 0;
+	if (game.UITourID != TourId) {
+		TourId = game.UITourID;
+		if (0 <= game.PresentShowedTalkID && game.PresentShowedTalkID < game.NPCTalkTable.size()) {
+			wcscpy_s((wchar_t*)pbtn->text, 256, (wchar_t*)game.NPCTalkTable[game.PresentShowedTalkID].text);
+		}
+	}
+}
+
+void UIUpdate_NPCNameDummyBtn(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	static int TourId = 0;
+	if (game.UITourID != TourId) {
+		TourId = game.UITourID;
+		if (0 <= game.PresentShowedTalkID && game.PresentShowedTalkID < game.NPCTalkTable.size()) {
+			wcscpy_s((wchar_t*)pbtn->text, 256, (wchar_t*)game.NPCTalkTable[game.PresentShowedTalkID].SpeakerName);
+		}
+	}
+}
+
+void UIEvent_NPCTalkDummyBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+}
+
+void UIRender_TalkLeftBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+	constexpr float margin = 10.0f;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+	renderLoc.x += margin;
+	renderLoc.w -= margin;
+	game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+}
+
+void UIUpdate_TalkLeftBtn(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+}
+
+void UIEvent_TalkLeftBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		//talk left
+	}
+}
+
+void UIRender_TalkNextBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (pbtn->addtionalParams_int[0]) {
+		vec4 color = vec4(1, 1, 1, 1);
+		float depth = ui->depth - game.ui_depth_epsilon;
+		float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+		constexpr float margin = 10.0f;
+		vec4 renderLoc = ui->location + game.CurrentUICenter;
+		game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+		renderLoc.x += margin;
+		renderLoc.w -= margin;
+		game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+	}
+}
+
+void UIUpdate_TalkNextBtn(DXUI* ui, float deltaTime) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (game.NPCTalkTable[game.PresentShowedTalkID].selectCnt > 0) {
+		pbtn->addtionalParams_int[0] = 0;
+	}
+	else {
+		pbtn->addtionalParams_int[0] = 1;
+	}
+}
+
+void UIEvent_TalkNextBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (pbtn->addtionalParams_int[0]) {
+		vec4 evtloc = ui->location + game.CurrentUICenter;
+		if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+			pbtn->flow = 0;
+
+			//talk next
+			game.PresentShowedTalkID += 1;
+			game.UITourID += 1;
+		}
+	}
+}
+
+void UIRender_TalkSelectionBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (pbtn->addtionalParams_int[1]) {
+		vec4 color = vec4(1, 1, 1, 1);
+		float depth = ui->depth - game.ui_depth_epsilon;
+		float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
+		constexpr float margin = 10.0f;
+		vec4 renderLoc = ui->location + game.CurrentUICenter;
+		game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+		renderLoc.x += margin;
+		renderLoc.w -= margin;
+		game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+	}
+}
+
+void UIUpdate_TalkSelectionBtn(DXUI* ui, float deltaTime) {
+	static int TourID = 0;
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	int selindex = pbtn->addtionalParams_int[0];
+	int talkID = game.PresentShowedTalkID;
+	if (game.NPCTalkTable[talkID].selectCnt > selindex) {
+		pbtn->addtionalParams_int[1] = 1;
+	}
+	else {
+		pbtn->addtionalParams_int[1] = 0;
+	}
+
+	if (game.UITourID != TourID) {
+		if (game.NPCTalkTable[talkID].selectCnt > selindex) {
+			wcscpy_s(pbtn->text, 256, (wchar_t*)game.NPCTalkTable[talkID].sel[selindex].selectionText);
+		}
+	}
+}
+
+void UIEvent_TalkSelectionBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (pbtn->addtionalParams_int[1]) {
+		vec4 evtloc = ui->location + game.CurrentUICenter;
+		if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+			pbtn->flow = 0;
+
+			//talk next
+			int talkID = game.PresentShowedTalkID;
+			int selindex = pbtn->addtionalParams_int[0];
+			bool isExistNext = false;
+			if (game.NPCTalkTable[talkID].sel[selindex].gotoOtherTalk) {
+				game.PresentShowedTalkID = game.NPCTalkTable[talkID].sel[selindex].goto_otherTalkID;
+				isExistNext = true;
+			}
+
+			//Send Selection Packet
+			CTS_Client_NPCTalkSelection_Header header;
+			header.size = sizeof(CTS_Client_NPCTalkSelection_Header);
+			header.st = CTS_Protocol::Client_NPCTalkSelection;
+			header.selectionID = selindex;
+			client.send((char*)&header, sizeof(CTS_Client_NPCTalkSelection_Header), 0);
+
+			if (isExistNext == false) {
+				game.PresentShowedTalkID = -1;
+				game.mainPageStack.pop_back();
+			}
+
+			game.UITourID += 1;
+		}
+	}
+}
+#pragma endregion
 
 void Game::UI_Init()
 {
@@ -5705,7 +7275,7 @@ void Game::UI_Init()
 	NeonLight->CreateTexture_fromFile(L"Resources/UI/NeonLight.png", game.basicTexFormat, 1, false);
 	UITextureTable.push_back(NeonLight);
 
-	constexpr int UITextureCount = 40;
+	constexpr int UITextureCount = 41;
 	const wchar_t TextureNames[UITextureCount][512] = {
 		L"Resources/UI/UI_Inventory_Window.png", // 2
 		L"Resources/UI/UI_CloseBtn.png", //3
@@ -5747,7 +7317,9 @@ void Game::UI_Init()
 		L"Resources/UI/UI_GamePlay_Passive.png", //39
 		L"Resources/UI/UI_GamePlay_HPBar.png", //40
 		L"Resources/UI/UI_GamePlay_HPBarGage.png", //41
+		L"Resources/UI/UI_SellBuy_Window.png", // 42
 	};
+
 	for (int i = 0; i < UITextureCount; ++i) {
 		GPUResource* temp = new GPUResource();
 		temp->CreateTexture_fromFile(TextureNames[i], game.basicTexFormat, 1, false);
@@ -5762,106 +7334,6 @@ void Game::UI_Init()
 	UIPageTable.push_back(sample_page);
 	float ScreenW = gd.ClientFrameWidth;
 	float ScreenH = gd.ClientFrameHeight;
-
-	if (false)
-	{
-		vec4 rateloc = vec4(0.5, 0.8, 0.7, 0.9);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		DXUI* SaveBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
-		DXBtnParam* pbtn = (DXBtnParam*)SaveBtn->pParamterData;
-		pbtn->flow = 0;
-		pbtn->maxtime = 1;
-		wcscpy_s(pbtn->text, 64, L"저장하기");
-		ZeroMemory(pbtn->addtionalParams, sizeof(float) * 16);
-		pbtn->Base_UITextureIndex = 0;
-		SaveBtn->RenderFunc = UIRenderDefaultBtn;
-		SaveBtn->UpdateFunc = UIUpdateDefaultBtn;
-		SaveBtn->EventFunc = UIEventSaveBtn;
-		sample_page->uiArr.push_back(SaveBtn);
-
-		rateloc = vec4(0.75, 0.8, 0.95, 0.9);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		DXUI* CloseBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
-		pbtn = (DXBtnParam*)CloseBtn->pParamterData;
-		pbtn->flow = 0;
-		pbtn->maxtime = 1;
-		wcscpy_s(pbtn->text, 64, L"???");
-		ZeroMemory(pbtn->addtionalParams, sizeof(float) * 16);
-		pbtn->Base_UITextureIndex = 0;
-		CloseBtn->RenderFunc = UIRenderDefaultBtn;
-		CloseBtn->UpdateFunc = UIUpdateDefaultBtn;
-		CloseBtn->EventFunc = UIEventCloseBtn;
-		sample_page->uiArr.push_back(CloseBtn);
-
-		rateloc = vec4(0.1, 0.1, 0.9, 0.5);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		DXUI* TextEdit = new DXUI(DXUI_TYPE::DXUI_Edit, sizeof(DXEditParam), rateloc, 0, new DXEditParam());
-		DXEditParam* pEdit;
-		pEdit = (DXEditParam*)TextEdit->pParamterData;
-		pEdit->flow = 0;
-		pEdit->maxtime = 1;
-		pEdit->ReturnMode = 0;
-		pEdit->Base_UITextureIndex = 0;
-		pEdit->editCursor = 0;
-		ZeroMemory(&pEdit->wstr, sizeof(wstring));
-		pEdit->wstr.reserve(64);
-		pEdit->wstr.clear();
-		TextEdit->RenderFunc = UIRenderDefaultEdit;
-		TextEdit->UpdateFunc = UIUpdateDefaultEdit;
-		TextEdit->EventFunc = UIEventDefaultEdit;
-		wcscpy_s(pEdit->text, 64, L"무언가를 입력해보세요!");
-		ZeroMemory(pEdit->addtionalParams, sizeof(float) * 16);
-		sample_page->uiArr.push_back(TextEdit);
-
-		rateloc = vec4(0.1, 0.6, 0.5, 0.67);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		DXUI* SliderX = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
-		SliderX->RenderFunc = UIRenderDefaultSlider;
-		SliderX->UpdateFunc = UIUpdateDefaultSlider;
-		SliderX->EventFunc = UIEventDefaultSlider;
-		DXSliderParam* pSliderX = (DXSliderParam*)SliderX->pParamterData;
-		pSliderX->horizontal = true;
-		pSliderX->ShowValueMode = 'q';
-		pSliderX->inverse_direction = false;
-		pSliderX->min = -100.0f;
-		pSliderX->max = 100.0f;
-		pSliderX->setter = 0;
-		pSliderX->mod = 'f';
-		pSliderX->obj = new float(); // 보통 Set할 외부 변수의 주소를 넣는다. 다만 지금은 new로 새로 만든다.
-		ZeroMemory(pSliderX->addtionalParams, sizeof(float) * 16);
-		sample_page->uiArr.push_back(SliderX);
-
-		rateloc = vec4(0.05, 0.6, 0.1, 0.9);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		DXUI* SliderY = new DXUI(DXUI_TYPE::DXUI_Slider, sizeof(DXSliderParam), rateloc, 0, new DXSliderParam());
-		SliderY->RenderFunc = UIRenderDefaultSlider;
-		SliderY->UpdateFunc = UIUpdateDefaultSlider;
-		SliderY->EventFunc = UIEventDefaultSlider;
-		DXSliderParam* pSliderY = (DXSliderParam*)SliderY->pParamterData;
-		pSliderY->horizontal = false;
-		pSliderY->ShowValueMode = 'q';
-		pSliderY->inverse_direction = true;
-		pSliderY->min = -100.0f;
-		pSliderY->max = 100.0f;
-		pSliderY->setter = 0;
-		pSliderY->mod = 'n';
-		pSliderY->obj = new float(); // 보통 Set할 외부 변수의 주소를 넣는다. 다만 지금은 new로 새로 만든다.
-		ZeroMemory(pSliderY->addtionalParams, sizeof(float) * 16);
-		sample_page->uiArr.push_back(SliderY);
-
-		rateloc = vec4(0.5, 0.1, 0.9, 0.5);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		DXUI* SampleWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
-		SampleWindow->RenderFunc = UIRenderDefaultWindow;
-		SampleWindow->UpdateFunc = UIUpdateDefaultWindow;
-		SampleWindow->EventFunc = UIEventDefaultWindow;
-		DXWindowParam* pSampleWindow = (DXWindowParam*)SampleWindow->pParamterData;
-		ZeroMemory(pSampleWindow, sizeof(DXWindowParam));
-		pSampleWindow->origin = SampleWindow;
-		UIInitEquipWindow(SampleWindow);
-		sample_page->uiArr.push_back(SampleWindow);
-	}
-
 	{
 
 		/*
@@ -5892,6 +7364,43 @@ void Game::UI_Init()
 		EquipWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
 		sample_page->uiArr.push_back(EquipWindowOpenBtn);
 
+		// ����â�� ���� �� ��ư. 6:(134x54)
+		rateloc.x += 140;
+		rateloc.z += 140;
+		DXUI* ShopWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_openShop = (DXBtnParam*)ShopWindowOpenBtn->pParamterData;
+		pbtn_openShop->Set(0, 1, 6, L"����");
+		ShopWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		sample_page->uiArr.push_back(ShopWindowOpenBtn);
+
+		// ����Ʈ â�� ���� �� ��ư. 6:(134x54)
+		rateloc.x += 140;
+		rateloc.z += 140;
+		DXUI* QuestWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_openQuest = (DXBtnParam*)QuestWindowOpenBtn->pParamterData;
+		pbtn_openQuest->Set(0, 1, 6, L"����Ʈ");
+		QuestWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		sample_page->uiArr.push_back(QuestWindowOpenBtn);
+
+		// Ű ���ε� â�� ���� �� ��ư. 6:(134x54)
+		rateloc.x += 140;
+		rateloc.z += 140;
+		DXUI* KeyBindingWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_KeyBinding = (DXBtnParam*)KeyBindingWindowOpenBtn->pParamterData;
+		pbtn_KeyBinding->Set(0, 1, 6, L"Ű ���ε�");
+		KeyBindingWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		sample_page->uiArr.push_back(KeyBindingWindowOpenBtn);
+
+		// �Ҽ� â�� ���� �� ��ư. 6:(886x783)
+		rateloc.x += 886;
+		rateloc.z += 783;
+		DXUI* SocialWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_SocialWindowOpenBtn = (DXBtnParam*)SocialWindowOpenBtn->pParamterData;
+		pbtn_SocialWindowOpenBtn->Set(0, 1, 6, L"�Ҽ�");
+		SocialWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		sample_page->uiArr.push_back(SocialWindowOpenBtn);
+
+		//�κ��丮 ������ 2:(605x710)
 		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		rateloc.z += 605;
@@ -5905,6 +7414,7 @@ void Game::UI_Init()
 		pInventoryWindow->addtionalPtr[1] = new vec4(); // 아이템 슬롯이 보일 수 있는 영역을 저장.
 		pInventoryWindow->LastFocusedTime = chrono::system_clock::now();
 		UIInitInventoryWindow(InventoryWindow);
+		InventoryWindow->enable = false;
 		sample_page->uiArr.push_back(InventoryWindow);
 		pbtn_openInven->addtionalPtr[0] = InventoryWindow;
 
@@ -5918,8 +7428,155 @@ void Game::UI_Init()
 		pEquipWindow->Set(EquipWindow, 9);
 		pEquipWindow->LastFocusedTime = chrono::system_clock::now();
 		UIInitEquipWindow(EquipWindow);
+		EquipWindow->enable = false;
 		sample_page->uiArr.push_back(EquipWindow);
 		pbtn_openequip->addtionalPtr[0] = EquipWindow;
+
+		//����â ������ 12 : (602, 737)
+		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 602;
+		rateloc.y -= 737;
+		DXUI* ShopWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		ShopWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pShopWindow = (DXWindowParam*)ShopWindow->pParamterData;
+		pShopWindow->Set(ShopWindow, 12);
+		pShopWindow->LastFocusedTime = chrono::system_clock::now();
+		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+		pShopWindow->addtionalPtr[1] = new vec4(); // ���� ���� �������� ������ ����
+		UIInitShopWindow(ShopWindow);
+		ShopWindow->enable = false;
+		sample_page->uiArr.push_back(ShopWindow);
+		// ��ư�� �������x �����찡 �������� ����
+		pbtn_openShop->addtionalPtr[0] = ShopWindow;
+
+		//����Ʈ â ������ 12 : (602, 737)
+		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 602;
+		rateloc.y -= 755;
+		DXUI* QuestWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		QuestWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pQuestWindow = (DXWindowParam*)QuestWindow->pParamterData;
+		pQuestWindow->Set(QuestWindow, 24);
+		pQuestWindow->LastFocusedTime = chrono::system_clock::now();
+		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+		pQuestWindow->addtionalPtr[1] = new vec4(); // ���� ���� �������� ������ ����
+		UIInitQuestWindow(QuestWindow);
+		QuestWindow->enable = false;
+		sample_page->uiArr.push_back(QuestWindow);
+		// ��ư�� �������x �����찡 �������� ����
+		pbtn_openQuest->addtionalPtr[0] = QuestWindow;
+
+		//Ű ���ε� â ������ 12 : (372, 505)
+		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 372;
+		rateloc.y -= 505;
+		DXUI* KeyBindWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		KeyBindWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pKeyBindWindow = (DXWindowParam*)KeyBindWindow->pParamterData;
+		pKeyBindWindow->Set(KeyBindWindow, 28);
+		pKeyBindWindow->LastFocusedTime = chrono::system_clock::now();
+		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+		UIInitKeyBindingWindow(KeyBindWindow);
+		KeyBindWindow->enable = false;
+		sample_page->uiArr.push_back(KeyBindWindow);
+		// ��ư�� �������x �����찡 �������� ����
+		pbtn_KeyBinding->addtionalPtr[0] = KeyBindWindow;
+
+		// �Ҽ� ������
+		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.z += 886;
+		rateloc.y -= 783;
+		DXUI* SocialWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+		SocialWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+		DXWindowParam* pSocialWindow = (DXWindowParam*)SocialWindow->pParamterData;
+		pSocialWindow->Set(SocialWindow, 30);
+		pSocialWindow->LastFocusedTime = chrono::system_clock::now();
+		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+		UIInitSocialWindow(SocialWindow);
+		KeyBindWindow->enable = false;
+		sample_page->uiArr.push_back(SocialWindow);
+		// ��ư�� �������x �����찡 �������� ����
+		pbtn_SocialWindowOpenBtn->addtionalPtr[0] = SocialWindow;
+	}
+
+	DXPage* NPCTalkPage = new DXPage();
+	NPCTalkPage->BackGroundColor = vec4(0, 0, 0, 0.1f);
+	NPCTalkPage->location = vec4(-((float)gd.ClientFrameWidth * 0.5f), -((float)gd.ClientFrameHeight * 0.5f), (float)gd.ClientFrameWidth * 0.5f, (float)gd.ClientFrameHeight * 0.5f);
+	UIPageTable.push_back(NPCTalkPage);
+	{
+		vec4 rateloc = vec4(0.1f, 0.7f, 0.9f, 0.9f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* NPCTalkDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_NPCTalkDumyBtn = (DXBtnParam*)NPCTalkDumyBtn->pParamterData;
+		pbtn_NPCTalkDumyBtn->Set(0, 1, 35, L"��ȭâ");
+		NPCTalkDumyBtn->SetFunctions(UIRender_NPCTalkDummyBtn, UIUpdate_NPCTalkDummyBtn, UIEvent_NPCTalkDummyBtn);
+		NPCTalkPage->uiArr.push_back(NPCTalkDumyBtn);
+
+		rateloc = vec4(0.1f, 0.6f, 0.2f, 0.7f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* NPCNameDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_NPCNameDumyBtn = (DXBtnParam*)NPCNameDumyBtn->pParamterData;
+		pbtn_NPCNameDumyBtn->Set(0, 1, 6, L"�̸�");
+		NPCNameDumyBtn->SetFunctions(UIRender_NPCTalkDummyBtn, UIUpdate_NPCNameDummyBtn, UIEvent_NPCTalkDummyBtn);
+		NPCTalkPage->uiArr.push_back(NPCNameDumyBtn);
+
+		//rateloc = vec4(0.8f, 0.85f, 0.9f, 0.95f);
+		//WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		//DXUI* TalkLeftDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		//DXBtnParam* pbtn_TalkLeftDumyBtn = (DXBtnParam*)TalkLeftDumyBtn->pParamterData;
+		//pbtn_TalkLeftDumyBtn->Set(0, 1, 6, L"��ȭ ������");
+		//TalkLeftDumyBtn->SetFunctions(UIRender_TalkLeftBtn, UIUpdate_TalkLeftBtn, UIEvent_TalkLeftBtn);
+		//NPCTalkPage->uiArr.push_back(TalkLeftDumyBtn);
+
+		rateloc = vec4(0.8f, 0.6f, 0.9f, 0.7f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* TalkNextBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_TalkNextBtn = (DXBtnParam*)TalkNextBtn->pParamterData;
+		pbtn_TalkNextBtn->Set(0, 1, 6, L"����");
+		pbtn_TalkNextBtn->addtionalParams_int[0] = 1;
+		TalkNextBtn->SetFunctions(UIRender_TalkNextBtn, UIUpdate_TalkNextBtn, UIEvent_TalkNextBtn);
+		NPCTalkPage->uiArr.push_back(TalkNextBtn);
+
+		// Selection
+		rateloc = vec4(0.8f, 0.6f, 0.9f, 0.7f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* TalkSelectionBtn1 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_TalkSelectionBtn1 = (DXBtnParam*)TalkSelectionBtn1->pParamterData;
+		pbtn_TalkSelectionBtn1->Set(0, 1, 6, L"������1");
+		pbtn_TalkSelectionBtn1->addtionalParams_int[0] = 0;
+		TalkSelectionBtn1->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
+		NPCTalkPage->uiArr.push_back(TalkSelectionBtn1);
+
+		rateloc = vec4(0.8f, 0.5f, 0.9f, 0.6f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* TalkSelectionBtn2 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_TalkSelectionBtn2 = (DXBtnParam*)TalkSelectionBtn2->pParamterData;
+		pbtn_TalkSelectionBtn2->Set(0, 1, 6, L"������2");
+		pbtn_TalkSelectionBtn2->addtionalParams_int[0] = 1;
+		TalkSelectionBtn2->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
+		NPCTalkPage->uiArr.push_back(TalkSelectionBtn2);
+
+		rateloc = vec4(0.8f, 0.4f, 0.9f, 0.5f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* TalkSelectionBtn3 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_TalkSelectionBtn3 = (DXBtnParam*)TalkSelectionBtn3->pParamterData;
+		pbtn_TalkSelectionBtn3->Set(0, 1, 6, L"������3");
+		pbtn_TalkSelectionBtn3->addtionalParams_int[0] = 2;
+		TalkSelectionBtn3->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
+		NPCTalkPage->uiArr.push_back(TalkSelectionBtn3);
+
+		rateloc = vec4(0.8f, 0.3f, 0.9f, 0.4f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		DXUI* TalkSelectionBtn4 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_TalkSelectionBtn4 = (DXBtnParam*)TalkSelectionBtn4->pParamterData;
+		pbtn_TalkSelectionBtn4->Set(0, 1, 6, L"������4");
+		pbtn_TalkSelectionBtn4->addtionalParams_int[0] = 3;
+		TalkSelectionBtn4->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
+		NPCTalkPage->uiArr.push_back(TalkSelectionBtn4);
 	}
 }
 

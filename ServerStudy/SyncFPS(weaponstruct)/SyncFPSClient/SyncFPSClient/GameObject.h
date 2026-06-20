@@ -213,9 +213,9 @@ struct GameObject {
 	virtual void Release();
 	virtual BoundingOrientedBox GetOBB();
 
-	virtual void SetShape(Shape _shape);
-	virtual void SetShape(Model* _shape);
-	virtual void SetShape(Mesh* _shape);
+	virtual void SetShape(Shape _shape, int ZoneID = -1);
+	virtual void SetShape(Model* _shape, int ZoneID = -1);
+	virtual void SetShape(Mesh* _shape, int ZoneID = -1);
 
 	virtual void OnRayHit(GameObject* rayFrom);
 
@@ -246,6 +246,7 @@ struct StaticGameObject : public GameObject {
 	StaticGameObject();
 	virtual ~StaticGameObject();
 	vector<BoundingOrientedBox> obbArr;
+	int zoneid = -1;
 
 	virtual matrix GetWorld();
 	virtual void SetWorld(matrix localWorldMat);
@@ -263,7 +264,7 @@ struct StaticGameObject : public GameObject {
 	void InitMapAABB_Inherit(void* origin, matrix parent_world);
 	BoundingOrientedBox GetOBBw(matrix worldMat);
 
-	virtual void SetShape(Shape _shape);
+	virtual void SetShape(Shape _shape, int ZoneID = -1);
 
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
@@ -430,6 +431,7 @@ struct DynamicGameObject : public GameObject {
 	GameObjectIncludeChunks IncludeChunks;
 	int* chunkAllocIndexs = nullptr;
 	int chunkAllocIndexsCapacity = 8;
+	int zoneid = -1;
 
 	void InitialChunkSetting();
 	void Move(vec4 velocity, vec4 Q);
@@ -450,7 +452,7 @@ struct DynamicGameObject : public GameObject {
 	virtual void OnCollision(GameObject* other);
 	virtual void OnRayHit(GameObject* rayFrom);
 
-	virtual void SetShape(Shape _shape);
+	virtual void SetShape(Shape _shape, int ZoneID = -1);
 
 	void PositionInterpolation(float deltaTime);
 	virtual void MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc);
@@ -593,9 +595,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 // 이름에서 ShapeIndex를 얻는 map
 	void BlendingAnimation();
 
-// 이름에서 ShapeIndex를 얻는 map
-// 이름에서 ShapeIndex를 얻는 map
-	void ModifyLocalToWorld();
+	virtual void ModifyLocalToWorld();
 
 // 이름에서 ShapeIndex를 얻는 map
 	void AnimationComputeDispatch(matrix parent = XMMatrixIdentity());
@@ -603,7 +603,7 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	using RenderFuncType = void (SkinMeshGameObject::*)(matrix parent);
 	inline static RenderFuncType CurrentRenderFunc = &SkinMeshGameObject::Render;
 
-	virtual void SetShape(Shape _shape);
+	virtual void SetShape(Shape _shape, int ZoneID = -1);
 
 	virtual void Update(float delatTime);
 	virtual void AnimationUpdate(float deltaTime);
@@ -707,10 +707,13 @@ struct Item
 	// 이름에서 ShapeIndex를 얻는 map
 	const wchar_t* description;
 
-	Item(int i, ItemType type, vec4 c, Shape s, GPUResource* t, GPUResource* icontex, const wchar_t* d) :
+	// ������ ������
+	void* pItemData = nullptr;
+
+	Item(int i, ItemType type, vec4 c, Shape s, GPUResource* t, GPUResource* icontex, const wchar_t* d, void* ptrData = nullptr) :
 		id{ i }, itemtype{type}, color { c }, ShapeInInventory{ s }, tex{ t }, icon{ icontex }, description{ d }
 	{
-
+		pItemData = ptrData;
 	}
 };
 
@@ -916,7 +919,18 @@ struct GameMap {
 	unsigned int TextureTableStart = 0;
 	unsigned int MaterialTableStart = 0;
 
-	void LoadMap(const char* MapName, int ZoneID);
+	bool LoadMap(const char* MapName, int ZoneID);
+
+	enum LoadMap_Context_WorkKind {
+		LMCWK_
+	};
+	struct LoadMap_Context {
+		ifstream* ifs;
+		ifstream* ifs2;
+		LoadMap_Context_WorkKind workKind;
+		int work_iterator;
+	};
+	bool LoadMap_WithContext(const char* MapName, int ZoneID, LoadMap_Context* context);
 
 	void Release();
 };
@@ -933,67 +947,14 @@ struct SphereLODObject : public DynamicGameObject {
 };
 
 /*
-* 설명 : 무기 타입 enum
-*/
-enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
-
-/*
 * 설명 : 게임 맵 데이터
 */
-struct WeaponData {
-	WeaponType type;
-	float shootDelay;     // 연사 속도
-	float recoilVelocity; // 반동 세기
-	float recoilDelay;    // 반동 회복 시간
-	float damage;         // 기본 데미지
-	int maxBullets;       // 탄창 용량
-	float reloadTime;     // 장전 시간
-};
-
-static WeaponData GWeaponTable[] = {
-	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
-	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
-	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
-	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
-	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
-	//
-};
-
-class Weapon {
-public:
-	WeaponData m_info;      // GWeaponTable에서 가져온 수치
-	float m_shootFlow = 0;  // 다음 발사까지 남은 시간 계산
-	float m_recoilFlow = 0; // 반동 애니메이션/에임 상승 진행률
-
-	Weapon(){}
-
-	Weapon(WeaponType type) : m_info(GWeaponTable[(int)type]) {
-		m_shootFlow = m_info.shootDelay;
-		m_recoilFlow = m_info.recoilDelay;
-	}
-
-	virtual void Update(float deltaTime) {
-		if (m_shootFlow < m_info.shootDelay) m_shootFlow += deltaTime;
-		if (m_recoilFlow < m_info.recoilDelay) m_recoilFlow += deltaTime;
-	}
-
-	virtual void OnFire() {
-		m_shootFlow = 0.0f;
-		m_recoilFlow = 0.0f;
-	}
-
-	/*
-	* 설명
-	* 현재 반동이 얼마나 진행되었는지 0~1 사이 값으로 반환
-	*/
-	float GetRecoilAlpha() const {
-		float alpha = 1.0f - (m_recoilFlow / m_info.recoilDelay);
-		return (alpha < 0) ? 0 : alpha;
-	}
-};
 
 /*
 * 설명 : 무기 타입 구조체
+=======
+* ���� : ���� ���� Ŭ����
+>>>>>>> Stashed changes
 */
 class Monster : public SkinMeshGameObject {
 #define STC_CurrentStruct Monster
@@ -1075,6 +1036,125 @@ public:
 #undef STC_CurrentStruct
 };
 
+enum QuestType {
+	CollectItem,
+	KillMonster
+};
+
+struct QuestRequirement {
+	QuestType type;
+	int ObjID = -1; // ������ �����̸� �������� ���̵�, ���� óġ�� ������ ���̵�
+	int Cnt = 0; // �ؾ��ϴ� ��ǥ�� ����
+	int PresentCnt = 0; // ���� ����� ����
+	int PastCnt = 0; // ������ ����� ���� - ���� ���̿� ���.
+
+	QuestRequirement() {}
+	QuestRequirement(QuestType t, int objid, int count) {
+		type = t;
+		ObjID = objid;
+		Cnt = count;
+		PresentCnt = 0;
+		PastCnt = 0;
+	}
+
+	void Copy(QuestRequirement* dest) {
+		dest->type = type;
+		dest->ObjID = ObjID;
+		dest->Cnt = Cnt;
+		dest->PresentCnt = PresentCnt;
+		dest->PastCnt = PastCnt;
+	}
+
+	bool isComplete() {
+		return PresentCnt >= Cnt;
+	}
+};
+
+enum QuestRewardType {
+	QRT_Money = 0,
+	QRT_Item = 1,
+	QRT_Exp = 2,
+};
+
+struct QuestReward {
+	QuestRewardType type;
+	int objid = 0;
+	int count = 0;
+
+	QuestReward() {}
+	QuestReward(QuestRewardType t, int obj, int cnt) {
+		type = t;
+		objid = obj;
+		count = cnt;
+	}
+
+	void Copy(QuestReward* dest) {
+		dest->type = type;
+		dest->objid = objid;
+		dest->count = count;
+	}
+};
+
+struct Quest {
+	const wchar_t* QuestName;
+	const wchar_t* QuestDesc;
+	static constexpr int MaxRequire = 16;
+	int requp = 0;
+	QuestRequirement ReqArr[MaxRequire];
+
+	static constexpr int MaxReward = 16;
+	int rewardUp = 0;
+	QuestReward RewardArr[MaxReward];
+
+	Quest() {}
+	Quest(const wchar_t* qName, const wchar_t* qDesc) {
+		QuestName = qName;
+		QuestDesc = qDesc;
+	}
+
+	void PushReq(QuestType type, int objid, int Cnt) {
+		if (requp < MaxRequire) {
+			ReqArr[requp] = QuestRequirement(type, objid, Cnt);
+			requp += 1;
+		}
+	}
+
+	void PushReward(QuestRewardType t, int obj, int cnt) {
+		if (rewardUp < MaxReward) {
+			RewardArr[rewardUp] = QuestReward(t, obj, cnt);
+			rewardUp += 1;
+		}
+	}
+
+	void Copy(Quest* dest) {
+		dest->QuestName = QuestName;
+		dest->QuestDesc = QuestDesc;
+		dest->requp = requp;
+		for (int i = 0; i < dest->requp; ++i) {
+			ReqArr[i].Copy(&dest->ReqArr[i]);
+		}
+		for (int i = 0; i < dest->rewardUp; ++i) {
+			RewardArr[i].Copy(&dest->RewardArr[i]);
+		}
+	}
+
+	bool isSameQuest(Quest* q) {
+		bool b = q->QuestName == QuestName;
+		b = b && q->QuestDesc == QuestDesc;
+		b = b && q->requp == requp;
+		b = b && q->rewardUp == rewardUp;
+		return b;
+	}
+
+	bool isComplete() {
+		bool b = true;
+		for (int i = 0; i < requp; ++i) {
+			b = b && ReqArr[i].isComplete();
+		}
+		return b;
+	}
+};
+
 /*
 * 설명 : 간이 몬스터 클래스
 */
@@ -1136,10 +1216,21 @@ public:
 		// 이름에서 ShapeIndex를 얻는 map
 	//static constexpr int maxItem = 36;
 	//STCDefArr(ItemStack, Inventory, maxItem);
-		// 이름에서 ShapeIndex를 얻는 map
-	Weapon weapon;
 
-		// 이름에서 ShapeIndex를 얻는 map
+	//STC ���� ��� �ִ� ����
+	Weapon weapon[3];
+	int SelectedWeapon = 0;
+
+	//STC �÷��̾��� ��
+	STCDef(int, Gold);
+
+	//STC �÷��̾��� ����ġ
+	STCDef(int, Exp);
+
+	//STC �÷��̾��� ����
+	STCDef(int, Level);
+	
+	//ClientOnly ���콺�� �󸶳� ������������ ��Ÿ����.
 	vec4 DeltaMousePos;
 	//ClientOnly
 	//Mesh* Gun;
@@ -1196,6 +1287,8 @@ public:
 	// idk
 	void UpdateGunBarrelNodes();
 
+	virtual void ModifyLocalToWorld();
+
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
 		Tag tag;
@@ -1224,6 +1317,7 @@ public:
 		float HeatGauge = 0;
 	// 이름에서 ShapeIndex를 얻는 map
 		float MaxHeatGauge = 100;
+
 		float ShieldDurability = 0;
 		float MaxShieldDurability = 100;
 		//STC player job
@@ -1232,15 +1326,14 @@ public:
 		float SkillCooldown[(int)SkillSlot::Max] = {};
 		//STC skill cooldown remaining by slot
 		float SkillCooldownFlow[(int)SkillSlot::Max] = {};
-	// 이름에서 ShapeIndex를 얻는 map
 		int m_currentWeaponType = 0;
 		float m_yaw = 0.0f;
 		float m_pitch = 0.0f;
-	// 이름에서 ShapeIndex를 얻는 map
-		//static constexpr int maxItem = 36;
-		//ItemStack Inventory[maxItem];
-	// 이름에서 ShapeIndex를 얻는 map
-		Weapon weapon;
+		Weapon weapon[3];
+		int SelectedWeapon = 0;
+		int Gold = 0;
+		int Exp = 0;
+		int Level = 0;
 	};
 #pragma pack(pop)
 
@@ -1248,6 +1341,95 @@ public:
 	static void STATICINIT(int typeindex = GameObjectType::_Player);
 #undef STC_CurrentStruct
 };
+
+class PeacefulNPC : public SkinMeshGameObject {
+#define STC_CurrentStruct PeacefulNPC
+	STC_STATICINIT_innerStruct;
+public:
+	// �� Ŭ���̾�Ʈ���� �� NPC�� ���̴��� ����
+	STCDef(PeacefulNPCType, NPCType);
+	STCDef(int, NPCID);
+
+	PeacefulNPC();
+	virtual ~PeacefulNPC() {}
+
+	/*
+	* ���� : ���ӿ�����Ʈ�� ������Ʈ�� ������.
+	* �Ű����� :
+	* float deltaTime : ���� ������Ʈ ���� ���� ��������� �ð� ����.
+	*/
+	virtual void Update(float deltaTime);
+
+	/*
+	* ���� : ���ӿ�����Ʈ�� �������Ѵ�.
+	*/
+	virtual void Render(matrix parent = XMMatrixIdentity());
+
+	virtual void Release();
+
+#pragma pack(push, 1)
+	struct STC_SyncObjData {
+		Tag tag;
+		int shapeindex;
+		int parent;
+		int childs;
+		int sibling;
+		matrix DestWorld;
+		vec4 LVelocity;
+		float AnimationFlowTime;
+		int PlayingAnimationIndex;
+
+		PeacefulNPCType npctype;
+		int NPCID;
+	};
+#pragma pack(pop)
+
+	virtual void RecvSTC_SyncObj(char* data);
+	static void STATICINIT(int typeindex = GameObjectType::_PeacefulNPC);
+#undef STC_CurrentStruct
+};
+
+struct TalkSelection {
+	const wchar_t* volatile selectionText;
+	bool gotoOtherTalk = true;
+	void (*Function)() = nullptr; // gotoOtherTalk == false �̸�, ���ý� �� �Լ��� �����Ѵ�. (Ŭ�󿡼��� �ƹ��͵� ���Ѵ�.)
+	size_t goto_otherTalkID; // gotoOtherTalk == true �̸�, ���ý� �ش� Id�� ��ȭ�� ��ȯ�ȴ�. (Ŭ�󿡼��� �۵��ȴ�.)
+
+	TalkSelection() {
+		selectionText = nullptr;
+		gotoOtherTalk = true;
+		Function = nullptr;
+		goto_otherTalkID = -1;
+	}
+	TalkSelection(const wchar_t* txt, bool gotoOther_talk, ui64 gotoData) {
+		selectionText = txt;
+		gotoOtherTalk = gotoOther_talk;
+		if (gotoOther_talk) {
+			goto_otherTalkID = gotoData;
+		}
+		else {
+			Function = reinterpret_cast<void(*)()>(gotoData);
+		}
+	}
+	TalkSelection(const TalkSelection& ref) {
+		selectionText = ref.selectionText;
+		gotoOtherTalk = ref.gotoOtherTalk;
+		goto_otherTalkID = ref.goto_otherTalkID;
+		Function = ref.Function;
+	}
+};
+
+struct NPCTalkData {
+	// ����� �ؽ�Ʈ
+	const wchar_t* volatile SpeakerName;
+	const wchar_t* volatile text;
+	int selectCnt = 0;
+	bool NextEscape = false;
+	TalkSelection sel[4];
+	NPCTalkData(const wchar_t* speaker, const wchar_t* txt, bool nxtEsc = false, TalkSelection sel1 = TalkSelection(), TalkSelection sel2 = TalkSelection(), TalkSelection sel3 = TalkSelection(), TalkSelection sel4 = TalkSelection());
+};
+
+
 
 struct Portal : public StaticGameObject {
 	float spawnX = 0;
@@ -1376,15 +1558,11 @@ struct DXUI {
 };
 
 struct DXBtnParam {
-		// 이름에서 ShapeIndex를 얻는 map
 	float flow;
 	float maxtime;
 	int Base_UITextureIndex = 0;
+	wchar_t text[256] = {};
 
-// 이름에서 ShapeIndex를 얻는 map
-	wchar_t text[64] = {};
-
-// 이름에서 ShapeIndex를 얻는 map
 	union {
 		float addtionalParams[16];
 		void* addtionalPtr[8];
@@ -1491,7 +1669,13 @@ struct DXSliderParam {
 
 enum SlotKind {
 	_Item = 0,
+	_Item_Equipment = 2,
+	_Item_Weapone = 4,
+	_Item_Consumable = 6,
+	// ���� ���� ¦���� ��������
+
 	_Skill = 1,
+	//������ ���� Ȧ���� ��ų��.
 };
 
 struct SlotData {
@@ -1500,7 +1684,6 @@ struct SlotData {
 	DXUI* selectedSlot = nullptr;
 };
 
-	// 이름에서 ShapeIndex를 얻는 map
 /*
 *			- 하지만 지금 기존 슬롯의 일부만 잡고 있을 경우 : 아무 동작도 안한다. (마크와 다른점.)
 * 2. 오른쪽 클릭
@@ -1544,6 +1727,8 @@ struct DXSlotParam {
 		maxtime = m;
 		slotObType = type;
 		Base_UITextureIndex = texid;
+		objid = 0;
+		itemCount = 0;
 	}
 };
 

@@ -270,7 +270,7 @@ struct SyncWay {
 // virtual function pointer table <-> GameObjectType
 // pair <GameObjectType, offset> <-> Client Offset
 union GameObjectType {
-	static constexpr int ObjectTypeCount = 7;
+	static constexpr int ObjectTypeCount = 8;
 
 	short id;
 	enum {
@@ -281,6 +281,7 @@ union GameObjectType {
 		_Player = 4,
 		_Monster = 5,
 		_Portal = 6,
+		_PeacefulNPC = 7,
 	};
 
 	operator short() { return id; }

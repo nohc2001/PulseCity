@@ -68,7 +68,7 @@ namespace {
 			mat->roughnessFactor = 1.0f;
 			mat->metallicFactor = 0.0f;
 			mat->specularFactor = 0.0f;
-			mat->SetDescTable();
+			mat->SetDescTable(-1);
 			gBoxLODProxyMaterialIndex = static_cast<int>(game.MaterialTable.size());
 			game.MaterialTable.push_back(mat);
 			game.RenderMaterialTable.push_back(mat);
@@ -720,8 +720,9 @@ void GameObject::Render(matrix parent)
 		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
 		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &rootWorld, 0);
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
-			if (material[i] < 0 || material[i] >= game.MaterialTable.size()) continue;
-			Material* Mat = game.MaterialTable[material[i]];
+			if (material[i] < 0 || material[i] >= game.RenderMaterialTable.size()) continue;
+			Material* Mat = game.GetMaterialFromRenderMaterialIndex(material[i]);
+			
 			//if (Mat == nullptr) continue;
 			//if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
 			//	Mat->SetDescTable();
@@ -729,6 +730,7 @@ void GameObject::Render(matrix parent)
 			//if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
 			//	continue;
 			//}
+
 			using PBRRPI = PBRShader1::RootParamId;
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, Mat->CB_Resource.descindex.hRender.hgpu);
 			gd.gpucmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, Mat->TextureSRVTableIndex.hRender.hgpu);
@@ -921,7 +923,7 @@ BoundingOrientedBox GameObject::GetOBB()
 	return obb_world;
 }
 
-void GameObject::SetShape(Shape _shape)
+void GameObject::SetShape(Shape _shape, int ZoneID)
 {
 	static LocalRootSigData tempLRSSaver[1024] = {};
 	shape = _shape;
@@ -942,8 +944,8 @@ void GameObject::SetShape(Shape _shape)
 				RaytracingWorldMatInput_Model[i] = nullptr;
 				if (model->Nodes[i].numMesh > 0) {
 					BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-					int matindex = game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
-					tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex);
+					int matindex = model->Nodes[i].materialIndex[0]; // game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
+					tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex, ZoneID);
 
 					float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 					/*RaytracingWorldMatInput_Model[i] = new float* [bmesh->subMeshNum];
@@ -970,8 +972,8 @@ void GameObject::SetShape(Shape _shape)
 				tempLRSSaver[i] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[i] / sizeof(unsigned int));
 			}*/
 
-			int matindex = game.GetRenderMaterialIndexFromGlobalMaterialIndex(material[0]);
-			tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex);
+			int matindex = material[0];// game.GetRenderMaterialIndexFromGlobalMaterialIndex(material[0]);
+			tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex, ZoneID);
 
 			float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 			/*RaytracingWorldMatInput = new float* [bmesh->subMeshNum];
@@ -985,14 +987,14 @@ void GameObject::SetShape(Shape _shape)
 	}
 }
 
-void GameObject::SetShape(Model* _shape)
+void GameObject::SetShape(Model* _shape, int ZoneID)
 {
-	SetShape(Shape(_shape));
+	SetShape(Shape(_shape), ZoneID);
 }
 
-void GameObject::SetShape(Mesh* _shape)
+void GameObject::SetShape(Mesh* _shape, int ZoneID)
 {
-	SetShape(Shape(_shape));
+	SetShape(Shape(_shape), ZoneID);
 }
 
 void GameObject::DbgHieraky()
@@ -1218,8 +1220,8 @@ BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
 	return obb_world;
 }
 
-void StaticGameObject::SetShape(Shape _shape) {
-	GameObject::SetShape(_shape);
+void StaticGameObject::SetShape(Shape _shape, int ZoneID) {
+	GameObject::SetShape(_shape, zoneid);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	shape.GetRealShape(mesh, model);
@@ -1695,9 +1697,9 @@ void DynamicGameObject::OnRayHit(GameObject* rayFrom)
 {
 }
 
-void DynamicGameObject::SetShape(Shape _shape)
+void DynamicGameObject::SetShape(Shape _shape, int ZoneID)
 {
-	GameObject::SetShape(_shape);
+	GameObject::SetShape(_shape, zoneid);
 }
 
 bool godmod = true;
@@ -1732,23 +1734,42 @@ void DynamicGameObject::Update(float delatTime)
 
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
-	BoundingOrientedBox beforeobb = GetOBB();
-	GameObjectIncludeChunks goic_before = game.Current_Zone->GetChunks_Include_OBB(beforeobb);
-	float pow = deltaTime * 10;
-	vec4 flowScale, flowRot, flowPos;
-	XMMatrixDecompose((XMVECTOR*)&flowScale, (XMVECTOR*)&flowRot, (XMVECTOR*)&flowPos, worldMat);
-	vec4 renderScale = (1.0f - pow) * flowScale + pow * DestScale;
-	vec4 renderRot = vec4::Qlerp(flowRot, DestRot, pow);
-	vec4 renderPos = (1.0f - pow) * flowPos + pow * DestPos;
-	matrix mat = XMMatrixScaling(renderScale.x, renderScale.y, renderScale.z) * XMMatrixRotationQuaternion(renderRot);
-	mat.pos = renderPos;
-	matrix temp = worldMat;
-	worldMat = mat;
-	BoundingOrientedBox afterobb = GetOBB();
-	GameObjectIncludeChunks goic_after = game.Current_Zone->GetChunks_Include_OBB(afterobb);
-	if (goic_before != goic_after) {
-		worldMat = temp;
-		MoveChunck(mat, goic_before, goic_after);
+	if (deltaTime < 0.1f) {
+		BoundingOrientedBox beforeobb = GetOBB();
+		GameObjectIncludeChunks goic_before = game.Current_Zone->GetChunks_Include_OBB(beforeobb);
+		float pow = deltaTime * 10;
+		vec4 flowScale, flowRot, flowPos;
+		XMMatrixDecompose((XMVECTOR*)&flowScale, (XMVECTOR*)&flowRot, (XMVECTOR*)&flowPos, worldMat);
+		vec4 renderScale = (1.0f - pow) * flowScale + pow * DestScale;
+		vec4 renderRot = vec4::Qlerp(flowRot, DestRot, pow);
+		vec4 renderPos = (1.0f - pow) * flowPos + pow * DestPos;
+		matrix mat = XMMatrixScaling(renderScale.x, renderScale.y, renderScale.z) * XMMatrixRotationQuaternion(renderRot);
+		mat.pos = renderPos;
+		matrix temp = worldMat;
+		worldMat = mat;
+		BoundingOrientedBox afterobb = GetOBB();
+		GameObjectIncludeChunks goic_after = game.Current_Zone->GetChunks_Include_OBB(afterobb);
+		if (goic_before != goic_after) {
+			worldMat = temp;
+			MoveChunck(mat, goic_before, goic_after);
+		}
+	}
+	else {
+		BoundingOrientedBox beforeobb = GetOBB();
+		GameObjectIncludeChunks goic_before = game.Current_Zone->GetChunks_Include_OBB(beforeobb);
+		vec4 renderScale = DestScale;
+		vec4 renderRot = DestRot;
+		vec4 renderPos = DestPos;
+		matrix mat = XMMatrixScaling(renderScale.x, renderScale.y, renderScale.z) * XMMatrixRotationQuaternion(renderRot);
+		mat.pos = renderPos;
+		matrix temp = worldMat;
+		worldMat = mat;
+		BoundingOrientedBox afterobb = GetOBB();
+		GameObjectIncludeChunks goic_after = game.Current_Zone->GetChunks_Include_OBB(afterobb);
+		if (goic_before != goic_after) {
+			worldMat = temp;
+			MoveChunck(mat, goic_before, goic_after);
+		}
 	}
 }
 
@@ -1910,9 +1931,9 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			BoneToWorldMatrixCB[i].Release();
 			RootBoneMatrixs_PerSkinMesh[i] = nullptr;
 			if constexpr (gd.PlayAnimationByGPU) {
-				gd.TextureDescriptorAllotter.Free(BoneToWorldMatrix_UAVDescIndex[i].index);
+				gd.DynamicDescriptorAllotter.Free(BoneToWorldMatrix_UAVDescIndex[i].index);
 				NodeToBone[i].Release();
-				gd.TextureDescriptorAllotter.Free(NodeToBone_SRVDescIndex[i].index);
+				gd.DynamicDescriptorAllotter.Free(NodeToBone_SRVDescIndex[i].index);
 			}
 		}
 		BoneToWorldMatrixCB_Default.clear();
@@ -1921,15 +1942,15 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		if constexpr (gd.PlayAnimationByGPU) {
 			BoneToWorldMatrix_UAVDescIndex.clear();
 			NodeTposMatrixs.Release();
-			gd.TextureDescriptorAllotter.Free(NodeTposMatrixs_SRVDescIndex.index);
+			gd.DynamicDescriptorAllotter.Free(NodeTposMatrixs_SRVDescIndex.index);
 			Node_ToParentRes.Release();
-			gd.TextureDescriptorAllotter.Free(NodeToParentSRVIndex.index);
+			gd.DynamicDescriptorAllotter.Free(NodeToParentSRVIndex.index);
 			HumanoidToNodeIndexRes.Release();
-			gd.TextureDescriptorAllotter.Free(HumanoidToNodeIndexSRVIndex.index);
+			gd.DynamicDescriptorAllotter.Free(HumanoidToNodeIndexSRVIndex.index);
 			AnimationBlendConstantUploadBuffer.resource->Unmap(0, nullptr);
 			AnimationBlendConstantUploadBuffer.Release();
 			AnimBlendingCB_Mapped = nullptr;
-			gd.TextureDescriptorAllotter.Free(AnimBlendingCBVDescIndex.index);
+			gd.DynamicDescriptorAllotter.Free(AnimBlendingCBVDescIndex.index);
 			NodeToBone_SRVDescIndex.clear();
 			NodeToBone.clear();
 		}
@@ -1957,8 +1978,8 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 	{
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
 		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255);
-		int n = gd.TextureDescriptorAllotter.Alloc();
-		D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
+		int n = gd.DynamicDescriptorAllotter.Alloc();
+		D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.DynamicDescriptorAllotter.GetCPUHandle(n);
 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
 		cbvDesc.BufferLocation = BoneToWorldMatrixCB_Default[i].resource->GetGPUVirtualAddress();
 		cbvDesc.SizeInBytes = ncbElementBytes;
@@ -2008,7 +2029,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			Node_ToParentRes_upload.Release();
 
 			//SRV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			NodeToParentSRVIndex.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -2052,7 +2073,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			HumanoidToNodeIndexRes_upload.Release();
 
 			//SRV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			HumanoidToNodeIndexSRVIndex.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -2094,7 +2115,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			NodeLocalMatrixs_upload.Release();
 
 			//UAV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			NodeLocalMatrixs_UAVDescIndex.Set(false, index, 'n');
 			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
 			uavDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -2106,7 +2127,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			uavDesc.Buffer.StructureByteStride = sizeof(matrix);
 			gd.pDevice->CreateUnorderedAccessView(NodeLocalMatrixs.resource, nullptr, &uavDesc, NodeLocalMatrixs_UAVDescIndex.hCreation.hcpu);
 			//SRV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			NodeLocalMatrixs_SRVDescIndex.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -2154,7 +2175,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			res_upload.Release();
 
 			//SRV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			resdescindex.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -2201,7 +2222,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			}
 
 			//SRV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			NodeTposMatrixs_SRVDescIndex.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -2221,7 +2242,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			AnimationBlendConstantUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 			AnimationBlendConstantUploadBuffer.resource->Map(0, nullptr, (void**)&AnimBlendingCB_Mapped);
 			//CBV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			AnimBlendingCBVDescIndex.Set(false, index, 'n');
 			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
 			cbvDesc.BufferLocation = AnimationBlendConstantUploadBuffer.resource->GetGPUVirtualAddress();
@@ -2235,7 +2256,7 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 			DescIndex di;
 			BumpSkinMesh* bsm = model->mBumpSkinMeshs[i];
 			//UAV
-			index = gd.TextureDescriptorAllotter.Alloc();
+			index = gd.DynamicDescriptorAllotter.Alloc();
 			di.Set(false, index, 'n');
 			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
 			uavDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -2326,7 +2347,7 @@ void SkinMeshGameObject::RaytracingUpdateTransform() {
 	}
 }
 
-void SkinMeshGameObject::SetShape(Shape _shape)
+void SkinMeshGameObject::SetShape(Shape _shape, int ZoneID)
 {
 	static LocalRootSigData tempLRSSaver[1024] = {};
 
@@ -2355,8 +2376,8 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 					modifyMeshes[i].IBStartOffset[k] = model->mBumpSkinMeshs[i]->rmesh.IBStartOffset[k];
 				}
 
-				//if (Mat == nullptr) continue;
-				int index = gd.TextureDescriptorAllotter.Alloc();
+				//Compute Geometry ������ ���� UAV ����
+				int index = gd.DynamicDescriptorAllotter.Alloc();
 				OutVertexUAV[i] = DescIndex(false, index);
 				D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 				uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
@@ -2379,8 +2400,8 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 							/*for (int k = 0; k < bsmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 							}*/
-							int matindex = game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
-							tempLRSSaver[0] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex);
+							int matindex = model->Nodes[i].materialIndex[0]; // game.GetRenderMaterialIndexFromGlobalMaterialIndex();
+							tempLRSSaver[0] = LocalRootSigData(modifyMeshes[skinmeshIndex].UAV_VBStartOffset / sizeof(RayTracingMesh::Vertex), bsmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex, -1);
 							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&modifyMeshes[skinmeshIndex], worldMat, tempLRSSaver, 1);
 
 							//RaytracingWorldMatInput_Model[i] = new float* [bsmesh->subMeshNum];
@@ -2395,8 +2416,8 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 							/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 								tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 							}*/
-							int matindex = game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
-							tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex);
+							int matindex = model->Nodes[i].materialIndex[0]; // game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
+							tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex, -1);
 
 							float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 
@@ -2414,8 +2435,8 @@ void SkinMeshGameObject::SetShape(Shape _shape)
 						/*for (int k = 0; k < bmesh->subMeshNum; ++k) {
 							tempLRSSaver[k] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[k] / sizeof(unsigned int));
 						}*/
-						int matindex = game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
-						tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex);
+						int matindex = model->Nodes[i].materialIndex[0]; // game.GetRenderMaterialIndexFromGlobalMaterialIndex();
+						tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex, -1);
 
 						float** WorldMatInputs = game.MyRayTracingShader->push_rins_immortal(&bmesh->rmesh, worldMat, tempLRSSaver);
 
@@ -2934,7 +2955,7 @@ void SkinMeshGameObject::Release() {
 	for (int i = 0; i < BoneToWorldMatrix_UAVDescIndex.size(); ++i) {
 		DescIndex& di = BoneToWorldMatrix_UAVDescIndex[i];
 		if (di.type == 'n' && di.isShaderVisible == false) {
-			gd.TextureDescriptorAllotter.Free(di.index);
+			gd.DynamicDescriptorAllotter.Free(di.index);
 		}
 	}
 	BoneToWorldMatrix_UAVDescIndex.clear();
@@ -2942,7 +2963,7 @@ void SkinMeshGameObject::Release() {
 	for (int i = 0; i < NodeToBone_SRVDescIndex.size(); ++i) {
 		DescIndex& di = NodeToBone_SRVDescIndex[i];
 		if (di.type == 'n' && di.isShaderVisible == false) {
-			gd.TextureDescriptorAllotter.Free(di.index);
+			gd.DynamicDescriptorAllotter.Free(di.index);
 		}
 	}
 	NodeToBone_SRVDescIndex.clear();
@@ -2954,7 +2975,7 @@ void SkinMeshGameObject::Release() {
 		for (int i = 0; i < model->mNumSkinMesh; ++i) {
 			DescIndex& di = OutVertexUAV[i];
 			if (di.type == 'n' && di.isShaderVisible == false) {
-				gd.TextureDescriptorAllotter.Free(di.index);
+				gd.DynamicDescriptorAllotter.Free(di.index);
 			}
 		}
 
@@ -3099,19 +3120,11 @@ void Monster::Update(float deltaTime)
 
 void Monster::Render(matrix parent)
 {
-	static int rc4 = 0;
-	if (rc4 < 3) {
-		char dbg[256];
-		sprintf_s(dbg, "[Monster] pos=(%f,%f,%f) destPos=(%f,%f,%f)\n",
-			worldMat.pos.x, worldMat.pos.y, worldMat.pos.z,
-			DestPos.x, DestPos.y, DestPos.z);
-		OutputDebugStringA(dbg);
-		rc4++;
-	}
 	if (isDead) {
 		return;
 	}
-	SkinMeshGameObject::Render(parent);
+
+	//SkinMeshGameObject::Render(parent);
 }
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
@@ -3227,7 +3240,11 @@ Player::Player() : HP{ 100 } {
 	tag[GameObjectTag::Tag_Dynamic] = true;
 	tag[GameObjectTag::Tag_SkinMeshObject] = true;
 	worldMat.Id();
-	weapon = Weapon(WeaponType::Pistol);
+	weapon[0] = Weapon(WeaponType::Max);
+	weapon[1] = Weapon(WeaponType::Max);
+	weapon[2] = Weapon(WeaponType::Max);
+	SelectedWeapon = 0;
+	
 	HP = 100;
 	MaxHP = 100;
 	Attack = 0;
@@ -3237,6 +3254,7 @@ Player::Player() : HP{ 100 } {
 	DeathCount = 0;
 	HeatGauge = 0;
 	MaxHeatGauge = 200;
+
 	ShieldDurability = 0;
 	MaxShieldDurability = 0;
 	m_currentJob = (int)PlayerJob::Healer;
@@ -3244,7 +3262,9 @@ Player::Player() : HP{ 100 } {
 		SkillCooldown[i] = 0.0f;
 		SkillCooldownFlow[i] = 0.0f;
 	}
-	m_currentWeaponType = (int)WeaponType::Pistol;
+	//HealSkillCooldown = 10.0f;
+	//HealSkillCooldownFlow = 0;
+	m_currentWeaponType = (int)WeaponType::Max;
 	//ZeroMemory(Inventory, sizeof(ItemStack) * maxItem);
 
 	DeltaMousePos = 0;
@@ -3296,6 +3316,8 @@ void Player::Update(float deltaTime)
 {
 	PositionInterpolation(deltaTime);
 	//PlayingAnimationIndex[0] = 0;
+
+	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
 
 	float velSpeed = sqrt(LVelocity.x * LVelocity.x + LVelocity.z * LVelocity.z);
 	float dx = DestPos.x - worldMat.pos.x;
@@ -3379,23 +3401,30 @@ void Player::Update(float deltaTime)
 	}
 
 	AnimationUpdate(deltaTime);
+
+	if (game.bFirstPersonVision) {
+		// �÷��̾ ������ ��.
+
+	}
+	else {
+		// ���� BLAS�� �־�� ��.
+	}
 }
 
 void Player::ClientUpdate(float deltaTime)
 {
-	if ((int)weapon.m_info.type != m_currentWeaponType)
+	Weapon& currentWeapon = weapon[SelectedWeapon];
+	if ((int)currentWeapon.m_info.type != m_currentWeaponType)
 	{
-		weapon = Weapon((WeaponType)m_currentWeaponType);
-
+		currentWeapon = Weapon((WeaponType)m_currentWeaponType);
 	}
 
-	weapon.Update(deltaTime);
+	currentWeapon.Update(deltaTime);
 
 	if (game.player == this) {
-		// --- 권총 로직 ---
-		float recoilT = weapon.GetRecoilAlpha();
+		float recoilT = currentWeapon.GetRecoilAlpha();
 		if (recoilT > 0.7f) {
-			float f = weapon.m_info.recoilVelocity * 10.0f * (recoilT - 0.7f) * deltaTime;
+			float f = currentWeapon.m_info.recoilVelocity * 10.0f * (recoilT - 0.7f) * deltaTime;
 			game.DeltaMousePos.y -= f;
 		}
 
@@ -3415,14 +3444,13 @@ void Player::ClientUpdate(float deltaTime)
 
 	gunMatrix_firstPersonView.Id();
 
-	WeaponType currentType = weapon.m_info.type;
+	WeaponType currentType = currentWeapon.m_info.type;
 
 	switch (currentType)
 	{
 	case WeaponType::Pistol:
 	{
-		//if (Mat == nullptr) continue;
-		float recoilT = weapon.GetRecoilAlpha();
+		float recoilT = currentWeapon.GetRecoilAlpha();
 
 		float zOffset = 0.3f - (0.0f * powf(recoilT, 3.0f));
 		float pitchAngle = 15.0f * powf(recoilT, 2.0f);
@@ -3442,8 +3470,7 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::MachineGun:
 	{
-		//if (Mat == nullptr) continue;
-		float shootrate = powf(weapon.m_shootFlow / weapon.m_info.shootDelay, 3);
+		float shootrate = powf(currentWeapon.m_shootFlow / currentWeapon.m_info.shootDelay, 3);
 		if (shootrate > 1.0f) shootrate = 1.0f;
 
 		float recoilAmount = 1.0f - shootrate;
@@ -3462,15 +3489,14 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::Sniper:
 	{
-		//if (Mat == nullptr) continue;
-		float recoilT = weapon.GetRecoilAlpha();
+		float recoilT = currentWeapon.GetRecoilAlpha();
 		float zOffset = 0.3f;
 		float pitchAngle = 0.0f;
 
 		if (recoilT > 0.70f) {
 			float stageT = (recoilT - 0.70f) / 0.30f;
 			float smoothT = sinf(stageT * XM_PIDIV2);
-			pitchAngle = weapon.m_info.recoilVelocity * smoothT;
+			pitchAngle = currentWeapon.m_info.recoilVelocity * smoothT;
 			zOffset -= 0.2f * smoothT;
 		}
 		else if (recoilT > 0.60f) {
@@ -3490,16 +3516,16 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::Shotgun:
 	{
-		float currentFlow = weapon.m_shootFlow;
-		float shootDelay = weapon.m_info.shootDelay;
+		float currentFlow = currentWeapon.m_shootFlow;
+		float shootDelay = currentWeapon.m_info.shootDelay;
 
-		float recoilT = weapon.GetRecoilAlpha();
+		float recoilT = currentWeapon.GetRecoilAlpha();
 		float zOffset = 0.3f;
 		float pitchAngle = 0.0f;
 
 		if (recoilT > 0.0f) {
 			zOffset -= 0.25f * powf(recoilT, 2.0f);
-			pitchAngle = weapon.m_info.recoilVelocity * recoilT;
+			pitchAngle = currentWeapon.m_info.recoilVelocity * recoilT;
 		}
 		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.0f, zOffset);
 
@@ -3526,7 +3552,7 @@ void Player::ClientUpdate(float deltaTime)
 
 	case WeaponType::Rifle:
 	{
-		float recoilT = weapon.GetRecoilAlpha();
+		float recoilT = currentWeapon.GetRecoilAlpha();
 		float zOffset = 0.3f;
 		float pitchAngle = 0.0f;
 		float shakeX = 0.0f;
@@ -3534,7 +3560,7 @@ void Player::ClientUpdate(float deltaTime)
 		if (recoilT > 0.0f) {
 			zOffset -= 0.07f * powf(recoilT, 1.0f);
 
-			pitchAngle = (weapon.m_info.recoilVelocity * 0.1f) * recoilT;
+			pitchAngle = (currentWeapon.m_info.recoilVelocity * 0.1f) * recoilT;
 
 			shakeX = sinf(recoilT * XM_PI * 1.0f) * 0.005f;
 		}
@@ -3553,13 +3579,13 @@ void Player::ClientUpdate(float deltaTime)
 		extern bool g_playReloadSound;
 		if (this == game.player) {
 			static bool s_wasReloading = false;
-			bool nowReloading = (weapon.m_shootFlow < 0);
+			bool nowReloading = (currentWeapon.m_shootFlow < 0);
 			if (nowReloading && !s_wasReloading) g_playReloadSound = true;
 			s_wasReloading = nowReloading;
 		}
 	}
-	if (weapon.m_shootFlow < 0) {
-		float reloadProgress = 1.0f - (abs(weapon.m_shootFlow) / weapon.m_info.reloadTime);
+	if (currentWeapon.m_shootFlow < 0) {
+		float reloadProgress = 1.0f - (abs(currentWeapon.m_shootFlow) / currentWeapon.m_info.reloadTime);
 		float drop = sinf(reloadProgress * XM_PI) * 0.5f;
 
 		XMMATRIX dropMat = XMMatrixTranslation(0, -drop, 0);
@@ -3579,6 +3605,51 @@ void Player::Render(matrix parent)
 	}
 }
 
+void Player::ModifyLocalToWorld() {
+	if (BoneToWorldMatrixCB_Default.size() == 0) return;
+	Model* model = shape.GetModel();
+	if (model == nullptr) return;
+	matrix rootworld = worldMat;
+	if (game.bFirstPersonVision) {
+		rootworld.right = vec4(0, 0, 0, 0);
+		rootworld.up = vec4(0, 0, 0, 0);
+		rootworld.look = vec4(0, 0, 0, 0);
+		rootworld.pos = vec4(0, 0, 0, 0);
+	}
+	
+	rootworld.transpose();
+	for (int i = 0; i < model->mNumSkinMesh; ++i) {
+		using HBLTWSRPI = HBoneLocalToWorldShader::RootParamId;
+		//gd.CScmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		gd.CScmd.ResBarrierTr(&NodeLocalMatrixs, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+		DescHandle AllocDescHandle;
+		gd.ShaderVisibleDescPool.DynamicAlloc(&AllocDescHandle, 5);
+		DescHandle tempDescHandle_SRVTable_LocalMatrixs = AllocDescHandle[0];
+		DescHandle tempDescHandle_SRVTable_TPOSLocalTr = AllocDescHandle[1];
+		DescHandle tempDescHandle_SRVTable_toParent = AllocDescHandle[2];
+		DescHandle tempDescHandle_SRVTable_NodeToBoneIndex = AllocDescHandle[3];
+		DescHandle tempDescHandle_UAVTable_Out_ToWorldMatrix = AllocDescHandle[4];
+
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_LocalMatrixs.hcpu, NodeLocalMatrixs_SRVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_TPOSLocalTr.hcpu, NodeTposMatrixs_SRVDescIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_toParent.hcpu,
+			NodeToParentSRVIndex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_SRVTable_NodeToBoneIndex.hcpu, NodeToBone_SRVDescIndex[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		gd.pDevice->CopyDescriptorsSimple(1, tempDescHandle_UAVTable_Out_ToWorldMatrix.hcpu, BoneToWorldMatrix_UAVDescIndex[i].hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		gd.CScmd->SetComputeRoot32BitConstants(HBLTWSRPI::Constant_WorldMat, 16, &rootworld, 0);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_LocalMatrixs, tempDescHandle_SRVTable_LocalMatrixs.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_TPOSLocalTr, tempDescHandle_SRVTable_TPOSLocalTr.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_toParent, tempDescHandle_SRVTable_toParent.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::SRVTable_NodeToBoneIndex, tempDescHandle_SRVTable_NodeToBoneIndex.hgpu);
+		gd.CScmd->SetComputeRootDescriptorTable(HBLTWSRPI::UAVTable_Out_ToWorldMatrix, tempDescHandle_UAVTable_Out_ToWorldMatrix.hgpu);
+		gd.CScmd->Dispatch(1, 1, 1); // numthread(64, 1, 1)
+		gd.CScmd.ResBarrierTr(&BoneToWorldMatrixCB_Default[i], D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	}
+}
+
 static bool TryFindHumanoidNodeIndex(Model* model, HumanoidAnimation::HumanBodyBones bone, int& outNodeIndex);
 static matrix GetAnimatedNodeLocalMatrix(SkinMeshGameObject* obj, Model* model, int nodeIndex);
 static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::HumanBodyBones bone, matrix& outBoneWorld);
@@ -3586,29 +3657,50 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponTyp
 
 void Player::Render_ThirdPersonWeapon()
 {
-	if (game.player == this && game.bFirstPersonVision) {
-		return;
-	}
+	if (game.bFirstPersonVision) return;
+	if (gd.isRaytracingRender) {
+		matrix gunmat;
+		if (!TryBuildThirdPersonWeaponMatrix(this, (WeaponType)m_currentWeaponType, gunmat)) {
+			gunmat = gunMatrix_thirdPersonView;
+			gunmat *= XMMatrixRotationX(XM_PI);
+			gunmat.pos.y -= 0.40f;
+			gunmat.pos.x += 0.55f;
+			gunmat.pos.z += 0.80f;
+			gunmat *= worldMat;
+		}
 
-	Model* pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
-	if (!pTargetModel) {
-		pTargetModel = GunModel;
+		for (int i = 0; i < 5; ++i) {
+			if (m_currentWeaponType != i) {
+				game.PlayerWeaponObj[i]->worldMat = 0;
+			}
+			else {
+				game.PlayerWeaponObj[i]->worldMat = gunmat;
+			}
+			game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+		}
 	}
-	if (!pTargetModel) {
-		return;
-	}
+	else {
+		if (game.player == this && game.bFirstPersonVision) {
+			return;
+		}
 
-	matrix gunmat;
-	if (!TryBuildThirdPersonWeaponMatrix(this, (WeaponType)m_currentWeaponType, gunmat)) {
-		gunmat = gunMatrix_thirdPersonView;
-		gunmat *= XMMatrixRotationX(XM_PI);
-		gunmat.pos.y -= 0.40f;
-		gunmat.pos.x += 0.55f;
-		gunmat.pos.z += 0.80f;
-		gunmat *= worldMat;
-	}
+		Model* pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
+		if (!pTargetModel) {
+			return;
+		}
 
-	pTargetModel->Render(gd.gpucmd, gunmat, nullptr);
+		matrix gunmat;
+		if (!TryBuildThirdPersonWeaponMatrix(this, (WeaponType)m_currentWeaponType, gunmat)) {
+			gunmat = gunMatrix_thirdPersonView;
+			gunmat *= XMMatrixRotationX(XM_PI);
+			gunmat.pos.y -= 0.40f;
+			gunmat.pos.x += 0.55f;
+			gunmat.pos.z += 0.80f;
+			gunmat *= worldMat;
+		}
+
+		pTargetModel->Render(gd.gpucmd, gunmat, nullptr);
+	}
 }
 
 void Player::Render_AfterDepthClear()
@@ -3617,11 +3709,89 @@ void Player::Render_AfterDepthClear()
 
 	struct Model* pTargetModel = nullptr;
 
-	if (game.bFirstPersonVision)
+	if (gd.isRaytracingRender) {
+		if (game.bFirstPersonVision) {
+
+			matrix gunmat = gunMatrix_firstPersonView;
+
+			switch ((WeaponType)m_currentWeaponType)
+			{
+			case WeaponType::MachineGun:
+			{
+				matrix modelFix = XMMatrixScaling(0.8f, 0.8f, 0.8f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(180.0f));
+				modelFix *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+				gunmat.pos.y -= 0.60f;
+				gunmat.pos.x += 0.35f;
+				gunmat.pos.z += 0.90f;
+				break;
+			}
+			case WeaponType::Sniper:
+				if (m_isZooming && m_currentFov < 25.0f) {
+					pTargetModel = nullptr;
+				}
+				else {
+					gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+					gunmat.pos.y -= 0.40f;
+					gunmat.pos.x += 0.60f;
+					gunmat.pos.z += 1.90f;
+				}
+				break;
+			case WeaponType::Pistol:
+				gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
+				gunmat.pos.y -= 1.20f;
+				gunmat.pos.x += 1.00f;
+				gunmat.pos.z += 1.40f;
+				break;
+			case WeaponType::Rifle:
+			{
+				matrix modelFix = XMMatrixScaling(1.5f, 1.5f, 1.5f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+
+				float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f);
+				if (zoomAlpha < 0) zoomAlpha = 0;
+				if (zoomAlpha > 1) zoomAlpha = 1;
+
+				float targetX = 0.0f;
+				float targetY = -0.35f;
+				float targetZ = 1.80f;
+
+				gunmat.pos.x += (0.90f * (1.0f - zoomAlpha)) + (targetX * zoomAlpha);
+				gunmat.pos.y -= (0.65f * (1.0f - zoomAlpha)) + (abs(targetY) * zoomAlpha);
+				gunmat.pos.z += (1.50f * (1.0f - zoomAlpha)) + (targetZ * zoomAlpha);
+				break;
+			}
+			case WeaponType::Shotgun:
+			{
+				matrix modelFix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
+				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+				gunmat.pos.y -= 0.70f;
+				gunmat.pos.x += 0.75f;
+				gunmat.pos.z += 1.70f;
+				break;
+			}
+			}
+
+			gunmat *= viewmat;
+			for (int i = 0; i < 5; ++i) {
+				if (m_currentWeaponType != i) {
+					game.PlayerWeaponObj[i]->worldMat = 0;
+				}
+				else {
+					game.PlayerWeaponObj[i]->worldMat = gunmat;
+				}
+				game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+			}
+		}
+	}
+	else if (game.bFirstPersonVision)
 	{
 		pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
 		if (!pTargetModel) {
-			pTargetModel = GunModel;
+			goto GunRenderEnd;
 		}
 
 		if (pTargetModel) {
@@ -3688,7 +3858,6 @@ void Player::Render_AfterDepthClear()
 			}
 			}
 
-
 			if (pTargetModel) {
 				gunmat *= viewmat;
 
@@ -3702,6 +3871,11 @@ void Player::Render_AfterDepthClear()
 				}
 			}
 		}
+	}
+
+GunRenderEnd:
+	if (gd.isRaytracingRender) {
+		return;
 	}
 
 	Shader* shader = (Shader*)game.MyOnlyColorShader;
@@ -3901,10 +4075,30 @@ void Player::RecvSTC_SyncObj(char* data) {
 	m_currentWeaponType = stcsod.m_currentWeaponType;
 	m_yaw = stcsod.m_yaw;
 	m_pitch = stcsod.m_pitch;
-	weapon = Weapon((WeaponType)m_currentWeaponType);
-
+	weapon[0] = stcsod.weapon[0];
+	weapon[1] = stcsod.weapon[1];
+	weapon[2] = stcsod.weapon[2];
+	SelectedWeapon = stcsod.SelectedWeapon;
+	Gold = stcsod.Gold;
+	Exp = stcsod.Exp;
+	Level = stcsod.Level;
 	//memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));
-	//offset += sizeof(STC_SyncObjData);
+	offset += sizeof(STC_SyncObjData);
+
+	//quest
+	int& questCnt = *(int*)(data + offset);
+	offset += sizeof(int);
+	if (game.player == this) {
+		game.QuestArr.clear();
+		game.QuestArr.reserve(questCnt);
+	}
+	for (int i = 0; i < questCnt; ++i) {
+		int& QI = *(int*)(data + offset);
+		if (game.player == this) {
+			game.QuestArr[i] = QI;
+		}
+		offset += sizeof(int);
+	}
 
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
@@ -3996,6 +4190,89 @@ void Portal::RecvSTC_SyncObj(char* data) {
 	//if (Mat == nullptr) continue;
 }
 
+PeacefulNPC::PeacefulNPC()
+{
+	tag = 0;
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+	worldMat.Id();
+}
+
+void PeacefulNPC::Update(float deltaTime) {
+	PositionInterpolation(deltaTime);
+}
+
+void PeacefulNPC::Render(matrix parent) {
+	if (BoneToWorldMatrixCB.size() == 0) {
+		return;
+	}
+	SkinMeshGameObject::Render(parent);
+}
+
+void PeacefulNPC::Release() {
+	SkinMeshGameObject::Release();
+}
+
+void PeacefulNPC::RecvSTC_SyncObj(char* data) {
+	int offset = 0;
+	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
+	if (stcsod.shapeindex >= 0) {
+		shape = Shape::ShapeTable[stcsod.shapeindex];
+	}
+	tag = stcsod.tag;
+	parent = (stcsod.parent >= 0) ? game.DynmaicGameObjects[stcsod.parent] : nullptr;
+	childs = (stcsod.childs >= 0) ? game.DynmaicGameObjects[stcsod.childs] : nullptr;
+	sibling = (stcsod.sibling >= 0) ? game.DynmaicGameObjects[stcsod.sibling] : nullptr;
+	XMMatrixDecompose((XMVECTOR*)&DestScale, (XMVECTOR*)&DestRot, (XMVECTOR*)&DestPos, stcsod.DestWorld);
+	LVelocity = stcsod.LVelocity;
+	NPCType = stcsod.npctype;
+	NPCID = stcsod.NPCID;
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int& materialCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		if (material != nullptr) {
+			delete[] material;
+			material = nullptr;
+		}
+		material = new int[materialCount];
+		for (int i = 0; i < materialCount; ++i) {
+			material[i] = *(int*)(data + offset);
+			offset += sizeof(int);
+		}
+	}
+	else {
+		int& NodeCount = *(int*)(data + offset);
+		offset += sizeof(int);
+		if (transforms_innerModel != nullptr) {
+			delete[] transforms_innerModel;
+			transforms_innerModel = nullptr;
+		}
+		transforms_innerModel = new matrix[NodeCount];
+		for (int i = 0; i < NodeCount; ++i) {
+			transforms_innerModel[i] = *(matrix*)(data + offset);
+			offset += sizeof(matrix);
+		}
+	}
+
+	SetShape(shape);
+}
+
+void PeacefulNPC::STATICINIT(int typeindex) {
+	SkinMeshGameObject::STATICINIT(typeindex);
+	for (int i = 0; i < PeacefulNPC::g_member.size(); ++i) {
+		g_member[i].offset = g_member[i].get_offset();
+		MemberInfo& mi = *(MemberInfo*)&g_member[i];
+		int lastindex = GameObjectType::Client_STCMembers[typeindex].size();
+		GameObjectType::Client_STCMembers[typeindex].emplace_back(mi.name, mi.get_offset, mi.size);
+		GameObjectType::Client_STCMembers[typeindex][lastindex].offset = g_member[i].offset;
+	}
+}
+
 BulletRay::BulletRay()
 {
 }
@@ -4068,7 +4345,7 @@ void GameMap::GetLastDescIndexs()
 	LastDesc_Instancing = gd.ShaderVisibleDescPool.InstancingSRVSiz - 1;
 }
 
-void GameMap::LoadMap(const char* MapName, int ZoneID)
+bool GameMap::LoadMap(const char* MapName, int ZoneID)
 {
 	GameMap* map = this;
 	map->ZoneID = ZoneID;
@@ -4103,7 +4380,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		msg += MapFilePath;
 		msg += "\n";
 		OutputDebugStringA(msg.c_str());
-		return;
+		return false;
 	}
 
 	int nameCount;
@@ -4123,7 +4400,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		msg += MapFilePath;
 		msg += "\n";
 		OutputDebugStringA(msg.c_str());
-		return;
+		return false;
 	}
 	if (nameCount < 0 || nameCount > 100000
 		|| MeshCount < 0 || MeshCount > 100000
@@ -4135,7 +4412,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		msg += MapFilePath;
 		msg += "\n";
 		OutputDebugStringA(msg.c_str());
-		return;
+		return false;
 	}
 	map->name.reserve(nameCount);
 	map->name.resize(nameCount);
@@ -4224,7 +4501,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		}
 
 		ifs2.close();
-		mesh->CreateMesh_FromVertexAndIndexData(verts, indexs, subMeshCount, SubMeshSlots);
+		mesh->CreateMesh_FromVertexAndIndexData(verts, indexs, subMeshCount, SubMeshSlots, true, ZoneID);
 		//mesh->ReadMeshFromFile_OBJ(filename.c_str(), vec4(1, 1, 1, 1), false);
 
 		ifs.read((char*)&mesh->OBB_Tr, sizeof(float) * 3);
@@ -4233,8 +4510,9 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		Shape::AddMesh(name, mesh);
 	}
 
-	TextureTableStart = game.TextureTable.size();
-	MaterialTableStart = game.MaterialTable.size();
+	TextureTableStart = 0;
+	MaterialTableStart = 0;
+	int ZoneMaterialOff = (zone->Asset_OffsetMul + 1) * Zone::MAXZoneMaterialCount;
 	int emptyTextureNameCount = 0;
 	for (int i = 0; i < TextureCount; ++i) {
 		int namelen = 0;
@@ -4248,7 +4526,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		if (textureName.empty()) {
 			emptyTextureNameCount += 1;
 			texture = new GPUResource();
-			texture->CreateTexture_fromFile(L"Resources/DefaultTexture.dds", game.basicTexFormat, game.basicTexMip);
+			texture->CreateTexture_fromFile(L"Resources/DefaultTexture.dds", game.basicTexFormat, game.basicTexMip, false, ZoneID);
 		}
 
 		int width = 0;
@@ -4265,7 +4543,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 				int len = filename_dds.size();
 				for (int i = 0; i < len; ++i) ddsFile[i] = filename_dds[i];
 				ddsFile[len] = 0;
-				texture->CreateTexture_fromFile(ddsFile, DXGI_FORMAT_BC3_UNORM, 3);
+				texture->CreateTexture_fromFile(ddsFile, DXGI_FORMAT_BC3_UNORM, game.basicTexMip, false, ZoneID);
 			}
 			else {
 				string filename = TextureDirPath;
@@ -4301,7 +4579,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 				int len = filename_dds.size();
 				for (int i = 0; i < len; ++i) ddsFile[i] = filename_dds[i];
 				ddsFile[len] = 0;
-				texture->CreateTexture_fromFile(ddsFile, game.basicTexFormat, game.basicTexMip);
+				texture->CreateTexture_fromFile(ddsFile, game.basicTexFormat, game.basicTexMip, false, ZoneID);
 
 				DeleteFileA(filename_bmp.c_str());
 				delete[] pixels;
@@ -4311,7 +4589,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		ifs.read((char*)&height, sizeof(int));
 		ifs.read((char*)&format, sizeof(int));
 
-		game.TextureTable.push_back(texture);
+		zone->TextureTable.push_back(texture);
 	}
 	if (emptyTextureNameCount > 0) {
 		std::wstringstream ss;
@@ -4373,12 +4651,17 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		ifs.read((char*)&diffuse2, sizeof(int));
 		ifs.read((char*)&normal2, sizeof(int));
 
-		mat->ShiftTextureIndexs(TextureTableStart);
-		mat->SetDescTable();
+		//mat->ShiftTextureIndexs(TextureTableStart);
+		mat->SetDescTable(ZoneID);
 
-		game.MaterialTable.push_back(mat);
+		zone->MaterialTable.push_back(mat);
 		if (game.isAssetAddingInGlobal == false) {
-			game.RenderMaterialTable.push_back(mat);
+			int renderIndex = (zone->Asset_OffsetMul + 1) * Zone::MAXZoneMaterialCount + game.RenderMaterialTableSizePerZone[1 + zone->Asset_OffsetMul];
+			if (game.RenderMaterialTable[renderIndex] != nullptr) {
+				dbglog1(L"Zone ���͸��� ������ �ȵ�. ZoneID : %d \n", ZoneID);
+			}
+			game.RenderMaterialTable[renderIndex] = mat;
+			game.RenderMaterialTableSizePerZone[1 + zone->Asset_OffsetMul] += 1;
 		}
 	}
 
@@ -4396,7 +4679,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		filename += ".model";
 
 		Model* pModel = new Model();
-		pModel->LoadModelFile2(filename);
+		pModel->LoadModelFile2(filename, ZoneID);
 		map->models[i] = pModel;
 		Shape::AddModel(modelName, pModel);
 	}
@@ -4424,6 +4707,12 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 		world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
 		world.pos.f3 = pos.f3;
 		world.pos.w = 1;
+
+		// ���� ���� Map ������Ʈ�� ���, �ش� Zone �� �˸��� ��ġ�� �̵����Ѿ� �Ѵ�.
+		if (i == 0) {
+			world.pos.x = 0.5f * (zone->BasicAABB_onlyXZ.x + zone->BasicAABB_onlyXZ.z);
+			world.pos.z = 0.5f * (zone->BasicAABB_onlyXZ.y + zone->BasicAABB_onlyXZ.w);
+		}
 		go->SetWorld(world);
 
 		char Mod = 'n';
@@ -4445,7 +4734,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 					ifs.read((char*)&materialId, sizeof(int));
 					if (materialId < 0) go->material[k] = 0;
 					else {
-						go->material[k] = MaterialTableStart + materialId;
+						go->material[k] = ZoneMaterialOff + MaterialTableStart + materialId;
 					}
 				}
 				go->SetShape(map->meshes[meshid]);
@@ -4550,6 +4839,7 @@ void GameMap::LoadMap(const char* MapName, int ZoneID)
 	map->MapObjects[0]->DbgHieraky();
 	map->GetLastDescIndexs();
 	//BakeStaticCollision();
+	return true;
 }
 
 void GameMap::Release() {
@@ -4664,5 +4954,34 @@ void DXWindowParam::AlignUIDepth() {
 		page_stack[i]->depth_min = GetDepth(i);
 		page_stack[i]->depth_max = GetDepth(i + 1);
 		page_stack[i]->AlignUIDepth();
+	}
+}
+
+NPCTalkData::NPCTalkData(const wchar_t* speaker, const wchar_t* txt, bool nxtEsc, TalkSelection sel1, TalkSelection sel2, TalkSelection sel3, TalkSelection sel4)
+{
+	SpeakerName = speaker;
+	text = txt;
+	NextEscape = nxtEsc;
+	if (sel1.selectionText == nullptr) {
+		selectCnt = 0;
+		sel[0] = sel1;
+	}
+	else if (sel2.selectionText == nullptr) {
+		selectCnt = 1;
+		sel[0] = sel1;
+		sel[1] = sel2;
+	}
+	else if (sel3.selectionText == nullptr) {
+		selectCnt = 2;
+		sel[0] = sel1;
+		sel[1] = sel2;
+		sel[2] = sel3;
+	}
+	else if (sel4.selectionText == nullptr) {
+		selectCnt = 3;
+		sel[0] = sel1;
+		sel[1] = sel2;
+		sel[2] = sel3;
+		sel[3] = sel4;
 	}
 }

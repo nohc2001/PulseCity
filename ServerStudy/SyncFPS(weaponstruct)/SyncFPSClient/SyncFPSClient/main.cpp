@@ -24,6 +24,37 @@ bool g_playGunSound = false;      // [sfx] set in Game.cpp on STC_PlayerFire for
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
+	{
+		HANDLE hMainThread = GetCurrentThread();
+
+		if (hMainThread == NULL) {
+			printf("Failed to get the main thread handle\n");
+			return 1;
+		}
+
+		DWORD_PTR dwThreadAffinityMask = 0xFF; // 예: Core 0
+		if (!SetThreadAffinityMask(hMainThread, dwThreadAffinityMask)) {
+			printf("SetThreadAffinityMask failed\n");
+			return 1;
+		}
+
+		// Time Critical은 위험하지 않을까? ..
+		if (!SetThreadPriority(hMainThread, THREAD_PRIORITY_HIGHEST)) {
+			printf("SetThreadPriority failed\n");
+			return 1;
+		}
+
+		int priority = GetThreadPriority(hMainThread);
+		if (priority == THREAD_PRIORITY_ERROR_RETURN) {
+			printf("GetThreadPriority failed\n");
+			return 1;
+		}
+		printf("Thread priority is set to %d\n", priority);
+
+		// yeild and revisit -> update priority and affinity.
+		Sleep(100);
+	}
+
 	// 오류등이 한글로 표시되도록 한다.
 	wcout.imbue(locale("korean"));
 	//WSA �ʱ�ȭ
@@ -428,7 +459,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 			break;
-
 			case VK_SPACE:
 			{
 				if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
@@ -463,6 +493,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 			break;
+			case 'R':
+			{
+				// 퀘스트 
+				if ((game.pKeyBuffer['R'] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = 'R';
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+				//game.isInventoryOpen = !game.isInventoryOpen;
+			}
+			break;
 			case '1':
 			case '2':
 			case '3':
@@ -470,15 +514,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			case '5':
 			case '6':
 			case '7':
+			case '8':
+			case '9':
+			case '-':
 			{
 				if (!(lParam & (1 << 30))) {
-					int jobIndex = (int)(wParam - '1');
+					int jobIndex = (int)(wParam - '3');
 					if (jobIndex >= 0 && jobIndex < (int)PlayerJob::Max) {
 						CTS_ChangeJob_Header header;
 						header.size = sizeof(CTS_ChangeJob_Header);
 						header.st = CTS_Protocol::ChangeJob;
 						header.job = (PlayerJob)jobIndex;
 						client.send((char*)&header, sizeof(CTS_ChangeJob_Header), 0);
+					}
+					if (game.player) {
+						switch (wParam) {
+						case '1': {
+							game.player->SelectedWeapon = 0;
+							game.player->m_currentWeaponType = (int)game.player->weapon[game.player->SelectedWeapon].m_info.type;
+							break;
+						}
+						case '2': {
+							game.player->SelectedWeapon = 1;
+							game.player->m_currentWeaponType = (int)game.player->weapon[game.player->SelectedWeapon].m_info.type;
+							break;
+						}
+						case '3': {
+							game.player->SelectedWeapon = 2;
+							game.player->m_currentWeaponType = (int)game.player->weapon[game.player->SelectedWeapon].m_info.type;
+							break;
+						}
+						}
 					}
 				}
 			}
@@ -562,7 +628,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 			case 'Q':
-				break;
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'Q';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case 'E':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = 'E';
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
 			case VK_SPACE:
 			{
 				CTS_KeyInput_Header header;
@@ -590,7 +674,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			static WaveChannel* s_sfxChannel = NewChannel();
 			static WaveDataStruct s_dryReload = CreateWaveFromFile(L"Resources/Sound/reload.wav");
 			if (false) {   // [sfx] disabled: gunshot now plays on the real-fire event STC_PlayerFire (Game.cpp, g_playGunSound), not on every click
-				if (game.player != nullptr && game.player->weapon.m_shootFlow >= 0)
+				if (game.player != nullptr && game.player->weapon[game.player->SelectedWeapon].m_shootFlow >= 0)
 					s_sfxChannel->pushWave(s_gunshot);    // 발사 가능(장전 중 아님) -> 총소리
 				else
 					s_sfxChannel->pushWave(s_dryReload);  // 장전 중(탄약 없음) -> 장전소리

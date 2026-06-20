@@ -10,6 +10,7 @@
 //*********************************************************
 
 #define ADD_PONG_SPECULAR
+//#define DEBUG_NORMAL
 #define MAX_TraceRayCount 6
 
 // 청크 크기가 달라지면 바꾸어야 함.
@@ -498,7 +499,8 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         + SampleInterploate * MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1).r;
     float Metalic = (1 - SampleInterploate) * MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r
         + SampleInterploate * MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1).r;
-    float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
+    //float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
+    float Roughness = max(min(material.smoothness + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0), 0.02f);
     
     //Real Normal (with NormalMap)
     float3x3 invTBN = 0;
@@ -507,6 +509,14 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         invTBN = transpose(float3x3(Tangent, Bitangent, Normal));
         realNormal = normalize(mul(invTBN, TBNnormal));
     }
+    
+#ifdef DEBUG_NORMAL
+    payload.color = float4(realNormal, 1);
+    payload.depth = depth;
+    payload.stencil = 0.0f;
+    payload.isCollide_Light = 0;
+    return;
+#endif
     
     //PBR Lighting Caculation Prepare
     float fValue = (1.0f - 0.02f) * Metalic + 0.02f;
@@ -692,7 +702,8 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     TBNnormal = 2.0 * (TBNnormal - 0.5);
     float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
     float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
-    float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
+    //float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
+    float Roughness = max(min(material.smoothness + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0), 0.02f);
     
     //Real Normal (with NormalMap)
     float3x3 invTBN = 0;

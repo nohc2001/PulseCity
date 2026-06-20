@@ -61,9 +61,16 @@ union STC_Protocol {
 		SkillCast = 13,
 
 		StatusEffect = 14,
+
+		NPCTalkStart = 15,
+
+		AddQuest = 16,
+		
+		DeleteQuest = 17,
+
+		SyncQuestPrograss = 18,
 	};
 
-	// enum�� ���ڷ� ��Ÿ�� ��.
 	short n;
 	char two_byte[2];
 
@@ -288,6 +295,7 @@ struct STC_SkillCast_Header {
 	float power = 1.0f;
 	float duration = 1.0f;
 };
+
 struct STC_StatusEffect_Header {
 	unsigned int size = sizeof(STC_StatusEffect_Header);
 	STC_Protocol st = STC_Protocol::StatusEffect;
@@ -301,6 +309,39 @@ struct STC_StatusEffect_Header {
 	float power = 0.0f;
 	vec4 position = vec4(0, 0, 0, 1);
 	vec4 extents = vec4(0.3f, 1.0f, 0.3f, 0.0f);
+};
+
+enum PeacefulNPCType {
+	PNT_Shop = 0,
+	PNT_Quest = 1,
+	PNT_None = 2
+};
+
+struct STC_NPCTalkStart_Header {
+	unsigned int size = 14;
+	STC_Protocol st = STC_Protocol::NPCTalkStart;
+	PeacefulNPCType NPCType = PNT_None;
+	int StartID = 0;
+};
+
+struct STC_AddQuest_Header {
+	unsigned int size = 10;
+	STC_Protocol st = STC_Protocol::AddQuest;
+	int QuestID = 0;
+};
+
+struct STC_DeleteQuest_Header {
+	unsigned int size = 10;
+	STC_Protocol st = STC_Protocol::DeleteQuest;
+	int QuestID = 0;
+};
+
+struct STC_SyncQuestPrograss_Header {
+	unsigned int size = 10;
+	STC_Protocol st = STC_Protocol::SyncQuestPrograss;
+	int questID;
+	int questReqSiz;
+	// 이후로 questReqSiz 개수 만큼의 int 를 전달.
 };
 
 union CTS_Protocol {
@@ -322,6 +363,8 @@ union CTS_Protocol {
 		GhostDamage = 10,
 		// [4단계-STEP5] 몬스터가 경계를 넘었을 때 소유권을 이웃 서버로 넘기는 핸드오프.
 		MonsterHandoff = 11,
+		CTS_ChangeEquipSlotWithInventorySlot = 12,
+		Client_NPCTalkSelection = 13,
 	};
 	short n;
 	char two_byte[2];
@@ -393,6 +436,8 @@ struct PlayerTransferData {
 	float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 	int m_currentWeaponType = 0;
 	ItemStack Inventory[36] = {};
+	Weapon weapon[3];
+	int SelectedWeapone;
 };
 
 struct CTS_ServerPlayerTransfer_Header {
@@ -465,10 +510,22 @@ struct CTS_ChangeInventoryItemSlot_Header {
 	int srcCount;
 };
 
+struct CTS_ChangeEquipSlotWithInventorySlot_Header {
+	unsigned int size = 22;
+	CTS_Protocol st = CTS_Protocol::CTS_ChangeEquipSlotWithInventorySlot;
+	int EquipIndex;
+	int InventoryIndex;
+};
+
+struct CTS_Client_NPCTalkSelection_Header {
+	unsigned int size = 22;
+	CTS_Protocol st = CTS_Protocol::Client_NPCTalkSelection;
+	int selectionID = 0;
+};
 
 #pragma pack(pop)
 #pragma endregion
 
-// ���� �ִ� UTF8 
+// 서명있는 UTF8 
    
 

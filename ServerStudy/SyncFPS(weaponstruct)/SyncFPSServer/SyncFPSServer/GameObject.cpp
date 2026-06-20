@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "GameObject.h"
 #include <set>
 using namespace std;
@@ -63,9 +63,6 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, bool centering)
 	MAXpos.y = (maxPos.y - minPos.y) * 0.5f;
 	MAXpos.z = (maxPos.z - minPos.z) * 0.5f;
 
-	// fbx�� �⺻ ũ�� ������ 100 �̱� ������ �̷��� ��������.
-	// ������ UnitScale�� �ٸ� ��쿡�� ��� �ϴ°�?
-	// ��ġ�� �ʿ��ϴ�.
 	MAXpos *= 0.01f;
 
 	subMeshNum = 1;
@@ -123,7 +120,7 @@ int Shape::AddModel(string name, Model* ptr)
 
 int Shape::AddMeshInZone(string name, Mesh* ptr, int zoneid)
 {
-	Zone* zone = &gameworld.zones[zoneid];
+	Zone* zone = gameworld.ZoneTable[zoneid];
 	auto it = StrToShapeIndex.find(name);
 	if (it != StrToShapeIndex.end()) {
 		return it->second;
@@ -139,7 +136,7 @@ int Shape::AddMeshInZone(string name, Mesh* ptr, int zoneid)
 
 int Shape::AddModelInZone(string name, Model* ptr, int zoneid)
 {
-	Zone* zone = &gameworld.zones[zoneid];
+	Zone* zone = gameworld.ZoneTable[zoneid];
 	auto it = StrToShapeIndex.find(name);
 	if (it != StrToShapeIndex.end()) {
 		return it->second;
@@ -198,7 +195,7 @@ BoundingOrientedBox GameObject::GetOBB()
 		obb_local.Extents.x = -1;
 		return obb_local;
 	}
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	zone->GetShape(shapeindex).GetRealShape(mesh, model);
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	if (model != nullptr) obb_local = model->GetOBB();
@@ -210,7 +207,7 @@ BoundingOrientedBox GameObject::GetOBB()
 void GameObject::SetShape(int _shapeindex)
 {
 	shapeindex = _shapeindex;
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
@@ -234,7 +231,6 @@ void GameObject::SetShape(int _shapeindex)
 void GameObject::OnRayHit(GameObject* rayFrom) {
 
 }
-
 void GameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 	sds.postpush_start();
 
@@ -243,7 +239,7 @@ void GameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	if (shapeindex >= 0 && shapeindex < Shape::ShapeTable.size() + zone->ZoneShapeTable.size()) {
 		Shape& s = zone->GetShape(shapeindex);
 		s.GetRealShape(mesh, model);
@@ -308,20 +304,20 @@ matrix StaticGameObject::GetWorld() {
 
 void StaticGameObject::SetWorld(matrix localWorldMat)
 {
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	matrix sav = localWorldMat;
 	int temp = parent;
 	StaticGameObject* obj = nullptr;
-	if (temp > 0) {
-		obj = gameworld.commonMap.MapObjects[temp];
+	if (temp >= 0) {
+		obj = zone->map.MapObjects[temp];
 	}
-	
+
 	if (obj != nullptr) {
 		sav *= obj->worldMat;
 		temp = obj->parent;
 		obj = nullptr;
-		if (temp > 0) {
-			obj = gameworld.commonMap.MapObjects[temp];
+		if (temp >= 0) {
+			obj = zone->map.MapObjects[temp];
 		}
 	}
 	worldMat = sav;
@@ -368,7 +364,7 @@ BoundingOrientedBox StaticGameObject::GetOBBw(matrix worldMat)
 	BoundingOrientedBox obb_local;
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	zone->GetShape(shapeindex).GetRealShape(mesh, model);
 	if (model != nullptr) {
 		obb_local = model->GetOBB();
@@ -390,8 +386,8 @@ void StaticGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 
 	//calculate app packet siz.
 	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-	Zone zone = gameworld.zones[zoneId];
-	Shape& s = zone.GetShape(shapeindex);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	s.GetRealShape(mesh, model);
@@ -492,7 +488,7 @@ DynamicGameObject::~DynamicGameObject()
 void DynamicGameObject::InitialChunkSetting()
 {
 	if (chunkAllocIndexs == nullptr) {
-		Zone* zone = &gameworld.zones[zoneId];
+		Zone* zone = gameworld.ZoneTable[zoneId];
 		BoundingOrientedBox obb = GetOBB();
 		vec4 ext = obb.Extents;
 		float len = ext.len3 / zone->chunck_divide_Width;
@@ -502,9 +498,10 @@ void DynamicGameObject::InitialChunkSetting()
 }
 
 matrix DynamicGameObject::GetWorld() {
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	matrix sav = worldMat;
-	GameObject* obj = zone->Dynamic_gameObjects[parent];
+	GameObject* obj = nullptr;
+	if(parent != -1) obj = zone->Dynamic_gameObjects[parent];
 	while (obj != nullptr) {
 		sav *= obj->worldMat;
 		if (obj->tag[GameObjectTag::Tag_Dynamic] == false) break;
@@ -515,15 +512,14 @@ matrix DynamicGameObject::GetWorld() {
 
 void DynamicGameObject::SetWorld(matrix local)
 {
-	Zone& zone = gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 
-	//���� ûũ���� ���� �����
 	if (chunkAllocIndexs) {
 		ChunkIndex ci = ChunkIndex(IncludeChunks.xmin, IncludeChunks.ymin, IncludeChunks.zmin);
 		int len = IncludeChunks.GetChunckSize();
 		for (; ci.extra < len; IncludeChunks.Inc(ci)) {
-			auto f = zone.chunck.find(ci);
-			if (f != zone.chunck.end()) {
+			auto f = zone->chunck.find(ci);
+			if (f != zone->chunck.end()) {
 				GameChunk* gc = f->second;
 				gc->Dynamic_gameobjects.Free(chunkAllocIndexs[ci.extra]);
 			}
@@ -532,19 +528,18 @@ void DynamicGameObject::SetWorld(matrix local)
 	worldMat = local;
 
 	if (chunkAllocIndexs) {
-		// �� ��ġ���� ûũ�� �ֱ�
-		GameObjectIncludeChunks chunkIds = zone.GetChunks_Include_OBB(GetOBB());
+		GameObjectIncludeChunks chunkIds = zone->GetChunks_Include_OBB(GetOBB());
 		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
 		ci.extra = 0;
 		int chunckCount = chunkIds.GetChunckSize();
 		for (; ci.extra < chunckCount; chunkIds.Inc(ci)) {
-			auto c = zone.chunck.find(ci);
+			auto c = zone->chunck.find(ci);
 			GameChunk* gc;
-			if (c == zone.chunck.end()) {
+			if (c == zone->chunck.end()) {
 				// new game chunk
 				gc = new GameChunk();
-				gc->SetChunkIndex(ci, &zone);
-				zone.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+				gc->SetChunkIndex(ci, zone);
+				zone->chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
 			}
 			else gc = c->second;
 			int allocN = gc->Dynamic_gameobjects.Alloc();
@@ -556,7 +551,7 @@ void DynamicGameObject::SetWorld(matrix local)
 
 void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc)
 {
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	static int temp[512] = {};
 	GameObjectIncludeChunks intersection = beforeChunckInc;
 	intersection &= afterChunkInc;
@@ -581,14 +576,13 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
         chunkAllocIndexsCapacity = requiredChunkCapacity;
     }
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci) { // ��ġ�� �κ��� Free ���� �ʴ´�.
+		if (ci == inter_ci) {
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
 			continue;
 		}
 
-		// �� ��ġ�� �κ��� Free �Ѵ�.
 		auto f = zone->chunck.find(ci);
 		if (f != zone->chunck.end()) {
 #ifdef DEVELOPMODE_ChunckDEBUG
@@ -598,7 +592,6 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
 		}
 	}
 
-	// ��ġ �̵� / ȸ��
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
@@ -613,7 +606,7 @@ void DynamicGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const Ga
 
 	inter_up = 0;
 	for (; ci.extra < chunckCount; afterChunkInc.Inc(ci)) {
-		if (ci == inter_ci) { // ��ġ�� �κ��� Alloc ���� �ʴ´�.
+		if (ci == inter_ci) {
 			intersection.Inc(inter_ci);
 			chunkAllocIndexs[ci.extra] = temp[inter_up];
 			inter_up += 1;
@@ -642,7 +635,7 @@ void DynamicGameObject::Update(float delatTime) {
 }
 
 void DynamicGameObject::Release() {
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	GameObject::Release();
 	if (chunkAllocIndexs) {
 		int xmax = IncludeChunks.xmin + IncludeChunks.xlen;
@@ -665,7 +658,7 @@ BoundingOrientedBox DynamicGameObject::GetOBB() {
 	BoundingOrientedBox obb_local;
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	zone->GetShape(shapeindex).GetRealShape(mesh, model);
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	if (model != nullptr) obb_local = model->GetOBB();
@@ -937,8 +930,8 @@ void DynamicGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 
 	//calculate app packet siz.
 	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-	Zone zone = gameworld.zones[zoneId];
-	Shape& s = zone.GetShape(shapeindex);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	s.GetRealShape(mesh, model);
@@ -1012,7 +1005,7 @@ void SkinMeshGameObject::Update(float delatTime) {
 }
 
 void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc) {
-	Zone* zone = &gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 	static int temp[512] = {};
 	GameObjectIncludeChunks intersection = beforeChunckInc;
 	intersection &= afterChunkInc;
@@ -1042,14 +1035,14 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
     }
 	
 	for (; ci.extra < chunckCount; beforeChunckInc.Inc(ci)) {
-		if (ci == inter_ci && inter_Count > 0) { // ��ġ�� �κ��� Free ���� �ʴ´�.
+		if (ci == inter_ci && inter_Count > 0) {
 			intersection.Inc(inter_ci);
 			temp[inter_up] = chunkAllocIndexs[ci.extra];
 			inter_up += 1;
 			
 			continue;
 		}
-		// �� ��ġ�� �κ��� Free �Ѵ�.
+
 		auto f = zone->chunck.find(ci);
 		if (f != zone->chunck.end()) {
 #ifdef DEVELOPMODE_ChunckDEBUG 
@@ -1063,9 +1056,6 @@ void SkinMeshGameObject::MoveChunck(const vec4& velocity, const vec4& Q, const G
 	cout << endl;
 #endif
 
-
-
-	// ��ġ �̵� / ȸ��
 	vec4 pos = worldMat.pos;
 	worldMat.trQ(Q);
 	worldMat.pos = pos + velocity;
@@ -1125,8 +1115,8 @@ void SkinMeshGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 
 	//calculate app packet siz.
 	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-	Zone zone = gameworld.zones[zoneId];
-	Shape& s = zone.GetShape(shapeindex);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	s.GetRealShape(mesh, model);
@@ -1183,15 +1173,14 @@ void SkinMeshGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 }
 
 void SkinMeshGameObject::SetWorld(matrix local) {
-	Zone& zone = gameworld.zones[zoneId];
+	Zone* zone = gameworld.ZoneTable[zoneId];
 
-	//���� ûũ���� ���� �����
 	if (chunkAllocIndexs) {
 		ChunkIndex ci = ChunkIndex(IncludeChunks.xmin, IncludeChunks.ymin, IncludeChunks.zmin);
 		int len = IncludeChunks.GetChunckSize();
 		for (; ci.extra < len; IncludeChunks.Inc(ci)) {
-			auto f = zone.chunck.find(ci);
-			if (f != zone.chunck.end()) {
+			auto f = zone->chunck.find(ci);
+			if (f != zone->chunck.end()) {
 				GameChunk* gc = f->second;
 				gc->SkinMesh_gameobjects.Free(chunkAllocIndexs[ci.extra]);
 			}
@@ -1200,19 +1189,18 @@ void SkinMeshGameObject::SetWorld(matrix local) {
 	worldMat = local;
 
 	if (chunkAllocIndexs) {
-		// �� ��ġ���� ûũ�� �ֱ�
-		GameObjectIncludeChunks chunkIds = zone.GetChunks_Include_OBB(GetOBB());
+		GameObjectIncludeChunks chunkIds = zone->GetChunks_Include_OBB(GetOBB());
 		ChunkIndex ci = ChunkIndex(chunkIds.xmin, chunkIds.ymin, chunkIds.zmin);
 		ci.extra = 0;
 		int chunckCount = chunkIds.GetChunckSize();
 		for (; ci.extra < chunckCount; chunkIds.Inc(ci)) {
-			auto c = zone.chunck.find(ci);
+			auto c = zone->chunck.find(ci);
 			GameChunk* gc;
-			if (c == zone.chunck.end()) {
+			if (c == zone->chunck.end()) {
 				// new game chunk
 				gc = new GameChunk();
-				gc->SetChunkIndex(ci, &zone);
-				zone.chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
+				gc->SetChunkIndex(ci, zone);
+				zone->chunck.insert(pair<ChunkIndex, GameChunk*>(ci, gc));
 			}
 			else gc = c->second;
 			int allocN = gc->SkinMesh_gameobjects.Alloc();
@@ -1247,7 +1235,6 @@ void GameMap::StaticCollisionMove(DynamicGameObject* obj)
 	BoundingOrientedBox obb = obj->GetOBB();
 	obj->worldMat.pos -= obj->tickLVelocity;
 
-	// ������ ���� ûũ������ ã�Ƴ�.
 	GameObjectIncludeChunks goic = ownerzone->GetChunks_Include_OBB(obb);
 
 	for (int ix = goic.xmin; ix <= goic.xmin + goic.xlen; ++ix) {
@@ -1256,11 +1243,7 @@ void GameMap::StaticCollisionMove(DynamicGameObject* obj)
 				auto chun = ownerzone->chunck.find(ChunkIndex(ix, iy, iz));
 				if (chun == ownerzone->chunck.end()) continue;
 				GameChunk* ch = chun->second;
-				//Static Object�� Enable�� false�� �� ���� ������ �Ҵ�˻�� ����.
-				// >> �׷� �׳� vector���� ��������� �� vecset���� ��? >> fix
-
-				//��¥�� ������ ûũ�� �� ����°� ���� ������? �׷� nullptr üũ�� �� �ʿ䰡 �ֳ�?
-				// fix
+				// fix?
 				for (int k = 0; k < ch->Static_gameobjects.size; ++k) {
 					BoundingOrientedBox staticobb = ch->Static_gameobjects[k]->GetOBB();
 					obj->worldMat.pos += obj->tickLVelocity;
@@ -1324,6 +1307,10 @@ void GameMap::LoadMap(const char* MapName)
 		GetCurrentDirectoryA(1024, Buff);
 		cout << endl;
 	}
+	else {
+		return;
+	}
+
 	int nameCount;
 	int MeshCount;
 	int TextureCount;
@@ -1383,7 +1370,7 @@ void GameMap::LoadMap(const char* MapName)
 		Mesh mesh;
 
 		string filename = MeshDirPath;
-		// .map (Ȯ����)����
+		// .map
 		filename += name;
 		filename += ".mesh";
 		ifstream ifs2{ filename, ios_base::binary };
@@ -1395,7 +1382,7 @@ void GameMap::LoadMap(const char* MapName)
 		ifs2.close();
 
 		//string filename = MeshDirPath;
-		//// .map (Ȯ����)����
+		//// .map
 		//filename += name;
 		//filename += ".mesh";
 		//Mesh mesh;
@@ -1486,12 +1473,12 @@ void GameMap::LoadMap(const char* MapName)
 
 		string modelName = TempBuff;
 		string filename = ModelDirPath;
-		// .map (Ȯ����)����
+		// .map
 		filename += modelName;
 		filename += ".model";
 
 		Model* pModel = new Model();
-		pModel->LoadModelFile2(filename);
+		pModel->LoadModelFile2(filename, ownerzone);
 		map->models[i] = pModel;
 		model_shapeindexes[i] = Shape::ShapeTable.size() + Shape::AddModelInZone(modelName, pModel, ownerzone->zoneId);
 	}
@@ -1508,7 +1495,6 @@ void GameMap::LoadMap(const char* MapName)
 		ownerzone->Static_gameObjects[index] = go;
 	}
 	for (int i = 0; i < gameObjectCount; ++i) {
-		//dbgbreak(i == 308);
 		StaticGameObject* go = map->MapObjects[i];
 		int nameId = 0;
 		ifs.read((char*)&nameId, sizeof(int));
@@ -1527,6 +1513,13 @@ void GameMap::LoadMap(const char* MapName)
 		world *= XMMatrixRotationRollPitchYaw(rot.x, rot.y, rot.z);
 		world.pos.f3 = pos.f3;
 		world.pos.w = 1;
+
+		// 가장 위에 Map 오브젝트일 경우, 해당 Zone 을 알맞은 위치로 이동시켜야 한다.
+		if (i == 0) {
+			world.pos.x = 0.5f * (ownerzone->BasicAABB_onlyXZ.x + ownerzone->BasicAABB_onlyXZ.z);
+			world.pos.z = 0.5f * (ownerzone->BasicAABB_onlyXZ.y + ownerzone->BasicAABB_onlyXZ.w);
+		}
+
 		go->SetWorld(world);
 
 		char Mod = 'n';
@@ -1563,9 +1556,7 @@ void GameMap::LoadMap(const char* MapName)
 				ifs.read((char*)&Center, sizeof(XMFLOAT3));
 				ifs.read((char*)&Extents, sizeof(XMFLOAT3));
 				BoundingOrientedBox obb = BoundingOrientedBox(Center, Extents, vec4(0, 0, 0, 1));
-				BoundingOrientedBox obb_world;
-				obb.Transform(obb_world, go->worldMat);
-				go->obbArr[k] = obb_world;
+				go->obbArr[k] = obb;
 			}
 		}
 		else if (Mod == 'm'){
@@ -1579,7 +1570,7 @@ void GameMap::LoadMap(const char* MapName)
 				go->SetShape(map->model_shapeindexes[ModelID]);
 			}
 
-			Zone* zone = &gameworld.zones[ownerzone->zoneId];
+			Zone* zone = gameworld.ZoneTable[ownerzone->zoneId];
 			int nodeCount = zone->GetShape(go->shapeindex).GetModel()->nodeCount;
 			go->transforms_innerModel = new matrix[nodeCount];
 			for (int k = 0; k < nodeCount; ++k) {
@@ -1639,14 +1630,21 @@ void GameMap::LoadMap(const char* MapName)
 			go->childs = -1;
 		}
 
+		if (Mod == 'n') {
+			for (int k = 0; k < go->obbArr.size(); ++k) {
+				BoundingOrientedBox obb_world;
+				go->obbArr[k].Transform(obb_world, go->worldMat);
+				go->obbArr[k] = obb_world;
+			}
+		}
+
 		if (Mod == 'm') {
 			go->obbArr.clear();
-			Zone* zone = &gameworld.zones[ownerzone->zoneId];
-			Model* model = zone->GetShape(go->shapeindex).GetModel();
+			Model* model = ownerzone->GetShape(go->shapeindex).GetModel();
 			model->RootNode->PushOBBs(model, go->worldMat, &go->obbArr, go);
 			//for (int k = 0;k < model->nodeCount;++k) {
 			//	ModelNode* node = &model->Nodes[k];
-			//	// fix. ����Ƽ �ڽ� ������Ʈ���� AABB�� ��� ������? ���������� ������ �޴��� Ȯ���� �ʿ�.
+			//	// fix.
 			//	for (int u = 0;u < node->aabbArr.size();++u) {
 			//		BoundingOrientedBox obb;
 			//		obb.Center = node->aabbArr[u].Center;
@@ -1657,6 +1655,7 @@ void GameMap::LoadMap(const char* MapName)
 			//	}
 			//}
 		}
+
 		map->MapObjects[i] = go;
 	}
 
@@ -2112,14 +2111,21 @@ Player::Player() {
 	tag[GameObjectTag::Tag_Enable] = false;
 	tag[GameObjectTag::Tag_Dynamic] = true;
 	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+	tag[GameObjectTag::Tag_Player] = true;
 	worldMat.Id();
 	shapeindex = -1;
 
 	ApplyJob(PlayerJob::Healer);
 
+	m_currentWeaponType = (int)WeaponType::Max;
+	weapon[0] = Weapon(WeaponType::Max);
+	weapon[1] = Weapon(WeaponType::Max);
+	weapon[2] = Weapon(WeaponType::Max);
+	SelectedWeapon = 0;
+
 	HP = 100;
 	MaxHP = 100;
-	bullets = weapon.m_info.maxBullets;
+	bullets = weapon[0].m_info.maxBullets;
 	KillCount = 0;
 	DeathCount = 0;
 	HeatGauge = 0;
@@ -2147,8 +2153,9 @@ void Player::ApplyJob(PlayerJob job)
 	const JobData& jobData = GetJobData(job);
 	m_currentJob = (int)jobData.job;
 	m_currentWeaponType = (int)jobData.defaultWeapon;
-	weapon = Weapon(jobData.defaultWeapon);
-	bullets = weapon.m_info.maxBullets;
+	//무기는 장착할 수 있도록. 장착할때 직업에 따라 제한을 두는 식으로 한다.
+	/*weapon[0] = Weapon(jobData.defaultWeapon);
+	bullets = weapon[0].m_info.maxBullets;*/
 	MaxHP -= m_tempMaxHpBonus;
 	if (MaxHP <= 0.0f) MaxHP = 100.0f;
 	if (HP > MaxHP) HP = MaxHP;
@@ -2492,6 +2499,7 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 
 bool Player::TryUseSkill(SkillSlot slot)
 {
+	Weapon& currentWeapon = weapon[SelectedWeapon];
 	int slotIndex = (int)slot;
 	if (slotIndex < 0 || slotIndex >= (int)SkillSlot::Max) return false;
 	if (SkillCooldownFlow[slotIndex] > 0.0f) return false;
@@ -2653,11 +2661,11 @@ bool Player::TryUseSkill(SkillSlot slot)
 	else if (skill.effectType == SkillEffectType::Sniper_ModeSwitch) {
 		m_sniperDmrMode = !m_sniperDmrMode;
 		if ((WeaponType)m_currentWeaponType == WeaponType::Sniper) {
-			weapon.m_info.shootDelay = m_sniperDmrMode ? 0.35f : 1.5f;
-			weapon.m_info.damage = m_sniperDmrMode ? 35.0f : 100.0f;
-			weapon.m_info.maxBullets = m_sniperDmrMode ? 10 : 5;
-			weapon.m_info.reloadTime = m_sniperDmrMode ? 1.4f : 2.0f;
-			if (bullets > weapon.m_info.maxBullets) bullets = weapon.m_info.maxBullets;
+			currentWeapon.m_info.shootDelay = m_sniperDmrMode ? 0.35f : 1.5f;
+			currentWeapon.m_info.damage = m_sniperDmrMode ? 35.0f : 100.0f;
+			currentWeapon.m_info.maxBullets = m_sniperDmrMode ? 10 : 5;
+			currentWeapon.m_info.reloadTime = m_sniperDmrMode ? 1.4f : 2.0f;
+			if (bullets > currentWeapon.m_info.maxBullets) bullets = currentWeapon.m_info.maxBullets;
 			zones->Sending_ChangeGameObjectMember<Weapon>(gameworld.clients[clientIndex].PersonalSDS,
 				gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &weapon);
 			zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
@@ -2672,7 +2680,7 @@ bool Player::TryUseSkill(SkillSlot slot)
 		LVelocity.x = direction.x * 20.0f;
 		LVelocity.z = direction.z * 20.0f;
 		m_dualDashTimer = max(0.18f, skill.duration);
-		bullets = weapon.m_info.maxBullets;
+		bullets = currentWeapon.m_info.maxBullets;
 		zones->ApplySkillDamage(this, skill.effectType, worldMat.pos, direction, skill.range, skill.radius, skill.power);
 		zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
 			gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
@@ -2715,7 +2723,53 @@ bool Player::TryUseSkill(SkillSlot slot)
 void Player::Update(float deltaTime)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
-	weapon.Update(deltaTime);
+	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
+	weapon[SelectedWeapon].Update(deltaTime);
+
+	if (zone->lowHit()) {
+		// 퀘스트 진행상황 체크 및 업데이트
+		
+		// 퀘스트가 추가되면 프로그래스도 추가됨.
+		while (QuestPrograss.size() < QuestArr.size()) {
+			QuestPrograss.push_back(new Quest());
+		}
+
+		// 퀘스트가 삭제되면 프로그래스도 삭제됨.
+		while (QuestPrograss.size() > QuestArr.size()) {
+			QuestPrograss.pop_back();
+		}
+
+		for (int i = 0; i < QuestArr.size(); ++i) {
+			int n = QuestArr[i];
+			Quest* q = gameworld.QuestTable[n];
+			if (q->isSameQuest(QuestPrograss[i]) == false) {
+				q->Copy(QuestPrograss[i]);
+			}
+
+			Quest* prograss = QuestPrograss[i];
+			bool QuestUpdate = false;
+			for (int k = 0; k < prograss->requp; ++k) {
+				QuestRequirement& req = prograss->ReqArr[k];
+				int PresentCnt = 0;
+				if (req.type == QuestType::CollectItem) {
+					for (int u = 0; u < maxItem; ++u) {
+						if (Inventory[u].id == req.ObjID) PresentCnt += Inventory[u].ItemCount;
+					}
+				}
+				else if (req.type == QuestType::KillMonster) {
+					PresentCnt = req.PastCnt;
+				}
+				if (PresentCnt != req.PresentCnt) {
+					req.PresentCnt = PresentCnt;
+					QuestUpdate = true;
+				}
+			}
+
+			if (QuestUpdate) {
+				zone->Sending_SyncQuestPrograss(gameworld.clients[clientIndex].PersonalSDS, n, prograss);
+			}
+		}
+	}
 
 	vec4 currentPos = worldMat.pos;
 	XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, m_yaw, 0);
@@ -2760,6 +2814,44 @@ void Player::Update(float deltaTime)
 	UpdateSkillCooldowns(deltaTime, zones);
 	UpdateJobTimers(deltaTime, zones);
 
+	if (InputBuffer[InputID::Keyboard1] == true) {
+		SelectedWeapon = 0;
+		m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
+	}
+	if (InputBuffer[InputID::Keyboard2] == true) {
+		SelectedWeapon = 1;
+		m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
+	}
+	if (InputBuffer[InputID::Keyboard3] == true) {
+		SelectedWeapon = 2;
+		m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
+	}
+
+	//if (InputBuffer[InputID::KeyboardQ] == true) {
+	//	std::cout << "[Player::Update] Q pressed!  HP=" << HP
+	//		<< " Heat=" << HeatGauge
+	//		<< " CD=" << HealSkillCooldownFlow << std::endl;
+
+	//	if (HealSkillCooldownFlow <= 0.0f && HeatGauge > 0.0f && HP < MaxHP) {
+
+	//		// ȸ���� HeatGauge ���θ� HP�� ��ȯ
+	//		float healAmount = HeatGauge;
+	//		HP += healAmount;
+
+	//		if (HP > MaxHP) HP = MaxHP;
+
+	//		// ������ �Ҹ�
+	//		HeatGauge = 0.0f;
+
+	//		// ��Ÿ�� ����
+	//		HealSkillCooldownFlow = HealSkillCooldown;
+
+	//		// HP, HeatGauge ����->Ŭ�� ���� ����ȭ
+	//		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+	//		zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
+	//	}
+	//}
+
 	//if (InputBuffer[InputID::MouseLbutton] == true) {
 	//	if (ShootFlow >= ShootDelay) {
 	//		if (bFirstPersonVision) {
@@ -2801,13 +2893,14 @@ void Player::Update(float deltaTime)
 		InputBuffer[InputID::KeyboardQ] = false;
 	}
 
+	Weapon& currentWeapon = weapon[SelectedWeapon];
 	if (InputBuffer[InputID::MouseLbutton] == true) {
 		bool isHeatWeapon = ((PlayerJob)m_currentJob == PlayerJob::Juggernaut && (WeaponType)m_currentWeaponType == WeaponType::MachineGun);
 		bool isOverheated = (isHeatWeapon && HeatGauge >= MaxHeatGauge);
 		bool isBladeAttack = (m_dualBladeTimer > 0.0f && (PlayerJob)m_currentJob == PlayerJob::Gunner);
 		bool isRailgunAttack = (m_railgunTimer > 0.0f && m_railgunShots > 0);
-		float effectiveShootDelay = weapon.m_info.shootDelay;
-		float effectiveDamage = weapon.m_info.damage;
+		float effectiveShootDelay = currentWeapon.m_info.shootDelay;
+		float effectiveDamage = currentWeapon.m_info.damage;
 		float effectiveRayDistance = 50.0f;
 		if (m_rifleStimTimer > 0.0f) effectiveShootDelay *= 0.70f;
 		if (m_dualAwakenTimer > 0.0f) effectiveShootDelay *= 0.50f;
@@ -2821,8 +2914,8 @@ void Player::Update(float deltaTime)
 			effectiveRayDistance = 90.0f;
 		}
 
-		if (isBladeAttack && weapon.m_shootFlow >= 0.55f) {
-			weapon.OnFire();
+		if (isBladeAttack && currentWeapon.m_shootFlow >= 0.55f) {
+			currentWeapon.OnFire();
 			int hitCount = zones->ApplySkillDamage(this, SkillEffectType::DualPistol_BladeMode, worldMat.pos, clook, 2.4f, 1.5f, 35.0f);
 			if (hitCount > 0) {
 				HP += 35.0f * 0.7f * (float)hitCount;
@@ -2833,7 +2926,7 @@ void Player::Update(float deltaTime)
 			zones->Sending_SkillCast(zones->CommonSDS, gameworld.clients[clientIndex].objindex, (PlayerJob)m_currentJob,
 				SkillSlot::Skill2, SkillEffectType::DualPistol_BladeMode, worldMat.pos, clook, 1.5f, 35.0f, 0.25f);
 		}
-		else if (weapon.m_shootFlow >= effectiveShootDelay && (bullets > 0 || isRailgunAttack) && isOverheated == false) {
+		else if (currentWeapon.m_shootFlow >= effectiveShootDelay && (bullets > 0 || isRailgunAttack) && isOverheated == false) {
 
 			if (isRailgunAttack) {
 				--m_railgunShots;
@@ -2847,9 +2940,10 @@ void Player::Update(float deltaTime)
 				if (HeatGauge > MaxHeatGauge) HeatGauge = MaxHeatGauge;
 			}
 
-			weapon.OnFire();
+			currentWeapon.OnFire();
 
 			vec4 shootOrigin = worldMat.pos + vec4(0, 1.0f, 0, 0);
+
 			vec4 rayStart;
 			if (bFirstPersonVision) {
 				rayStart = shootOrigin + clook * 1.5f;
@@ -2879,19 +2973,18 @@ void Player::Update(float deltaTime)
 				}
 			}
 
-			// fix �̰� �̷��� �ϸ� �ȵɰ� ������? Update �ɶ����� ��Ŷ�� ����. 
-			// ��Ŷ�� �������� �������� �δ��̹Ƿ� ���� Ư���ð����� ���ִ°� ����.
+			// fix?
 			zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
 			zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HeatGauge);
 			zones->Sending_PlayerFire(zones->CommonSDS, gameworld.clients[clientIndex].objindex);
+		}
 
-			if (isRailgunAttack == false && bullets <= 0) {
-				weapon.m_shootFlow = -weapon.m_info.reloadTime;
+		if (isRailgunAttack == false && bullets <= 0) {
+			currentWeapon.m_shootFlow = -currentWeapon.m_info.reloadTime;
 
-				bullets = weapon.m_info.maxBullets;
+			bullets = currentWeapon.m_info.maxBullets;
 
-				zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
-			}
+			zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
 		}
 	}
 
@@ -3077,18 +3170,102 @@ void Player::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	TakeDamage(damage);
 }
 
+bool Player::LootItem(ItemStack is)
+{
+	int changeSlotID = -1;
+	for (int i = 0; i < maxItem; ++i) {
+		if (Inventory[i].id == is.id) {
+			Inventory[i].ItemCount += is.ItemCount;
+			changeSlotID = i;
+			goto UpdateInventorySlotEnd;
+		}
+	}
+	for (int i = 0; i < maxItem; ++i) {
+		if (Inventory[i].id == 0 || Inventory[i].ItemCount) {
+			Inventory[i].id = is.id;
+			Inventory[i].ItemCount = is.ItemCount;
+			changeSlotID = i;
+			goto UpdateInventorySlotEnd;
+		}
+	}
+
+UpdateInventorySlotEnd:
+	if (changeSlotID >= 0) {
+		zone->Sending_InventoryItemSync(gameworld.clients[clientIndex].PersonalSDS, Inventory[changeSlotID], changeSlotID);
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
+bool Player::AddGold(int delta)
+{
+	int next_gold = Gold + delta;
+	if (next_gold < 0) return false;
+	else 
+	{
+		Gold = next_gold;
+		zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Gold);
+		return true;
+	}
+}
+
+void Player::AddExp(int delta)
+{
+	if (delta < 0) return;
+	Exp += delta;
+	int IndexLevel = Level;
+	if (IndexLevel > 99) IndexLevel = 99;
+	if (IndexLevel < 0) IndexLevel = 0;
+
+	bool isLevelChanged = false;
+	while (ExpLimit[IndexLevel] < Exp) {
+		Exp -= ExpLimit[IndexLevel];
+		Level += 1;
+		isLevelChanged = true;
+	}
+
+	if (isLevelChanged) {
+		zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Level);
+	}
+	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Exp);
+}
+
+void Player::RewardQuest(Quest* completeQuest)
+{
+	if (completeQuest == nullptr) return;
+	for (int i = 0; i < completeQuest->rewardUp; ++i) {
+		QuestReward& reward = completeQuest->RewardArr[i];
+		if (reward.type == QuestRewardType::QRT_Money) {
+			this->AddGold(reward.count);
+		}
+		else if (reward.type == QuestRewardType::QRT_Item) {
+			ItemStack is;
+			is.id = reward.objid;
+			is.ItemCount = reward.count;
+			this->LootItem(is);
+		}
+		else if (reward.type == QuestRewardType::QRT_Exp) {
+			// 우리 게임에 경험치가 있었나?
+			this->AddGold(reward.count);
+		}
+	}
+}
+
 void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	sds.postpush_start();
 
 	//calculate app packet siz.
 	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-	Zone zone = gameworld.zones[zoneId];
-	Shape& s = zone.GetShape(shapeindex);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	s.GetRealShape(mesh, model);
 	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
 	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+	reqsiz += (QuestArr.size()+1) * sizeof(int);
 
 	sds.postpush_reserve(reqsiz);
 	int offset = 0;
@@ -3129,11 +3306,27 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	static_data.m_yaw = m_yaw;
 	static_data.m_pitch = m_pitch;
 	/*memcpy(static_data.Inventory, Inventory, sizeof(ItemStack) * maxItem);*/
-	static_data.weapon = weapon;
+	static_data.weapon[0] = weapon[0];
+	static_data.weapon[1] = weapon[1];
+	static_data.weapon[2] = weapon[2];
+	static_data.SelectedWeapone = SelectedWeapon;
+	static_data.Gold = Gold;
+	static_data.Exp = Exp;
+	static_data.Level = Level;
 	offset += sizeof(STC_SyncObjData);
 
 	//dynamic push
 
+	// quest
+	int& questCnt = *(int*)(sds.ofbuff + offset);
+	questCnt = QuestArr.size();
+	offset += sizeof(int);
+	for (int i = 0; i < questCnt; ++i) {
+		int& QI = *(int*)(sds.ofbuff + offset);
+		QI = QuestArr[i];
+		offset += sizeof(int);
+	}
+		
 	//shape
 	if (mesh) {
 		int& submeshNum = *(int*)(sds.ofbuff + offset);
@@ -3594,6 +3787,18 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 			Player* p = (Player*)shooter;
 			p->KillCount += 1;
 			zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
+
+			// monster kill quest prograss update
+			for (int i = 0; i < p->QuestPrograss.size(); ++i) {
+				Quest* prograss = p->QuestPrograss[i];
+				for (int k = 0; k < prograss->requp; ++k) {
+					QuestRequirement& req = prograss->ReqArr[k];
+					constexpr int monsterId = 0; // fix : here write monsterID
+					if (req.type == QuestType::KillMonster && req.ObjID == monsterId) {
+						req.PresentCnt += 1;
+					}
+				}
+			}
 		}
 
 		//when monster is dead, loot random items;
@@ -3764,7 +3969,6 @@ BoundingOrientedBox Monster::GetOBB()
 	obb_local.Transform(obb_world, id);
 	return obb_world;
 }
-
 
 /*
 <����>
@@ -3978,8 +4182,8 @@ void Monster::SendGameObject(int objindex, SendDataSaver& sds) {
 
 	//calculate app packet siz.
 	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
-	Zone zone = gameworld.zones[zoneId];
-	Shape& s = zone.GetShape(shapeindex);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	s.GetRealShape(mesh, model);
@@ -4079,8 +4283,8 @@ BoundingOrientedBox Portal::GetOBB() {
 		obb_local.Extents.x = -1;
 		return obb_local;
 	}
-	Zone zone = gameworld.zones[zoneId];
-	Shape& s = zone.GetShape(shapeindex);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
 	s.GetRealShape(mesh, model);
 	if (mesh != nullptr) obb_local = mesh->GetOBB();
 	if (model != nullptr) obb_local = model->GetOBB();
@@ -4123,6 +4327,199 @@ void Portal::SendGameObject(int objindex, SendDataSaver& sds) {
 	sds.postpush_end();
 }
 
+PeacefulNPC::PeacefulNPC()
+{
+	tag = 0;
+	tag[GameObjectTag::Tag_Enable] = false;
+	tag[GameObjectTag::Tag_Dynamic] = true;
+	tag[GameObjectTag::Tag_SkinMeshObject] = true;
+	tag[GameObjectTag::Tag_Player] = false;
+	worldMat.Id();
+	shapeindex = -1;
+	parent = -1;
+	childs = -1;
+	sibling = -1;
+}
+
+void PeacefulNPC::Update(float deltaTime) {
+	Zone* zone = gameworld.GetZone(zoneId);
+	if (collideCount == 0) isGround = false;
+	collideCount = 0;
+
+	if (isGround == false) {
+		LVelocity.y -= 9.8f * deltaTime;
+	}
+	tickLVelocity = LVelocity * deltaTime;
+
+	// 주변 플레이어를 탐색하여 대화를 시작할 수 있는지 점검한다.
+	constexpr float TalkRange = 2.0f;
+	GameObjectIncludeChunks goic = IncludeChunks;
+	int len = goic.GetChunckSize();
+	ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
+	for (; ci.extra < len; goic.Inc(ci)) {
+		auto f = zone->chunck.find(ci);
+		if (f != zone->chunck.end()) {
+			GameChunk* gc = f->second;
+			for (int i = 0; i < gc->SkinMesh_gameobjects.size; ++i) {
+				if (gc->SkinMesh_gameobjects.isnull(i)) continue;
+				SkinMeshGameObject* skgo = gc->SkinMesh_gameobjects[i];
+				if (skgo == nullptr) continue;
+				
+				Tag::TagSetter ts = skgo->tag[GameObjectTag::Tag_Player];
+
+				if (skgo->tag[GameObjectTag::Tag_Player] == true) {
+					Player* pgo = (Player*)skgo;
+					vec4 distance = worldMat.pos - pgo->worldMat.pos;
+
+					bool PressE = pgo->InputBuffer[InputID::KeyboardE];
+					if ((PressE && distance.len3 < TalkRange) && pgo->PresentTalkID == -1) {
+
+						bool QuestCompleteExist = false;
+						// 완료처리하기
+						for (int k = 0; k < NPCQuestList.size(); ++k) {
+							int questId = NPCQuestList[k];
+							if (pgo->PrograssQuestBitArr[questId] == true) {
+								int selectedQI = -1;
+								for (int qi = 0; qi < pgo->QuestArr.size(); ++qi) {
+									if (pgo->QuestArr[qi] == questId) {
+										selectedQI = qi;
+										break;
+									}
+								}
+
+								if (selectedQI >= 0) {
+									if (pgo->QuestPrograss[selectedQI]->isComplete()) {
+										// 플레이어가 보상을 얻게 한다.
+										pgo->RewardQuest(pgo->QuestPrograss[selectedQI]);
+										
+										// Delete Quest Protocol
+										zone->Sending_DeleteQuest(gameworld.clients[pgo->clientIndex].PersonalSDS, questId);
+
+										QuestCompleteExist = true;
+										pgo->EraseQuest(selectedQI);
+										break;
+									}
+								}
+							}
+						}
+
+						if (QuestCompleteExist == false) {
+							// 특정 함수를 통해 StartID를 반환해야 함.
+							// 만약 StartID를 반환하지 않으면 
+							int StartID = gameworld.GetStartTalk(pgo, this);
+
+							zone->Sending_NPCStartTalk(gameworld.clients[pgo->clientIndex].PersonalSDS, NPCType, StartID);
+
+							if (gameworld.NPCTalkTable[StartID].selectCnt > 0) {
+								pgo->PresentTalkID = StartID;
+							}
+							else {
+								pgo->PresentTalkID = -1;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+void PeacefulNPC::Release() {
+
+}
+
+void PeacefulNPC::OnCollision(GameObject* other)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = other->GetOBB();
+
+	BoundingOrientedBox bottomObb = GetOBB();
+	bottomObb.Center.y += tickLVelocity.y;
+
+	if (bottomObb.Intersects(otherOBB)) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+void PeacefulNPC::OnStaticCollision(BoundingOrientedBox obb)
+{
+	collideCount += 1;
+	float belowDist = 0;
+	BoundingOrientedBox otherOBB = obb;
+
+	BoundingOrientedBox bottomObb = GetOBB();
+	bottomObb.Center.y += tickLVelocity.y;
+
+	if (bottomObb.Intersects(otherOBB)) {
+		LVelocity.y = 0;
+		isGround = true;
+	}
+}
+
+void PeacefulNPC::SendGameObject(int objindex, SendDataSaver& sds) {
+	sds.postpush_start();
+
+	//calculate app packet siz.
+	int reqsiz = sizeof(STC_SyncGameObject_Header) + sizeof(STC_SyncObjData);
+	Zone* zone = gameworld.ZoneTable[zoneId];
+	Shape& s = zone->GetShape(shapeindex);
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	s.GetRealShape(mesh, model);
+	if (mesh) reqsiz += sizeof(int) + sizeof(int) * mesh->subMeshNum;
+	else reqsiz += sizeof(int) + sizeof(matrix) * model->nodeCount;
+
+	sds.postpush_reserve(reqsiz);
+	int offset = 0;
+
+	//static pushv
+	STC_SyncGameObject_Header& header = *(STC_SyncGameObject_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::SyncGameObject;
+	header.objindex = objindex;
+	header.type = GameObjectType::_PeacefulNPC;
+	offset += sizeof(STC_SyncGameObject_Header);
+
+	STC_SyncObjData& static_data = *(STC_SyncObjData*)(sds.ofbuff + offset);
+	static_data.tag = tag;
+	static_data.shapeindex = shapeindex;
+	static_data.parent = parent;
+	static_data.childs = childs;
+	static_data.sibling = sibling;
+	static_data.DestWorld = worldMat;
+	static_data.LVelocity = LVelocity;
+	static_data.AnimationFlowTime = AnimationFlowTime;
+	static_data.PlayingAnimationIndex = PlayingAnimationIndex;
+	static_data.npctype = NPCType;
+	static_data.NPCID = NPCID;
+	offset += sizeof(STC_SyncObjData);
+
+	//dynamic push
+
+	//shape
+	if (mesh) {
+		int& submeshNum = *(int*)(sds.ofbuff + offset);
+		submeshNum = mesh->subMeshNum;
+		offset += sizeof(int);
+
+		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
+		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		offset += sizeof(int) * mesh->subMeshNum;
+	}
+	else {
+		int& nodecount = *(int*)(sds.ofbuff + offset);
+		nodecount = model->nodeCount;
+		offset += sizeof(int);
+
+		matrix* InnerModelTransformArr = (matrix*)(sds.ofbuff + offset);
+		memcpy_s(InnerModelTransformArr, sizeof(matrix) * model->nodeCount, transforms_innerModel, sizeof(matrix) * model->nodeCount);
+		offset += sizeof(matrix) * model->nodeCount;
+	}
+
+	sds.postpush_end();
+}
 
 BoundingBox ChunkIndex::GetAABB(Zone* zone) {
 	BoundingBox AABB;
@@ -4142,9 +4539,9 @@ void World::InitCommonMap() {
 	if (staticZone == nullptr) return;
 
 	commonMap.ownerzone = staticZone;
-	commonMap.LoadMap(ZoneMapName[0]);
+	commonMap.LoadMap(staticZone->zoneName);
 	if (commonMap.MapObjects.empty()) {
-		cout << "[World] common map load failed: " << ZoneMapName[0] << endl;
+		cout << "[World] common map load failed: " << staticZone->zoneName << endl;
 		return;
 	}
 
@@ -4167,11 +4564,12 @@ void World::InitCommonMap() {
 	commonMap.AABB[0].w = -INFINITY;
 	commonMap.AABB[1].w = INFINITY;
 
-	cout << "[World] common map=" << ZoneMapName[0]
+	cout << "[World] common map=" << staticZone->zoneName
 		<< " AABB.min=(" << commonMap.AABB[0].f3.x << ", " << commonMap.AABB[0].f3.y << ", " << commonMap.AABB[0].f3.z << ")"
 		<< " AABB.max=(" << commonMap.AABB[1].f3.x << ", " << commonMap.AABB[1].f3.y << ", " << commonMap.AABB[1].f3.z << ")"
 		<< " MapObjectCount=" << commonMap.MapObjects.size() << endl;
 }
+
 void World::Init() {
 #ifdef DEVELOPMODE_SYNC_GLOBAL_ASSET
 	ifstream GlobalAssetCounter{ "../../GlobalAssetCounter.txt" };
@@ -4188,7 +4586,24 @@ void World::Init() {
 	clients.Init(32);
 	GameObjectType::STATICINIT();
 
-	// ���� �� �ε�
+	//Quest Table
+	{
+		Quest* q = new Quest(L"첫번째 퀘스트", L"아이템 7개를 모아오자! 그럼 1000골드를 줄게!");
+		q->PushReq(QuestType::CollectItem, 1, 7);
+		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
+
+		QuestTable.push_back(q);
+	}
+
+	//NPC Talk Table
+	{
+		NPCTalkTable.push_back(NPCTalkData(L"안녕? 반가워!", false, TalkSelection(L"당연하지! 들어줄게!", 'q', 0), TalkSelection(L"지금은 바빠. 나중에.", true, 3)));
+		NPCTalkTable.push_back(NPCTalkData());
+		NPCTalkTable.push_back(NPCTalkData());
+		NPCTalkTable.push_back(NPCTalkData());
+	}
+
+
 	{
 		HumanoidAnimation animIdle;
 		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
@@ -4230,155 +4645,73 @@ void World::Init() {
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
 		Shape::AddMesh("Portal", portalMesh);
 
-		//Item ���ҽ�
+		//Item
 		{
 			int globalitem_index = 0;
 			Shape BlackShape;
 			BlackShape.FlagPtr = 0;
-			ItemTable.push_back(Item(globalitem_index, ItemType::_NULL, L"")); // blank space in inventory.
+			ItemTable.push_back(Item(globalitem_index, ItemType::_NULL, L"", nullptr)); // blank space in inventory.
 			globalitem_index += 1;
 
-			auto AddItemFunc = [&](int id, ItemType t, const char* ItemName, const char* modelfilepath, const wchar_t* ItemIconPath, const wchar_t* ItemDescription) {
-				// [shape-index align] Register a placeholder shape (null model) per item so the client and
-				// server GLOBAL shape tables have identical indices. Without this, the client's 7 item shapes
-				// (indices 4..10) shift every later index, so a shapeindex sent by the server resolves to the
-				// wrong/garbage shape on the client -> null Model -> shadow-render crash.
-				// The server never renders or collides item shapes, so it only needs the index slot. It must
-				// NOT load the real model/texture: the server has no graphics device, and the model files may
-				// be missing from its Resources folder (loading them crashed startup). null model is safe here
-				// because Shape::AddModel only stores the pointer; the server never dereferences it.
-				Shape::AddModel(ItemName, nullptr);
-				ItemTable.push_back(Item(globalitem_index, t, ItemDescription));
+			auto AddItemFunc = [&](int id, ItemType t, const char* ItemName, const char* modelfilepath, const wchar_t* ItemIconPath, const wchar_t* ItemDescription, void* Dataptr) {
+	// [shape-index align] Register a placeholder shape (null model) per item so the client and
+	// server GLOBAL shape tables have identical indices. Without this, the client's 7 item shapes
+	// (indices 4..10) shift every later index, so a shapeindex sent by the server resolves to the
+	// wrong/garbage shape on the client -> null Model -> shadow-render crash.
+	// The server never renders or collides item shapes, so it only needs the index slot. It must
+	// NOT load the real model/texture: the server has no graphics device, and the model files may
+	// be missing from its Resources folder (loading them crashed startup). null model is safe here
+	// because Shape::AddModel only stores the pointer; the server never dereferences it.
+				ItemTable.push_back(Item(globalitem_index, t, ItemDescription, Dataptr));
 				};
 
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
 				"Resources/Model/ItemModel/BioFix.model",
 				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",
-				L"[���̿��Ƚ�] : ��ü ������ ����ϴ� ������ �Ƿ� �ֻ��! \n HP+20");
+				L"바이오픽스 \n HP+20", nullptr);
 			globalitem_index += 1;
 
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "Tier4Gear",
 				"Resources/Model/ItemModel/Tier4Gear.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Tear4Gear.png",
-				L"[Ƽ��4 ��ǰ] : Ƽ�� 4 ���� ���ۿ� ���Ǵ� �ֿ����. ���� ������ ���⳪ ������ �����ϴµ� ������ �ȴ�.");
+				L"티어 4Gear", nullptr);
 			globalitem_index += 1;
 
+			
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "Sniper_IronSight",
 				"Resources/Model/sniper.model",
 				L"Resources/UI/ItemIcons/ItemIcon_IronSight.png",
-				L"[�������� - ���̾����Ʈ] : ���� ������� ����� �޸��� ���� ���� ��ź ���ݼ���.");
+				L"[�������� - ���̾����Ʈ] : ���� ������� ����� �޸��� ���� ���� ��ź ���ݼ���.",
+				new Weapon(WeaponType::Sniper));
 			globalitem_index += 1;
 
-			// ������ �� �ε�
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "Rifle_StreetSweeper",
 				"Resources/Model/Rifle.model",
 				L"Resources/UI/ItemIcons/ItemIcon_StreetSweeper.png",
-				L"[���ݼ��� - ��Ʈ��Ʈ������] : �Ѷ� �Ÿ��� ������ȴ� Ŭ���� ���ݼ���. ������ ���� ���� ���̴�.");
+				L"[���ݼ��� - ��Ʈ��Ʈ������] : �Ѷ� �Ÿ��� ������ȴ� Ŭ���� ���ݼ���. ������ ���� ���� ���̴�.",
+				new Weapon(WeaponType::Rifle));
 			globalitem_index += 1;
 
-			// ���� �� �ε�
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "Pistol_DoubleTroble",
 				"Resources/Model/pistol.model",
 				L"Resources/UI/ItemIcons/ItemIcon_DoubleTroble.png",
-				L"[�ֱ��� - ����Ʈ����] : ������ ������ �� ��� ��ƺ��̴� ������ �ֱ���.");
+				L"[�ֱ��� - ����Ʈ����] : ������ ������ �� ��� ��ƺ��̴� ������ �ֱ���.",
+				new Weapon(WeaponType::Pistol));
 			globalitem_index += 1;
 
-			// ���� �� �ε�
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
 				"Resources/Model/shootgun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_SlagShot.png",
-				L"[���� - �����׽�] : ���� ��⸦ ��� ���� ��ĥ�� ����� ��. ���� ���̶� ���ɵ� �״��� ���� �ʴ�.");
+				L"[���� - �����׽�] : ���� ��⸦ ��� ���� ��ĥ�� ����� ��. ���� ���̶� ���ɵ� �״��� ���� �ʴ�.", new Weapon(WeaponType::Shotgun));
 			globalitem_index += 1;
 
-			// �ӽŰ�(�̴ϰ�) �� �ε�
 			AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
 				"Resources/Model/minigun.model",
 				L"Resources/UI/ItemIcons/ItemIcon_Ratler.png",
-				L"[�ӽŰ� - ��Ʋ��] : ���� ��ǰ�� �����Ÿ��� �Ҹ����� ���� �̸�. ���� ����������� �� �� ����.");
+				L"[�ӽŰ� - ��Ʋ��] : ���� ��ǰ�� �����Ÿ��� �Ҹ����� ���� �̸�. ���� ����������� �� �� ����.", new Weapon(WeaponType::MachineGun));
 			globalitem_index += 1;
 		}
 	}
-
-	/*
-	{
-		ItemTable.push_back(Item(0));
-		ItemTable.push_back(Item(1));
-		ItemTable.push_back(Item(2));
-		ItemTable.push_back(Item(3));
-		HumanoidAnimation animIdle;
-		animIdle.LoadHumanoidAnimation("Resources/Animation/Idle.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animIdle); // Idle
-
-		HumanoidAnimation animWalk;
-		animWalk.LoadHumanoidAnimation("Resources/Animation/Walk.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animWalk); // Walk
-
-		HumanoidAnimation animRun;
-		animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animRun);  // Run
-
-		HumanoidAnimation animAim;
-		animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animAim);  // 3: Aim
-
-		HumanoidAnimation animShoot;
-		animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
-
-		constexpr bool kLoadSniperModel = true;
-		constexpr bool kLoadRifleModel = true;
-		constexpr bool kLoadPistolModel = true;
-		constexpr bool kLoadShotGunModel = true;
-		constexpr bool kLoadMachineGunModel = true;
-
-		// �������� �� �ε�
-		Model* SniperModel = nullptr;
-		if (kLoadSniperModel) {
-			SniperModel = new Model;
-			SniperModel->LoadModelFile2("Resources/Model/sniper.model");
-		}
-
-		// ������ �� �ε�
-		Model* RifleModel = nullptr;
-		if (kLoadRifleModel) {
-			RifleModel = new Model;
-			RifleModel->LoadModelFile2("Resources/Model/Rifle.model");
-		}
-
-		// ���� �� �ε�
-		Model* PistolModel = nullptr;
-		if (kLoadPistolModel) {
-			PistolModel = new Model;
-			PistolModel->LoadModelFile2("Resources/Model/pistol.model");
-		}
-
-		// ���� �� �ε�
-		Model* ShotGunModel = nullptr;
-		if (kLoadShotGunModel) {
-			ShotGunModel = new Model;
-			ShotGunModel->LoadModelFile2("Resources/Model/shootgun.model");
-		}
-
-		//// �ӽŰ�(�̴ϰ�) �� �ε�
-		Model* MachineGunModel = nullptr;
-		if (kLoadMachineGunModel) {
-			MachineGunModel = new Model;
-			MachineGunModel->LoadModelFile2("Resources/Model/minigun.model");
-		}
-
-		Model* PlayerModel = new Model();
-		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
-		int playerMesh_index = Shape::AddModel("Player", PlayerModel);
-
-		Model* MonsterModel = new Model();
-		MonsterModel->LoadModelFile2("Resources/Model/Exo.model");
-		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
-
-		Mesh* portalMesh = new Mesh();
-		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f);
-		Shape::AddMesh("Portal", portalMesh);
-	}
-	*/
 
 	cout << "Game Init end" << endl;
 	cout << "=== Shape Index Check ===" << endl;
@@ -4396,33 +4729,69 @@ void World::Init() {
 	GlobalMaterialCount = GlobalMaterialSiz;
 #endif
 
-	zones.resize(zoneCount);
-	// Zone initialization owns dynamic containers only. The map is loaded once by World.
-	for (int i = 0; i < zoneCount; ++i) {
-		zones[i].world = this;
-		zones[i].zoneId = i;
-		if (IsZoneOwned(i) == false) continue;
-		zones[i].Init();
+	gameworld.ZoneTable.reserve(256);
+	char ZoneName[128] = "Zone_0_0";
+	for (int iz = 0; iz < 10; ++iz) {
+		for (int ix = 0; ix < 10; ++ix) {
+			ZoneName[7] = '0' + iz;
+			ZoneName[5] = '0' + ix;
+
+			// Make Zone
+			Zone* tempZone = new Zone(iz * 10 + ix, ZoneName, ix, iz);
+			gameworld.ZoneTable.push_back(tempZone);
+		}
 	}
 
-	InitCommonMap();
+	//Set Near Zones
+	for (int i = 0; i < gameworld.ZoneTable.size(); ++i) {
+		Zone* tempZone = gameworld.ZoneTable[i];
+		int nearSiz = 1;
+		int nearSiz_5 = 5;
+		for (int k = 0; k < gameworld.ZoneTable.size(); ++k) {
+			Zone* tempZone2 = gameworld.ZoneTable[k];
+			if (tempZone == tempZone2) {
+				continue;
+			}
+			if (abs(tempZone2->x - tempZone->x) + abs(tempZone2->y - tempZone->y) <= 1) {
+				tempZone->nearZones[nearSiz] = tempZone2;
+				nearSiz += 1;
+				continue;
+			}
+			if (abs(tempZone2->x - tempZone->x) <= 1 && abs(tempZone2->y - tempZone->y) <= 1) {
+				tempZone->nearZones[nearSiz_5] = tempZone2;
+				nearSiz_5 += 1;
+			}
+		}
+		tempZone->BakeNear();
+	}
 
-	for (int i = 0; i < zoneCount; ++i) {
+	// Zone initialization owns dynamic containers only. The map is loaded once by World.
+	for (int i = 0; i < gameworld.ZoneTable.size(); ++i) {
+		Zone* z = gameworld.ZoneTable[i];
+		z->Set_world_id_pos(this, i, z->x, z->y);
 		if (IsZoneOwned(i) == false) continue;
-		zones[i].GridCollisionCheck();
-		zones[i].SpawnObjects();
-		zones[i].Spawnboundary();
+		z->Init();
+	}
+
+	//InitCommonMap(); // 이미 Init 내부에 있음.
+
+	for (int i = 0; i < gameworld.ZoneTable.size(); ++i) {
+		Zone* z = gameworld.ZoneTable[i];
+		if (IsZoneOwned(i) == false) continue;
+		z->GridCollisionCheck();
+		z->SpawnObjects();
+		z->Spawnboundary();
 	}
 }
 
 void World::Update() {	
-	for (int i = 0; i < zoneCount; ++i) {
+	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
-		zones[i].Update(DeltaTime);
+		gameworld.ZoneTable[i]->Update(DeltaTime);
 	}
-	for (int i = 0; i < zoneCount; ++i) {
+	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
-		zones[i].FlushSendToClients();
+		gameworld.ZoneTable[i]->FlushSendToClients();
 	}
 }
 
@@ -4439,8 +4808,6 @@ void World::Update() {
 //int World::
 
 //should i separate player delete and gameobject delete?
-
-//Ŭ���̾�Ʈ �ε����� �ش��ϴ� �� ã��
 
 bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 	// [지연 개선] 상시 peer 링크가 있으면 일회성 소켓 대신 그걸로 보낸다.
@@ -4489,7 +4856,7 @@ bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 void World::TryConnectPeers() {
 	if (singleProcessAllZones) return; // 단일 프로세스는 이웃이 같은 메모리에 있어 링크가 필요 없다.
 
-	for (int zi = 0; zi < zoneCount; ++zi) {
+	for (int zi = 0; zi < ZoneTable.size(); ++zi) {
 		if (zi == ownedZoneId) continue;
 		if (IsAdjacentZone(ownedZoneId, zi) == false) continue;
 		if (zi <= ownedZoneId) continue;   // 높은 쪽으로만 connect -> 쌍당 연결 1개
@@ -4541,7 +4908,7 @@ void World::OnPeerLinkEstablished(int clientIndex, int fromServerId) {
 	clients[clientIndex].peerServerId = fromServerId;
 	clients[clientIndex].pObjData = nullptr;
 	clients[clientIndex].objindex = -1;
-	if (fromServerId >= 0 && fromServerId < zoneCount) peerLinkUp[fromServerId] = true;
+	if (fromServerId >= 0 && fromServerId < ZoneTable.size()) peerLinkUp[fromServerId] = true;
 
 	cout << "[Peer] inbound link established from server " << fromServerId << endl;
 }
@@ -4557,10 +4924,10 @@ void World::SendGhostToPeers() {
 
 	GhostPlayerState* arr = (GhostPlayerState*)(buf + sizeof(CTS_GhostSync_Header));
 	int count = 0;
-	Zone& oz = zones[ownedZoneId];
-	for (int i = 0; i < oz.Dynamic_gameObjects.size; ++i) {
-		if (oz.Dynamic_gameObjects.isnull(i)) continue;
-		DynamicGameObject* o = oz.Dynamic_gameObjects[i];
+	Zone* oz = gameworld.ZoneTable[ownedZoneId];
+	for (int i = 0; i < oz->Dynamic_gameObjects.size; ++i) {
+		if (oz->Dynamic_gameObjects.isnull(i)) continue;
+		DynamicGameObject* o = oz->Dynamic_gameObjects[i];
 		if (o == nullptr) continue;
 		if (o->tag[GameObjectTag::Tag_Enable] == false) continue;
 
@@ -4604,11 +4971,11 @@ void World::SendGhostToPeers() {
 void World::OnGhostSync(char* data) {
 	CTS_GhostSync_Header* h = (CTS_GhostSync_Header*)data;
 	int fromZone = h->fromZoneId;
-	if (fromZone < 0 || fromZone >= zoneCount) return;
+	if (fromZone < 0 || fromZone >= ZoneTable.size()) return;
 	if (IsZoneOwned(ownedZoneId) == false) return;
 
 	GhostPlayerState* arr = (GhostPlayerState*)(data + sizeof(CTS_GhostSync_Header));
-	SendDataSaver& outSDS = zones[ownedZoneId].CommonSDS;
+	SendDataSaver& outSDS = gameworld.ZoneTable[ownedZoneId]->CommonSDS;
 
 	int seen[256];
 	int seenCount = 0;
@@ -4648,11 +5015,11 @@ void World::OnGhostSync(char* data) {
 			ghost->SendGameObject(idx, outSDS);  // 처음 본 고스트 -> 풀 생성 패킷 1회
 		}
 		else {
-			zones[fromZone].Sending_ChangeGameObjectMember<matrix>(outSDS, idx, ghost, (GameObjectType)t, &ghost->worldMat);
+			gameworld.ZoneTable[fromZone]->Sending_ChangeGameObjectMember<matrix>(outSDS, idx, ghost, (GameObjectType)t, &ghost->worldMat);
 			if (t == GameObjectType::_Monster) {
 				Monster* mg = (Monster*)ghost;
-				zones[fromZone].Sending_ChangeGameObjectMember<float>(outSDS, idx, mg, (GameObjectType)t, &mg->HP);
-				zones[fromZone].Sending_ChangeGameObjectMember<bool>(outSDS, idx, mg, (GameObjectType)t, &mg->isDead);
+				gameworld.ZoneTable[fromZone]->Sending_ChangeGameObjectMember<float>(outSDS, idx, mg, (GameObjectType)t, &mg->HP);
+				gameworld.ZoneTable[fromZone]->Sending_ChangeGameObjectMember<bool>(outSDS, idx, mg, (GameObjectType)t, &mg->isDead);
 			}
 		}
 	}
@@ -4662,7 +5029,7 @@ void World::OnGhostSync(char* data) {
 		bool found = false;
 		for (int s = 0; s < seenCount; ++s) { if (seen[s] == it->first) { found = true; break; } }
 		if (found == false) {
-			zones[fromZone].Sending_DeleteGameObject(outSDS, it->first);
+			gameworld.ZoneTable[fromZone]->Sending_DeleteGameObject(outSDS, it->first);
 			delete it->second;
 			it = ghostPlayers.erase(it);
 		}
@@ -4706,16 +5073,16 @@ void World::SendMonsterHandoff(int dstZoneId, Monster* m) {
 void World::SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp) {
 	if (IsZoneOwned(ownedZoneId) == false) return;
 	if (monsterType < 0 || monsterType >= (int)MonsterType::Max) return;  // [SAFE] 잘못된 타입이면 무시(크래시 방어)
-	Zone& z = zones[ownedZoneId];
+	Zone* z = gameworld.ZoneTable[ownedZoneId];
 	Monster* mon = new Monster();
-	mon->zone = &z;
+	mon->zone = z;
 	mon->ApplyMonsterData((MonsterType)monsterType);
 	mon->Init(XMMatrixTranslation(pos.f3.x, pos.f3.y, pos.f3.z));
 	mon->HP = hp;
 	mon->MaxHP = maxhp;
 	mon->handoffCooldown = 1.0f;   // 받자마자 다시 넘어가지 않게(thrashing 방지)
-	z.NewObject(mon, GameObjectType::_Monster);
-	z.PushGameObject(mon);
+	z->NewObject(mon, GameObjectType::_Monster);
+	z->PushGameObject(mon);
 }
 
 void World::AcceptClientHello(int clientIndex) {
@@ -4731,7 +5098,14 @@ void World::AcceptClientHello(int clientIndex) {
 	Player* p = new Player();
 	p->clientIndex = clientIndex;
 	p->worldMat.Id();
-	p->worldMat.pos.f3.y = commonMap.AABB[1].y - 1;
+	Zone* StartZone = gameworld.ZoneTable[StartzoneId];
+	vec4 avgpos = StartZone->map.AABB[0] + StartZone->map.AABB[1];
+	avgpos *= 0.5f;
+	avgpos.x = 0.5f * (StartZone->BasicAABB_onlyXZ.x + StartZone->BasicAABB_onlyXZ.z);
+	avgpos.z = 0.5f * (StartZone->BasicAABB_onlyXZ.y + StartZone->BasicAABB_onlyXZ.w);
+	avgpos.w = 1;
+	p->worldMat.pos = avgpos;
+	p->worldMat.pos.f3.y = StartZone->map.AABB[1].y - 4;
 	p->SetShape(Shape::StrToShapeIndex["Player"]);
 	for (int i = 0; i < 36; ++i) {
 		p->Inventory[i].id = 0;
@@ -4740,8 +5114,8 @@ void World::AcceptClientHello(int clientIndex) {
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = StartzoneId;
-	vec4 spawnPos(0.0f, 10.0f, 0.0f, 1.0f);
-	int objindex = zones[StartzoneId].AddPlayer(clientIndex, p, spawnPos);
+	vec4 spawnPos = p->worldMat.pos;
+	int objindex = StartZone->AddPlayer(clientIndex, p, spawnPos);
 	clients[clientIndex].objindex = objindex;
 }
 
@@ -4761,7 +5135,7 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	// success path indexed clients[] / zones[] directly. If clientIndex or data.dstZoneId is
 	// inconsistent (ABI mismatch / corrupted packet), that is an out-of-bounds crash. Drop instead.
 	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return false;
-	if (data.dstZoneId < 0 || data.dstZoneId >= zoneCount) return false;
+	if (data.dstZoneId < 0 || data.dstZoneId >= ZoneTable.size()) return false;
 
 	clients[clientIndex].PersonalSDS.Init(4096);
 	clients[clientIndex].pendingTransferToken = 0;
@@ -4789,7 +5163,12 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	memcpy(p->SkillCooldown, data.SkillCooldown, sizeof(p->SkillCooldown));
 	memcpy(p->SkillCooldownFlow, data.SkillCooldownFlow, sizeof(p->SkillCooldownFlow));
 	p->m_currentWeaponType = data.m_currentWeaponType;
-	p->weapon = Weapon((WeaponType)data.m_currentWeaponType);
+	
+	p->weapon[0] = data.weapon[0];
+	p->weapon[1] = data.weapon[1];
+	p->weapon[2] = data.weapon[2];
+	p->SelectedWeapon = data.SelectedWeapone;
+
 	p->m_yaw = data.yaw;
 	p->m_pitch = data.pitch;
 	for (int i = 0; i < 36; ++i) {
@@ -4798,7 +5177,7 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = data.dstZoneId;
-	int objindex = zones[data.dstZoneId].AddPlayer(clientIndex, p, data.spawnPos, false);
+	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, false);
 	clients[clientIndex].objindex = objindex;
 	return true;
 }
@@ -4819,9 +5198,9 @@ Zone* World::GetClientZone(int clientIndex)
 	if (clients.isnull(clientIndex)) return nullptr;
 
 	int zid = clients[clientIndex].zoneId;
-	if (zid < 0 || zid >= zoneCount) return nullptr;
+	if (zid < 0 || zid >= ZoneTable.size()) return nullptr;
 
-	return &zones[zid];
+	return gameworld.ZoneTable[zid];
 }
 
 void World::PrintOffset() {
@@ -4857,6 +5236,14 @@ void World::PrintOffset() {
 	ofs.close();
 }
 
+int World::GetStartTalk(Player* p, PeacefulNPC* npc)
+{
+	if (npc->NPCID == 0) {
+		if (p->CompleteQuestBitArr[0] == false) return 0;
+	}
+	return -1;
+}
+
 void ClientData::DisconnectToServer(int index) {
 	if (index < 0 || index >= gameworld.clients.size) return;
 	if (gameworld.clients.isnull(index)) return;
@@ -4867,7 +5254,7 @@ void ClientData::DisconnectToServer(int index) {
 	// 링크 상태만 리셋한 뒤 종료한다. (다음 TryConnectPeers 가 재연결을 시도)
 	if (client.isServerPeer) {
 		int lostServerId = client.peerServerId;
-		if (lostServerId >= 0 && lostServerId < World::zoneCount) gameworld.peerLinkUp[lostServerId] = false;
+		if (lostServerId >= 0 && lostServerId < gameworld.ZoneTable.size()) gameworld.peerLinkUp[lostServerId] = false;
 		if (client.socket != INVALID_SOCKET) {
 			closesocket(client.socket);
 			client.socket = INVALID_SOCKET;
@@ -4939,10 +5326,10 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename) {
 void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 	if (clientIndex < 0 || clientIndex >= clients.size) return;
 	if (clients.isnull(clientIndex)) return;
-	if (dstZoneId < 0 || dstZoneId >= zoneCount) return;
+	if (dstZoneId < 0 || dstZoneId >= ZoneTable.size()) return;
 
 	int srcZoneId = clients[clientIndex].zoneId;
-	if (srcZoneId < 0 || srcZoneId >= zoneCount) return;
+	if (srcZoneId < 0 || srcZoneId >= ZoneTable.size()) return;
 	if (srcZoneId == dstZoneId) return;
 
 	Player* player = clients[clientIndex].pObjData;
@@ -4980,6 +5367,10 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		for (int i = 0; i < 36; ++i) {
 			data.Inventory[i] = player->Inventory[i];
 		}
+		data.weapon[0] = player->weapon[0];
+		data.weapon[1] = player->weapon[1];
+		data.weapon[2] = player->weapon[2];
+		data.SelectedWeapone = player->SelectedWeapon;
 
 		if (SendPlayerTransferToServer(data) == false) {
 			cout << "[ZoneMove] remote transfer send failed. dstZone=" << dstZoneId << endl;
@@ -4987,16 +5378,62 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		}
 
 		Sending_ServerTransfer(clients[clientIndex].PersonalSDS, dstZoneId, GetZoneIP(dstZoneId), GetZonePort(dstZoneId), data.transferToken);
-		zones[srcZoneId].RemovePlayer(clientIndex);
+		gameworld.ZoneTable[srcZoneId]->RemovePlayer(clientIndex);
 		delete player;
 		clients[clientIndex].pObjData = nullptr;
 		clients[clientIndex].objindex = -1;
 		return;
 	}
 
-	zones[srcZoneId].RemovePlayer(clientIndex);
+	gameworld.ZoneTable[srcZoneId]->RemovePlayer(clientIndex);
 	// [PERF/FIX ②] 심리스 로컬 이동: fullWorldSnapshot=false 로 동적객체 버스트 생략.
 	// 클라는 인접 존 객체를 이미 보유 중이며, 가시성 기반 cleanup 이 그걸 유지한다.
-	zones[dstZoneId].AddPlayer(clientIndex, player, spawnPos, true, false);
+	gameworld.ZoneTable[dstZoneId]->AddPlayer(clientIndex, player, spawnPos, true, false);
 }
 
+NPCTalkData::NPCTalkData()
+{
+	text = nullptr;
+	selectCnt = 0;
+	NextEscape = true;
+	sel[0] = TalkSelection();
+	sel[1] = TalkSelection();
+	sel[2] = TalkSelection();
+	sel[3] = TalkSelection();
+}
+
+NPCTalkData::NPCTalkData(const wchar_t* txt, bool nxtEsc, TalkSelection sel1, TalkSelection sel2, TalkSelection sel3, TalkSelection sel4)
+{
+	text = txt;
+	NextEscape = nxtEsc;
+	if (sel1.selectionText == nullptr) {
+		selectCnt = 0;
+		sel[0] = sel1;
+	}
+	else if (sel2.selectionText == nullptr) {
+		selectCnt = 1;
+		sel[0] = sel1;
+		sel[1] = sel2;
+	}
+	else if (sel3.selectionText == nullptr) {
+		selectCnt = 2;
+		sel[0] = sel1;
+		sel[1] = sel2;
+		sel[2] = sel3;
+	}
+	else if (sel4.selectionText == nullptr) {
+		selectCnt = 3;
+		sel[0] = sel1;
+		sel[1] = sel2;
+		sel[2] = sel3;
+		sel[3] = sel4;
+	}
+}
+
+void Player::EraseQuest(int index)
+{
+	QuestArr.erase(QuestArr.begin() + index);
+	Quest* q = QuestPrograss[index];
+	delete q;
+	QuestPrograss.erase(QuestPrograss.begin() + index);
+}

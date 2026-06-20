@@ -15,6 +15,17 @@ vector<string> Shape::ShapeStrTable;
 
 #pragma region Global_InitCode
 
+LocalRootSigData::LocalRootSigData(unsigned int VBOff, unsigned int IBOff, unsigned int MaterialSt, int ZoneID) :
+	VBOffset{ VBOff }, IBOffset{ IBOff }
+{
+	int off = 0;
+	if (ZoneID > 0) {
+		Zone* zone = game.ZoneTable[ZoneID];
+		off = zone->Asset_OffsetMul + 1;
+	}
+	MaterialStart = off * Zone::MAXZoneMaterialCount + MaterialSt;
+}
+
 void GPUCmd::SetShader(Shader* shader, ShaderType reg) {
 	shader->Add_RegisterShaderCommand(*this, reg);
 }
@@ -133,7 +144,7 @@ void SDFTextPageTextureBuffer::BakeSDF() {
 		if (DefaultTextureBuffer.resource == nullptr) {
 			DefaultTextureBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_DIMENSION_TEXTURE2D, MaxWidth, MaxHeight, DXGI_FORMAT_R8_UNORM);
 
-			int index = gd.TextureDescriptorAllotter.Alloc();
+			int index = gd.DynamicDescriptorAllotter.Alloc();
 			SDFTextureSRV.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -209,7 +220,7 @@ D3D12_RESOURCE_BARRIER GPUResource::GetResourceBarrierTransition(D3D12_RESOURCE_
 	return d3dResourceBarrier;
 }
 
-BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const BYTE* pInitImage, DXGI_FORMAT Format, bool ImmortalShaderVisible)
+BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const BYTE* pInitImage, DXGI_FORMAT Format, bool ImmortalShaderVisible, int ZoneID)
 {
 	if (resource != nullptr) return FALSE;
 
@@ -270,10 +281,20 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 	//pGPU = resource->GetGPUVirtualAddress();
 
 	if (ImmortalShaderVisible == false) {
-		int srvIndex = gd.TextureDescriptorAllotter.Alloc();
+		int srvIndex = 0;
+		int zoneoff = -1;
+		if (ZoneID != -1) {
+			Zone* zone = game.ZoneTable[ZoneID];
+			zoneoff = zone->Asset_OffsetMul;
+			srvIndex = gd.DynamicDescriptorAllotterPerZone[zoneoff].Alloc();
+		}
+		else {
+			srvIndex = gd.DynamicDescriptorAllotter.Alloc();
+		}
+		
 		if (srvIndex >= 0)
 		{
-			descindex = DescIndex(false, srvIndex);
+			descindex = DescIndex(false, srvIndex, 'n', zoneoff);
 			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, descindex.hCreation.hcpu);
 		}
 		else
@@ -300,7 +321,7 @@ BOOL GPUResource::CreateTexture_fromImageBuffer(UINT Width, UINT Height, const B
 	return TRUE;
 }
 
-void GPUResource::CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Format, int mipmapLevel, bool ImmortalShaderVisible)
+void GPUResource::CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Format, int mipmapLevel, bool ImmortalShaderVisible, int ZoneID)
 {
 	int len = wcslen(filename);
 	wchar_t* DDSName = nullptr;
@@ -417,10 +438,20 @@ TEXTURE_LOAD_START:
 	//pGPU = resource->GetGPUVirtualAddress();
 
 	if (ImmortalShaderVisible == false) {
-		int srvIndex = gd.TextureDescriptorAllotter.Alloc();
+		int srvIndex = 0;
+		int zoneoff = -1;
+		if (ZoneID != -1) {
+			Zone* zone = game.ZoneTable[ZoneID];
+			zoneoff = zone->Asset_OffsetMul;
+			srvIndex = gd.DynamicDescriptorAllotterPerZone[zoneoff].Alloc();
+		}
+		else {
+			srvIndex = gd.DynamicDescriptorAllotter.Alloc();
+		}
+
 		if (srvIndex >= 0)
 		{
-			descindex.Set(false, srvIndex);
+			descindex.Set(false, srvIndex, 'n', zoneoff);
 			gd.pDevice->CreateShaderResourceView(resource, &SRVDesc, descindex.hCreation.hcpu);
 		}
 		else
@@ -584,11 +615,11 @@ BOOL SVDescPool2::Initialize(UINT MaxDescriptorCount)
 	InitDescArrSiz = 0;
 	InitDescArrCap = TextureSRVStart = 64; // 64부터 Desc 배열관리가 시작됨.
 	TextureSRVSiz = 0;
-	TextureSRVCap = 64;
+	TextureSRVCap = Zone::MAXZoneTextureCount * 10;
 	MaterialCBVSiz = 0;
-	MaterialCBVCap = 64;
+	MaterialCBVCap = Zone::MAXZoneMaterialCount * 10;
 	InstancingSRVSiz = 0;
-	InstancingSRVCap = 64;
+	InstancingSRVCap = 256;
 
 	BOOL bResult = FALSE;
 	MaxDescCount = MaxDescriptorCount;
@@ -691,6 +722,40 @@ BOOL SVDescPool2::ImmortalAlloc_MaterialCBV(DescIndex* pindex, UINT DescriptorCo
 	return bResult;
 }
 
+BOOL SVDescPool2::ImmortalAlloc_TextureSRV_PerZone(DescIndex* pindex, UINT DescriptorCount, int ZoneId)
+{
+	int off = 0;
+	if (ZoneId != -1) {
+		Zone* zone = game.ZoneTable[ZoneId];
+		off = zone->Asset_OffsetMul + 1;
+	}
+	isImmortalChange = true;
+	if (TextureSRVSizePerZone[off] + DescriptorCount > Zone::MAXZoneTextureCount)
+	{
+		return FALSE;
+	}
+	pindex->Set(true, InitDescArrCap + off * Zone::MAXZoneTextureCount + TextureSRVSizePerZone[off]);
+	TextureSRVSizePerZone[off] += DescriptorCount;
+	return TRUE;
+}
+
+BOOL SVDescPool2::ImmortalAlloc_MaterialCBV_PerZone(DescIndex* pindex, UINT DescriptorCount, int ZoneId)
+{
+	int off = 0;
+	if (ZoneId != -1) {
+		Zone* zone = game.ZoneTable[ZoneId];
+		off = zone->Asset_OffsetMul + 1;
+	}
+	isImmortalChange = true;
+	if (MaterialCBVSizePerZone[off] + DescriptorCount > Zone::MAXZoneMaterialCount)
+	{
+		return FALSE;
+	}
+	pindex->Set(true, InitDescArrCap + TextureSRVCap + off * Zone::MAXZoneMaterialCount + MaterialCBVSizePerZone[off]);
+	MaterialCBVSizePerZone[off] += DescriptorCount;
+	return TRUE;
+}
+
 BOOL SVDescPool2::ImmortalAlloc_InstancingSRV(DescIndex* pindex, UINT DescriptorCount)
 {
 	isImmortalChange = true;
@@ -743,8 +808,10 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	ui32 MatCBVdelta = afterMatCBVStart - beforeMatCBVStart;
 	for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
 		Material* mat = game.RenderMaterialTable[i];
-		mat->TextureSRVTableIndex.index += TexturesSRVdelta;
-		mat->CB_Resource.descindex.index += MatCBVdelta;
+		if (mat != nullptr) {
+			mat->TextureSRVTableIndex.index += TexturesSRVdelta;
+			mat->CB_Resource.descindex.index += MatCBVdelta;
+		}
 	}
 
 	ui32 beforeInstancingSRVStart = TextureSRVStart + TextureSRVCap + MaterialCBVCap;
@@ -767,8 +834,9 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	DestSizeArr[0] = ImmortalSize;
 	gd.pDevice->CopyDescriptors(1, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
 
+	// 이 코드의 이유 = 빈 공간의 Desc들을 더미로 채우기
 	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + TextureSRVSiz);
-	if (game.RenderTextureTable.size() > 0) {
+	if (game.RenderTextureTable.size() > 0 && game.RenderTextureTable[0] != nullptr) {
 		for (int i = 0; i < TextureSRVCap - TextureSRVSiz; ++i) {
 			gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hRender.hcpu, game.RenderTextureTable[0]->descindex.hCreation.hcpu, descheaptype);
 			dummyTexSRV.index += 1;
@@ -776,7 +844,7 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	}
 
 	DescIndex dummyMatCBV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVSiz);
-	if (game.RenderMaterialTable.size() > 0) {
+	if (game.RenderMaterialTable.size() > 0 && game.RenderMaterialTable[0] != nullptr) {
 		for (int i = 0; i < MaterialCBVCap - MaterialCBVSiz; ++i) {
 			gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hRender.hcpu, game.RenderMaterialTable[0]->CB_Resource.descindex.hCreation.hcpu, descheaptype);
 			dummyMatCBV.index += 1;
@@ -784,7 +852,7 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	}
 
 	DescIndex dummyInstancingSRV = DescIndex(true, TextureSRVStart + TextureSRVCap + MaterialCBVCap + InstancingSRVSiz);
-	if (game.RenderInstancingTable.size() > 0) {
+	if (game.RenderInstancingTable.size() > 0 && game.RenderInstancingTable[0] != nullptr) {
 		for (int i = 0; i < InstancingSRVCap - InstancingSRVSiz; ++i) {
 			gd.pDevice->CopyDescriptorsSimple(1, dummyInstancingSRV.hRender.hcpu, game.RenderInstancingTable[0]->InstancingSRVIndex.hCreation.hcpu, descheaptype);
 			dummyInstancingSRV.index += 1;
@@ -1174,7 +1242,8 @@ GlobalDeviceInit_InitMultisamplingVariable:
 
 	MainRenderTarget_PixelFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	ShaderVisibleDescPool.Initialize(1024 * 32);
+	int InitSize = 1024 * 64 + Zone::MAXZoneMaterialCount * 10 + Zone::MAXZoneTextureCount * 10;
+	ShaderVisibleDescPool.Initialize(InitSize);
 
 	NewSwapChain();
 	Create_RTV_DSV_DescriptorHeaps();
@@ -1187,7 +1256,10 @@ GlobalDeviceInit_InitMultisamplingVariable:
 	//	CreateGbufferRenderTargetViews();
 	//}
 
-	TextureDescriptorAllotter.Init(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 16384);
+	DynamicDescriptorAllotter.Init(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 16384);
+	for (int i = 0; i < 9; ++i) {
+		DynamicDescriptorAllotterPerZone[i].Init(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 16384);
+	}
 	//why cannot be shader visible in Saver DescriptorHeap?
 	//answer : CreateConstantBufferView, CreateShaderResourceView -> only CPU Descriptor Working. so Shader Invisible.
 
@@ -2112,12 +2184,12 @@ void GlobalDevice::GetBakedSDFs() {
 
 	if (registerd_SDFTextSRVCount > 0) {
 		for (int i = 0;i < registerd_SDFTextSRVCount;++i) {
-			gd.TextureDescriptorAllotter.Free(SDFTextureArr[i]->SDFTextureSRV.index);
+			gd.DynamicDescriptorAllotter.Free(SDFTextureArr[i]->SDFTextureSRV.index);
 		}
 	}
 
 	for (int i = 0;i < SDFTextureArr.size(); ++i) {
-		int index = gd.TextureDescriptorAllotter.Alloc();
+		int index = gd.DynamicDescriptorAllotter.Alloc();
 		SDFTextureArr[i]->SDFTextureSRV.Set(false, index, 'n');
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -2571,8 +2643,14 @@ void RayTracingMesh::StaticInit()
 	gd.pDevice->CreateShaderResourceView(indexBuffer, &srvDesc_UAV_IB, dh.hcpu);
 }
 
-void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes)
+void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes, int ZoneID)
 {
+	int off = 0;
+	if (ZoneID >= 0) {
+		Zone* zone = game.ZoneTable[ZoneID];
+		off = zone->Asset_OffsetMul + 1;
+	}
+
 	subMeshCount = SubMeshNum;
 	int* SubMeshIndexArr = SubMeshIndexes;
 	if (SubMeshIndexes == nullptr) {
@@ -2610,19 +2688,19 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 	}*/
 	addtionalIB_Bytesiz = ibarr.size() * sizeof(TriangleIndex);
 
-	bool vb_con = VertexBufferByteSize + addtionalVB_Bytesiz <= VertexBufferCapacity;
-	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
+	bool vb_con = VertexBufferByteSize[off] + addtionalVB_Bytesiz <= VertexBufferCapacityPerZone;
+	bool ib_con = IndexBufferByteSize[off] + addtionalIB_Bytesiz <= IndexBufferCapacityPerZone;
 
 	IBStartOffset = new UINT64[2]; /*new UINT64[subMeshCount + 1];*/
 	if (vb_con && ib_con) {
 		// Create New Mesh
-		VBStartOffset = VertexBufferByteSize;
+		VBStartOffset = VertexBufferCapacityPerZone * off + VertexBufferByteSize[off];
 		/*for (int i = 0; i < subMeshCount; ++i) {
 			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
 		}*/
 		//IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;
-		IBStartOffset[0] = IndexBufferByteSize;
-		IBStartOffset[1] = IndexBufferByteSize + addtionalIB_Bytesiz;
+		IBStartOffset[0] = IndexBufferCapacityPerZone * off + IndexBufferByteSize[off];
+		IBStartOffset[1] = IndexBufferCapacityPerZone * off + IndexBufferByteSize[off] + addtionalIB_Bytesiz;
 
 		pVBMapped = &pVBMappedStart[0];
 		pIBMapped = &pIBMappedStart[0];
@@ -2756,12 +2834,12 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
 
-		VertexBufferByteSize += addtionalVB_Bytesiz;
-		VertexBufferByteSize = VBAlign * (1 + ((VertexBufferByteSize - 1) / VBAlign));
+		VertexBufferByteSize[off] += addtionalVB_Bytesiz;
+		VertexBufferByteSize[off] = VBAlign * (1 + ((VertexBufferByteSize[off] - 1) / VBAlign));
 		//VertexBufferByteSize = ((VertexBufferByteSize + 255) & ~255);
 
-		IndexBufferByteSize += addtionalIB_Bytesiz;
-		IndexBufferByteSize = IBAlign * (1 + ((IndexBufferByteSize - 1) / IBAlign));
+		IndexBufferByteSize[off] += addtionalIB_Bytesiz;
+		IndexBufferByteSize[off] = IBAlign * (1 + ((IndexBufferByteSize[off] - 1) / IBAlign));
 		//IndexBufferByteSize = ((IndexBufferByteSize + 255) & ~255);
 		/*if (initialCmdStateClose == false) {
 			gd.CmdReset(commandList, commandAllocator);
@@ -2774,8 +2852,8 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 				dbglog1(L"Raytracing VB additional capacity require! %d \n", RequireByteVB);
 			}
 			else {
-				dbglog1(L"Raytracing VB additional capacity require! %d \n", VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacity);
-				RequireByteVB += VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacity;
+				dbglog1(L"Raytracing VB additional capacity require! %d \n", VertexBufferByteSize + addtionalVB_Bytesiz - VertexBufferCapacityPerZone);
+				RequireByteVB += VertexBufferByteSize[off] + addtionalVB_Bytesiz - VertexBufferCapacityPerZone;
 				VBisFulling = true;
 			}
 		}
@@ -2788,7 +2866,7 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		else {
 			if (IBisFulling == false) {
 				IBisFulling = true;
-				RequireByteIB = IndexBufferByteSize + addtionalIB_Bytesiz - IndexBufferCapacity;
+				RequireByteIB = IndexBufferByteSize[off] + addtionalIB_Bytesiz - IndexBufferCapacityPerZone;
 			}
 			else {
 				RequireByteIB += addtionalIB_Bytesiz;
@@ -2801,6 +2879,9 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 
 void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum, int* SubMeshIndexes)
 {
+	//UAV는 무조건 글로벌이기 때문.
+	int off = 0;
+
 	static bool VBisFulling = false;
 	static UINT RequireByteVB = 0;
 	static bool IBisFulling = false;
@@ -2958,6 +3039,9 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 
 void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes)
 {
+	//UAV는 무조건 글로벌이기 때문.
+	int off = 0;
+
 	subMeshCount = SubMeshNum;
 	int* SubMeshIndexArr = SubMeshIndexes;
 	if (SubMeshIndexes == nullptr) {
@@ -2994,7 +3078,7 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 	}*/
 	addtionalIB_Bytesiz = ibarr.size() * sizeof(TriangleIndex);
 
-	bool ib_con = IndexBufferByteSize + addtionalIB_Bytesiz <= IndexBufferCapacity;
+	bool ib_con = IndexBufferByteSize[off] + addtionalIB_Bytesiz <= IndexBufferCapacityPerZone;
 	//IBStartOffset = new UINT64[subMeshCount + 1];
 	IBStartOffset = new UINT64[2];
 	if (ib_con) {
@@ -3003,8 +3087,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 			IBStartOffset[i] = IndexBufferByteSize + IBByteStart[i];
 		}
 		IBStartOffset[subMeshCount] = IndexBufferByteSize + addtionalIB_Bytesiz;*/
-		IBStartOffset[0] = IndexBufferByteSize;
-		IBStartOffset[1] = IndexBufferByteSize + addtionalIB_Bytesiz;
+		IBStartOffset[0] = IndexBufferCapacityPerZone * off + IndexBufferByteSize[off];
+		IBStartOffset[1] = IndexBufferCapacityPerZone * off + IndexBufferByteSize[off] + addtionalIB_Bytesiz;
 
 		pIBMapped = &pIBMappedStart[0];
 
@@ -3048,8 +3132,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 			gd.gpucmd.Reset(true);
 		}
 
-		IndexBufferByteSize += addtionalIB_Bytesiz;
-		IndexBufferByteSize = IBAlign * (1 + ((IndexBufferByteSize - 1) / IBAlign));
+		IndexBufferByteSize[off] += addtionalIB_Bytesiz;
+		IndexBufferByteSize[off] = IBAlign * (1 + ((IndexBufferByteSize[off] - 1) / IBAlign));
 	}
 	else {
 		if (RequireByteIB > 0) {
@@ -3061,7 +3145,7 @@ void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> i
 		else {
 			if (IBisFulling == false) {
 				IBisFulling = true;
-				RequireByteIB = IndexBufferByteSize + addtionalIB_Bytesiz - IndexBufferCapacity;
+				RequireByteIB = IndexBufferByteSize[off] + addtionalIB_Bytesiz - IndexBufferCapacityPerZone;
 			}
 			else {
 				RequireByteIB += addtionalIB_Bytesiz;
@@ -3441,7 +3525,7 @@ void Mesh::InstancingStruct::Init(unsigned int capacity, Mesh* _mesh)
 	StructuredBuffer.resource->Map(0, NULL, (void**)&InstanceDataArr);
 	
 	if (game.isAssetAddingInGlobal) {
-		int index = gd.TextureDescriptorAllotter.Alloc();
+		int index = gd.DynamicDescriptorAllotter.Alloc();
 		InstancingSRVIndex.Set(false, index);
 		//game.RenderInstancingTable.push_back(this);
 	}
@@ -4071,7 +4155,7 @@ void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
-void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SubMeshNum, int* SubMeshIndexArr, bool include_DXR)
+void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SubMeshNum, int* SubMeshIndexArr, bool include_DXR, int ZoneID)
 {
 	if (!IsAutoLODGenerated) {
 		sourceVertexData = vert;
@@ -4099,7 +4183,7 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 	}
 
 	if (gd.isSupportRaytracing) {
-		rmesh.AllocateRaytracingMesh(vert, inds, SubMeshNum, SubMeshIndexStart);
+		rmesh.AllocateRaytracingMesh(vert, inds, SubMeshNum, SubMeshIndexStart, ZoneID);
 
 		VertexBufferView.BufferLocation = RayTracingMesh::vertexBuffer->GetGPUVirtualAddress() + rmesh.VBStartOffset;
 		VertexBufferView.StrideInBytes = sizeof(RayTracingMesh::Vertex);
@@ -4130,12 +4214,12 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 	}
 	InstancingInit();
 	game.AddMesh(this);
-	if (!IsAutoLODGenerated) {
+	/*if (!IsAutoLODGenerated) {
 		AutoLOD_RegisterBumpMesh(this);
-	}
+	}*/
 }
 
-void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering, bool include_DXR)
+void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering, bool include_DXR, int ZoneID)
 {
 	std::vector< Vertex > temp_vertices;
 	std::vector< TriangleIndex > TrianglePool;
@@ -4252,7 +4336,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 
 	SetOBBDataWithAABB(AABB[0], AABB[1]);
 
-	CreateMesh_FromVertexAndIndexData(temp_vertices, TrianglePool, 1, nullptr, gd.isSupportRaytracing);
+	CreateMesh_FromVertexAndIndexData(temp_vertices, TrianglePool, 1, nullptr, gd.isSupportRaytracing, ZoneID);
 
 	InstancingInit();
 	game.AddMesh(this);
@@ -4459,7 +4543,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 		}
 	}
 
-
+	// 문자메쉬는 무조건 글로벌임.
 	CreateMesh_FromVertexAndIndexData(temp_vertices, TrianglePool);
 }
 
@@ -4579,7 +4663,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 		RenderVBufferView[1].StrideInBytes = sizeof(BoneData);
 		RenderVBufferView[1].SizeInBytes = sizeof(BoneData) * VertexNum;
 
-		int index = gd.TextureDescriptorAllotter.Alloc();
+		int index = gd.DynamicDescriptorAllotter.Alloc();
 		VertexSRV = DescIndex(false, index);
 		D3D12_SHADER_RESOURCE_VIEW_DESC Vertex_SRVdesc = {};
 		Vertex_SRVdesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -4590,7 +4674,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 		Vertex_SRVdesc.Buffer.StructureByteStride = sizeof(Vertex);
 		gd.pDevice->CreateShaderResourceView(VertexBuffer.resource, &Vertex_SRVdesc, VertexSRV.hCreation.hcpu);
 
-		index = gd.TextureDescriptorAllotter.Alloc();
+		index = gd.DynamicDescriptorAllotter.Alloc();
 		BoneSRV = DescIndex(false, index);
 		D3D12_SHADER_RESOURCE_VIEW_DESC Bone_SRVdesc = {};
 		Bone_SRVdesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -4658,8 +4742,8 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 	ToOffsetMatrixsCB_Upload.Release();
 	gd.gpucmd.Reset(true);
 
-	int n = gd.TextureDescriptorAllotter.Alloc();
-	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.TextureDescriptorAllotter.GetCPUHandle(n);
+	int n = gd.DynamicDescriptorAllotter.Alloc();
+	D3D12_CPU_DESCRIPTOR_HANDLE hCPU = gd.DynamicDescriptorAllotter.GetCPUHandle(n);
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
 	cbvDesc.BufferLocation = ToOffsetMatrixsCB.resource->GetGPUVirtualAddress();
 	cbvDesc.SizeInBytes = ncbElementBytes;
@@ -4700,11 +4784,11 @@ void BumpSkinMesh::Release()
 	BoneWeightBuffer.Release();
 	BoneWeightUploadBuffer.Release();
 	if (VertexSRV.type == 'n') {
-		gd.TextureDescriptorAllotter.Free(VertexSRV.index);
+		gd.DynamicDescriptorAllotter.Free(VertexSRV.index);
 		VertexSRV.Set(false, 0, 0);
 	}
 	if (BoneSRV.type == 'n') {
-		gd.TextureDescriptorAllotter.Free(BoneSRV.index);
+		gd.DynamicDescriptorAllotter.Free(BoneSRV.index);
 		BoneSRV.Set(false, 0, 0);
 	}
 	rmesh.Release();
@@ -5021,8 +5105,13 @@ void ModelNode::Release() {
 	}
 }
 
-void Model::LoadModelFile2(string filename)
+void Model::LoadModelFile2(string filename, int ZoneId)
 {
+	Zone* zone = nullptr;
+	if (ZoneId >= 0) {
+		zone = game.ZoneTable[ZoneId];
+	}
+
 	ifstream ifs{ filename, ios_base::binary };
 	ifs.read((char*)&mNumMeshes, sizeof(unsigned int));
 	mMeshes = new Mesh * [mNumMeshes];
@@ -5037,7 +5126,15 @@ void Model::LoadModelFile2(string filename)
 	vector<vector<BumpSkinMesh::BoneData>> skinboneWeights_Arr;
 
 	int BSMCount = 0;
-	MaterialTableStart = game.MaterialTable.size();
+
+	vector<Material*>* MaterialTable = &game.MaterialTable;
+	int MaterialOff = 0;
+	if (ZoneId >= 0) {
+		MaterialTable = &zone->MaterialTable;
+		MaterialOff = (zone->Asset_OffsetMul + 1) * Zone::MAXZoneMaterialCount;
+	}
+	MaterialTableStart = MaterialTable->size();
+	
 	for (int i = 0; i < mNumMeshes; ++i) {
 		bool hasBone = false;
 		ifs.read((char*)&hasBone, sizeof(bool));
@@ -5206,7 +5303,7 @@ void Model::LoadModelFile2(string filename)
 			}
 
 			mesh->SetOBBDataWithAABB(MAABB[0], MAABB[1]);
-			mesh->CreateMesh_FromVertexAndIndexData(vertices, indexs, subMeshCount, SubMeshSlots);
+			mesh->CreateMesh_FromVertexAndIndexData(vertices, indexs, subMeshCount, SubMeshSlots, true, ZoneId);
 			mMeshes[i] = mesh;
 		}
 	}
@@ -5291,6 +5388,7 @@ void Model::LoadModelFile2(string filename)
 			for (int u = 0; u < num_materials; ++u) {
 				int material_id = 0;
 				ifs.read((char*)&material_id, sizeof(int));
+				material_id += MaterialOff;
 				material_id += MaterialTableStart;
 				Nodes[i].materialIndex[u] = material_id;
 			}
@@ -5325,10 +5423,20 @@ void Model::LoadModelFile2(string filename)
 	//new2
 
 	//mTextures = new GPUResource * [mNumTextures];
-	TextureTableStart = game.TextureTable.size();
+	vector<GPUResource*>* TextureTable = nullptr;
+	if (ZoneId < 0) {
+		TextureTable = &game.TextureTable;
+		TextureTableStart = game.TextureTable.size();
+	}
+	else {
+		Zone* zone = game.ZoneTable[ZoneId];
+		TextureTable = &zone->TextureTable;
+		TextureTableStart = zone->TextureTable.size();
+	}
+	
 	for (int i = 0; i < mNumTextures; ++i) {
 		GPUResource* Texture = new GPUResource();
-		game.TextureTable.push_back(Texture);
+		TextureTable->push_back(Texture);
 
 		Texture->resource = nullptr;
 		string DDSFilename = filename;
@@ -5345,7 +5453,7 @@ void Model::LoadModelFile2(string filename)
 			for (int k = 0; k < DDSFilename.size(); ++k) {
 				wDDSFilename.push_back(DDSFilename[k]);
 			}
-			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip);
+			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip, false, ZoneId);
 		}
 		else {
 			string texfile = filename;
@@ -5371,7 +5479,7 @@ void Model::LoadModelFile2(string filename)
 				msg += texfile;
 				msg += "\n";
 				OutputDebugStringA(msg.c_str());
-				Texture->CreateTexture_fromFile(L"Resources/DefaultTexture.dds", game.basicTexFormat, game.basicTexMip);
+				Texture->CreateTexture_fromFile(L"Resources/DefaultTexture.dds", game.basicTexFormat, game.basicTexMip, false, ZoneId);
 				continue;
 			}
 
@@ -5397,7 +5505,7 @@ void Model::LoadModelFile2(string filename)
 			for (int k = 0; k < DDSFilename.size(); ++k) {
 				wDDSFilename.push_back(DDSFilename[k]);
 			}
-			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip);
+			Texture->CreateTexture_fromFile(wDDSFilename.c_str(), game.basicTexFormat, game.basicTexMip, false, ZoneId);
 
 			DeleteFileA(BMPFile);
 			//Texture->CreateTexture_fromImageBuffer(width, height, (BYTE*)pdata, DXGI_FORMAT_BC2_UNORM);
@@ -5471,21 +5579,52 @@ void Model::LoadModelFile2(string filename)
 		ifs.read((char*)&normal2, sizeof(int));
 
 		mat->ShiftTextureIndexs(TextureTableStart);
-		mat->SetDescTable();
-		//mMaterials[i] = mat;
-		game.MaterialTable.push_back(mat);
+		//mat->ShiftTextureIndexs(TextureTableStart);
+		mat->SetDescTable(ZoneId);
+
+		if (zone == nullptr) {
+			game.MaterialTable.push_back(mat);
+		}
+		else {
+			zone->MaterialTable.push_back(mat);
+		}
+		
 		if (game.isAssetAddingInGlobal == false) {
-			game.RenderMaterialTable.push_back(mat);
+			if (ZoneId >= 0) {
+				int renderIndex = (zone->Asset_OffsetMul + 1) * Zone::MAXZoneMaterialCount + game.RenderMaterialTableSizePerZone[1 + zone->Asset_OffsetMul];
+				if (game.RenderMaterialTable[renderIndex] != nullptr) {
+					dbglog1(L"Zone 머터리얼 해제가 안됨. ZoneID : %d \n", ZoneId);
+				}
+				game.RenderMaterialTable[renderIndex] = mat;
+				game.RenderMaterialTableSizePerZone[1 + zone->Asset_OffsetMul] += 1;
+			}
+			else {
+				int renderIndex = game.RenderMaterialTableSizePerZone[0];
+				if (game.RenderMaterialTable[renderIndex] != nullptr) {
+					dbglog1(L"Zone 머터리얼 해제가 안됨. ZoneID : %d \n", ZoneId);
+				}
+				game.RenderMaterialTable[renderIndex] = mat;
+				game.RenderMaterialTableSizePerZone[0] += 1;
+			}
+			
 		}
 	}
 
 	RootNode = &Nodes[0];
 
 	// GPU animation resources read this for every model shape. Static models keep identity T-pose.
-	DefaultNodelocalTr = new matrix[nodeCount];
-	for (int i = 0; i < nodeCount; ++i) {
-		DefaultNodelocalTr[i].Id();
+
+	//calcul normal Node Local Tr Mats (WhenSkinMesh enabled)
+	if (mNumSkinMesh > 0) {
+		DefaultNodelocalTr = new matrix[nodeCount];
+		for (int i = 0; i < nodeCount; ++i) {
+			DefaultNodelocalTr[i].Id();
+		}
 	}
+	//DefaultNodelocalTr = new matrix[nodeCount];
+	//for (int i = 0; i < nodeCount; ++i) {
+	//	DefaultNodelocalTr[i].Id();
+	//}
 
 	NodeOffsetMatrixArr = new matrix[nodeCount];
 	for (int i = 0; i < mNumSkinMesh; ++i) {
@@ -5720,23 +5859,35 @@ void Material::ShiftTextureIndexs(unsigned int TextureIndexStart)
 	if (ti.Anisotropy >= 0)ti.Anisotropy += TextureIndexStart;
 }
 
-void Material::SetDescTable()
+void Material::SetDescTable(int zoneid)
 {
+	int off = 0;
+	vector<GPUResource*>* ptrTextureTable = nullptr;
+	if (zoneid != -1) {
+		Zone* zone = game.ZoneTable[zoneid];
+		off = zone->Asset_OffsetMul;
+		ZoneOff = off;
+		ptrTextureTable = &zone->TextureTable;
+	}
+	else {
+		ptrTextureTable = &game.TextureTable;
+	}
+	
 	DescIndex hDesc;
 	DescIndex hOriginDesc;
 	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
 
 	// 텍스쳐 5개가 같은 머터리얼이 있는지 확인한다. (SRV Desc Heap 자리 재활용을 위해..)
 	int findSame = -1;
-	for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
-		Material& mat = *game.RenderMaterialTable[i];
+	for (int i = 0; i < gd.ShaderVisibleDescPool.MaterialCBVSizePerZone[off]; ++i) {
+		Material& mat = *game.RenderMaterialTable[off * Zone::MAXZoneMaterialCount + i];
 		bool b = mat.ti.Diffuse == ti.Diffuse;
 		b = b && (mat.ti.Normal == ti.Normal);
 		b = b && (mat.ti.AmbientOcculsion == ti.AmbientOcculsion);
 		b = b && (mat.ti.Metalic == ti.Metalic);
 		b = b && (mat.ti.Roughness == ti.Roughness);
 		if (b) {
-			findSame = i;
+			findSame = off * Zone::MAXZoneMaterialCount + i;
 			break;
 		}
 	}
@@ -5745,23 +5896,30 @@ void Material::SetDescTable()
 		TextureSRVTableIndex = game.RenderMaterialTable[findSame]->TextureSRVTableIndex;
 	}
 	else {
+		vector<GPUResource*>& TextureTable = *ptrTextureTable;
 		if (game.isAssetAddingInGlobal == false) {
-			gd.ShaderVisibleDescPool.ImmortalAlloc_TextureSRV(&TextureSRVTableIndex, 5);
+			gd.ShaderVisibleDescPool.ImmortalAlloc_TextureSRV_PerZone(&TextureSRVTableIndex, 5, zoneid);
 
+			int InnerZone_TextureIndex = TextureSRVTableIndex.index - gd.ShaderVisibleDescPool.InitDescArrCap - Zone::MAXZoneTextureCount - Zone::MAXZoneTextureCount * off;
 			hDesc = TextureSRVTableIndex;
 			hOriginDesc = hDesc;
 
 			GPUResource* diffuseTex = &game.DefaultTex;
-			if (ti.Diffuse >= 0) diffuseTex = game.TextureTable[ti.Diffuse];
+			if (ti.Diffuse >= 0 && TextureTable[ti.Diffuse]->resource != nullptr) diffuseTex = TextureTable[ti.Diffuse];
 			GPUResource* normalTex = &game.DefaultNoramlTex;
-			if (ti.Normal >= 0) normalTex = game.TextureTable[ti.Normal];
+			if (ti.Normal >= 0 && TextureTable[ti.Normal]->resource != nullptr) normalTex = TextureTable[ti.Normal];
 			GPUResource* ambientTex = &game.DefaultTex;
-			if (ti.AmbientOcculsion >= 0) ambientTex = game.TextureTable[ti.AmbientOcculsion];
+			if (ti.AmbientOcculsion >= 0 && TextureTable[ti.AmbientOcculsion]->resource != nullptr) ambientTex = TextureTable[ti.AmbientOcculsion];
 			GPUResource* MetalicTex = &game.DefaultAmbientTex;
-			if (ti.Metalic >= 0) MetalicTex = game.TextureTable[ti.Metalic];
+			if (ti.Metalic >= 0 && TextureTable[ti.Metalic]->resource != nullptr) MetalicTex = TextureTable[ti.Metalic];
 			GPUResource* roughnessTex = &game.DefaultAmbientTex;
-			if (ti.Roughness >= 0) roughnessTex = game.TextureTable[ti.Roughness];
-
+			if (ti.Roughness >= 0 && TextureTable[ti.Roughness]->resource != nullptr) {
+				roughnessTex = TextureTable[ti.Roughness];
+				this->roughnessFactor = 0;
+			}
+			else {
+				this->roughnessFactor *= 0.5f;
+			}
 			const int inc = gd.CBVSRVUAVSize;
 			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, diffuseTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 			hDesc.index += 1;
@@ -5773,11 +5931,11 @@ void Material::SetDescTable()
 			hDesc.index += 1;
 			gd.pDevice->CopyDescriptorsSimple(1, hDesc.hCreation.hcpu, roughnessTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-			game.RenderTextureTable.push_back(diffuseTex);
-			game.RenderTextureTable.push_back(normalTex);
-			game.RenderTextureTable.push_back(ambientTex);
-			game.RenderTextureTable.push_back(MetalicTex);
-			game.RenderTextureTable.push_back(roughnessTex);
+			game.RenderTextureTable[TextureSRVTableIndex.index] = diffuseTex;
+			game.RenderTextureTable[TextureSRVTableIndex.index + 1] = normalTex;
+			game.RenderTextureTable[TextureSRVTableIndex.index + 2] = ambientTex;
+			game.RenderTextureTable[TextureSRVTableIndex.index + 3] = MetalicTex;
+			game.RenderTextureTable[TextureSRVTableIndex.index + 4] = roughnessTex;
 		}
 	}
 
@@ -5790,7 +5948,7 @@ void Material::SetDescTable()
 	}
 
 	if (game.isAssetAddingInGlobal == false) {
-		gd.ShaderVisibleDescPool.ImmortalAlloc_MaterialCBV(&CB_Resource.descindex, 1);
+		gd.ShaderVisibleDescPool.ImmortalAlloc_MaterialCBV_PerZone(&CB_Resource.descindex, 1, zoneid);
 
 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc;
 		cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
@@ -5862,7 +6020,9 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 			MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 			for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
-				MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
+				if (game.RenderMaterialTable[i] != nullptr) {
+					MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
+				}
 			}
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
 			LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
@@ -5881,7 +6041,9 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		else {
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 			for (int i = LastMaterialStructureBufferUp; i < game.RenderMaterialTable.size(); ++i) {
-				MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
+				if (game.RenderMaterialTable[i] != nullptr) {
+					MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
+				}
 			}
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
 			LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
@@ -5903,7 +6065,9 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 		for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
-			MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
+			if (game.RenderMaterialTable[i] != nullptr) {
+				MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
+			}
 		}
 		MaterialStructuredBuffer.resource->Unmap(0, NULL);
 		LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
@@ -6916,7 +7080,10 @@ void ScreenShader::RenderAllSDFTexts() {
 	}
 	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_Texture, descH.hgpu);
 
-	game.TextMesh->Render(gd.gpucmd, SDFInstanceCount);
+	if (SDFInstanceCount > 0) {
+		game.TextMesh->Render(gd.gpucmd, SDFInstanceCount);
+	}
+	
 }
 
 #pragma endregion
@@ -10160,7 +10327,7 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename)
 		AnimationRes_Upload.Release();
 
 		//create SRV
-		int index = gd.TextureDescriptorAllotter.Alloc();
+		int index = gd.DynamicDescriptorAllotter.Alloc();
 		AnimationDescIndex.Set(false, index, 'n');
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -10267,9 +10434,9 @@ void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
 	// static shadow cube map
 	StaticShadowCubeMap = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_TEXTURE2D, resolution, resolution, DXGI_FORMAT_D32_FLOAT, 6, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
 
-	int i = gd.TextureDescriptorAllotter.Alloc();
-	StaticCubeShadowMapHandleSRV.hcpu = gd.TextureDescriptorAllotter.GetCPUHandle(i);
-	StaticCubeShadowMapHandleSRV.hgpu = gd.TextureDescriptorAllotter.GetGPUHandle(i);
+	int i = gd.DynamicDescriptorAllotter.Alloc();
+	StaticCubeShadowMapHandleSRV.hcpu = gd.DynamicDescriptorAllotter.GetCPUHandle(i);
+	StaticCubeShadowMapHandleSRV.hgpu = gd.DynamicDescriptorAllotter.GetGPUHandle(i);
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
 	srv_desc.Format = DXGI_FORMAT_R32_FLOAT;

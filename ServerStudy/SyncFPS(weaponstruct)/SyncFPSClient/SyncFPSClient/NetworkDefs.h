@@ -137,198 +137,65 @@ struct twoPage {
 	char data[8196] = {};
 };
 
-//Protocol
 
 /*
-* ���� : �����κ��� �޴� ���������� Ÿ���� �з��ϴ� enum
-* Sentinal Value : 
-* NULL = 0;
+* 설명 : 무기 타입 enum
 */
+enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
+
 /*
-���� : Server ���� Client�� ������ ������ ���������� Ÿ��
-Sentinal Value :
-NULL = (short)0
+* 설명 : 무기 타입 구조체
 */
-//
-//#pragma pack(push, 1)
-//union STCProtocol {
-//	enum {
-//		NullType = 0,
-//		//there is no format
-//
-//		SyncGameObject = 1,
-//		// [int size] [int sendttype] [int newobj_index] [type of gameobject] [gameobject raw data]
-//
-//		ChangeMemberOfGameObject = 2,
-//		// [int size] [st(2)] [obj index(int) (4)] [type of gameobject(2)] [client member offset(short)] [memberSize (2)] [rawData (member size)]
-//
-//		NewRay = 3,
-//		// [int size] [st] [Ray raw data (include distance which determined by raycast)]
-//
-//		AllocPlayerIndexes = 4,
-//		// [int size] [st] [client Index] [Object Index]
-//
-//		DeleteGameObject = 5,
-//		// [int size] [st] [obj index]
-//
-//		ItemDrop = 6,
-//		// [int size] [st] [dropindex] [lootdata]
-//
-//		ItemDropRemove = 7,
-//		// [int size] [st] [dropindex]
-//
-//		InventoryItemSync = 8,
-//		// [int size] [st] [lootdata] [inventory index]
-//
-//		PlayerFire = 9,
-//		// [int size] [st(2)] [obj index(4)]
-//
-//		SyncGameState = 10,
-//		// [int size] [st] [int DynamicGameObjectCapacity] [int StaticGameObjectCapacity]
-//	};
-//
-//	// enum�� ���ڷ� ��Ÿ�� ��.
-//	short n;
-//	char two_byte[2];
-//
-//	STCProtocol(short id) { n = id; }
-//	operator short() { return n; }
-//};
-//
-//
-///*
-//* ���� : ��ü ������Ʈ �ϳ��� ��ü�� ����ȭ �ϰ� ������ ���ȴ�.
-//* �� ���ӿ�����Ʈ���� �ɹ������� �ش� �����͸� ����� SendDataSaver�� ���� �� �ִ�.
-//*/
-//struct STC_SyncGameObject_Header {
-//	unsigned int size = 0;
-//	STCProtocol st = STCProtocol::SyncGameObject;
-//	GameObjectType type;
-//	int objindex;
-//};
-//
-///*
-//* ���� : ���ӿ�����Ʈ���� � ������Ʈ�� � �ɹ��� �����ϰ� ������ ���ȴ�.
-//*/
-//struct STC_ChangeMemberOfGameObject_Header {
-//	unsigned int size = 0;
-//	STCProtocol st = STCProtocol::ChangeMemberOfGameObject;
-//	GameObjectType type;
-//	int objindex;
-//	// ������ �������� ����Ѵ�. (Ŭ�� �˾Ƽ� �ؼ��Ѵ�.)
-//	int serveroffset;
-//	int datasize;
-//	// �� ���ķ� ���� ����ȭ�� �����Ͱ� �ٴ´�.
-//};
-//
-///*
-//* ���� : �׳� Ŭ���̾�Ʈ���� � �Ѿ� ������ �׸��� �����ϴ� ��.
-//	��� �浹�� �������� ��������.
-//*/
-//struct STC_NewRay_Header {
-//	unsigned int size = 34; // ũ�����
-//	STCProtocol st = STCProtocol::NewRay;
-//	XMFLOAT3 raystart;
-//	XMFLOAT3 rayDir;
-//	float distance;
-//};
-//
-///*
-//* ���� : Ŭ���̾�Ʈ���� �������� �ڽŰ� �ڽ��� ������Ʈ�� ��� �����ǰ� �ִ��� �˷��ش�.
-//*/
-//struct STC_AllocPlayerIndexes_Header {
-//	unsigned int size = 14; // ũ�����
-//	STCProtocol st = STCProtocol::AllocPlayerIndexes;
-//
-//	// �����͸� ���� Ŭ���̾�Ʈ�� ���������� ���° Ŭ���̾�Ʈ����
-//	int clientindex;
-//	// �� Ŭ���̾�Ʈ�� �����ϴ� ������Ʈ�� �������� ���° Dynamic������Ʈ����.
-//	int server_obj_index;
-//};
-//
-///*
-//* ���� : Ư�� ������Ʈ�� �����Ǿ��ٴ� ����� Ŭ���̾�Ʈ���� �����Ѵ�.
-//*/
-//struct STC_DeleteGameObject_Header {
-//	unsigned int size = 10; // ũ�����
-//	STCProtocol st = STCProtocol::DeleteGameObject;
-//	int obj_index; // ������ ������ dynamic ������Ʈ�� �ε���
-//};
-//
-///*
-//* ���� : �������� ��ӵǾ��ٴ� �� Ŭ���̾�Ʈ���� �˸��� ����.
-//*/
-//struct STC_ItemDrop_Header {
-//	unsigned int size = 48; // ũ�����
-//	STCProtocol st = STCProtocol::ItemDrop;
-//	int dropindex; // ��Ӿ����� �ε���
-//	ItemLoot lootData; // ���õ� �������� ������
-//};
-//
-///*
-//* ���� : ��� �������� �����Ǿ��ٴ°� Ŭ���̾�Ʈ���� �˸��� ����
-//*/
-//struct STC_ItemDropRemove_Header {
-//	unsigned int size = 10; // ũ�����
-//	STCProtocol st = STCProtocol::ItemDropRemove;
-//	int dropindex; // ������ ��Ӿ������� �ε���
-//};
-//
-///*
-//* ���� : �κ��丮�� Ư�� ĭ�� ����ȭ �ϴ� ����
-//*/
-//struct STC_InventoryItemSync_Header {
-//	unsigned int size = 18; // ũ�����
-//	STCProtocol st = STCProtocol::InventoryItemSync;
-//	// �κ��丮�� �� ������
-//	ItemStack Iteminfo;
-//	// �κ��丮 ���° ĭ����.
-//	int inventoryIndex;
-//};
-//
-///*
-//* ���� : ???
-//*/
-//struct STC_PlayerFire_Header {
-//	unsigned int size = 10; // ũ�����
-//	STCProtocol st = STCProtocol::PlayerFire;
-//	int objindex;
-//};
-//
-///*
-//* ���� : �������� ���Ӱ� ���õ� ���µ��� �����Ѵ�.
-//*/
-//struct STC_SyncGameState_Header {
-//	unsigned int size = 10; // ũ�����
-//	STCProtocol st = STCProtocol::SyncGameState;
-//	int DynamicGameObjectCapacity;
-//	int StaticGameObjectCapacity;
-//};
-//
-//union CTS_Protocol {
-//	enum {
-//		KeyInput = 0,
-//		SyncRotation = 1
-//	};
-//	short n;
-//	char two_byte[2];
-//
-//	CTS_Protocol(short id) { n = id; }
-//	operator short() { return n; }
-//};
-//
-//struct CTS_KeyInput_Header {
-//	unsigned int size = 8; // ũ�����
-//	CTS_Protocol st = CTS_Protocol::KeyInput;
-//	char Key;
-//	bool isdown;
-//};
-//
-//struct CTS_SyncRotation_Header {
-//	unsigned int size = 14;
-//	CTS_Protocol st = CTS_Protocol::KeyInput;
-//	float yaw;
-//	float pitch;
-//};
+struct WeaponData {
+	WeaponType type;
+	float shootDelay;     // 연사 속도
+	float recoilVelocity; // 반동 세기
+	float recoilDelay;    // 반동 회복 시간
+	float damage;         // 기본 데미지
+	int maxBullets;       // 탄창 용량
+	float reloadTime;     // 장전 시간
+};
+
+static WeaponData GWeaponTable[] = {
+	{ WeaponType::MachineGun, 0.1f, 12.0f, 0.2f, 10.0f, 100, 4.0f },
+	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
+	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
+	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
+	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
+	// 
+};
+
+class Weapon {
+public:
+	WeaponData m_info;      // GWeaponTable에서 가져온 수치
+	float m_shootFlow = 0;  // 다음 발사까지 남은 시간 계산
+	float m_recoilFlow = 0; // 반동 애니메이션/에임 상승 진행률
+
+	Weapon() {}
+
+	Weapon(WeaponType type) : m_info(GWeaponTable[(int)type]) {
+		m_shootFlow = m_info.shootDelay;
+		m_recoilFlow = m_info.recoilDelay;
+	}
+
+	virtual void Update(float deltaTime) {
+		if (m_shootFlow < m_info.shootDelay) m_shootFlow += deltaTime;
+		if (m_recoilFlow < m_info.recoilDelay) m_recoilFlow += deltaTime;
+	}
+
+	virtual void OnFire() {
+		m_shootFlow = 0.0f;
+		m_recoilFlow = 0.0f;
+	}
+
+	/*
+	* 설명
+	* 현재 반동이 얼마나 진행되었는지 0~1 사이 값으로 반환
+	*/
+	float GetRecoilAlpha() const {
+		float alpha = 1.0f - (m_recoilFlow / m_info.recoilDelay);
+		return (alpha < 0) ? 0 : alpha;
+	}
+};
 
 #include "../../SyncFPSServer/SyncFPSServer/Protocol.h"

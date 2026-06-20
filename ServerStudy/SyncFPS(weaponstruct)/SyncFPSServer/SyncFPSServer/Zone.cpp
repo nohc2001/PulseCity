@@ -14,6 +14,19 @@ Shape& Zone::GetShape(int shapeindex)
     }
 }
 
+void Zone::Set_world_id_pos(World* w, int id, int _x, int _y)
+{
+    world = w;
+    zoneId = id;
+    x = _x;
+    y = _y;
+    BasicAABB_onlyXZ = vec4(
+        MinimumCenter + ZoneWidth * _x - ZoneHalfWidth,
+        MinimumCenter + ZoneWidth * _y - ZoneHalfWidth,
+        MinimumCenter + ZoneWidth * _x + ZoneHalfWidth,
+        MinimumCenter + ZoneWidth * _y + ZoneHalfWidth);
+}
+
 void Zone::Init() {
     const int gridWidth = 80;
     const int gridHeight = 80;
@@ -46,7 +59,48 @@ void Zone::Init() {
     CommonSDS.Init(4096);
 
     cout << "Zone " << zoneId << " Init end (dynamic only)" << endl;
+    //�� ���� �� ���� ���� �ִ�
+    map.ownerzone = this;
+
+    // �� �ε�
+    LoadMapForZone(zoneId);
+    if (map.MapObjects.empty()) {
+        cout << "Zone " << zoneId << " map load failed!" << endl;
+        return;
+    }
+
+    map.AABB[0] = INFINITY;
+    map.AABB[1] = -INFINITY;
+    for (int i = 0; i < map.MapObjects.size(); ++i) {
+        PushGameObject(map.MapObjects[i]);
+        BoundingOrientedBox obb = map.MapObjects[i]->GetOBB();
+        XMFLOAT3 corners[8];
+        obb.GetCorners(corners);
+        for (int k = 0; k < 8; ++k) {
+            vec4 c = corners[k];
+            map.AABB[0] = _mm_min_ps(c, map.AABB[0]);
+            map.AABB[1] = _mm_max_ps(c, map.AABB[1]);
+        }
+    }
+    map.AABB[0].w = -INFINITY;
+    map.AABB[1].w = INFINITY;
+
+    // === DEBUG : Zone ¸Ê AABB ·Î±× ===
+    cout << "[Zone " << zoneId << "] map=" << gameworld.ZoneTable[zoneId]->zoneName
+        << " AABB.min=(" << map.AABB[0].f3.x << ", " << map.AABB[0].f3.y << ", " << map.AABB[0].f3.z << ")"
+        << " AABB.max=(" << map.AABB[1].f3.x << ", " << map.AABB[1].f3.y << ", " << map.AABB[1].f3.z << ")"
+        << " size=(" << (map.AABB[1].f3.x - map.AABB[0].f3.x) << ", "
+                     << (map.AABB[1].f3.y - map.AABB[0].f3.y) << ", "
+                     << (map.AABB[1].f3.z - map.AABB[0].f3.z) << ")"
+        << " MapObjectCount=" << map.MapObjects.size() << endl;
+
+    SpawnObjects();
+
+    GridCollisionCheck();
+
+    cout << "Zone " << zoneId << " Init end" << endl;
 }
+
 void Zone::Update(float deltaTime) {
     // �� ���� ������Ʈ
     lowFrequencyFlow += deltaTime;
@@ -157,13 +211,14 @@ void Zone::Update(float deltaTime) {
                             }
                         }
 
-                        for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
+                        for (int zi = 0; zi < 9; ++zi) {
                             if (zi == zoneId) continue;
-                            if (gameworld.IsZoneOwned(zi) == false) continue;
-                            if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
-                            Zone& nearZone = gameworld.zones[zi];
-                            auto nearChunkIt = nearZone.chunck.find(ci);
-                            if (nearChunkIt == nearZone.chunck.end()) continue;
+                            /*if (gameworld.IsZoneOwned(zi) == false) continue;
+                            if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;*/
+                            Zone* nearZone = nearZones[zi];
+                            if (nearZone == nullptr) continue;
+                            auto nearChunkIt = nearZone->chunck.find(ci);
+                            if (nearChunkIt == nearZone->chunck.end()) continue;
                             GameChunk* nearChunk = nearChunkIt->second;
                             if (nearChunk == nullptr) continue;
 
@@ -206,7 +261,7 @@ void Zone::Update(float deltaTime) {
                             }
                         }
 
-                        Zone* staticZone = gameworld.GetStaticChunkZone();
+                        Zone* staticZone = this;
                         if (staticZone != nullptr) {
                             auto sf = staticZone->chunck.find(ci);
                             if (sf == staticZone->chunck.end()) continue;
@@ -243,8 +298,6 @@ void Zone::Update(float deltaTime) {
                     continue;
                 }
 
-                // �Ƹ� �浹ó���ϸ鼭 tickVelocity�� �پ����� ���� ����.
-                // ������ after������ �޶�����.
                 gbj1->worldMat.pos += gbj1->tickLVelocity;
                 obb_after = gbj1->GetOBB();
                 gbj1->worldMat.pos -= gbj1->tickLVelocity;
@@ -255,10 +308,10 @@ void Zone::Update(float deltaTime) {
                 }
                 else {
                     vec4 pos = gbj1->worldMat.pos + gbj1->tickLVelocity;
-                    vec4 minpos = _mm_min_ps(pos, gameworld.commonMap.AABB[0]);
-                    vec4 maxpos = _mm_max_ps(pos, gameworld.commonMap.AABB[1]);
-                    if (gameworld.commonMap.AABB[0] == minpos &&
-                        gameworld.commonMap.AABB[1] == maxpos) {
+                    vec4 minpos = _mm_min_ps(pos, map.AABB[0]);
+                    vec4 maxpos = _mm_max_ps(pos, map.AABB[1]);
+                    if (map.AABB[0] == minpos &&
+                        map.AABB[1] == maxpos) {
                         gbj1->MoveChunck(gbj1->tickLVelocity, vec4(0, 0, 0, 1), goic_before, goic_after);
                     }
                     else {
@@ -273,6 +326,7 @@ void Zone::Update(float deltaTime) {
 
                 //dbgbreak(GameObjectType::VptrToTypeTable[*(void**)gbj1] == GameObjectType::_Player);
                 // send matrix to client
+
                 Sending_ChangeGameObjectMember<matrix>(CommonSDS, i, gbj1, GameObjectType::VptrToTypeTable[*(void**)gbj1], &gbj1->worldMat);
             }
         }
@@ -457,7 +511,7 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
 
 
     // Notify other clients in this zone about the new player. (CommonSDS)
-    player->SendGameObject(newIdx, CommonSDS);
+    //player->SendGameObject(newIdx, CommonSDS);
 
     // Send current zone data to the new client. (PersonalSDS)
     SendDataSaver& personalSDS = gameworld.clients[clientIndex].PersonalSDS;
@@ -492,6 +546,10 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // Send player inventory data.
     // Load player data from database here when needed.
     for (int i = 0; i < player->maxItem; ++i) {
+        ItemStack is;
+        is.id = rand() % ItemTable.size();
+        is.ItemCount = rand() % 10;
+        player->Inventory[i] = is;
         Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
     }
 
@@ -543,42 +601,99 @@ void Zone::SpawnPortal() {
 void Zone::Spawnboundary()
 {
     boundaries.clear();
-    if (zoneId == 0) {
+
+    for (int ix = 0; ix < 2; ++ix) {
         Zoneboundary boundary{};
-        boundary.basezoneId = 0;
-        boundary.dstzoneId = 1;
+        boundary.basezoneId = zoneId;
 
-        // Mid-zone debug gate for Zone 0.
-        boundary.minPos = vec4(-40.0f, -100.0f, 33.0f, 1.0f);
-        boundary.maxPos = vec4(40.0f, 100.0f, 35.0f, 1.0f);
-
-        // Fallback spawn. Seamless transfer keeps the player's crossing position.
-        boundary.spawnPos = vec4(0.0f, 10.0f, 36.0f, 1.0f);
-        boundary.spawnYaw = XM_PIDIV2;  // face +X
-
+        int nearIndex = 0;
+        if (ix == 0) {
+            boundary.dstzoneId = this->nearZones[2]->zoneId;
+            // Mid-zone debug gate
+            boundary.minPos = vec4(BasicAABB_onlyXZ.x - 2, -100.0f, BasicAABB_onlyXZ.y, 1.0f);
+            boundary.maxPos = vec4(BasicAABB_onlyXZ.x + 2, 100.0f, BasicAABB_onlyXZ.w, 1.0f);
+            // Fallback spawn. Seamless transfer keeps the player's crossing position.
+            float midZ = BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w;
+            midZ *= 0.5f;
+            boundary.spawnPos = vec4(BasicAABB_onlyXZ.x - 6, 10.0f, midZ, 1.0f);
+            boundary.spawnYaw = XM_PIDIV2;  // face +X
+        }
+        else {
+            boundary.dstzoneId = this->nearZones[3]->zoneId;
+            // Mid-zone debug gate
+            boundary.minPos = vec4(BasicAABB_onlyXZ.z - 2, -100.0f, BasicAABB_onlyXZ.y, 1.0f);
+            boundary.maxPos = vec4(BasicAABB_onlyXZ.z + 2, 100.0f, BasicAABB_onlyXZ.w, 1.0f);
+            // Fallback spawn. Seamless transfer keeps the player's crossing position.
+            float midZ = BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w;
+            midZ *= 0.5f;
+            boundary.spawnPos = vec4(BasicAABB_onlyXZ.z + 6, 10.0f, midZ, 1.0f);
+            boundary.spawnYaw = XM_PIDIV2;  // face +X
+        }
         boundary.cooldownSec = 0.5f;
         boundary.enabled = true;
-
         boundaries.push_back(boundary);
     }
-    else if (zoneId == 1) {
+
+    for (int iy = 0; iy < 2; ++iy) {
         Zoneboundary boundary{};
-        boundary.basezoneId = 1;
-        boundary.dstzoneId = 0;
+        boundary.basezoneId = zoneId;
 
-        // Same physical boundary as Zone 0 because both servers load the same map.
-        boundary.minPos = vec4(-40.0f, -100.0f, 33.0f, 1.0f);
-        boundary.maxPos = vec4(40.0f, 100.0f, 35.0f, 1.0f);
-
-        // Fallback spawn. Seamless transfer keeps the player's crossing position.
-        boundary.spawnPos = vec4(0.0f, 10.0f, 32.0f, 1.0f);
-        boundary.spawnYaw = XM_PIDIV2;  // face +X (opposite of -X entry)
-
+        int nearIndex = 0;
+        if (iy == 0) {
+            boundary.dstzoneId = this->nearZones[1]->zoneId;
+            // Mid-zone debug gate
+            boundary.minPos = vec4(BasicAABB_onlyXZ.x, -100.0f, BasicAABB_onlyXZ.y - 2, 1.0f);
+            boundary.maxPos = vec4(BasicAABB_onlyXZ.z, 100.0f, BasicAABB_onlyXZ.y + 2, 1.0f);
+            // Fallback spawn. Seamless transfer keeps the player's crossing position.
+            float midX = BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z;
+            midX *= 0.5f;
+            boundary.spawnPos = vec4(midX, 10.0f, BasicAABB_onlyXZ.y - 6, 1.0f);
+            boundary.spawnYaw = XM_PIDIV2;  // face +X
+        }
+        else {
+            boundary.dstzoneId = this->nearZones[4]->zoneId;
+            // Mid-zone debug gate
+            boundary.minPos = vec4(BasicAABB_onlyXZ.x, -100.0f, BasicAABB_onlyXZ.w - 2, 1.0f);
+            boundary.maxPos = vec4(BasicAABB_onlyXZ.z, 100.0f, BasicAABB_onlyXZ.w + 2, 1.0f);
+            // Fallback spawn. Seamless transfer keeps the player's crossing position.
+            float midX = BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z;
+            midX *= 0.5f;
+            boundary.spawnPos = vec4(midX, 10.0f, BasicAABB_onlyXZ.w + 6, 1.0f);
+            boundary.spawnYaw = XM_PIDIV2;  // face +X
+        }
         boundary.cooldownSec = 0.5f;
         boundary.enabled = true;
-
         boundaries.push_back(boundary);
     }
+   
+    //if (zoneId == 0) {
+    //    Zoneboundary boundary{};
+    //    boundary.basezoneId = zoneId;
+    //    boundary.dstzoneId = 1;
+    //    // Mid-zone debug gate for Zone 0.
+    //    boundary.minPos = vec4(-40.0f, -100.0f, 33.0f, 1.0f);
+    //    boundary.maxPos = vec4(40.0f, 100.0f, 35.0f, 1.0f);
+    //    // Fallback spawn. Seamless transfer keeps the player's crossing position.
+    //    boundary.spawnPos = vec4(0.0f, 10.0f, 36.0f, 1.0f);
+    //    boundary.spawnYaw = XM_PIDIV2;  // face +X
+    //    boundary.cooldownSec = 0.5f;
+    //    boundary.enabled = true;
+    //    boundaries.push_back(boundary);
+    //}
+    //else if (zoneId == 1) {
+    //    Zoneboundary boundary{};
+    //    boundary.basezoneId = 1;
+    //    boundary.dstzoneId = 0;
+    //    // Same physical boundary as Zone 0 because both servers load the same map.
+    //    boundary.minPos = vec4(-40.0f, -100.0f, 33.0f, 1.0f);
+    //    boundary.maxPos = vec4(40.0f, 100.0f, 35.0f, 1.0f);
+    //    // Fallback spawn. Seamless transfer keeps the player's crossing position.
+    //    boundary.spawnPos = vec4(0.0f, 10.0f, 32.0f, 1.0f);
+    //    boundary.spawnYaw = XM_PIDIV2;  // face +X (opposite of -X entry)
+    //    boundary.cooldownSec = 0.5f;
+    //    boundary.enabled = true;
+    //    boundaries.push_back(boundary);
+    //}
 
     for (int i = 0; i < boundaries.size(); ++i) {
         Zoneboundary& boundary = boundaries[i];
@@ -594,7 +709,6 @@ void Zone::Spawnboundary()
 
     cout << "[Zone " << zoneId << "] Total boundaries = " << boundaries.size() << endl;
 }
-
 
 void Zone::CheckPortalCollision(Player* p) {
     if (!p) return;
@@ -718,6 +832,8 @@ void Zone::FlushSendToClients() {
         bool isTransferring = (gameworld.clients[i].pObjData == nullptr);
         if ((isOwnerZoneFlush == false || gameworld.clients[i].PersonalSDS.size <= 0) && (CommonSDS.size <= 0 || isTransferring)) continue;
 
+        //dbgbreak(gameworld.clients[i].zoneId == 74);
+
         WSABUF sendbuf[2];
         DWORD sendbufCount = 0;
         if (isOwnerZoneFlush && gameworld.clients[i].PersonalSDS.size > 0) {
@@ -731,18 +847,21 @@ void Zone::FlushSendToClients() {
             sendbufCount += 1;
         }
 
-        DWORD retval = 0;
-        int err = WSASend(gameworld.clients[i].socket, sendbuf, sendbufCount, &retval, 0, NULL, NULL);
-        if (err == SOCKET_ERROR) {
-            int wsaErr = WSAGetLastError();
-            if (wsaErr == WSAEWOULDBLOCK) {
-                keepCommonSDS = true;
+        if (sendbufCount != 0) {
+            DWORD retval = 0;
+            int err = WSASend(gameworld.clients[i].socket, sendbuf, sendbufCount, &retval, 0, NULL, NULL);
+            if (err == SOCKET_ERROR) {
+                int wsaErr = WSAGetLastError();
+                if (wsaErr == WSAEWOULDBLOCK) {
+                    keepCommonSDS = true;
+                    continue;
+                }
+                ClientData::DisconnectToServer(i);
+
                 continue;
             }
-            ClientData::DisconnectToServer(i);
-            continue;
         }
-
+        
         if (isOwnerZoneFlush) {
             gameworld.clients[i].PersonalSDS.Clear();
         }
@@ -780,26 +899,27 @@ void Zone::FlushSendToClients() {
 
 void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects)
 {
-    for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
-        if (gameworld.IsZoneOwned(zi) == false) continue;
-        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
-        Zone& syncZone = gameworld.zones[zi];
+    for (int zi = 0; zi < 9; ++zi) {
+        /*if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;*/
+        Zone* syncZone = nearZones[zi];
+        if (syncZone == nullptr) continue;
 
         // [PERF/FIX ?? ?�리???�동?�서???�적 객체(?�킨메시) ?�전?�을 ?�략 -> ?�환 ?��? ?�거.
         if (includeDynamicObjects) {
-            for (int i = 0; i < syncZone.Dynamic_gameObjects.size; ++i) {
-                if (syncZone.Dynamic_gameObjects.isnull(i)) continue;
-                syncZone.Sending_NewGameObject(sds, i, (GameObject*)syncZone.Dynamic_gameObjects[i]);
+            for (int i = 0; i < syncZone->Dynamic_gameObjects.size; ++i) {
+                if (syncZone->Dynamic_gameObjects.isnull(i)) continue;
+                syncZone->Sending_NewGameObject(sds, i, (GameObject*)syncZone->Dynamic_gameObjects[i]);
             }
         }
 
-        for (int i = 0; i < syncZone.DropedItems.size; ++i) {
-            if (syncZone.DropedItems.isnull(i)) continue;
-            syncZone.Sending_ItemDrop(sds, i, syncZone.DropedItems[i]);
+        for (int i = 0; i < syncZone->DropedItems.size; ++i) {
+            if (syncZone->DropedItems.isnull(i)) continue;
+            syncZone->Sending_ItemDrop(sds, i, syncZone->DropedItems[i]);
         }
 
-        for (int i = 0; i < syncZone.portals.size(); ++i) {
-            syncZone.portals[i]->SendGameObject(i, sds);
+        for (int i = 0; i < syncZone->portals.size(); ++i) {
+            syncZone->portals[i]->SendGameObject(i, sds);
         }
     }
 
@@ -853,7 +973,7 @@ void Zone::Sending_ItemRemove(SendDataSaver& sds, int dropindex) {
 
 //��/����
 void Zone::LoadMapForZone(int zid) {
-    // Map loading is owned by World::InitCommonMap().
+    map.LoadMap(this->zoneName);
 }
 
 void Zone::SpawnObjects() {
@@ -878,14 +998,21 @@ void Zone::SpawnObjects() {
             spawnY = 4.0f;
         }
 
-        mon->Init(XMMatrixTranslation((float)(rand() % range - (range/2)), spawnY, (float)(rand() % range - (range / 2))));
-        while (gameworld.commonMap.isStaticCollision(mon->GetOBB())) {
+        mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)(rand() % range - (range / 2))));
+        while (map.isStaticCollision(mon->GetOBB())) {
             mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
         }
-
-        NewObject(mon, GameObjectType::_Monster);
-        PushGameObject(mon);
     }
+
+    //Spawn NPC
+    PeacefulNPC* npc = new PeacefulNPC();
+    npc->worldMat.Id();
+    npc->worldMat.pos = vec4(-248.0f, 14, 1180.0f, 1);
+    npc->NPCType = PeacefulNPCType::PNT_Quest;
+    npc->NPCQuestList.push_back(0);
+    npc->SetShape(Shape::StrToShapeIndex["Monster001"]);
+    NewObject(npc, GameObjectType::_PeacefulNPC);
+    PushGameObject(npc);
 }
 
 void Zone::GridCollisionCheck() {
@@ -951,24 +1078,25 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
 
     int lastcurrentindex = currentIndex;
 
-    for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
-        if (gameworld.IsZoneOwned(zi) == false) continue;
-        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
-        Zone& testZone = gameworld.zones[zi];
-        for (int i = 0; i < testZone.Dynamic_gameObjects.size; ++i) {
-            if (testZone.Dynamic_gameObjects.isnull(i)) continue;
-            if (shooter == (GameObject*)testZone.Dynamic_gameObjects[i]) continue;
+    for (int zi = 0; zi < 9; ++zi) {
+        /*if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;*/
+        Zone* testZone = nearZones[zi];
+        if (testZone == nullptr) continue;
+        for (int i = 0; i < testZone->Dynamic_gameObjects.size; ++i) {
+            if (testZone->Dynamic_gameObjects.isnull(i)) continue;
+            if (shooter == (GameObject*)testZone->Dynamic_gameObjects[i]) continue;
 
-            testZone.currentIndex = i;
-            BoundingOrientedBox obb = testZone.Dynamic_gameObjects[i]->GetOBB();
+            testZone->currentIndex = i;
+            BoundingOrientedBox obb = testZone->Dynamic_gameObjects[i]->GetOBB();
             float distance;
 
             if (obb.Intersects(rayOrigin, rayDirection, distance)) {
                 if (distance < closestDistance) {
                     closestDistance = distance;
-                    hitObject = testZone.Dynamic_gameObjects[i];
+                    hitObject = testZone->Dynamic_gameObjects[i];
                     hitObjectIndex = i;
-                    hitZone = &testZone;
+                    hitZone = testZone;
                 }
             }
         }
@@ -1013,6 +1141,7 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     header.rayDir = XMFLOAT3(rayDirection.f3.x, rayDirection.f3.y, rayDirection.f3.z);
     header.distance = closestDistance;
     CommonSDS.postpush_end();
+
 }
 static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& statusDuration, float& statusPower)
 {
@@ -1084,13 +1213,15 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
     int hitCount = 0;
     int lastCurrentIndex = currentIndex;
 
-    for (int zi = 0; zi < gameworld.zoneCount; ++zi) {
-        if (gameworld.IsZoneOwned(zi) == false) continue;
-        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
-        Zone& testZone = gameworld.zones[zi];
-        for (int i = 0; i < testZone.Dynamic_gameObjects.size; ++i) {
-            if (testZone.Dynamic_gameObjects.isnull(i)) continue;
-            GameObject* object = (GameObject*)testZone.Dynamic_gameObjects[i];
+    for (int zi = 0; zi < 9; ++zi) {
+        /*if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;*/
+        Zone* testZone = nearZones[zi];
+        if (testZone == nullptr) continue;
+
+        for (int i = 0; i < testZone->Dynamic_gameObjects.size; ++i) {
+            if (testZone->Dynamic_gameObjects.isnull(i)) continue;
+            GameObject* object = (GameObject*)testZone->Dynamic_gameObjects[i];
             if (object == caster) continue;
 
             void* vptr = *(void**)object;
@@ -1103,7 +1234,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
             bool hit = directional ? skillBox.Intersects(monsterOBB) : skillSphere.Intersects(monsterOBB);
             if (hit == false) continue;
 
-            testZone.currentIndex = i;
+            testZone->currentIndex = i;
             monster->ApplyDamage(caster, damage);
             float statusDuration = 0.0f;
             float statusPower = 0.0f;
@@ -1183,6 +1314,7 @@ void Zone::Sending_SkillCast(SendDataSaver& sds, int ownerObjIndex, PlayerJob jo
     header.duration = duration;
     sds.postpush_end();
 }
+
 void Zone::Sending_StatusEffect(SendDataSaver& sds, int targetObjIndex, int sourceObjIndex, StatusEffectType statusType, bool active, float duration, float remainTime, float power, vec4 position, vec4 extents) {
     sds.postpush_start();
     constexpr int reqsiz = sizeof(STC_StatusEffect_Header);
@@ -1202,6 +1334,62 @@ void Zone::Sending_StatusEffect(SendDataSaver& sds, int targetObjIndex, int sour
     header.extents = extents;
     sds.postpush_end();
 }
+
+void Zone::Sending_NPCStartTalk(SendDataSaver& sds, PeacefulNPCType npctype, int StartID)
+{
+    sds.postpush_start();
+    constexpr int reqsiz = sizeof(STC_NPCTalkStart_Header);
+    sds.postpush_reserve(reqsiz);
+    STC_NPCTalkStart_Header& header = *(STC_NPCTalkStart_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::NPCTalkStart;
+    header.NPCType = npctype;
+    header.StartID = StartID;
+    sds.postpush_end();
+}
+
+void Zone::Sending_AddQuest(SendDataSaver& sds, int questID)
+{
+    sds.postpush_start();
+    constexpr int reqsiz = sizeof(STC_AddQuest_Header);
+    sds.postpush_reserve(reqsiz);
+    STC_AddQuest_Header& header = *(STC_AddQuest_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::AddQuest;
+    header.QuestID = questID;
+    sds.postpush_end();
+}
+
+void Zone::Sending_DeleteQuest(SendDataSaver& sds, int questID)
+{
+    sds.postpush_start();
+    constexpr int reqsiz = sizeof(STC_DeleteQuest_Header);
+    sds.postpush_reserve(reqsiz);
+    STC_DeleteQuest_Header& header = *(STC_DeleteQuest_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::DeleteQuest;
+    header.QuestID = questID;
+    sds.postpush_end();
+}
+
+void Zone::Sending_SyncQuestPrograss(SendDataSaver& sds, int questID, Quest* prograss) {
+    sds.postpush_start();
+    int reqsiz = sizeof(STC_SyncQuestPrograss_Header) + prograss->requp * sizeof(int);
+    sds.postpush_reserve(reqsiz);
+    STC_SyncQuestPrograss_Header& header = *(STC_SyncQuestPrograss_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::SyncQuestPrograss;
+    header.questID = questID;
+    header.questReqSiz = prograss->requp;
+    char* ptr = sds.ofbuff + sizeof(STC_SyncQuestPrograss_Header);
+    for (int i = 0; i < prograss->requp; ++i) {
+        int& prograssI = *(int*)ptr;
+        prograssI = prograss->ReqArr[i].PresentCnt;
+        ptr += sizeof(int);
+    }
+    sds.postpush_end();
+}
+
 GameObjectIncludeChunks Zone::GetChunks_Include_OBB(BoundingOrientedBox obb) {
     GameObjectIncludeChunks ret;
     XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];

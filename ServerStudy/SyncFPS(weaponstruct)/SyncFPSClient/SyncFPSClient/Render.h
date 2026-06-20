@@ -40,19 +40,21 @@ struct OBB_vertexVector {
 struct DescIndex {
 	bool isShaderVisible = false;
 	char type = 0; // 'n' - UAV, SRV, CBV / 'r' - RTV / 'd' - DSV
+	short ZoneOffIndex = -1; // Zone의 에셋 오프셋이 담김. -1이면 글로벌임.
 	ui32 index;
 	DescIndex() {
+		ZoneOffIndex = -1;
+	}
+
+	DescIndex(bool isSV, ui32 i, char t = 'n', short ZoneOff = -1) : isShaderVisible{ isSV }, index{ i }, type{ t }, ZoneOffIndex{ ZoneOff } {
 
 	}
 
-	DescIndex(bool isSV, ui32 i, char t = 'n') : isShaderVisible{ isSV }, index{ i }, type{ t } {
-
-	}
-
-	void Set(bool isSV, ui32 i, char t = 'n') {
+	void Set(bool isSV, ui32 i, char t = 'n', short ZoneOff = -1) {
 		isShaderVisible = isSV;
 		index = i;
 		type = t;
+		ZoneOffIndex = ZoneOff;
 	}
 	__forceinline DescHandle GetCreationDescHandle() const;
 	__forceinline DescHandle GetRenderDescHandle() const;
@@ -337,8 +339,18 @@ struct SVDescPool2
 	};
 	ui32 TextureSRVSiz;
 	ui32 TextureSRVCap;
+	//Zone마다의 텍스쳐 사이즈.
+	// 0 : 글로벌 텍스쳐
+	// 1~10 : Zone 전용 텍스쳐
+	ui32 TextureSRVSizePerZone[10] = {};
+	
 	ui32 MaterialCBVSiz;
 	ui32 MaterialCBVCap;
+	//Zone마다의 텍스쳐 사이즈.
+	// 0 : 글로벌 머터리얼
+	// 1~10 : Zone 전용 머터리얼
+	ui32 MaterialCBVSizePerZone[10] = {};
+
 	ui32 InstancingSRVSiz;
 	ui32 InstancingSRVCap;
 
@@ -355,6 +367,11 @@ struct SVDescPool2
 	BOOL ImmortalAlloc(DescIndex* pindex, UINT DescriptorCount);
 	BOOL ImmortalAlloc_TextureSRV(DescIndex* pindex, UINT DescriptorCount);
 	BOOL ImmortalAlloc_MaterialCBV(DescIndex* pindex, UINT DescriptorCount);
+
+	//만약 글로벌 리소스 바인딩에는 ZoneId 를 -1로 넣으면 된다.
+	BOOL ImmortalAlloc_TextureSRV_PerZone(DescIndex* pindex, UINT DescriptorCount, int ZoneId);
+	BOOL ImmortalAlloc_MaterialCBV_PerZone(DescIndex* pindex, UINT DescriptorCount, int ZoneId);
+
 	BOOL ImmortalAlloc_InstancingSRV(DescIndex* pindex, UINT DescriptorCount);
 
 	void ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRVCap, ui32 newMaterialCBVCap, ui32 newInstancingSRVCap);
@@ -385,8 +402,8 @@ struct GPUResource {
 	void AddResourceBarrierTransitoinToCommand(ID3D12GraphicsCommandList* cmd, D3D12_RESOURCE_STATES afterState);
 	D3D12_RESOURCE_BARRIER GetResourceBarrierTransition(D3D12_RESOURCE_STATES afterState);
 
-	BOOL CreateTexture_fromImageBuffer(UINT Width, UINT Height, const BYTE* pInitImage, DXGI_FORMAT Format, bool ImmortalShaderVisible = false);
-	void CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Format, int mipmapLevel, bool ImmortalShaderVisible = false);
+	BOOL CreateTexture_fromImageBuffer(UINT Width, UINT Height, const BYTE* pInitImage, DXGI_FORMAT Format, bool ImmortalShaderVisible = false, int ZoneID = -1);
+	void CreateTexture_fromFile(const wchar_t* filename, DXGI_FORMAT Format, int mipmapLevel, bool ImmortalShaderVisible = false, int ZoneID = -1);
 
 	void UpdateTextureForWrite(ID3D12Resource* pSrcTexResource);
 
@@ -852,7 +869,9 @@ struct GPUCmd {
 
 		// 커맨드가 실행될 동안 로드된 텍스쳐가 있으면, 해당 업로드 버퍼를 해제한다.
 		for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
-			GPUResource::TextureLoadedUploadBuffers[i]->Release();
+			if (GPUResource::TextureLoadedUploadBuffers[i] != nullptr) {
+				GPUResource::TextureLoadedUploadBuffers[i]->Release();
+			}
 		}
 		GPUResource::TextureLoadedUploadBuffers.clear();
 	}
@@ -986,17 +1005,15 @@ struct LocalRootSigData {
 	char padding[20];
 
 	LocalRootSigData() {}
-	LocalRootSigData(unsigned int VBOff, unsigned int IBOff, unsigned int MaterialSt) :
-		VBOffset{ VBOff }, IBOffset{ IBOff }, MaterialStart{ MaterialSt }
-	{
-	}
+	LocalRootSigData(unsigned int VBOff, unsigned int IBOff, unsigned int MaterialSt, int ZoneID = -1);
 	LocalRootSigData(const LocalRootSigData& ref) {
 		VBOffset = ref.VBOffset;
 		IBOffset = ref.IBOffset;
+		MaterialStart = ref.MaterialStart;
 	}
 
 	bool operator==(const LocalRootSigData& ref) const {
-		return ref.IBOffset == IBOffset && ref.VBOffset == VBOffset;
+		return (ref.IBOffset == IBOffset && ref.VBOffset == VBOffset) && MaterialStart == ref.MaterialStart;
 	}
 };
 
@@ -1022,10 +1039,24 @@ struct RayTracingMesh {
 	inline static ID3D12Resource* UAV_vertexBuffer = nullptr; // UAV, SRV
 
 	// VB, IB의 최대크기
-	static constexpr int MB = 1024 * 1024;
-	static constexpr int VertexBufferCapacity = 500 * MB; // 500MB
-	static constexpr int IndexBufferCapacity = 500 * MB; // 100MB
-	static constexpr int UAV_VertexBufferCapacity = 500 * MB; // 500MB
+	static constexpr int MB768 = 1048320; // MB에 가까운 768의 배수여야 함. 21845개의 버택스를 포함 가능.
+	static constexpr int VertexBufferCapacity = 700 * MB768; // 700MB
+	static constexpr int IndexBufferCapacity = 300 * MB768; // 300MB
+	static constexpr int UAV_VertexBufferCapacity = 300 * MB768; // 300MB
+
+	//한 존당 들어갈 수 있는 버택스/인덱스 버퍼크기
+	static constexpr int VertexBufferCapacityPerZone = 70 * MB768; // 50MB
+	static constexpr int IndexBufferCapacityPerZone = 30 * MB768; // 20MB
+
+	/*
+	* 버택스 버퍼와 인덱스 버퍼는 10조각으로 나누게 된다.
+	* Seamless Zone을 위해서.
+	* 0 : Global
+	* 1~9 : Zone Local 임.
+	* 
+	* 반면 UAV_VertexBufferCapacity는 
+	* 스킨메쉬가 들어가기 때문에, 모두 글로벌이다.
+	*/
 
 	// 업로드할 메쉬의 VB, IB 가 들어갈 데이터
 	inline static ID3D12Resource* Upload_vertexBuffer = nullptr;
@@ -1033,9 +1064,9 @@ struct RayTracingMesh {
 	inline static ID3D12Resource* UAV_Upload_vertexBuffer = nullptr;
 
 	// 업로드 VB, IB의 최대크기
-	static constexpr int Upload_VertexBufferCapacity = 10 * 20 * MB; // 10 * 20MB
-	static constexpr int Upload_IndexBufferCapacity = 20 * MB; // 2 * 10MB
-	static constexpr int UAV_Upload_VertexBufferCapacity = 20 * MB; // 2 * 20MB
+	static constexpr int Upload_VertexBufferCapacity = 20 * MB768; // 20MB
+	static constexpr int Upload_IndexBufferCapacity = 10 * MB768; // 10MB
+	static constexpr int UAV_Upload_VertexBufferCapacity = 20 * MB768; // 20MB
 
 	// 업로드 VB, IB가 매핑된 CPURAM 데이터의 주소
 	inline static char* pVBMappedStart = nullptr;
@@ -1045,8 +1076,8 @@ struct RayTracingMesh {
 	void MeshAddingUnMap();
 
 	// VB, IB의 현재 크기
-	inline static int VertexBufferByteSize = 0;
-	inline static int IndexBufferByteSize = 0;
+	inline static int VertexBufferByteSize[10] = {};
+	inline static int IndexBufferByteSize[10] = {};
 	inline static int UAV_VertexBufferByteSize = 0;
 
 	// VB, IB를 가리키는 SRV Desc Handle
@@ -1128,11 +1159,10 @@ struct RayTracingMesh {
 	};
 
 	static void StaticInit();
-	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
+	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr, int ZoneID = -1);
 
 	// 생성된 인덱스를 참조하여 생성된다.
 	void AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
-
 	void AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
 
 	void UAV_BLAS_Refit();
@@ -1447,7 +1477,8 @@ struct GlobalDevice {
 	ID3D12Resource* ppGBuffers[GbufferCount] = {};
 
 	// Texutre의 DESC를 할당/해제하여 수정이 가능한 텍스쳐 출력에 쓰이게 한다.
-	DescriptorAllotter TextureDescriptorAllotter;
+	DescriptorAllotter DynamicDescriptorAllotter;
+	DescriptorAllotter DynamicDescriptorAllotterPerZone[9] = {};
 
 	// CBV, SRV, UAV DESC의 증가 사이즈이다.
 	unsigned long long CBV_SRV_UAV_Desc_IncrementSiz = 0;
@@ -2381,7 +2412,7 @@ public:
 	*/
 	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
 
-	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SlotNum = 1, int* SlotArr = nullptr, bool include_DXR = true);
+	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SlotNum = 1, int* SlotArr = nullptr, bool include_DXR = true, int ZoneID = -1);
 
 	/*
 	* 설명 : path 경로에 있는 obj 파일의 Mesh를 불러온다. color 색 대로, centering 이 true일시에 OBB Center가 0이 된다.
@@ -2389,7 +2420,7 @@ public:
 	* vec4 color : Mesh에 입힐 색상
 	* bool centering : Mesh의 OBB Center가 원점인지 여부 (Mesh의 정 중앙이 원점이 됨.)
 	*/
-	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true, bool include_DXR = true);
+	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true, bool include_DXR = true, int ZoneID = -1);
 	static BumpMesh* MakeTerrainMeshFromHeightMap(const char* HeightMapTexFilename, float bumpScale, float Unit, int& XN, int& ZN, byte8** Heightmap, bool include_DXR = true);
 	void MakeTessTerrainMeshFromHeightMap(float EdgeLen, int xdiv, int zdiv);
 
@@ -2848,6 +2879,7 @@ struct Material {
 	GPUResource CB_Resource;
 	MaterialCB_Data* CBData = nullptr;
 	DescIndex TextureSRVTableIndex;
+	int ZoneOff = -1;
 
 	inline static GPUResource MaterialStructuredBuffer;
 	inline static MaterialST_Data* MappedMaterialStructuredBuffer = nullptr;
@@ -2863,6 +2895,7 @@ struct Material {
 		TilingY = 1;
 		TilingOffsetX = 1;
 		TilingOffsetY = 1;
+		ZoneOff = -1;
 	}
 
 	~Material()
@@ -2879,10 +2912,11 @@ struct Material {
 		TilingOffsetX = ref.TilingOffsetX;
 		TilingOffsetY = ref.TilingOffsetY;
 		TextureSRVTableIndex = ref.TextureSRVTableIndex;
+		ZoneOff = ref.ZoneOff;
 	}
 
 	void ShiftTextureIndexs(unsigned int TextureIndexStart);
-	void SetDescTable();
+	void SetDescTable(int zoneid);
 	MaterialCB_Data GetMatCB();
 	MaterialST_Data GetMatST();
 
@@ -3061,7 +3095,7 @@ struct ModelNode {
 	// 해당 메쉬가 몇번째 스킨메쉬인지에 대한 배열 Model이 스킨메쉬를 가지고, Node도 스킨메쉬를 가지면 할당됨.
 	int* Mesh_SkinMeshindex = nullptr;
 	vector<BoundingBox> aabbArr;
-	// 메쉬가 가진 머터리얼 번호 배열 (글로벌 머터리얼 테이블 기준.)
+	// 메쉬가 가진 머터리얼 번호 배열 (렌더 머터리얼 테이블 기준.)
 	int* materialIndex = nullptr;
 
 	//metadata
@@ -3178,7 +3212,7 @@ struct Model {
 	* 매개변수:
 	* string filename : 모델의 경로
 	*/
-	void LoadModelFile2(string filename);
+	void LoadModelFile2(string filename, int ZoneId = -1);
 
 	/*
 	* 설명 : 계층구조를 출력한다.
@@ -3579,7 +3613,15 @@ inline DescHandle DescHandle::operator[](UINT index)
 DescHandle DescIndex::GetCreationDescHandle() const
 {
 	if (isShaderVisible && type == 'n') return gd.ShaderVisibleDescPool.NSVDescHeapCreationHandle[index];
-	else if (type == 'n') return DescHandle(gd.TextureDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+	else if (type == 'n') {
+		int zoneoff = ZoneOffIndex;
+		if (zoneoff >= 0 && zoneoff < 10) {
+			return DescHandle(gd.DynamicDescriptorAllotterPerZone[zoneoff].GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+		}
+		else {
+			return DescHandle(gd.DynamicDescriptorAllotter.GetCPUHandle(index), D3D12_GPU_DESCRIPTOR_HANDLE(0));
+		}
+	}
 	else if (type == 'r') return DescHandle(
 		D3D12_CPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index),
 		D3D12_GPU_DESCRIPTOR_HANDLE(gd.pRtvDescriptorHeap->GetGPUDescriptorHandleForHeapStart().ptr + gd.RTVSize * index));
