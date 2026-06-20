@@ -1982,7 +1982,7 @@ struct World {
 	unsigned short listenPort = 9000;
 	int ownedZoneId = 0;
 
-	bool singleProcessAllZones = true;
+	bool singleProcessAllZones = false;
     
 	unordered_map<int, PlayerTransferData> pendingTransfers;
     int nextTransferToken = 1;
@@ -2159,6 +2159,78 @@ struct World {
 	vector<Quest*> QuestTable;
 
 	int GetStartTalk(Player* p, PeacefulNPC* npc);
+
+#pragma region TimeMeasureCode
+	static constexpr int TimeMeasureSamepleCount = 32;
+	static constexpr int MeasureCount = 1024;
+	ui64 tickStack[MeasureCount] = {};
+	ui64 tickMin[MeasureCount] = {};
+	ui64 tickMax[MeasureCount] = {};
+	ui64 ft[MeasureCount] = {};
+	ui32 cnt[MeasureCount] = {};
+	__forceinline void TIMER_STATICINIT() {
+		for (int i = 0; i < MeasureCount; ++i) {
+			tickMin[i] = numeric_limits<unsigned long long>::lowest() - 1;
+		}
+	}
+	__forceinline void AverageClockStart(int id = 0) {
+		unsigned int aux = 0;
+		ft[id] = __rdtscp(&aux);
+	}
+	__forceinline void AverageClockEnd(int id = 0) {
+		unsigned int aux = 0;
+		ui64 et = __rdtscp(&aux) - 33;
+		cnt[id] += 1;
+		ui64 del = et - ft[id];
+		tickMin[id] = min(tickMin[id], del);
+		tickMax[id] = max(tickMax[id], del);
+		tickStack[id] += del;
+		if (cnt[id] > TimeMeasureSamepleCount) {
+			ui64 avrtick = tickStack[id] / TimeMeasureSamepleCount;
+			cout << "Clock Interval [" << id << "] : Avg : " << avrtick << "clock \t Min : " << tickMin[id] << " clock \n Max : " << tickMax[id] << " clock \n" << endl;
+			tickStack[id] = 0;
+			cnt[id] = 0;
+		}
+	}
+
+	__forceinline void AverageTickStart(int id = 0) {
+		ft[id] = GetTicks();
+	}
+	__forceinline void AverageTickEnd(int id = 0) {
+		ui64 et = GetTicks();
+		cnt[id] += 1;
+		ui64 del = et - ft[id];
+		tickMin[id] = min(tickMin[id], del);
+		tickMax[id] = max(tickMax[id], del);
+		tickStack[id] += del;
+		if (cnt[id] > TimeMeasureSamepleCount) {
+			ui64 avrtick = tickStack[id] / TimeMeasureSamepleCount;
+			cout << "Tick Interval [" << id << "] : Avg : " << avrtick << "tick \t Min : " << tickMin[id] << " tick \n Max : " << tickMax[id] << " tick \n" << endl;
+			tickStack[id] = 0;
+			cnt[id] = 0;
+		}
+	}
+
+	__forceinline void AverageSecPer60Start(int id = 0) {
+		ft[id] = GetTicks();
+	}
+	__forceinline void AverageSecPer60End(int id = 0) {
+		ui64 et = GetTicks();
+		cnt[id] += 1;
+		ui64 del = et - ft[id];
+		tickMin[id] = min(tickMin[id], del);
+		tickMax[id] = max(tickMax[id], del);
+		tickStack[id] += del;
+		if (cnt[id] > TimeMeasureSamepleCount) {
+			double average = 60.0 * (double)(tickStack[id] / TimeMeasureSamepleCount) / (double)QUERYPERFORMANCE_HZ;
+			double Min = 60.0 * ((double)tickMin[id] / (double)QUERYPERFORMANCE_HZ);
+			double Max = 60.0 * ((double)tickMax[id] / (double)QUERYPERFORMANCE_HZ);
+			cout << "Tick Interval [" << id << "] : Avg : " << average << "step \t Min : " << Min << " step \n Max : " << Max << " step \n" << endl;
+			tickStack[id] = 0;
+			cnt[id] = 0;
+		}
+	}
+#pragma endregion
 };
 
 struct Portal : public GameObject {

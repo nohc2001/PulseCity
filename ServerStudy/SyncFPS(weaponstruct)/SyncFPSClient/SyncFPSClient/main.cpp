@@ -155,7 +155,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	game.Init();
 	GetKeyboardState(game.pKeyBuffer);
 	
-	bool Connected = client.Init("127.0.0.1", 9000);
+	constexpr unsigned short InitServerPort = 9073;
+	bool Connected = client.Init("127.0.0.1", InitServerPort);
 	if (Connected == false) {
 		WSACleanup();
 		return 0;

@@ -25,8 +25,10 @@ if not exist "!SERVER_EXE!" (
     exit /b 1
 )
 
-start /affinity FFFF "Server0-Zone73" /D "!SERVER_CWD!" cmd /k ""!SERVER_EXE!" 0 9000 73"
-
+start /affinity FFFF "Server1-Zone73" /D "!SERVER_CWD!" cmd /k ""!SERVER_EXE!" 1 9073 73"
+start /affinity FFFF "Server1-Zone74" /D "!SERVER_CWD!" cmd /k ""!SERVER_EXE!" 1 9074 74"
+start /affinity FFFF "Server1-Zone83" /D "!SERVER_CWD!" cmd /k ""!SERVER_EXE!" 1 9083 83"
+start /affinity FFFF "Server1-Zone84" /D "!SERVER_CWD!" cmd /k ""!SERVER_EXE!" 1 9084 84"
 
 echo [INFO] Launched both server processes.
 endlocal

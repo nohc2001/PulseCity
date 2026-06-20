@@ -17,6 +17,8 @@ void dbgbreak(bool condition) {
 }
 
 int main() {
+	
+
 	int serverId = 0;
 	unsigned short listenPort = 9000;
 
@@ -45,7 +47,9 @@ int main() {
 	gameworld.serverId = serverId;
 	gameworld.listenPort = listenPort;
 	gameworld.ownedZoneId = ownedZoneId;
-	gameworld.singleProcessAllZones = (__argc < 4);
+	if (__argc >= 4) {
+		gameworld.singleProcessAllZones = false;
+	}
 
 	server.Init("127.0.0.1", listenPort);
 

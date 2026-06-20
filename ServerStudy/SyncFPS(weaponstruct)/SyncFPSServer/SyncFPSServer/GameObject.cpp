@@ -4571,6 +4571,8 @@ void World::InitCommonMap() {
 }
 
 void World::Init() {
+	gameworld.TIMER_STATICINIT();
+
 #ifdef DEVELOPMODE_SYNC_GLOBAL_ASSET
 	ifstream GlobalAssetCounter{ "../../GlobalAssetCounter.txt" };
 	if (GlobalAssetCounter.is_open()) {
@@ -4856,11 +4858,16 @@ bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 void World::TryConnectPeers() {
 	if (singleProcessAllZones) return; // 단일 프로세스는 이웃이 같은 메모리에 있어 링크가 필요 없다.
 
+	//AverageSecPer60Start(0);
 	for (int zi = 0; zi < ZoneTable.size(); ++zi) {
 		if (zi == ownedZoneId) continue;
 		if (IsAdjacentZone(ownedZoneId, zi) == false) continue;
 		if (zi <= ownedZoneId) continue;   // 높은 쪽으로만 connect -> 쌍당 연결 1개
 		if (peerLinkUp[zi]) continue;      // 이미 연결됨
+		
+		Zone* otherZone = ZoneTable[zi];
+		if (World::minx > otherZone->x || otherZone->x > World::maxx) continue;
+		if (World::miny > otherZone->y || otherZone->y > World::maxy) continue;
 
 		SOCKET sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, 0);
 		if (sock == INVALID_SOCKET) continue;
@@ -4896,6 +4903,7 @@ void World::TryConnectPeers() {
 		cout << "[Peer] outbound link established to zone " << zi
 			<< " (" << GetZoneIP(zi) << ":" << GetZonePort(zi) << ")" << endl;
 	}
+	//AverageSecPer60End(0);
 }
 
 // [4단계-STEP1] 이웃이 connect 해와 보낸 ServerLink 핸드셰이크를 받았을 때 호출.
@@ -4917,6 +4925,8 @@ void World::OnPeerLinkEstablished(int clientIndex, int fromServerId) {
 void World::SendGhostToPeers() {
 	if (singleProcessAllZones) return;
 
+	//AverageSecPer60Start(1);
+	
 	static char buf[8192];
 	CTS_GhostSync_Header* h = (CTS_GhostSync_Header*)buf;
 	h->st = CTS_Protocol::GhostSync;
@@ -4963,6 +4973,8 @@ void World::SendGhostToPeers() {
 		if (clients[i].isServerPeer == false) continue;
 		send(clients[i].socket, buf, (int)h->size, 0);
 	}
+
+	//AverageSecPer60End(1);
 }
 
 // [4단계-STEP2] 이웃이 보낸 플레이어 목록으로 고스트를 생성/갱신/제거하고,
@@ -5041,6 +5053,9 @@ void World::OnGhostSync(char* data) {
 
 void World::SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage) {
 	if (singleProcessAllZones) return;
+
+	//AverageSecPer60Start(2);
+
 	CTS_GhostDamage_Header h;
 	h.targetZoneId = targetZoneId;
 	h.targetObjIndex = targetObjIndex;
@@ -5051,11 +5066,15 @@ void World::SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float d
 		if (clients[i].peerServerId != targetZoneId) continue;  // 그 존(객체)을 소유한 서버에게만
 		send(clients[i].socket, (const char*)&h, sizeof(h), 0);
 	}
+
+	//AverageSecPer60End(2);
 }
 
 void World::SendMonsterHandoff(int dstZoneId, Monster* m) {
 	if (singleProcessAllZones) return;
 	if (m == nullptr) return;
+
+	//AverageSecPer60Start(3);
 	CTS_MonsterHandoff_Header h;
 	h.dstZoneId = dstZoneId;
 	h.monsterType = (int)m->m_monsterType;
@@ -5068,6 +5087,7 @@ void World::SendMonsterHandoff(int dstZoneId, Monster* m) {
 		if (clients[i].peerServerId != dstZoneId) continue;  // 넘겨받을 서버에게만
 		send(clients[i].socket, (const char*)&h, sizeof(h), 0);
 	}
+	//AverageSecPer60End(3);
 }
 
 void World::SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp) {

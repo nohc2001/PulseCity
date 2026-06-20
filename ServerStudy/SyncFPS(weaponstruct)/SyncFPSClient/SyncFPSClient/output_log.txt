@@ -1,5 +1,4 @@
 Microsoft (R) DirectX Texture Converter [DirectXTex] Version 208 (library)
 Copyright (C) Microsoft Corp.
 
-reading Resources\Map\Zone_2_6\Texture\Ground086_2K-JPG_Roughness.bmp (2048x2048 B8G8R8X8_UNORM 2D) as (2048x2048,12 BC3_UNORM 2D α:Opaque)
-writing Ground086_2K-JPG_Roughness.dds
+reading ..\..\SyncFPSServer\SyncFPSServer\Resources\Map\Zone_4_8\Texture\Road007_2K-JPG_Color.bmp FAILED (80070032: 지원되지 않는 요청입니다. )
