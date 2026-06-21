@@ -1,6 +1,7 @@
 #pragma once
 
 //#define DEVELOPMODE_PIX_DEBUGING
+//#define RAYTRACING_TLAS_DEBUG
 
 #include <SDKDDKVer.h>
 

@@ -471,6 +471,55 @@ void Zone::GetImmortal_ZoneLightBuffer_SRV()
 	Immortal_ZoneLightBuffer_SRV = game.Immortal_ZoneLightBuffer_SRV[Asset_OffsetMul];
 }
 
+void Zone::ZoneAssetRelease()
+{
+	isMapLoaded = false;
+	bReqireBakeLight_Raster = false;
+	bReqireBakeLight_Raytracing = false;
+
+	RayTracingMesh::ReleaseZone_FromAssetOffset(Asset_OffsetMul);
+
+	// Static GameObject Release
+	ZeroMemory(&game.StaticGameObjects[MaxStaticObjectCount * Asset_OffsetMul], sizeof(StaticGameObject*) * MaxStaticObjectCount);
+
+	Map->Release();
+	for (auto f : chunck) {
+		GameChunk* gc = f.second;
+		gc->Release_Asset();
+	}
+
+	// Shader Visible Desc Heap 초기화
+	ZeroMemory(&game.RenderMaterialTable[Zone::MAXZoneMaterialCount * (1 + Asset_OffsetMul)], sizeof(Material*) * Zone::MAXZoneMaterialCount);
+	game.RenderMaterialTableSizePerZone[1 + Asset_OffsetMul] = 0;
+	ZeroMemory(&game.RenderTextureTable[Zone::MAXZoneTextureCount * (1 + Asset_OffsetMul)], sizeof(GPUResource*) * Zone::MAXZoneTextureCount);
+	game.RenderTextureTableSizePerZone[1 + Asset_OffsetMul] = 0;
+	gd.ShaderVisibleDescPool.Reset_Zone_FromAssetOffset(Asset_OffsetMul);
+
+	for (int i = 0; i < TextureTable.size(); ++i) {
+		TextureTable[i]->Release();
+		delete TextureTable[i];
+		TextureTable[i] = nullptr;
+	}
+	TextureTable.clear();
+
+	for (int i = 0; i < MaterialTable.size(); ++i) {
+		MaterialTable[i]->Release();
+		delete MaterialTable[i];
+		MaterialTable[i] = nullptr;
+	}
+	MaterialTable.clear();
+
+	for (int i = 0; i < LightTable.size(); ++i) {
+		delete LightTable[i];
+		LightTable[i] = nullptr;
+	}
+	LightTable.clear();
+
+	ZoneLightChuncks.Release();
+	ZoneLightChuncks_Mapped = nullptr;
+	//Immortal_ZoneLightBuffer_SRV 는 어짜피 참조만 해서 상관이 없음.
+}
+
 namespace
 {
 	enum class ParticleSpriteSlot
@@ -1744,6 +1793,9 @@ void Game::Init()
 		game.ShootPointMesh = new Mesh();
 		game.ShootPointMesh->CreateWallMesh(0.05f, 0.05f, 0.05f, { 1, 1, 1, 0.5f });
 
+		game.RaytracingTLASBlank = new BumpMesh();
+		RaytracingTLASBlank->CreateWallMesh(1, 1, 1, vec4(1, 1, 1, 1));
+
 		for (int i = 0; i < 3; ++i) {
 			MyDirLight[i].ShadowMap = gd.CreateShadowMap(kShadowCascadeResolutions[i], kShadowCascadeResolutions[i], gd.GetDirLightCascadingShadowDSVIndex(i), MyDirLight[i]);
 			MyDirLight[i].View.mat = XMMatrixLookAtLH(vec4(0, 2, 5, 0), vec4(0, 0, 0, 0), vec4(0, 1, 0, 0));
@@ -2136,6 +2188,8 @@ void Game::LoadLinkedZoneMaps()
 		if (nearzone->Map != nullptr) continue;
 
 		if (nearzone->isMapLoaded == false) {
+			int assetOff = nearzone->Asset_OffsetMul;
+
 			loadingMap = true;
 			nearzone->Map = new GameMap();
 			bool isLoadSuccess = nearzone->Map->LoadMap(nearzone->Load_MapName, nearzone->zoneid);
@@ -2169,6 +2223,8 @@ void Game::LoadLinkedZoneMaps()
 			nearzone->GetZoneChunkGOIC();
 
 			nearzone->isMapLoaded = true;
+			nearzone->bReqireBakeLight_Raster = true;
+			nearzone->bReqireBakeLight_Raytracing = true;
 		}
 	}
 
@@ -2251,6 +2307,25 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 	if (zoneid < 0 || zoneid >= (int)ZoneTable.size()) return;
 	Zone* prevZone = Current_Zone;
 	Zone* nextZone = ZoneTable[zoneid];
+
+	// 다음 존의 nearZone에 들어오지 않는 존을 Release
+	for (int i = 0; i < 9; ++i) {
+		Zone* nz = prevZone->nearZones[i];
+		if (nz != nullptr && nz->isMapLoaded) {
+			bool isRelease = true;
+			for (int k = 0; k < 9; ++k) {
+				Zone* nzk = nextZone->nearZones[k];
+				if (nz == nzk) {
+					isRelease = false;
+					break;
+				}
+			}
+
+			if (isRelease) {
+				nz->ZoneAssetRelease();
+			}
+		}
+	}
 
 	// [seamless] Light transfer path: keep all dynamic objects + the player, just switch the active
 	// zone and load any not-yet-loaded neighbor maps (LoadLinkedZoneMaps skips already-loaded ones).
@@ -2949,6 +3024,7 @@ void Game::Render() {
 
 void Game::Render_RayTracing()
 {
+	//dbgbreak(game.currentZoneId == 74);
 	PerfGPUWaitMs = 0.0;
 	PerfGPUPreWaitMs = 0.0;
 	PerfGPUShadowWaitMs = 0.0;
@@ -3131,8 +3207,8 @@ void Game::Render_RayTracing()
 	}
 	gd.gpucmd.Close(true);
 	gd.gpucmd.Execute(true);
-	//MeasureGPUWait(PerfGPUMainWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); }); // ?
-	gd.gpucmd.WaitGPUComplete();
+	MeasureGPUWait(PerfGPUMainWaitMs, [&]() { gd.gpucmd.WaitGPUComplete(); }); // ?
+	//gd.gpucmd.WaitGPUComplete();
 
 	HRESULT hResult;
 	//Blur
@@ -3160,7 +3236,7 @@ void Game::Render_RayTracing()
 	
 	hResult = gd.gpucmd.Reset(true);
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	//gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	//gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 	//9. ����Ʈ/������Ʈ ����

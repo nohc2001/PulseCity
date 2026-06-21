@@ -839,9 +839,7 @@ struct GameChunk {
 
 	// 이름에서 ShapeIndex를 얻는 map
 	vector<Light*> Lights; // 해당 청크에 범위가 걸치는 모든 라이팅
-
 	int StaticLightCount = 0; // 청크에 참조된 모든 라이팅의 개수
-	GPUResource GameChunckRefLightArr; // 청크에 참조된 모든 라이팅을 Structured Buffer로 모아 놓은 것.
 
 	ChunkIndex cindex;
 	BoundingBox AABB;
@@ -857,6 +855,7 @@ struct GameChunk {
 	}
 	void SetChunkIndex(ChunkIndex ci);
 	void Release();
+	void Release_Asset();
 };
 
 /*

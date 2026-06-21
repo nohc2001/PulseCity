@@ -900,6 +900,33 @@ void GameObject::PushRenderBatch(matrix parent)
 }
 void GameObject::Release()
 {
+	//Raytracing Release
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh) {
+		int TLASindex = ((char*)this->RaytracingWorldMatInput - (char*)game.MyRayTracingShader->TLAS_InstanceDescs_MappedData) / sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
+		if (0 <= TLASindex && TLASindex < game.MyRayTracingShader->TLASAlloter.size) {
+			ZeroMemory(&game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[TLASindex], sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+			game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[TLASindex].AccelerationStructure = game.RaytracingTLASBlank->rmesh.MeshDefaultInstanceData.AccelerationStructure;
+			game.MyRayTracingShader->TLASAlloter.Free(TLASindex);
+		}
+	}
+	else if (model) {
+		for (int i = 0; i < model->nodeCount; ++i) {
+			if (this->RaytracingWorldMatInput_Model[i] != nullptr) {
+				float* ptr = this->RaytracingWorldMatInput_Model[i];
+
+				int TLASindex = ((char*)ptr - (char*)game.MyRayTracingShader->TLAS_InstanceDescs_MappedData) / sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
+				if (0 <= TLASindex && TLASindex < game.MyRayTracingShader->TLASAlloter.size) {
+					ZeroMemory(&game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[TLASindex], sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+					game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[TLASindex].AccelerationStructure = game.RaytracingTLASBlank->rmesh.MeshDefaultInstanceData.AccelerationStructure;
+					game.MyRayTracingShader->TLASAlloter.Free(TLASindex);
+				}
+			}
+		}
+	}
+
 	tag[GameObjectTag::Tag_Enable] = false;
 	gMeshLODState.erase((const void*)this);
 	gBoxLODState.erase((const void*)this);
@@ -4844,9 +4871,28 @@ bool GameMap::LoadMap(const char* MapName, int ZoneID)
 
 void GameMap::Release() {
 	name.clear();
-	meshes.clear();
-	models.clear();
+
+	for (int i = 0; i < MapObjects.size(); ++i) {
+		MapObjects[i]->Release();
+		delete MapObjects[i];
+		MapObjects[i] = nullptr;
+	}
 	MapObjects.clear();
+
+	for (int i = 0; i < meshes.size(); ++i) {
+		meshes[i]->Release();
+		delete meshes[i];
+		meshes[i] = nullptr;
+	}
+	meshes.clear();
+
+	for (int i = 0; i < models.size(); ++i) {
+		models[i]->Release(false);
+		delete models[i];
+		models[i] = nullptr;
+	}
+	models.clear();
+
 	StartShapeIndex = 0;
 	StartDesc_Init = 0;
 	StartDesc_Texture = 0;
@@ -4894,6 +4940,14 @@ void GameChunk::Release() {
 	SkinMesh_gameobjects.Release();
 	cindex = ChunkIndex(0, 0, 0);
 	TourID = 0;
+}
+
+void GameChunk::Release_Asset()
+{
+	Lights.clear();
+	Static_gameobjects.Alloter.Clear();
+	Dynamic_gameobjects.Alloter.Clear();
+	SkinMesh_gameobjects.Alloter.Clear();
 }
 
 void Light::GenerateLight()

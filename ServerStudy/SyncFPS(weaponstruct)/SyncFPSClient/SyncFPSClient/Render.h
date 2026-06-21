@@ -1,7 +1,10 @@
 #pragma once
+#include <set>
 #include "stdafx.h"
 #include "ttfParser.h"
 #include "SpaceMath.h"
+#include "vecset.h"
+
 
 using namespace TTFFontParser;
 
@@ -380,6 +383,8 @@ struct SVDescPool2
 	bool IncludeHandle(D3D12_CPU_DESCRIPTOR_HANDLE hcpu);
 	void DynamicReset();
 	void ImmortalReset_ExcludeInit();
+
+	void Reset_Zone_FromAssetOffset(int AssetOffset);
 };
 
 struct GPUResource {
@@ -1080,6 +1085,8 @@ struct RayTracingMesh {
 	inline static int IndexBufferByteSize[10] = {};
 	inline static int UAV_VertexBufferByteSize = 0;
 
+	static void ReleaseZone_FromAssetOffset(int AssetOffset);
+
 	// VB, IB를 가리키는 SRV Desc Handle
 	inline static DescIndex VBIB_DescIndex;
 	// UAV_VB, IB를 가리키는 SRV Desc Handle
@@ -1158,6 +1165,8 @@ struct RayTracingMesh {
 		}
 	};
 
+	static std::set<D3D12_GPU_VIRTUAL_ADDRESS> BLASVA_Set;
+
 	static void StaticInit();
 	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr, int ZoneID = -1);
 
@@ -1230,6 +1239,7 @@ struct RayTracingShader {
 	int TLAS_InstanceDescs_Size = 0;
 	int TLAS_InstanceDescs_ImmortalSize = 0;
 	D3D12_RAYTRACING_INSTANCE_DESC* TLAS_InstanceDescs_MappedData = nullptr;
+	BitAllotter TLASAlloter;
 
 	// immortal 한 인스턴스는 clear가 된 후에 추가가 가능함. 안그럼 쌩뚱맞은 인스턴스가 immortal 영역으로 들어간다.
 	// 반환값은 해당 인스턴스의 월드행렬(3x4)를 가리키는 포인터를 반환한다.
@@ -3254,7 +3264,7 @@ struct Model {
 	*/
 	int FindNodeIndexByName(const std::string& name);
 
-	void Release();
+	void Release(bool releaseMat = true);
 };
 
 /*

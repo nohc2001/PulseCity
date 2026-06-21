@@ -8,6 +8,7 @@
 GlobalDevice gd;
 extern Game game;
 extern int dbgc[128];
+std::set<D3D12_GPU_VIRTUAL_ADDRESS> RayTracingMesh::BLASVA_Set;
 
 unordered_map<string, int> Shape::StrToShapeIndex;
 vector<Shape> Shape::ShapeTable;
@@ -533,6 +534,15 @@ void GPUResource::Release()
 	CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_COMMON;
 	extraData = 0;
 	pGPU = 0;
+
+	if (descindex.type == 'n' && descindex.isShaderVisible == false) {
+		if (descindex.ZoneOffIndex >= 0) {
+			gd.DynamicDescriptorAllotter.Free(descindex.index);
+		}
+		else {
+			gd.DynamicDescriptorAllotterPerZone[descindex.ZoneOffIndex].Free(descindex.index);
+		}
+	}
 	descindex.Set(false, 0);
 }
 
@@ -909,6 +919,32 @@ void SVDescPool2::ImmortalReset_ExcludeInit() {
 	MaterialCBVCap = 64;
 	InstancingSRVSiz = 0;
 	InstancingSRVCap = 64;
+}
+
+void SVDescPool2::Reset_Zone_FromAssetOffset(int AssetOffset)
+{
+	if (AssetOffset < 0) AssetOffset = -1;
+	int off = AssetOffset + 1;
+
+	D3D12_DESCRIPTOR_HEAP_TYPE descheaptype = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+
+	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + Zone::MAXZoneTextureCount * off);
+	if (game.RenderTextureTable.size() > 0 && game.RenderTextureTable[0] != nullptr) {
+		for (int i = 0; i < Zone::MAXZoneTextureCount; ++i) {
+			gd.pDevice->CopyDescriptorsSimple(1, dummyTexSRV.hRender.hcpu, game.RenderTextureTable[0]->descindex.hCreation.hcpu, descheaptype);
+			dummyTexSRV.index += 1;
+		}
+	}
+	TextureSRVSizePerZone[off] = 0;
+
+	DescIndex dummyMatCBV = DescIndex(true, TextureSRVStart + TextureSRVCap + Zone::MAXZoneMaterialCount * off);
+	if (game.RenderMaterialTable.size() > 0 && game.RenderMaterialTable[0] != nullptr) {
+		for (int i = 0; i < Zone::MAXZoneMaterialCount; ++i) {
+			gd.pDevice->CopyDescriptorsSimple(1, dummyMatCBV.hRender.hcpu, game.RenderMaterialTable[0]->CB_Resource.descindex.hCreation.hcpu, descheaptype);
+			dummyMatCBV.index += 1;
+		}
+	}
+	MaterialCBVSizePerZone[off] = 0;
 }
 
 #pragma endregion
@@ -2523,6 +2559,14 @@ void RayTracingMesh::MeshAddingUnMap() {
 	Upload_indexBuffer->Unmap(0, nullptr);
 	UAV_Upload_vertexBuffer->Unmap(0, nullptr);
 }
+void RayTracingMesh::ReleaseZone_FromAssetOffset(int AssetOffset)
+{
+	if (AssetOffset < 0) AssetOffset = -1;
+	int off = AssetOffset + 1;
+
+	VertexBufferByteSize[off] = 0;
+	IndexBufferByteSize[off] = 0;
+}
 void RayTracingMesh::StaticInit()
 {
 	auto uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -2834,6 +2878,8 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
 
+		BLASVA_Set.insert(MeshDefaultInstanceData.AccelerationStructure);
+
 		VertexBufferByteSize[off] += addtionalVB_Bytesiz;
 		VertexBufferByteSize[off] = VBAlign * (1 + ((VertexBufferByteSize[off] - 1) / VBAlign));
 		//VertexBufferByteSize = ((VertexBufferByteSize + 255) & ~255);
@@ -3016,6 +3062,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 		MeshDefaultInstanceData.InstanceMask = 1;
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
+
+		BLASVA_Set.insert(MeshDefaultInstanceData.AccelerationStructure);
 
 		UAV_VertexBufferByteSize += addtionalVB_Bytesiz;
 		UAV_VertexBufferByteSize = VBAlign * (1 + ((UAV_VertexBufferByteSize - 1) / VBAlign));
@@ -3643,11 +3691,17 @@ void Mesh::Release()
 	VertexUploadBuffer.Release();
 	IndexBuffer.Release();
 	IndexUploadBuffer.Release();
-	for (int i = 0; i < subMeshNum; ++i) {
-		InstanceData[i].Release();
+	if (InstanceData != nullptr) {
+		for (int i = 0; i < subMeshNum; ++i) {
+			InstanceData[i].Release();
+		}
+		delete[] InstanceData;
 	}
-	delete[] InstanceData;
-	delete[] SubMeshIndexStart;
+	
+	if (SubMeshIndexStart != nullptr) {
+		delete[] SubMeshIndexStart;
+		SubMeshIndexStart = nullptr;
+	}
 }
 
 // 구 메쉬 생성
@@ -4071,7 +4125,7 @@ BumpMesh::~BumpMesh()
 void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 {
 	std::vector<Vertex> vertices;
-	std::vector<UINT> indices;
+	std::vector<TriangleIndex> indices;
 	// Front
 	vertices.push_back(Vertex(XMFLOAT3(-width, -height, -depth), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0, 0), XMFLOAT3(1, 0, 0)));
 	vertices.push_back(Vertex(XMFLOAT3(width, -height, -depth), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1, 0), XMFLOAT3(1, 0, 0)));
@@ -4105,23 +4159,23 @@ void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color
 
 	// index
 	// front
-	indices.push_back(0); indices.push_back(2); indices.push_back(1);
-	indices.push_back(2); indices.push_back(0); indices.push_back(3);
+	indices.push_back(TriangleIndex(0, 2, 1));
+	indices.push_back(TriangleIndex(2, 0, 3));
 	// back
-	indices.push_back(4); indices.push_back(5); indices.push_back(6);
-	indices.push_back(6); indices.push_back(7); indices.push_back(4);
+	indices.push_back(TriangleIndex(4, 5, 6));
+	indices.push_back(TriangleIndex(6, 7, 4));
 	// top
-	indices.push_back(8); indices.push_back(10); indices.push_back(9);
-	indices.push_back(10); indices.push_back(8); indices.push_back(11);
+	indices.push_back(TriangleIndex(8, 10, 9));
+	indices.push_back(TriangleIndex(10, 8, 11));
 	// bottom
-	indices.push_back(12); indices.push_back(13); indices.push_back(14);
-	indices.push_back(14); indices.push_back(15); indices.push_back(12);
+	indices.push_back(TriangleIndex(12, 13, 14));
+	indices.push_back(TriangleIndex(14, 15, 12));
 	// left
-	indices.push_back(16); indices.push_back(18); indices.push_back(17);
-	indices.push_back(18); indices.push_back(16); indices.push_back(19);
+	indices.push_back(TriangleIndex(16, 18, 17));
+	indices.push_back(TriangleIndex(18, 16, 19));
 	// right
-	indices.push_back(20); indices.push_back(22); indices.push_back(21);
-	indices.push_back(22); indices.push_back(20); indices.push_back(23);
+	indices.push_back(TriangleIndex(20, 22, 21));
+	indices.push_back(TriangleIndex(22, 20, 23));
 
 	// OBB
 	OBB_Tr = { 0, 0, 0 };
@@ -4129,6 +4183,9 @@ void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color
 
 	int nVertices = vertices.size();
 	int nStride = sizeof(Vertex);
+
+	CreateMesh_FromVertexAndIndexData(vertices, indices, 1, nullptr, true, -1);
+	/*rmesh.AllocateRaytracingMesh(, nullptr, -1);
 
 	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
 	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
@@ -4152,7 +4209,7 @@ void BumpMesh::CreateWallMesh(float width, float height, float depth, vec4 color
 
 	IndexNum = indices.size();
 	VertexNum = vertices.size();
-	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;*/
 }
 
 void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SubMeshNum, int* SubMeshIndexArr, bool include_DXR, int ZoneID)
@@ -4212,7 +4269,7 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 		VertexNum = vert.size();
 		topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	}
-	InstancingInit();
+	//InstancingInit();
 	game.AddMesh(this);
 	/*if (!IsAutoLODGenerated) {
 		AutoLOD_RegisterBumpMesh(this);
@@ -4338,7 +4395,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 
 	CreateMesh_FromVertexAndIndexData(temp_vertices, TrianglePool, 1, nullptr, gd.isSupportRaytracing, ZoneID);
 
-	InstancingInit();
+	//InstancingInit();
 	game.AddMesh(this);
 
 	/*MeshOBB = BoundingOrientedBox(XMFLOAT3(0.0f, 0.0f, 0.0f), MAXpos, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));*/
@@ -5742,7 +5799,7 @@ int Model::FindNodeIndexByName(const std::string& name)
 	return -1;
 }
 
-void Model::Release() {
+void Model::Release(bool releaseMat) {
 	mName.clear();
 	RootNode = nullptr;
 	NodeArr.clear();
@@ -5782,15 +5839,22 @@ void Model::Release() {
 		NodeOffsetMatrixArr = nullptr;
 	}
 
-	for (int i = TextureTableStart; i < mNumTextures + TextureTableStart; ++i) {
-		game.TextureTable[i]->Release();
-		delete game.TextureTable[i];
-		game.TextureTable[i] = nullptr;
-	}
+	if (releaseMat) {
+		for (int i = TextureTableStart; i < mNumTextures + TextureTableStart; ++i) {
+			if (game.TextureTable[i] != nullptr) {
+				game.TextureTable[i]->Release();
+				delete game.TextureTable[i];
+				game.TextureTable[i] = nullptr;
+			}
+		}
 
-	for (int i = MaterialTableStart; i < mNumMaterials + MaterialTableStart; ++i) {
-		game.MaterialTable[i]->Release();
-		delete game.MaterialTable[i];
+		for (int i = MaterialTableStart; i < mNumMaterials + MaterialTableStart; ++i) {
+			if (game.MaterialTable[i] != nullptr) {
+				game.MaterialTable[i]->Release();
+				delete game.MaterialTable[i];
+				game.MaterialTable[i] = nullptr;
+			}
+		}
 	}
 
 	AABB[0] = 0;
@@ -5999,6 +6063,15 @@ MaterialST_Data Material::GetMatST()
 void Material::Release() {
 	CBData = nullptr;
 	CB_Resource.Release();
+
+	if (TextureSRVTableIndex.type == 'n' && TextureSRVTableIndex.isShaderVisible == false) {
+		if (TextureSRVTableIndex.ZoneOffIndex >= 0) {
+			gd.DynamicDescriptorAllotter.Free(TextureSRVTableIndex.index);
+		}
+		else {
+			gd.DynamicDescriptorAllotterPerZone[TextureSRVTableIndex.ZoneOffIndex].Free(TextureSRVTableIndex.index);
+		}
+	}
 	TextureSRVTableIndex.Set(false, 0, 0);
 	
 	ZeroMemory(this, sizeof(Material));
@@ -9275,7 +9348,8 @@ float** RayTracingShader::push_rins_immortal(RayTracingMesh* mesh, matrix mat, L
 PUSH_INSTACEDESC:
 	HitGroupShaderTableSize = HitGroupShaderTableImmortalSize;
 
-	D3D12_RAYTRACING_INSTANCE_DESC* insarr = &TLAS_InstanceDescs_MappedData[TLAS_InstanceDescs_ImmortalSize];
+	int tlas_index = TLASAlloter.AllocArr(LRSCount);
+	D3D12_RAYTRACING_INSTANCE_DESC* insarr = &TLAS_InstanceDescs_MappedData[tlas_index];
 	mat.transpose();
 	for (int i = 0; i < LRSCount; ++i) {
 		insarr[i] = mesh->MeshDefaultInstanceData;
@@ -9283,13 +9357,15 @@ PUSH_INSTACEDESC:
 		insarr[i].InstanceContributionToHitGroupIndex = curindex[i];
 		RaytracingInputWorldMatptr[i] = (float*)insarr[i].Transform;
 	}
-	TLAS_InstanceDescs_ImmortalSize += LRSCount;
-	TLAS_InstanceDescs_Size = TLAS_InstanceDescs_ImmortalSize;
+
+	/*TLAS_InstanceDescs_ImmortalSize += LRSCount;
+	TLAS_InstanceDescs_Size = TLAS_InstanceDescs_ImmortalSize;*/
 	//dbgbreak(TLAS_InstanceDescs_MappedData[0].AccelerationStructure == 0);
 
 	return RaytracingInputWorldMatptr;
 }
 
+// 안쓰임.
 void RayTracingShader::clear_rins()
 {
 	hitGroupShaderTable.m_shaderRecords.resize(HitGroupShaderTableImmortalSize);
@@ -9297,6 +9373,7 @@ void RayTracingShader::clear_rins()
 	TLAS_InstanceDescs_Size = TLAS_InstanceDescs_ImmortalSize;
 }
 
+//안 쓰임.
 float** RayTracingShader::push_rins(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex)
 {
 	std::unordered_map<ShaderRecord, int>::iterator f;
@@ -9594,7 +9671,7 @@ void RayTracingShader::InitAccelationStructure()
 	D3D12_RAYTRACING_INSTANCE_DESC* copyData = nullptr;
 	if (TLAS) {
 		copyData = new D3D12_RAYTRACING_INSTANCE_DESC[TLAS_InstanceDescs_Capacity];
-		memcpy_s(copyData, TLAS_InstanceDescs_Size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), TLAS_InstanceDescs_MappedData, TLAS_InstanceDescs_Size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+		memcpy_s(copyData, TLASAlloter.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), TLAS_InstanceDescs_MappedData, TLASAlloter.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
 		TLAS->Release();
 		TLAS_InstanceDescs_Res->Unmap(0, nullptr);
 		TLAS_InstanceDescs_Res->Release();
@@ -9628,8 +9705,10 @@ void RayTracingShader::InitAccelationStructure()
 	//instanceDesc.AccelerationStructure = TestMesh->BLAS->GetGPUVirtualAddress();
 	//instanceDesc.InstanceContributionToHitGroupIndex = 0;
 	TLAS_InstanceDescs_MappedData = (D3D12_RAYTRACING_INSTANCE_DESC*)AllocateUploadBuffer(device, nullptr, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * TLAS_InstanceDescs_Capacity, &TLAS_InstanceDescs_Res, L"InstanceDescs", false);
+	TLASAlloter.Init(TLAS_InstanceDescs_Capacity);
+
 	if (copyData) {
-		memcpy_s(TLAS_InstanceDescs_MappedData, TLAS_InstanceDescs_Size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), copyData, TLAS_InstanceDescs_Size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+		memcpy_s(TLAS_InstanceDescs_MappedData, TLASAlloter.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), copyData, TLASAlloter.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
 		delete[] copyData;
 		copyData = nullptr;
 	}
@@ -9637,6 +9716,8 @@ void RayTracingShader::InitAccelationStructure()
 
 void RayTracingShader::BuildAccelationStructure()
 {
+	static volatile int inc = 0;
+
 	ID3D12Device5* device = gd.raytracing.dxrDevice;
 	ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
 
@@ -9653,7 +9734,12 @@ void RayTracingShader::BuildAccelationStructure()
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS topLevelInputs = {};
 	topLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 	topLevelInputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
-	topLevelInputs.NumDescs = TLAS_InstanceDescs_Size;
+	topLevelInputs.NumDescs = TLASAlloter.size;
+#ifdef RAYTRACING_TLAS_DEBUG
+	if (game.currentZoneId == 74) {
+		topLevelInputs.NumDescs = inc;
+	}
+#endif
 	topLevelInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
 
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO topLevelPrebuildInfo = {};
@@ -9678,6 +9764,15 @@ void RayTracingShader::BuildAccelationStructure()
 	// Kick off acceleration structure construction.
 	gd.gpucmd.Execute(true);
 	gd.gpucmd.WaitGPUComplete();
+
+	HRESULT reason = gd.pDevice->GetDeviceRemovedReason();
+	if (FAILED(reason)) {
+	}
+	else {
+		if (inc + 5 <= TLASAlloter.size) {
+			inc += 5;
+		}
+	}
 }
 
 void RayTracingShader::InitShaderTable()

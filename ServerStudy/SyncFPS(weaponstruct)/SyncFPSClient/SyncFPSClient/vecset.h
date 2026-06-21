@@ -112,6 +112,84 @@ public:
 		return index;
 	}
 
+	int AllocArr(int arrsize) {
+		int offset = find_zeros_any_n(AllocFlag, size / 32, arrsize);
+		if (offset < size && offset != -1) {
+			int index = offset;
+			for (int i = 0; i < arrsize; ++i) {
+				int pi = index >> 5;
+				int ci = index & 31;
+				ui32& flag = AllocFlag[pi];
+				flag |= (1 << ci);
+				index += 1;
+			}
+			return offset;
+		}
+		else {
+			int offset = size;
+			if (size + arrsize <= Capacity) {
+				size += arrsize;
+				int index = offset;
+				for (int i = 0; i < arrsize; ++i) {
+					int pi = index >> 5;
+					int ci = index & 31;
+					ui32& flag = AllocFlag[pi];
+					flag |= (1 << ci);
+					index += 1;
+				}
+				return offset;
+			}
+			else {
+				// 확장이 필요해 보임.
+				return -1;
+			}
+		}
+	}
+
+	//AI Code Start <Google Gemini>
+	int64_t find_zeros_any_n(const unsigned int* arr, size_t size, int N) {
+		if (N <= 0) return 0;
+		if (!arr || size == 0) return -1;
+		int consecutive_zeros = 0;
+		int64_t start_idx = -1;
+
+		for (size_t i = 0; i < size; ++i) {
+			unsigned int val = arr[i];
+			if (val == 0) {
+				if (consecutive_zeros == 0) start_idx = (int64_t)i * 32;
+				consecutive_zeros += 32;
+				if (consecutive_zeros >= N) return start_idx;
+				continue;
+			}
+			int bit_pos = 0;
+			while (bit_pos < 32) {
+				unsigned int current = val >> bit_pos;
+				if ((current & 1) == 0) {
+					int zeros = std::countr_zero(current);
+					if (zeros > 32 - bit_pos) zeros = 32 - bit_pos;
+					if (consecutive_zeros == 0) start_idx = ((int64_t)i * 32) + bit_pos;
+					consecutive_zeros += zeros;
+					if (consecutive_zeros >= N) return start_idx;
+					bit_pos += zeros;
+				}
+				else {
+					consecutive_zeros = 0;
+					start_idx = -1;
+					int ones = std::countr_zero(~current);
+					bit_pos += ones;
+				}
+			}
+		}
+		return -1;
+	}
+	//AI Code End <Google Gemini>
+
+	void Clear() {
+		for (int i = 0; i < Capacity / 32; ++i) {
+			AllocFlag[i] = 0;
+		}
+	}
+
 	void Free(int index) {
 		if (index >= Capacity) return;
 		int pi = index >> 5;
