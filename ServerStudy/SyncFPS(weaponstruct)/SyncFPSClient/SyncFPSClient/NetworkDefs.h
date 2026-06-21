@@ -17,6 +17,12 @@ struct Client {
 			return false;
 		}
 
+		// Gameplay input packets are tiny and latency-sensitive. Do not let TCP's
+		// small-packet coalescing delay key/skill commands behind other traffic.
+		BOOL noDelay = TRUE;
+		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+			reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
+
 		struct sockaddr_in serveraddr;
 		memset(&serveraddr, 0, sizeof(serveraddr));
 		serveraddr.sin_family = AF_INET;
@@ -141,7 +147,7 @@ struct twoPage {
 /*
 * 설명 : 무기 타입 enum
 */
-enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, Max };
+enum class WeaponType { MachineGun, Sniper, Shotgun, Rifle, Pistol, DualPistol, DronePistol, SMG, GrenadeGun, Max };
 
 /*
 * 설명 : 무기 타입 구조체
@@ -161,7 +167,11 @@ static WeaponData GWeaponTable[] = {
 	{ WeaponType::Sniper, 1.5f, 10.0f, 1.0f, 100.0f, 5, 2.0f },
 	{ WeaponType::Shotgun, 0.7f, 7.0f, 0.6f, 12.0f, 8, 3.0f },
 	{ WeaponType::Rifle, 0.12f, 10.0f, 0.3f, 15.0f, 30, 2.5f },
-	{ WeaponType::Pistol, 0.4f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
+	{ WeaponType::Pistol, 0.14f, 7.0f, 0.16f, 15.0f, 30, 1.5f },
+	{ WeaponType::DualPistol, 0.50f, 6.0f, 0.22f, 12.0f, 30, 2.2f },
+	{ WeaponType::DronePistol, 0.35f, 5.0f, 0.2f, 15.0f, 12, 1.5f },
+	{ WeaponType::SMG, 0.09f, 8.0f, 0.15f, 13.0f, 25, 2.0f },
+	{ WeaponType::GrenadeGun, 0.80f, 9.0f, 0.5f, 10.0f, 5, 2.4f },
 	// 
 };
 

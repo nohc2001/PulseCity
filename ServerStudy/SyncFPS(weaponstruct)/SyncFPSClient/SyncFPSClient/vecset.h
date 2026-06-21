@@ -41,13 +41,16 @@ public:
 	__declspec(property(get = GetDynamicCapacityMode, put = SetDynamicCapacityMode)) bool isDynamicCapacityMode;
 
 	void Init(int capacity) {
-		int AllocSiz = capacity / 32;
+		int AllocSiz = (capacity + 31) / 32;
+		if (AllocSiz <= 0) AllocSiz = 1;
 		ui32* newArr = new ui32[AllocSiz];
 		if (AllocFlag != nullptr && extraData) {
 			ZeroMemory(newArr, sizeof(ui32) * AllocSiz);
 
-			int len = Capacity * sizeof(ui32) / 32;
-			memcpy_s(newArr, len, AllocFlag, len);
+			int newBytes = AllocSiz * sizeof(ui32);
+			int oldBytes = ((Capacity + 31) / 32) * sizeof(ui32);
+			int copyBytes = (oldBytes < newBytes) ? oldBytes : newBytes;
+			memcpy_s(newArr, newBytes, AllocFlag, copyBytes);
 			delete[] AllocFlag;
 		}
 		else {
@@ -113,7 +116,7 @@ public:
 	}
 
 	void Free(int index) {
-		if (index >= Capacity) return;
+		if (index < 0 || index >= Capacity || AllocFlag == nullptr) return;
 		int pi = index >> 5;
 		int ci = index & 31;
 		ui32& flag = AllocFlag[pi];
@@ -123,6 +126,7 @@ public:
 	}
 
 	__forceinline bool isnull(int index) {
+		if (index < 0 || index >= Capacity || AllocFlag == nullptr) return true;
 		int pi = index >> 5; // SHR (R32, I8) lat 1	throuput 0.50 / 0.50 port 1*p06
 		int ci = index & 31;
 		ui32 flag = AllocFlag[pi];
@@ -130,6 +134,7 @@ public:
 	}
 
 	__forceinline bool isAlloc(int index) {
+		if (index < 0 || index >= Capacity || AllocFlag == nullptr) return false;
 		int pi = index >> 5; // SHR (R32, I8) lat 1	throuput 0.50 / 0.50 port 1*p06
 		int ci = index & 31;
 		ui32 flag = AllocFlag[pi];

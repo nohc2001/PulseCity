@@ -122,6 +122,8 @@ void Zone::Update(float deltaTime) {
         }
     }
 
+    UpdateBossPrototype(deltaTime);
+
     // �浹 ó�� (Dynamic ������Ʈ ��)
     {
         TourID += 1;
@@ -164,6 +166,7 @@ void Zone::Update(float deltaTime) {
                 gbj1->worldMat.pos += gbj1->tickLVelocity;
                 BoundingOrientedBox obb_after = gbj1->GetOBB();
                 gbj1->worldMat.pos -= gbj1->tickLVelocity;
+
                 GameObjectIncludeChunks goic_before = GetChunks_Include_OBB(obb_before);
                 GameObjectIncludeChunks goic_after = GetChunks_Include_OBB(obb_after);
                 GameObjectIncludeChunks goic_sum = goic_before;
@@ -1017,23 +1020,46 @@ void Zone::SpawnObjects() {
     // [party/dungeon] don't fill any dungeon floor with random open-world monsters/NPC (boss content separate).
     if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) return;
 
-    static constexpr int range = 100;
-    for (int i = 0; i < 20; ++i) {
-        Monster* mon = new Monster();
-        mon->zone = this;
-        MonsterType monsterType = (MonsterType)(rand() % (int)MonsterType::Max);
-        mon->ApplyMonsterData(monsterType);
-        //dron spawn higher
+    // Player skill/weapon test mode: keep all monster/boss code intact, but do
+    // not instantiate combat actors. Flip this one flag back to true when the
+    // combat population is needed again.
+    constexpr bool SpawnCombatActors = false;
 
-        float spawnY = 2.0f;
+    if constexpr (SpawnCombatActors) {
+        Monster* boss = new Monster();
+        boss->zone = this;
+        boss->ApplyMonsterData(MonsterType::Tower);
+        boss->HP = 7500.0f;
+        boss->MaxHP = 7500.0f;
+        boss->Attack = 0.0f;
+        boss->Defense = 0.0f;
+        boss->Init(XMMatrixTranslation(0.0f, 0.0f, 0.0f));
+        BossPrototypeIndex = NewObject(boss, GameObjectType::_Monster);
+        BossPrototypeEnabled = true;
+        BossPrototypeConfigured = true;
+        BossPrototypeCoresInitialized = false;
+        BossPrototypeShieldActive = true;
+        BossPrototypeCenter = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        PushGameObject(boss);
 
-        if (monsterType == MonsterType::Dron) {
-            spawnY = 4.0f;
-        }
+        static constexpr int range = 100;
+        for (int i = 0; i < 20; ++i) {
+            Monster* mon = new Monster();
+            mon->zone = this;
+            MonsterType monsterType = (MonsterType)(rand() % (int)MonsterType::Max);
+            mon->ApplyMonsterData(monsterType);
+            //dron spawn higher
 
-        mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)(rand() % range - (range / 2))));
-        while (map.isStaticCollision(mon->GetOBB())) {
-            mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
+            float spawnY = 2.0f;
+
+            if (monsterType == MonsterType::Dron) {
+                spawnY = 4.0f;
+            }
+
+            mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)(rand() % range - (range / 2))));
+            while (map.isStaticCollision(mon->GetOBB())) {
+                mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
+            }
         }
     }
 
@@ -1108,8 +1134,22 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     DynamicGameObject* hitObject = nullptr;
     int hitObjectIndex = -1;
     Zone* hitZone = nullptr;
+    bool hitBossCore = false;
 
     int lastcurrentindex = currentIndex;
+    auto IntersectRaySphere = [](vec4 origin, vec4 direction, vec4 center, float radius, float maxDistance, float& distance) {
+        vec4 m = origin - center;
+        float b = m.x * direction.x + m.y * direction.y + m.z * direction.z;
+        float c = m.x * m.x + m.y * m.y + m.z * m.z - radius * radius;
+        if (c > 0.0f && b > 0.0f) return false;
+        float discr = b * b - c;
+        if (discr < 0.0f) return false;
+        float t = -b - sqrtf(discr);
+        if (t < 0.0f) t = 0.0f;
+        if (t > maxDistance) return false;
+        distance = t;
+        return true;
+    };
 
     for (int zi = 0; zi < 9; ++zi) {
         /*if (gameworld.IsZoneOwned(zi) == false) continue;
@@ -1130,6 +1170,19 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
                     hitObject = testZone->Dynamic_gameObjects[i];
                     hitObjectIndex = i;
                     hitZone = testZone;
+                }
+            }
+            if (testZone->BossPrototypeEnabled && testZone->BossPrototypeIndex == i) {
+                const float bossHitRadius = 3.55f;
+                const float bossHitHeights[] = { 1.65f, 3.35f, 5.05f };
+                for (float height : bossHitHeights) {
+                    vec4 bossHitCenter = testZone->BossPrototypeCenter + vec4(0.0f, height, 0.0f, 0.0f);
+                    if (IntersectRaySphere(rayOrigin, rayDirection, bossHitCenter, bossHitRadius, closestDistance, distance)) {
+                        closestDistance = distance;
+                        hitObject = testZone->Dynamic_gameObjects[i];
+                        hitObjectIndex = i;
+                        hitZone = testZone;
+                    }
                 }
             }
         }
@@ -1156,7 +1209,15 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     if (ghostHitIndex >= 0) {
         gameworld.SendGhostDamageToOwner(ghostHitZone, ghostHitIndex, damage);
     }
-    else if (hitObject != nullptr) {
+    else {
+        float coreHitDistance = closestDistance;
+        hitBossCore = DamageBossCoreByRay(rayOrigin, rayDirection, closestDistance, damage, coreHitDistance);
+        if (hitBossCore) {
+            closestDistance = coreHitDistance;
+        }
+    }
+
+    if (!hitBossCore && ghostHitIndex < 0 && hitObject != nullptr) {
         hitZone->currentIndex = hitObjectIndex;
         hitObject->OnCollisionRayWithBullet(shooter, damage);
     }
@@ -1176,6 +1237,127 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     CommonSDS.postpush_end();
 
 }
+
+void Zone::FirePiercingRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage) {
+    if (shooter == nullptr || damage <= 0.0f || rayDistance <= 0.0f) return;
+    if (rayDirection.fast_square_of_len3 <= 0.0001f) return;
+    rayDirection.len3 = 1.0f;
+
+    int lastCurrentIndex = currentIndex;
+    float farthestHitDistance = rayDistance;
+    bool hasHit = false;
+
+    for (int zi = 0; zi < (int)gameworld.ZoneTable.size(); ++zi) {
+        if (gameworld.IsZoneOwned(zi) == false) continue;
+        if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;
+
+        if (gameworld.ZoneTable[zi] == nullptr) continue;
+			Zone& testZone = *gameworld.ZoneTable[zi];
+        for (int i = 0; i < testZone.Dynamic_gameObjects.size; ++i) {
+            if (testZone.Dynamic_gameObjects.isnull(i)) continue;
+
+            GameObject* object = (GameObject*)testZone.Dynamic_gameObjects[i];
+            if (object == shooter) continue;
+
+            void* vptr = *(void**)object;
+            if (GameObjectType::VptrToTypeTable[vptr] != GameObjectType::_Monster) continue;
+
+            Monster* monster = (Monster*)object;
+            if (monster->isDead) continue;
+
+            BoundingOrientedBox obb = monster->GetOBB();
+            obb.Extents.x = max(obb.Extents.x * 1.35f, obb.Extents.x + 0.35f);
+            obb.Extents.y = max(obb.Extents.y * 1.20f, obb.Extents.y + 0.25f);
+            obb.Extents.z = max(obb.Extents.z * 1.35f, obb.Extents.z + 0.35f);
+            float distance = 0.0f;
+            if (obb.Intersects(rayStart, rayDirection, distance) == false) continue;
+            if (distance < 0.0f || distance > rayDistance) continue;
+
+            testZone.currentIndex = i;
+            monster->OnCollisionRayWithBullet(shooter, damage);
+            farthestHitDistance = max(farthestHitDistance, distance);
+            hasHit = true;
+        }
+    }
+
+    float coreHitDistance = rayDistance;
+    if (DamageBossCoreByRay(rayStart, rayDirection, rayDistance, damage, coreHitDistance)) {
+        farthestHitDistance = max(farthestHitDistance, coreHitDistance);
+        hasHit = true;
+    }
+
+    currentIndex = lastCurrentIndex;
+
+    CommonSDS.postpush_start();
+    constexpr int reqsiz = sizeof(STC_NewRay_Header);
+    CommonSDS.postpush_reserve(reqsiz);
+    STC_NewRay_Header& header = *(STC_NewRay_Header*)CommonSDS.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::NewRay;
+    header.raystart = XMFLOAT3(rayStart.f3.x, rayStart.f3.y, rayStart.f3.z);
+    header.rayDir = XMFLOAT3(rayDirection.f3.x, rayDirection.f3.y, rayDirection.f3.z);
+    header.distance = hasHit ? farthestHitDistance : rayDistance;
+    CommonSDS.postpush_end();
+}
+
+bool Zone::DamageBossCoreByRay(vec4 rayStart, vec4 rayDirection, float maxDistance, float damage, float& hitDistance)
+{
+    if (!BossPrototypeEnabled || !BossPrototypeShieldActive || damage <= 0.0f) return false;
+    if (rayDirection.fast_square_of_len3 <= 0.0001f) return false;
+    rayDirection.len3 = 1.0f;
+
+    int hitCoreIndex = -1;
+    float bestDistance = maxDistance;
+    const float coreRadius = 2.25f;
+    const float coreHitHeights[] = { 0.25f, 0.95f, 1.65f, 2.35f, 3.05f };
+    for (int i = 0; i < (int)BossPrototypeCores.size(); ++i) {
+        BossPrototypeCore& core = BossPrototypeCores[i];
+        if (!core.Active) continue;
+        for (float height : coreHitHeights) {
+            vec4 coreCenter = core.Position + vec4(0.0f, height, 0.0f, 0.0f);
+            vec4 toCore = coreCenter - rayStart;
+            float t = toCore.x * rayDirection.x + toCore.y * rayDirection.y + toCore.z * rayDirection.z;
+            if (t < 0.0f || t > bestDistance) continue;
+            vec4 closest = rayStart + rayDirection * t;
+            vec4 diff = closest - coreCenter;
+            if (diff.fast_square_of_len3 > coreRadius * coreRadius) continue;
+            bestDistance = t;
+            hitCoreIndex = i;
+        }
+    }
+
+    if (hitCoreIndex < 0) return false;
+
+    BossPrototypeCore& core = BossPrototypeCores[hitCoreIndex];
+    core.HP -= damage;
+    if (core.HP <= 0.0f) {
+        core.HP = 0.0f;
+        core.Active = false;
+    }
+
+    bool allDead = !BossPrototypeCores.empty();
+    for (const BossPrototypeCore& c : BossPrototypeCores) {
+        if (c.Active) {
+            allDead = false;
+            break;
+        }
+    }
+    if (allDead && BossPrototypeShieldActive) {
+        BossPrototypeShieldActive = false;
+        BossPrototypeShieldDownTime = 25.0f;
+        BossPrototypeGroggyTime = 12.0f;
+        BossPrototypeWarnings.clear();
+        BossPrototypePhaseState = BossPrototypePhase::Rest;
+        BossPrototypePhaseTime = 0.0f;
+        BossPrototypePatternCooldown = 0.6f;
+        BossPrototypeRotatingLaserHitFlow = 0.0f;
+        BossPrototypeRotatingLaserStep = -1;
+    }
+
+    hitDistance = bestDistance;
+    Sending_BossState(CommonSDS);
+    return true;
+}
 static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& statusDuration, float& statusPower)
 {
     statusDuration = 0.0f;
@@ -1183,21 +1365,24 @@ static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& 
     switch (effectType) {
     case SkillEffectType::Juggernaut_FireProjectile:
     case SkillEffectType::Juggernaut_UltimateFire:
+    case SkillEffectType::Bomber_FireExplosion:
         statusDuration = 3.0f;
         statusPower = 6.0f;
         return StatusEffectType::Burn;
     case SkillEffectType::Juggernaut_Taunt:
-        statusDuration = 3.0f;
-        statusPower = 1.0f;
-        return StatusEffectType::Taunt;
+        return StatusEffectType::None;
     case SkillEffectType::Frost_Cone:
-        statusDuration = 2.4f;
+        statusDuration = 3.0f;
         statusPower = 1.0f;
         return StatusEffectType::Freeze;
     case SkillEffectType::Frost_Blizzard:
-        statusDuration = 1.6f;
+        statusDuration = 4.0f;
         statusPower = 1.0f;
         return StatusEffectType::Freeze;
+    case SkillEffectType::Aegis_ShieldCharge:
+        statusDuration = 1.5f;
+        statusPower = 1.0f;
+        return StatusEffectType::Stun;
     case SkillEffectType::Tank_ShockWave:
         statusDuration = 0.8f;
         statusPower = 1.0f;
@@ -1206,12 +1391,20 @@ static StatusEffectType GetSkillStatusEffect(SkillEffectType effectType, float& 
         statusDuration = 1.2f;
         statusPower = 1.0f;
         return StatusEffectType::Paralyze;
+    case SkillEffectType::Hacker_Hack:
+        statusDuration = 3.0f;
+        statusPower = 1.0f;
+        return StatusEffectType::Hack;
+    case SkillEffectType::Hacker_EMPBurst:
+        statusDuration = 3.0f;
+        statusPower = 1.0f;
+        return StatusEffectType::Paralyze;
     default:
         return StatusEffectType::None;
     }
 }
-int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage) {
-    if (caster == nullptr || damage <= 0.0f || radius <= 0.0f) return 0;
+int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage, std::vector<GameObject*>* hitTargets) {
+    if (caster == nullptr || radius <= 0.0f) return 0;
 
     bool selfOnly = effectType == SkillEffectType::Healer_HealAura ||
         effectType == SkillEffectType::Frost_IceBlock ||
@@ -1266,6 +1459,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
             BoundingOrientedBox monsterOBB = monster->GetOBB();
             bool hit = directional ? skillBox.Intersects(monsterOBB) : skillSphere.Intersects(monsterOBB);
             if (hit == false) continue;
+            if (hitTargets != nullptr && std::find(hitTargets->begin(), hitTargets->end(), object) != hitTargets->end()) continue;
 
             testZone->currentIndex = i;
             monster->ApplyDamage(caster, damage);
@@ -1316,7 +1510,7 @@ void Zone::Sending_InventoryItemSync(SendDataSaver& sds, ItemStack lootdata, int
     sds.postpush_end();
 }
 
-void Zone::Sending_PlayerFire(SendDataSaver& sds, int objIndex) {
+void Zone::Sending_PlayerFire(SendDataSaver& sds, int objIndex, unsigned char fireHand) {
     sds.postpush_start();
     constexpr int reqsiz = sizeof(STC_PlayerFire_Header);
     sds.postpush_reserve(reqsiz);
@@ -1325,6 +1519,7 @@ void Zone::Sending_PlayerFire(SendDataSaver& sds, int objIndex) {
     header.st = STC_Protocol::PlayerFire;
     header.zoneId = zoneId;
     header.objindex = objIndex;
+    header.fireHand = fireHand;
     sds.postpush_end();
 }
 
@@ -1586,3 +1781,600 @@ void Zone::PushGameObject(GameObject* go) {
 //    std::cout << std::flush;
 //}
 
+
+
+void Zone::Sending_BossState(SendDataSaver& sds)
+{
+    sds.postpush_start();
+    constexpr int reqsiz = sizeof(STC_BossState_Header);
+    sds.postpush_reserve(reqsiz);
+    STC_BossState_Header& header = *(STC_BossState_Header*)sds.ofbuff;
+    header.size = reqsiz;
+    header.st = STC_Protocol::BossState;
+    header.zoneId = zoneId;
+    header.enabled = BossPrototypeEnabled;
+    header.bossObjIndex = BossPrototypeIndex;
+    header.center = BossPrototypeCenter;
+    header.aimDirection = BossPrototypeAimDirection;
+    header.railgunDirection = BossPrototypeRailgunDirection;
+    header.shieldActive = BossPrototypeShieldActive;
+    header.shieldDownTime = BossPrototypeShieldDownTime;
+    header.groggyTime = BossPrototypeGroggyTime;
+    header.phase = (int)BossPrototypePhaseState;
+    header.phaseTime = BossPrototypePhaseTime;
+    header.patternStep = BossPrototypePatternStep;
+
+    Monster* boss = nullptr;
+    if (BossPrototypeIndex >= 0 && BossPrototypeIndex < Dynamic_gameObjects.size && Dynamic_gameObjects.isnull(BossPrototypeIndex) == false) {
+        boss = (Monster*)Dynamic_gameObjects[BossPrototypeIndex];
+    }
+    header.bossHP = boss != nullptr ? boss->HP : 0.0f;
+    header.bossMaxHP = boss != nullptr ? boss->MaxHP : 7500.0f;
+
+    header.coreCount = min(3, (int)BossPrototypeCores.size());
+    for (int i = 0; i < header.coreCount; ++i) {
+        header.cores[i].position = BossPrototypeCores[i].Position;
+        header.cores[i].hp = BossPrototypeCores[i].HP;
+        header.cores[i].maxHP = BossPrototypeCores[i].MaxHP;
+        header.cores[i].active = BossPrototypeCores[i].Active;
+    }
+
+    std::vector<const BossPrototypeWarning*> sendWarnings;
+    sendWarnings.reserve(BossPrototypeWarnings.size());
+    for (const BossPrototypeWarning& warning : BossPrototypeWarnings) {
+        if (!warning.Active) continue;
+        if (!warning.ResidualActive && warning.Age <= warning.WarningTime + 0.05f) {
+            sendWarnings.push_back(&warning);
+        }
+    }
+    for (const BossPrototypeWarning& warning : BossPrototypeWarnings) {
+        if (!warning.Active) continue;
+        if (warning.ResidualActive || warning.Age > warning.WarningTime + 0.05f) {
+            sendWarnings.push_back(&warning);
+        }
+    }
+
+    header.warningCount = min(BossSyncWarningCapacity, (int)sendWarnings.size());
+    for (int i = 0; i < header.warningCount; ++i) {
+        const BossPrototypeWarning& src = *sendWarnings[i];
+        BossSyncAoEData& dst = header.warnings[i];
+        dst.shape = src.Shape;
+        dst.position = src.Position;
+        dst.direction = src.Direction;
+        dst.radius = src.Radius;
+        dst.width = src.Width;
+        dst.length = src.Length;
+        dst.warningTime = src.WarningTime;
+        dst.age = src.Age;
+        dst.damage = src.Damage;
+        dst.innerDamage = src.InnerDamage;
+        dst.followTime = src.FollowTime;
+        dst.lockTime = src.LockTime;
+        dst.active = src.Active;
+        dst.followPlayer = src.FollowPlayer;
+        dst.darkenOnLock = src.DarkenOnLock;
+        dst.visualSpawned = src.VisualSpawned;
+    }
+    sds.postpush_end();
+}
+
+
+static vec4 NormalizeXZOrFallback(vec4 v, vec4 fallback)
+{
+    v.y = 0.0f;
+    if (v.fast_square_of_len3 <= 0.0001f) return fallback;
+    v.len3 = 1.0f;
+    return v;
+}
+
+static float ServerRandomUnit()
+{
+    return (float)rand() / (float)RAND_MAX;
+}
+
+static float ServerRandomRange(float minValue, float maxValue)
+{
+    return minValue + (maxValue - minValue) * ServerRandomUnit();
+}
+
+static bool PointInBossRectWarning(const Zone::BossPrototypeWarning& warning, vec4 point)
+{
+    vec4 forward = NormalizeXZOrFallback(warning.Direction, vec4(0, 0, 1, 0));
+    vec4 right = NormalizeXZOrFallback(vec4(forward.z, 0, -forward.x, 0), vec4(1, 0, 0, 0));
+    vec4 delta = point - warning.Position;
+    float along = delta.x * forward.x + delta.z * forward.z;
+    float side = delta.x * right.x + delta.z * right.z;
+    return along >= 0.0f && along <= warning.Length && fabsf(side) <= warning.Width * 0.5f;
+}
+
+void Zone::UpdateBossPrototype(float deltaTime)
+{
+    if (!BossPrototypeEnabled || BossPrototypeIndex < 0 || BossPrototypeIndex >= Dynamic_gameObjects.size ||
+        Dynamic_gameObjects.isnull(BossPrototypeIndex)) {
+        return;
+    }
+
+    Monster* boss = (Monster*)Dynamic_gameObjects[BossPrototypeIndex];
+    if (boss == nullptr || boss->tag[GameObjectTag::Tag_Enable] == false || boss->isDead) return;
+
+    const float dt = max(0.0f, deltaTime);
+    auto findTargetPlayer = [&]() -> Player* {
+        Player* best = nullptr;
+        float bestDist2 = 80.0f * 80.0f;
+        for (int i = 0; i < gameworld.clients.size; ++i) {
+            if (gameworld.clients.isnull(i)) continue;
+            if (gameworld.clients[i].pObjData == nullptr) continue;
+            if (gameworld.IsAdjacentZone(zoneId, gameworld.clients[i].zoneId) == false) continue;
+            Player* p = (Player*)gameworld.clients[i].pObjData;
+            if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
+            vec4 d = p->worldMat.pos - BossPrototypeCenter;
+            d.y = 0.0f;
+            float dist2 = d.fast_square_of_len3;
+            if (dist2 < bestDist2) {
+                bestDist2 = dist2;
+                best = p;
+            }
+        }
+        return best;
+    };
+
+    Player* target = findTargetPlayer();
+    const float bossGroundY = BossPrototypeCenter.y;
+    const float warningGroundY = BossPrototypeCenter.y + 0.06f;
+
+    if (!BossPrototypeCoresInitialized || (!BossPrototypeShieldActive && BossPrototypeShieldDownTime <= 0.0f)) {
+        BossPrototypeCores.clear();
+        BossPrototypeWarnings.clear();
+        const float coreRadius = 20.0f;
+        for (int i = 0; i < 3; ++i) {
+            float angle = XM_2PI * (float)i / 3.0f + XM_PIDIV2;
+            BossPrototypeCore core;
+            core.Position = BossPrototypeCenter + vec4(cosf(angle) * coreRadius, 0.0f, sinf(angle) * coreRadius, 0.0f);
+            core.Position.y = bossGroundY;
+            core.Position.w = 1.0f;
+            core.HP = 1200.0f;
+            core.MaxHP = 1200.0f;
+            core.Active = true;
+            BossPrototypeCores.push_back(core);
+        }
+        BossPrototypeShieldActive = true;
+        BossPrototypeCoresInitialized = true;
+        BossPrototypeShieldDownTime = 0.0f;
+        BossPrototypeGroggyTime = 0.0f;
+        BossPrototypePhaseState = BossPrototypePhase::Rest;
+        BossPrototypePhaseTime = 0.0f;
+        BossPrototypePatternCooldown = 0.8f;
+        BossPrototypeMissileCooldown = 2.0f;
+        BossPrototypeRailgunCooldown = 4.0f;
+        BossPrototypeBombardmentCooldown = 6.0f;
+        BossPrototypeRotatingLaserCooldown = 10.0f;
+    }
+
+    auto updateShieldState = [&]() {
+        bool allDead = !BossPrototypeCores.empty();
+        for (const BossPrototypeCore& core : BossPrototypeCores) {
+            if (core.Active) {
+                allDead = false;
+                break;
+            }
+        }
+        if (allDead && BossPrototypeShieldActive) {
+            BossPrototypeShieldActive = false;
+            BossPrototypeShieldDownTime = 25.0f;
+            BossPrototypeGroggyTime = 12.0f;
+            BossPrototypeWarnings.clear();
+            BossPrototypePhaseState = BossPrototypePhase::Rest;
+            BossPrototypePhaseTime = 0.0f;
+            BossPrototypePatternCooldown = 0.6f;
+            BossPrototypeRotatingLaserHitFlow = 0.0f;
+            BossPrototypeRotatingLaserStep = -1;
+        }
+    };
+    auto stickWarningToGround = [&](BossPrototypeWarning& warning) {
+        warning.Position.y = warningGroundY;
+        warning.Position.w = 1.0f;
+    };
+
+    for (BossPrototypeWarning& warning : BossPrototypeWarnings) {
+        if (!warning.Active) continue;
+        warning.Age += dt;
+        if (warning.FollowPlayer && warning.Age < warning.FollowTime) {
+            Player* target = findTargetPlayer();
+            if (target != nullptr) {
+                warning.Position.x = target->worldMat.pos.x;
+                warning.Position.z = target->worldMat.pos.z;
+                stickWarningToGround(warning);
+            }
+        }
+        else {
+            stickWarningToGround(warning);
+        }
+        if (warning.Shape == 0 && !warning.VisualSpawned && warning.Age >= warning.FollowTime) {
+            warning.VisualSpawned = true;
+        }
+        if (warning.ResidualActive) {
+            if (warning.ResidualDamagePerSecond > 0.0f) {
+                warning.ResidualTickFlow += dt;
+                while (warning.ResidualTickFlow >= 1.0f) {
+                    warning.ResidualTickFlow -= 1.0f;
+                    for (int i = 0; i < gameworld.clients.size; ++i) {
+                        if (gameworld.clients.isnull(i)) continue;
+                        if (gameworld.clients[i].pObjData == nullptr) continue;
+                        if (gameworld.IsAdjacentZone(zoneId, gameworld.clients[i].zoneId) == false) continue;
+                        Player* p = (Player*)gameworld.clients[i].pObjData;
+                        if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
+                        vec4 delta = p->worldMat.pos - warning.Position;
+                        delta.y = 0.0f;
+                        if (delta.fast_square_of_len3 <= warning.Radius * warning.Radius) {
+                            p->TakeDamage(warning.ResidualDamagePerSecond);
+                        }
+                    }
+                }
+            }
+            if (warning.Age >= warning.WarningTime + warning.ResidualDuration) {
+                warning.Active = false;
+            }
+            continue;
+        }
+
+        if (warning.Shape == 1 && warning.Length >= 38.0f) continue;
+        if (warning.Age < warning.WarningTime || warning.DamageApplied) continue;
+
+        for (int i = 0; i < gameworld.clients.size; ++i) {
+            if (gameworld.clients.isnull(i)) continue;
+            if (gameworld.clients[i].pObjData == nullptr) continue;
+            if (gameworld.IsAdjacentZone(zoneId, gameworld.clients[i].zoneId) == false) continue;
+            Player* p = (Player*)gameworld.clients[i].pObjData;
+            if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
+
+            vec4 delta = p->worldMat.pos - warning.Position;
+            delta.y = 0.0f;
+            bool hit = false;
+            float damage = warning.Damage;
+            if (warning.Shape == 0) {
+                hit = delta.fast_square_of_len3 <= warning.Radius * warning.Radius;
+                if (hit && warning.InnerDamage > 0.0f && delta.fast_square_of_len3 <= warning.Radius * warning.Radius * 0.35f) {
+                    damage = warning.InnerDamage;
+                }
+            }
+            else {
+                hit = PointInBossRectWarning(warning, p->worldMat.pos);
+            }
+            if (hit) {
+                p->TakeDamage(damage);
+            }
+        }
+
+        warning.DamageApplied = true;
+        warning.Active = false;
+    }
+
+    BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
+        [](const BossPrototypeWarning& warning) {
+            return !warning.Active && warning.Age > warning.WarningTime + 0.25f;
+        }), BossPrototypeWarnings.end());
+
+    if (!BossPrototypeShieldActive) {
+        bool wasGroggy = BossPrototypeGroggyTime > 0.0f;
+        BossPrototypeShieldDownTime -= dt;
+        BossPrototypeGroggyTime = max(0.0f, BossPrototypeGroggyTime - dt);
+        if (wasGroggy && BossPrototypeGroggyTime <= 0.0f) {
+            BossPrototypeWarnings.clear();
+            BossPrototypePhaseState = BossPrototypePhase::Rest;
+            BossPrototypePhaseTime = 0.0f;
+            BossPrototypePatternCooldown = 0.6f;
+            BossPrototypeMissileCooldown = 0.8f;
+            BossPrototypeRailgunCooldown = 2.4f;
+            BossPrototypeBombardmentCooldown = 4.0f;
+            BossPrototypeRotatingLaserCooldown = 6.0f;
+        }
+        if (BossPrototypeShieldDownTime <= 0.0f) {
+            BossPrototypeCoresInitialized = false;
+        }
+    }
+
+    if (target == nullptr) {
+        target = findTargetPlayer();
+    }
+    if (target != nullptr) {
+        BossPrototypeAimDirection = NormalizeXZOrFallback(target->worldMat.pos - BossPrototypeCenter, vec4(0, 0, 1, 0));
+    }
+
+    boss->worldMat.pos = BossPrototypeCenter;
+    boss->HP = max(0.0f, boss->HP);
+    boss->MaxHP = max(boss->MaxHP, 7500.0f);
+
+    if (BossPrototypeGroggyTime > 0.0f) {
+        BossPrototypeWarnings.clear();
+        BossPrototypePhaseState = BossPrototypePhase::Rest;
+        BossPrototypePhaseTime = 0.0f;
+        BossPrototypePatternCooldown = 0.6f;
+        BossPrototypeRotatingLaserHitFlow = 0.0f;
+        BossPrototypeRotatingLaserStep = -1;
+        Sending_BossState(CommonSDS);
+        return;
+    }
+
+    float hpRate = boss->MaxHP > 0.0f ? boss->HP / boss->MaxHP : 1.0f;
+    int phaseIndex = hpRate <= 0.4f ? 2 : (hpRate <= 0.7f ? 1 : 0);
+    const float machineGunPeriods[3] = { 7.0f, 6.0f, 5.0f };
+    const float missilePeriods[3] = { 16.0f, 13.0f, 10.0f };
+    const float railgunPeriods[3] = { 28.0f, 24.0f, 20.0f };
+    const float bombardmentPeriods[3] = { 18.0f, 15.0f, 12.0f };
+    const float summonPeriods[3] = { 35.0f, 30.0f, 25.0f };
+    const float rotatingLaserPeriods[3] = { 38.0f, 34.0f, 30.0f };
+
+    auto finishPattern = [&]() {
+        BossPrototypePhaseState = BossPrototypePhase::Rest;
+        BossPrototypePhaseTime = 0.0f;
+        BossPrototypePatternCooldown = 0.35f;
+    };
+    auto spawnSupportTurret = [&](vec4 pos, MonsterType type, float hp, float attack, float fireDelay) {
+        Monster* mon = new Monster();
+        mon->zone = this;
+        mon->ApplyMonsterData(type);
+        mon->HP = hp;
+        mon->MaxHP = hp;
+        mon->Attack = attack;
+        mon->m_fireDelay = fireDelay;
+        mon->Init(XMMatrixTranslation(pos.x, pos.y, pos.z));
+        int idx = NewObject(mon, GameObjectType::_Monster);
+        if (idx >= 0) PushGameObject(mon);
+    };
+    auto spawnMissileLockWarnings = [&]() {
+        if (target == nullptr) return;
+        int targetCount = phaseIndex == 0 ? 2 : (phaseIndex == 1 ? 3 : 4);
+        int spawned = 0;
+        for (int i = 0; i < gameworld.clients.size && spawned < targetCount; ++i) {
+            if (gameworld.clients.isnull(i) || gameworld.clients[i].pObjData == nullptr) continue;
+            Player* p = (Player*)gameworld.clients[i].pObjData;
+            if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
+            BossPrototypeWarning warning;
+            warning.Shape = 0;
+            warning.Position = p->worldMat.pos;
+            stickWarningToGround(warning);
+            warning.Radius = 2.45f;
+            warning.WarningTime = 5.0f;
+            warning.FollowTime = 4.0f;
+            warning.LockTime = 1.0f;
+            warning.Damage = 30.0f;
+            warning.InnerDamage = 55.0f;
+            warning.FollowPlayer = true;
+            warning.DarkenOnLock = true;
+            BossPrototypeWarnings.push_back(warning);
+            spawned += 1;
+        }
+    };
+    auto spawnBombardmentWarnings = [&]() {
+        if (target == nullptr) return;
+        int bombCount = phaseIndex == 0 ? 5 : (phaseIndex == 1 ? 6 : 7);
+        float warningTime = phaseIndex == 0 ? 2.0f : (phaseIndex == 1 ? 1.8f : 1.6f);
+        float impactDamage = phaseIndex == 0 ? 35.0f : (phaseIndex == 1 ? 40.0f : 45.0f);
+        for (int i = 0; i < bombCount; ++i) {
+            float angle = XM_2PI * (float)i / (float)bombCount + ServerRandomUnit() * 0.45f;
+            float dist = ServerRandomRange(3.5f, 14.5f);
+            BossPrototypeWarning warning;
+            warning.Shape = 0;
+            warning.Position = target->worldMat.pos + vec4(cosf(angle) * dist, 0.0f, sinf(angle) * dist, 0.0f);
+            stickWarningToGround(warning);
+            warning.Radius = 2.1f;
+            warning.WarningTime = warningTime;
+            warning.Damage = impactDamage;
+            BossPrototypeWarnings.push_back(warning);
+        }
+    };
+
+    BossPrototypeMachineGunCooldown = max(0.0f, BossPrototypeMachineGunCooldown - dt);
+    BossPrototypeMissileCooldown = max(0.0f, BossPrototypeMissileCooldown - dt);
+    BossPrototypeRailgunCooldown = max(0.0f, BossPrototypeRailgunCooldown - dt);
+    BossPrototypeBombardmentCooldown = max(0.0f, BossPrototypeBombardmentCooldown - dt);
+    BossPrototypeSummonCooldown = max(0.0f, BossPrototypeSummonCooldown - dt);
+    BossPrototypeRotatingLaserCooldown = max(0.0f, BossPrototypeRotatingLaserCooldown - dt);
+
+    BossPrototypePhaseTime += dt;
+    switch (BossPrototypePhaseState) {
+    case BossPrototypePhase::FindBoss:
+        BossPrototypeMachineGunCooldown = 999999.0f;
+        BossPrototypeMissileCooldown = 4.0f;
+        BossPrototypeRailgunCooldown = 8.0f;
+        BossPrototypeBombardmentCooldown = 12.0f;
+        BossPrototypeSummonCooldown = 16.0f;
+        BossPrototypeRotatingLaserCooldown = 20.0f;
+        finishPattern();
+        break;
+    case BossPrototypePhase::MachineGun:
+        BossPrototypeMachineGunCooldown = 999999.0f;
+        finishPattern();
+        break;
+    case BossPrototypePhase::MissileLock:
+        if (BossPrototypePhaseTime <= dt + 0.001f && target != nullptr) {
+            spawnMissileLockWarnings();
+        }
+        if (BossPrototypePhaseTime >= 5.25f) {
+            BossPrototypeMissileCooldown = missilePeriods[phaseIndex];
+            finishPattern();
+        }
+        break;
+    case BossPrototypePhase::RailgunCharge:
+        if (BossPrototypePhaseTime <= dt + 0.001f) {
+            BossPrototypeRailgunDirection = BossPrototypeAimDirection;
+            BossPrototypeWarning warning;
+            warning.Shape = 1;
+            warning.Position = BossPrototypeCenter;
+            stickWarningToGround(warning);
+            warning.Direction = BossPrototypeRailgunDirection;
+            warning.Width = 2.3f;
+            warning.Length = 36.0f;
+            warning.Radius = 2.0f;
+            warning.WarningTime = 2.8f;
+            warning.Damage = 95.0f;
+            BossPrototypeWarnings.push_back(warning);
+        }
+        if (BossPrototypePhaseTime >= 4.75f) {
+            BossPrototypeRailgunCooldown = railgunPeriods[phaseIndex];
+            finishPattern();
+        }
+        break;
+    case BossPrototypePhase::Bombardment:
+        if (BossPrototypePhaseTime <= dt + 0.001f && target != nullptr) {
+            spawnBombardmentWarnings();
+        }
+        if (BossPrototypePhaseTime >= 2.2f) {
+            BossPrototypeBombardmentCooldown = bombardmentPeriods[phaseIndex];
+            finishPattern();
+        }
+        break;
+    case BossPrototypePhase::SummonTurret:
+        if (BossPrototypePhaseTime <= dt + 0.001f) {
+            int count = phaseIndex == 0 ? 1 : (phaseIndex == 1 ? 2 : 3);
+            for (int i = 0; i < count; ++i) {
+                float angle = XM_2PI * (float)(BossPrototypeSummonCount + i) / 6.0f;
+                vec4 pos = BossPrototypeCenter + vec4(cosf(angle) * 17.0f, 2.0f, sinf(angle) * 17.0f, 0.0f);
+                spawnSupportTurret(pos, MonsterType::Tower, 450.0f, 3.0f, 0.25f);
+            }
+            if (phaseIndex >= 1) {
+                float angle = XM_2PI * (float)(BossPrototypeSummonCount + 3) / 6.0f;
+                vec4 pos = BossPrototypeCenter + vec4(cosf(angle) * 19.0f, 2.0f, sinf(angle) * 19.0f, 0.0f);
+                spawnSupportTurret(pos, MonsterType::Tower, 350.0f, 45.0f, 5.0f);
+            }
+            if (phaseIndex >= 2) {
+                float angle = XM_2PI * (float)(BossPrototypeSummonCount + 5) / 6.0f;
+                vec4 pos = BossPrototypeCenter + vec4(cosf(angle) * 15.0f, 2.0f, sinf(angle) * 15.0f, 0.0f);
+                spawnSupportTurret(pos, MonsterType::Tower, 400.0f, 7.0f, 1.0f);
+            }
+            BossPrototypeSummonCount += count;
+        }
+        if (BossPrototypePhaseTime >= 0.6f) {
+            BossPrototypeSummonCooldown = summonPeriods[phaseIndex];
+            finishPattern();
+        }
+        break;
+    case BossPrototypePhase::RotatingLaser: {
+        const float chargeTime = 0.85f;
+        const float sweepInterval = phaseIndex == 2 ? 0.46f : 0.55f;
+        const int sweepGroupCount = 12;
+        const float randomHoldTime = phaseIndex == 2 ? 3.0f : 3.4f;
+        const float duration = BossPrototypeRotatingLaserMode == 0
+            ? chargeTime + sweepInterval * (float)sweepGroupCount + 0.2f
+            : chargeTime + randomHoldTime;
+        float elapsed = BossPrototypePhaseTime - chargeTime;
+        float latestAngle = BossPrototypeRotatingLaserBaseAngle + BossPrototypeRotatingLaserDirectionSign *
+            XMConvertToRadians(30.0f) * (float)max(BossPrototypeRotatingLaserStep, 0);
+        BossPrototypeRailgunDirection = NormalizeXZOrFallback(vec4(cosf(latestAngle), 0.0f, sinf(latestAngle), 0.0f), BossPrototypeAimDirection);
+
+        if (BossPrototypePhaseTime <= dt + 0.001f) {
+            BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
+                [](const BossPrototypeWarning& warning) { return (warning.Shape == 1 && warning.Length >= 38.0f) || warning.Shape == 2; }),
+                BossPrototypeWarnings.end());
+        }
+
+        auto pushLaserWarning = [&](float angle, float warningTime) {
+            BossPrototypeWarning warning;
+            warning.Shape = 1;
+            warning.Position = BossPrototypeCenter;
+            stickWarningToGround(warning);
+            warning.Direction = NormalizeXZOrFallback(vec4(cosf(angle), 0.0f, sinf(angle), 0.0f), BossPrototypeAimDirection);
+            warning.Width = 2.1f;
+            warning.Length = 40.0f;
+            warning.WarningTime = warningTime;
+            warning.Age = 0.0f;
+            warning.Damage = 0.0f;
+            warning.Active = true;
+            BossPrototypeWarnings.push_back(warning);
+            BossPrototypeRailgunDirection = warning.Direction;
+        };
+
+        if (elapsed >= 0.0f && BossPrototypeRotatingLaserMode == 0) {
+            int targetGroup = min(sweepGroupCount - 1, (int)(elapsed / max(sweepInterval, 0.001f)));
+            if (targetGroup != BossPrototypeRotatingLaserStep) {
+                BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
+                    [](const BossPrototypeWarning& warning) { return warning.Shape == 1 && warning.Length >= 38.0f; }),
+                    BossPrototypeWarnings.end());
+                BossPrototypeRotatingLaserStep = targetGroup;
+                for (int i = 0; i < 3; ++i) {
+                    float angle = BossPrototypeRotatingLaserBaseAngle + BossPrototypeRotatingLaserDirectionSign *
+                        XMConvertToRadians(30.0f * (float)targetGroup + 10.0f * (float)i);
+                    pushLaserWarning(angle, phaseIndex == 2 ? 0.30f : 0.35f);
+                }
+            }
+        }
+        else if (elapsed >= 0.0f && BossPrototypeRotatingLaserMode == 1 && BossPrototypeRotatingLaserStep < 0) {
+            bool used[36] = {};
+            int randomCount = 8 + (int)(ServerRandomUnit() * 11.0f);
+            randomCount = min(randomCount, BossSyncWarningCapacity);
+            int spawned = 0;
+            int attempts = 0;
+            while (spawned < randomCount && attempts < 144) {
+                attempts += 1;
+                int dirIndex = (int)(ServerRandomUnit() * 36.0f);
+                dirIndex = min(max(dirIndex, 0), 35);
+                if (used[dirIndex]) continue;
+                used[dirIndex] = true;
+                float angle = BossPrototypeRotatingLaserBaseAngle + XMConvertToRadians(10.0f * (float)dirIndex);
+                pushLaserWarning(angle, 0.85f);
+                spawned += 1;
+            }
+            BossPrototypeRotatingLaserStep = 0;
+        }
+
+        if (elapsed >= 0.0f && BossPrototypeRotatingLaserStep >= 0) {
+            BossPrototypeRotatingLaserHitFlow += dt;
+            if (BossPrototypeRotatingLaserHitFlow >= 0.45f) {
+                BossPrototypeRotatingLaserHitFlow = 0.0f;
+                for (int i = 0; i < gameworld.clients.size; ++i) {
+                    if (gameworld.clients.isnull(i) || gameworld.clients[i].pObjData == nullptr) continue;
+                    Player* p = (Player*)gameworld.clients[i].pObjData;
+                    if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
+                    for (const BossPrototypeWarning& warning : BossPrototypeWarnings) {
+                        if (!warning.Active || warning.Shape != 1 || warning.Length < 38.0f) continue;
+                        if (warning.Age < warning.WarningTime) continue;
+                        if (PointInBossRectWarning(warning, p->worldMat.pos)) {
+                            p->TakeDamage(24.0f);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (BossPrototypePhaseTime >= duration) {
+            BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
+                [](const BossPrototypeWarning& warning) { return (warning.Shape == 1 && warning.Length >= 38.0f) || warning.Shape == 2; }),
+                BossPrototypeWarnings.end());
+            BossPrototypeRotatingLaserCooldown = rotatingLaserPeriods[phaseIndex];
+            finishPattern();
+        }
+        break;
+    }
+    case BossPrototypePhase::Rest:
+        if (BossPrototypePhaseTime >= BossPrototypePatternCooldown && target != nullptr && BossPrototypeGroggyTime <= 0.0f) {
+            if (BossPrototypeMissileCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::MissileLock;
+            }
+            else if (BossPrototypeRailgunCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::RailgunCharge;
+            }
+            else if (BossPrototypeSummonCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::SummonTurret;
+            }
+            else if (BossPrototypeBombardmentCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::Bombardment;
+            }
+            else if (BossPrototypeRotatingLaserCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::RotatingLaser;
+                BossPrototypeRotatingLaserBaseAngle = ServerRandomRange(0.0f, XM_2PI);
+                BossPrototypeRotatingLaserDirectionSign = ServerRandomUnit() < 0.5f ? -1.0f : 1.0f;
+                BossPrototypeRotatingLaserMode = ServerRandomUnit() < 0.5f ? 0 : 1;
+                BossPrototypeRotatingLaserHitFlow = 0.45f;
+                BossPrototypeRotatingLaserStep = -1;
+            }
+            if (BossPrototypePhaseState != BossPrototypePhase::Rest) {
+                BossPrototypePatternStep += 1;
+                BossPrototypePhaseTime = 0.0f;
+            }
+        }
+        break;
+    }
+
+    updateShieldState();
+    Sending_BossState(CommonSDS);
+}

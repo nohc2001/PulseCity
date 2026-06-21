@@ -75,9 +75,14 @@ VS_OUTPUT VSMain(VS_INPUT input)
     return output;
 }
 
- //ÇÈ¼¿ ¼ÎÀÌ´õ¸¦ Á¤ÀÇÇÑ´Ù.
+ //ï¿½È¼ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {
+    if (input.color.b < 0.0f)
+    {
+        return float4(input.color.r, input.color.g, -input.color.b, input.color.a);
+    }
+
     float4 r = color * texDiffuse.Sample(StaticSampler, input.uv);
     return r;
 }

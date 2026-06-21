@@ -163,6 +163,7 @@ public:
 	//3D 공간?�서 빛처리�? ?��? ?�고, ?�만 보여주는 ?�이??
 	OnlyColorShader* MyOnlyColorShader;
 	ScreenShader* MyScreenShader;
+	WorldTextureShader* MyWorldTextureShader;
 	//PBR ?�더링을 ?�는 첫번�??�이??
 	PBRShader1* MyPBRShader1;
 	//?�카?�박?��? 그리???�이??
@@ -195,7 +196,31 @@ public:
 	Model* ShotGunModel = nullptr;
 	Model* RifleModel = nullptr;
 	Model* PistolModel = nullptr;
+	Model* DualRevolverModel = nullptr;
+	Model* DualGunBladeModel = nullptr;
+	Model* HackerSMGModel = nullptr;
+	Model* BomberGrenadeGunModel = nullptr;
+	Model* SupportDroneModel = nullptr;
 	Mesh* OBBDebugMesh = nullptr;
+	Mesh* BossPrototypeCircleMesh = nullptr;
+	Mesh* BossPrototypeCircleOutlineMesh = nullptr;
+	Mesh* BossPrototypeSafeCircleMesh = nullptr;
+	Mesh* BossPrototypeSafeCircleOutlineMesh = nullptr;
+	Mesh* BossPrototypeRectMesh = nullptr;
+	UVMesh* BossPrototypeBeamMesh = nullptr;
+	UVMesh* BossPrototypeMissileMesh = nullptr;
+	UVMesh* BossPrototypeShieldMesh = nullptr;
+	Model* BossPrototypeBossModel = nullptr;
+	Model* BossPrototypeMiniTurretModel = nullptr;
+	Model* BossPrototypeCoreModel = nullptr;
+	int BossPrototypeBossShapeIndex = -1;
+	int BossPrototypeMiniTurretShapeIndex = -1;
+	int BossPrototypeCoreShapeIndex = -1;
+	int BossPrototypeBossPlatformNodeIndex = -1;
+	int BossPrototypeBossHeadNodeIndex = -1;
+	float BossPrototypeHeadPitch = 0.0f;
+	float BossPrototypeHeadDrop = 0.0f;
+	float BossPrototypeHeadRecoil = 0.0f;
 
 	std::vector<int> MG_BarrelIndices;
 	std::vector<int> SG_PumpIndices;
@@ -211,7 +236,7 @@ public:
 	// �?��??붙�? ?�이?�들???�?�하�??�한 ?�로??버퍼
 	Player* player;
 	//RenderOnly
-	static constexpr int MaxWeapon = 5;
+	static constexpr int MaxWeapon = (int)WeaponType::Max;
 	GameObject* PlayerWeaponObj[MaxWeapon] = {};
 
 	// 불릿Ray�?모아?��? vecset -> ?�짜???��??�고 ?�라지???�간?� 같으?? ?�형배열??????��.
@@ -363,6 +388,101 @@ public:
 	void SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction = vec4(0, 0, 1, 0), UINT ownerId = 0, float radius = 1.0f, float power = 1.0f, float duration = 1.0f);
 	void SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sourceObjIndex, bool active, vec4 position, vec4 extents, float duration, float remainTime, float power);
 
+	enum class BossPrototypePhase {
+		FindBoss,
+		MachineGun,
+		MissileLock,
+		RailgunCharge,
+		Bombardment,
+		SummonTurret,
+		RotatingLaser,
+		Rest,
+	};
+
+	enum class BossAoEShape {
+		Circle,
+		Rectangle,
+		SafeCircle,
+	};
+
+	struct BossAoEWarning {
+		BossAoEShape Shape = BossAoEShape::Circle;
+		vec4 Position = vec4(0, 0, 0, 1);
+		vec4 Direction = vec4(0, 0, 1, 0);
+		float Radius = 2.0f;
+		float Width = 2.0f;
+		float Length = 6.0f;
+		float WarningTime = 1.0f;
+		float Age = 0.0f;
+		float Damage = 8.0f;
+		float InnerDamage = 0.0f;
+		float FollowTime = 0.0f;
+		float LockTime = 0.0f;
+		float CoreDamage = 0.0f;
+		bool DamageApplied = false;
+		bool Active = true;
+		bool FollowPlayer = false;
+		bool DarkenOnLock = false;
+		bool VisualSpawned = false;
+	};
+
+	struct BossPrototypeCore {
+		vec4 Position = vec4(0, 0, 0, 1);
+		float HP = 1200.0f;
+		float MaxHP = 1200.0f;
+		float HitFlashTimer = 0.0f;
+		float HitFlashDuration = 0.45f;
+		bool Active = true;
+	};
+
+	struct BossMissileVisual {
+		vec4 Start = vec4(0, 0, 0, 1);
+		vec4 Target = vec4(0, 0, 0, 1);
+		float Age = 0.0f;
+		float Duration = 1.0f;
+		float Radius = 1.0f;
+		bool Active = true;
+	};
+
+	bool BossPrototypeEnabled = true;
+	int BossPrototypeIndex = -1;
+	BossPrototypePhase BossPrototypePhaseState = BossPrototypePhase::FindBoss;
+	float BossPrototypePhaseTime = 0.0f;
+	float BossPrototypePatternCooldown = 0.0f;
+	float BossPrototypeShieldDownTime = 0.0f;
+	float BossPrototypeGroggyTime = 0.0f;
+	int BossPrototypePatternStep = 0;
+	bool BossPrototypeConfigured = false;
+	bool BossPrototypeCoresInitialized = false;
+	bool BossPrototypeShieldActive = true;
+	bool BossPrototypeServerSynced = false;
+	bool BossPrototypeVisualGroundInitialized = false;
+	bool ModelRenderTintOverrideActive = false;
+	vec4 ModelRenderTintOverride = vec4(0.0f, 1.0f, 1.0f, 1.0f);
+	float BossPrototypeVisualGroundY = 0.0f;
+	vec4 BossPrototypeCenter = vec4(0, 0, 0, 1);
+	vec4 BossPrototypeAimDirection = vec4(0, 0, 1, 0);
+	vec4 BossPrototypeRailgunDirection = vec4(0, 0, 1, 0);
+	vec4 BossPrototypeVisualLookDirection = vec4(0, 0, 1, 0);
+	std::vector<BossPrototypeCore> BossPrototypeCores;
+	std::vector<BossAoEWarning> BossAoEWarnings;
+	std::vector<BossMissileVisual> BossMissileVisuals;
+	void ApplyBossState(const STC_BossState_Header& header);
+	void UpdateBossPrototype(float deltaTime);
+	void RenderBossPrototypeObjects();
+	void RenderBossPrototypeAoEs();
+	void RenderBossPrototypeShield();
+	void RenderAegisShieldVisuals();
+	void RenderFrostBlizzardSnowWaves();
+	void RenderStatusEffectOverlays();
+	void RenderBossPrototypeBeam();
+	void RenderPlayerRailgunBeams();
+	void RenderRailgunOrbitVisuals();
+	void RenderDualBladeFloorVisuals();
+	void RenderHackerEmpVisuals();
+	void RenderSupportDrones();
+	void RenderBossPrototypeMissiles();
+
 	Game() {}
 	~Game() {}
 	/*
@@ -405,22 +525,45 @@ public:
 	bool RectContainRect(vec4 rt, vec4 rt2);
 	void UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid);
 	void UIDraw_TextureRect(vec4 loc, vec4 color, float depth, GPUResource* tex);
+	void UIDraw_SolidRect(vec4 loc, vec4 color, float depth);
 	// �ؽ��� �������� �׸��� �Լ�
 	void UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float LineWidth, int uitextureid);
 	
 	void UI_Init();
 	void UpdateGameplaySkillHUD(float deltaTime);
 	void UpdateFloatingDamageTexts(float deltaTime);
+	void UpdateDamageFeedback(float deltaTime);
+	void NotifyPlayerDamaged(float damage);
 	void SpawnFloatingDamageText(vec4 worldPosition, float damage);
 	void RenderGameplayStatusHUD();
+	void RenderDamageFeedbackHUD();
+	void RenderBossPrototypeHUD();
+	void RenderBossPrototypeCoreHealthPlates();
 	void RenderMonsterHealthPlates();
 	void RenderFloatingDamageTexts();
 	void RenderGameplaySkillHUD();
+	void RenderAmmoHUD();
+	void RenderSniperScopeHUD();
+	int ScopeOverlayTextureIndex = -1;
+	int AmmoHUDFrameTextureIndex = -1;
+	int AmmoHUDBulletTextureIndex = -1;
+	int AmmoHUDReloadTextureIndex = -1;
+	int AmmoHUDWeaponTextureIndices[(int)WeaponType::Max] = { -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 	float UltimateChargePercent = 0.0f;
 	float UltimateChargePassiveFlow = 0.0f;
 	float LastUltimateCooldownFlow = 0.0f;
 	int LastUltimateKillCount = 0;
 	int LastUltimateJob = -1;
+	float DamageBorderAlpha = 0.0f;
+	float DamageBorderFadeDuration = 0.30f;
+	float LastObservedPlayerHP = -1.0f;
+	float LastObservedPlayerMaxHP = -1.0f;
+	int LastObservedPlayerJob = -1;
+	float PlayerDamageFeedbackSuppressionTime = 0.0f;
+	float CameraShakeTimer = 0.0f;
+	float CameraShakeDuration = 0.0f;
+	float CameraShakeStrength = 0.0f;
+	float WhiteDamageFlashAlpha = 0.0f;
 	struct FloatingDamageText {
 		vec4 WorldPosition = vec4(0, 0, 0, 1);
 		float Damage = 0.0f;
@@ -499,6 +642,7 @@ public:
 	double PerfGPUComputeWaitMs = 0.0;
 	double PerfGPUFinalWaitMs = 0.0;
 	double PerfPresentMs = 0.0;
+	int AutoLODShadowStabilityLevel = 0;
 
 	UINT TourID = 0;
 	// ?�재 ?�더링을 ?�행?�는 ?�이???�??
@@ -763,6 +907,17 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 			m.transpose();
 
 			cmd->SetGraphicsRoot32BitConstants(1, 16, &m, 0);
+			if (game.PresentShaderType == ShaderType::RenderWithShadow) {
+				vec4 hitFlash = vec4(0.0f, 1.0f, 1.0f, 1.0f);
+				if (game.ModelRenderTintOverrideActive) {
+					hitFlash = game.ModelRenderTintOverride;
+				}
+				else if (pGameobject != nullptr && obj->tag[GameObjectTag::Tag_SkinMeshObject]) {
+					SkinMeshGameObject* smgo = (SkinMeshGameObject*)pGameobject;
+					hitFlash = smgo->GetRenderTint();
+				}
+				cmd->SetGraphicsRoot32BitConstants(PBRShader1::RootParamId::Const_ModelHitFlash, 4, &hitFlash, 0);
+			}
 			for (int i = 0; i < numMesh; ++i) {
 				Mesh* drawMesh = pModel->mMeshes[Meshes[i]];
 				if (AutoLOD_IsModelLODRenderActive()) {

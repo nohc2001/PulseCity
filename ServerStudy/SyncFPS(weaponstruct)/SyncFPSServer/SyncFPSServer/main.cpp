@@ -222,7 +222,6 @@ READ_START:
 	{
 		CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
 		p->InputBuffer[header.Key] = header.isdown;
-		cout << "client" << clientIndex << " : " << header.Key << " isdown : " << header.isdown << endl;
 		currentPivot += header.size;
 		offset += header.size;
 	}

@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "Render.h"
 #include "Game.h"
 #include "GameObject.h"
@@ -9,6 +9,8 @@ extern int dbgc[128];
 Mesh* BulletRay::mesh = nullptr;
 extern GlobalDevice gd;
 extern Game game;
+
+static float GetPlayerUpperBodyYawCorrection(int animationIndex);
 
 namespace {
 	constexpr bool kEnableMeshLODRender = true;
@@ -49,10 +51,34 @@ namespace {
 		return model != nullptr && model == turretModel;
 	}
 
+	bool IsDroneRenderModel(Model* model)
+	{
+		static Model* droneModel = nullptr;
+		static bool initialized = false;
+		if (!initialized) {
+			int droneShapeIndex = Shape::GetShapeIndex("MonsterDrone");
+			if (droneShapeIndex >= 0 && droneShapeIndex < (int)Shape::ShapeTable.size()) {
+				droneModel = Shape::ShapeTable[droneShapeIndex].GetModel();
+			}
+			initialized = true;
+		}
+		return model != nullptr && model == droneModel;
+	}
+
 	matrix GetModelRenderWorld(Model* model, const matrix& world)
 	{
 		if (IsTurretRenderModel(model)) {
 			matrix modelFix = XMMatrixRotationX(XM_PI);
+			modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+			return modelFix * (XMMATRIX)world;
+		}
+		return world;
+	}
+
+	matrix GetSkinMeshRenderWorld(Model* model, const matrix& world)
+	{
+		if (IsDroneRenderModel(model)) {
+			matrix modelFix = XMMatrixRotationY(XMConvertToRadians(-90.0f));
 			return modelFix * (XMMATRIX)world;
 		}
 		return world;
@@ -1959,6 +1985,10 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 	}
 
 	Model* pModel = shape.GetModel();
+	if (pModel == nullptr || pModel->nodeCount <= 0 || pModel->Nodes == nullptr ||
+		pModel->DefaultNodelocalTr == nullptr) {
+		return;
+	}
 	for (int i = 0; i < pModel->mNumSkinMesh; ++i) {
 		dbgc[5] += 1;
 		int boneNum = pModel->mBumpSkinMeshs[i]->MatrixCount;
@@ -2529,7 +2559,8 @@ void SkinMeshGameObject::Render(matrix parent) {
 			}
 		}
 		else if (BoneToWorldMatrixCB.size() != 0) {
-			model->Render<true>(gd.gpucmd, world, this);
+			matrix renderWorld = GetSkinMeshRenderWorld(model, world);
+			model->Render<true>(gd.gpucmd, renderWorld, this);
 		}
 	}
 }
@@ -2555,7 +2586,8 @@ void SkinMeshGameObject::RenderShadow(matrix parent)
 			return;
 		}
 		else if (BoneToWorldMatrixCB.size() != 0) {
-			model->Render<true>(gd.gpucmd, world, this);
+			matrix renderWorld = GetSkinMeshRenderWorld(model, world);
+			model->Render<true>(gd.gpucmd, renderWorld, this);
 		}
 	}
 }
@@ -2651,6 +2683,18 @@ void SkinMeshGameObject::BlendingAnimation() {
 		cbData->animMask[3] = m_animMask[3];
 
 		cbData->frameRate = game.HumanoidAnimationTable[anim0].frameRate;
+		cbData->upperBodyYawCorrection = GetPlayerUpperBodyYawCorrection(anim1);
+		cbData->upperBodyPitchCorrection = 0.0f;
+		Player* player = dynamic_cast<Player*>(this);
+		if (player != nullptr &&
+			(player->m_currentUpperState == Player::UpperState::AIM ||
+			 player->m_currentUpperState == Player::UpperState::SHOOT)) {
+			const float maxUpperBodyPitch = XMConvertToRadians(45.0f);
+			const float upperBodyPitchBias = XMConvertToRadians(-10.0f);
+			cbData->upperBodyPitchCorrection =
+				max(-maxUpperBodyPitch, min(maxUpperBodyPitch,
+					player->m_pitch + upperBodyPitchBias));
+		}
 	}
 
 	if (BoneToWorldMatrixCB_Default.size() == 0) return;
@@ -2693,7 +2737,7 @@ void SkinMeshGameObject::ModifyLocalToWorld() {
 	if (BoneToWorldMatrixCB_Default.size() == 0) return;
 	Model* model = shape.GetModel();
 	if (model == nullptr) return;
-	matrix rootworld = worldMat;
+	matrix rootworld = GetSkinMeshRenderWorld(model, worldMat);
 	rootworld.transpose();
 	for (int i = 0; i < model->mNumSkinMesh; ++i) {
 		using HBLTWSRPI = HBoneLocalToWorldShader::RootParamId;
@@ -3235,6 +3279,43 @@ void Monster::Release() {
 	SkinMeshGameObject::Release();
 }
 
+static int GetPlayerUpperAnimationIndex(WeaponType weaponType, Player::UpperState upperState)
+{
+	if (weaponType == WeaponType::DualPistol) {
+		if (upperState == Player::UpperState::SHOOT) return 11;
+		if (upperState == Player::UpperState::AIM) return 10;
+		if (upperState == Player::UpperState::RELOAD) return 9;
+		return -1;
+	}
+
+	const bool usePistolAnimation =
+		weaponType == WeaponType::Pistol ||
+		weaponType == WeaponType::DronePistol ||
+		weaponType == WeaponType::SMG ||
+		weaponType == WeaponType::GrenadeGun;
+	if (upperState == Player::UpperState::SHOOT) {
+		return usePistolAnimation ? 6 : 4;
+	}
+	if (upperState == Player::UpperState::AIM) {
+		return usePistolAnimation ? 5 : 3;
+	}
+	if (upperState == Player::UpperState::RELOAD) {
+		return usePistolAnimation ? 9 : 8;
+	}
+	return -1;
+}
+
+static float GetPlayerUpperBodyYawCorrection(int animationIndex)
+{
+	if (animationIndex == 3 || animationIndex == 4) {
+		return XMConvertToRadians(50.0f);
+	}
+	if (animationIndex == 5 || animationIndex == 6) {
+		return XMConvertToRadians(20.0f);
+	}
+	return 0.0f;
+}
+
 Player::Player() : HP{ 100 } {
 	tag = 0;
 	tag[GameObjectTag::Tag_Enable] = false;
@@ -3272,6 +3353,19 @@ Player::Player() : HP{ 100 } {
 	GunModel = nullptr;
 	ShootPointMesh = nullptr;
 	gunMatrix_thirdPersonView.Id();
+	cachedThirdPersonRightHandMatrix.Id();
+	cachedThirdPersonRightHandMatrixValid = false;
+	cachedThirdPersonLeftHandMatrix.Id();
+	cachedThirdPersonLeftHandMatrixValid = false;
+	cachedRightHandForwardAxisIndex = -1;
+	cachedRightHandRightAxisIndex = -1;
+	cachedRightHandForwardAxisSign = 1.0f;
+	cachedRightHandRightAxisSign = 1.0f;
+	cachedThirdPersonWeaponMatrix.Id();
+	cachedThirdPersonWeaponMatrixValid = false;
+	cachedThirdPersonLeftWeaponMatrix.Id();
+	cachedThirdPersonLeftWeaponMatrixValid = false;
+	cachedThirdPersonWeaponType = -1;
 	gunMatrix_firstPersonView.Id();
 	HPBarMesh = nullptr;
 	HPMatrix.Id();
@@ -3284,10 +3378,21 @@ Player::Player() : HP{ 100 } {
 	m_targetFov = 60.0f;
 	m_yaw = 0.0f;
 	m_pitch = 0.0f;
+	m_currentUpperState = UpperState::AIM;
+	m_jumpPhase = JumpPhase::NONE;
+	m_jumpElapsed = 0.0f;
+	m_jumpGroundStableTime = 0.0f;
+	m_jumpReentryCooldown = 0.0f;
+	m_jumpSawDescending = false;
+	PlayingAnimationIndex[1] = 5;
+	AnimationFlowTime[1] = 0.0f;
+	m_upperAimPoseTime = 0.0f;
 }
 
-static Model* GetWeaponRenderModel(WeaponType weaponType)
+static Model* GetWeaponRenderModel(const Player* player)
 {
+	if (player == nullptr) return nullptr;
+	const WeaponType weaponType = (WeaponType)player->m_currentWeaponType;
 	switch (weaponType)
 	{
 	case WeaponType::Sniper: return game.SniperModel;
@@ -3295,8 +3400,20 @@ static Model* GetWeaponRenderModel(WeaponType weaponType)
 	case WeaponType::Shotgun: return game.ShotGunModel;
 	case WeaponType::Rifle: return game.RifleModel;
 	case WeaponType::Pistol: return game.PistolModel;
+	case WeaponType::DualPistol: return player->m_dualBladeVisualTimer > 0.0f ? game.DualGunBladeModel : game.DualRevolverModel;
+	case WeaponType::DronePistol: return game.PistolModel;
+	case WeaponType::SMG: return game.HackerSMGModel;
+	case WeaponType::GrenadeGun: return game.BomberGrenadeGunModel;
 	default: return nullptr;
 	}
+}
+
+static float GetPlayerReloadTime(const Player* player)
+{
+	if ((WeaponType)player->m_currentWeaponType == WeaponType::Sniper) {
+		return player->m_sniperDmrMode ? 1.4f : 2.0f;
+	}
+	return player->weapon[player->SelectedWeapon].m_info.reloadTime;
 }
 
 Player::~Player() {
@@ -3315,90 +3432,192 @@ void Player::STATICINIT(int typeindex) {
 
 void Player::Update(float deltaTime)
 {
+	vec4 previousPosition = worldMat.pos;
 	PositionInterpolation(deltaTime);
-	//PlayingAnimationIndex[0] = 0;
-
-	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
+	if (HitFlashTimer > 0.0f) {
+		HitFlashTimer -= max(0.0f, deltaTime);
+		if (HitFlashTimer < 0.0f) HitFlashTimer = 0.0f;
+	}
 
 	float velSpeed = sqrt(LVelocity.x * LVelocity.x + LVelocity.z * LVelocity.z);
-	float dx = DestPos.x - worldMat.pos.x;
-	float dz = DestPos.z - worldMat.pos.z;
-	float distSpeed = sqrt(dx * dx + dz * dz);
-	float currentSpeed = max(velSpeed, distSpeed);
+	float movedX = worldMat.pos.x - previousPosition.x;
+	float movedY = worldMat.pos.y - previousPosition.y;
+	float movedZ = worldMat.pos.z - previousPosition.z;
+	float interpolatedSpeed = sqrt(movedX * movedX + movedZ * movedZ) / max(deltaTime, 0.0001f);
+	float verticalSpeed = movedY / max(deltaTime, 0.0001f);
+	float currentSpeed = max(velSpeed, interpolatedSpeed);
+	const float runEnterSpeed = 7.0f;
+	const float runExitSpeed = 6.5f;
 
-	switch (m_currentState)
-	{
-	case State::IDLE:
-		if (currentSpeed > 3.0f) ChangeState(State::RUN);
-		else if (currentSpeed > 0.05f) ChangeState(State::WALK);
-		break;
+	auto changeGroundLocomotion = [&]() {
+		if (currentSpeed >= runEnterSpeed ||
+			(m_currentState == State::RUN && currentSpeed > runExitSpeed)) {
+			ChangeState(State::RUN);
+		}
+		else if (currentSpeed > 0.10f) {
+			ChangeState(State::WALK);
+		}
+		else {
+			ChangeState(State::IDLE);
+		}
+	};
 
-	case State::WALK:
-		if (currentSpeed <= 0.05f) ChangeState(State::IDLE);
-		else if (currentSpeed > 3.0f) ChangeState(State::RUN);
-		break;
-
-	case State::RUN:
-		if (currentSpeed <= 0.05f) ChangeState(State::IDLE);
-		else if (currentSpeed <= 3.0f) ChangeState(State::WALK);
-		break;
+	if (m_jumpReentryCooldown > 0.0f) {
+		m_jumpReentryCooldown -= deltaTime;
+		if (m_jumpReentryCooldown < 0.0f) m_jumpReentryCooldown = 0.0f;
 	}
 
-	AnimationFlowTime[0] += deltaTime;
-
-	double currentDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration;
-
-	if (AnimationFlowTime[0] > currentDuration) {
-		AnimationFlowTime[0] = fmod(AnimationFlowTime[0], currentDuration);
-	}
-
-	if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-		ChangeUpperState(UpperState::SHOOT);
-	}
-	else if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
-		double upperDuration = (PlayingAnimationIndex[1] != -1) ? game.HumanoidAnimationTable[PlayingAnimationIndex[1]].Duration : 0.0;
-		if (m_currentUpperState != UpperState::SHOOT ||
-			(PlayingAnimationIndex[1] != -1 && AnimationFlowTime[1] >= upperDuration - 0.002))
-		{
-			ChangeUpperState(UpperState::AIM);
+	const bool hasVerticalAirMotion =
+		abs(LVelocity.y) > 0.15f || abs(verticalSpeed) > 1.00f;
+	if (m_jumpPhase == JumpPhase::NONE) {
+		if (m_jumpReentryCooldown <= 0.0f && hasVerticalAirMotion) {
+			ChangeState(State::JUMP);
+			m_jumpPhase = JumpPhase::TAKEOFF;
+			m_jumpElapsed = 0.0f;
+			m_jumpGroundStableTime = 0.0f;
+			m_jumpSawDescending = LVelocity.y < -0.80f || verticalSpeed < -0.80f;
+		}
+		else {
+			changeGroundLocomotion();
 		}
 	}
 	else {
-		if (m_currentUpperState == UpperState::SHOOT) {
-			double upperDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[1]].Duration;
-			if (PlayingAnimationIndex[1] != -1 && AnimationFlowTime[1] >= upperDuration - 0.002) {
-				ChangeUpperState(UpperState::NONE);
+		ChangeState(State::JUMP);
+		m_jumpElapsed += deltaTime;
+		if (LVelocity.y < -0.80f || verticalSpeed < -0.80f) {
+			m_jumpSawDescending = true;
+		}
+
+		const bool canLand = m_jumpElapsed > 0.18f &&
+			(m_jumpSawDescending || m_jumpElapsed > 0.90f);
+		const bool nearlyStoppedVertically =
+			abs(LVelocity.y) < 0.65f && abs(verticalSpeed) < 0.50f;
+		const bool staleVelocityFallback =
+			m_jumpElapsed > 1.50f && abs(verticalSpeed) < 0.50f;
+		const bool generousGroundContact =
+			(isGround && abs(LVelocity.y) < 0.80f) ||
+			nearlyStoppedVertically || staleVelocityFallback;
+		if (m_jumpPhase != JumpPhase::LANDING && canLand && generousGroundContact) {
+			m_jumpGroundStableTime += deltaTime;
+			if (m_jumpGroundStableTime >= 0.08f) {
+				m_jumpPhase = JumpPhase::LANDING;
 			}
 		}
-		else {
-			ChangeUpperState(UpperState::NONE);
+		else if (m_jumpPhase != JumpPhase::LANDING) {
+			m_jumpGroundStableTime = 0.0f;
 		}
+	}
+
+	double currentDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[0]].Duration;
+	if (m_currentState == State::JUMP && m_jumpPhase != JumpPhase::NONE) {
+		const float jumpDuration = max((float)currentDuration, 0.01f);
+		const float airPoseTime = jumpDuration * 0.50f;
+		const float landingStartTime = jumpDuration * 0.62f;
+		if (m_jumpPhase == JumpPhase::TAKEOFF) {
+			AnimationFlowTime[0] += deltaTime * (airPoseTime / 0.22f);
+			if (AnimationFlowTime[0] >= airPoseTime) {
+				AnimationFlowTime[0] = airPoseTime;
+				m_jumpPhase = JumpPhase::AIRBORNE;
+			}
+		}
+		else if (m_jumpPhase == JumpPhase::AIRBORNE) {
+			AnimationFlowTime[0] = airPoseTime;
+		}
+		else if (m_jumpPhase == JumpPhase::LANDING) {
+			if (AnimationFlowTime[0] < landingStartTime) {
+				AnimationFlowTime[0] = landingStartTime;
+			}
+			AnimationFlowTime[0] += deltaTime * ((jumpDuration - landingStartTime) / 0.20f);
+			if (AnimationFlowTime[0] >= jumpDuration) {
+				m_jumpPhase = JumpPhase::NONE;
+				m_jumpElapsed = 0.0f;
+				m_jumpGroundStableTime = 0.0f;
+				m_jumpReentryCooldown = 0.12f;
+				m_jumpSawDescending = false;
+				changeGroundLocomotion();
+			}
+		}
+	}
+	else {
+		AnimationFlowTime[0] += deltaTime;
+	}
+
+	if (m_currentState != State::JUMP && AnimationFlowTime[0] > currentDuration) {
+		AnimationFlowTime[0] = fmod(AnimationFlowTime[0], currentDuration);
+	}
+
+	// A holstered weapon uses the original full-body locomotion animation.
+	// Equipping restores the weapon-specific aim-idle upper pose.
+	const bool isReloading = ReloadRemain > 0.0f;
+	if (m_weaponHolstered) {
+		m_upperShootHoldTimer = 0.0f;
+		ChangeUpperState(UpperState::NONE);
+	}
+	else if (isReloading) {
+		m_upperShootHoldTimer = 0.0f;
+		ChangeUpperState(UpperState::RELOAD);
+	}
+	else if (m_currentUpperState == UpperState::RELOAD) {
+		ChangeUpperState(UpperState::AIM);
+	}
+	else if (m_currentUpperState == UpperState::NONE) {
+		ChangeUpperState(UpperState::AIM);
+	}
+	else {
+		ChangeUpperState(m_currentUpperState);
+	}
+	if (m_upperShootHoldTimer > 0.0f) {
+		m_upperShootHoldTimer -= deltaTime;
+		if (m_upperShootHoldTimer < 0.0f) m_upperShootHoldTimer = 0.0f;
 	}
 
 	if (m_currentUpperState != UpperState::NONE && PlayingAnimationIndex[1] != -1)
 	{
-		AnimationFlowTime[1] += deltaTime;
 		double upperDuration = game.HumanoidAnimationTable[PlayingAnimationIndex[1]].Duration;
+		if (m_currentUpperState == UpperState::RELOAD) {
+			const float reloadTime = max(GetPlayerReloadTime(this), 0.01f);
+			const float reloadProgress = min(1.0f, max(0.0f,
+				1.0f - ReloadRemain / reloadTime));
+			// The imported reload clips have a large hand offset in their first
+			// frames. Skip that unstable lead-in while preserving reload timing.
+			constexpr float reloadAnimationStartRatio = 0.08f;
+			const float reloadAnimationProgress = reloadAnimationStartRatio +
+				(1.0f - reloadAnimationStartRatio) * reloadProgress;
+			AnimationFlowTime[1] = (float)upperDuration * reloadAnimationProgress;
+		}
+		else {
+			AnimationFlowTime[1] += deltaTime;
+		}
 
 		if (AnimationFlowTime[1] > upperDuration) {
 			if (m_currentUpperState == UpperState::AIM) {
 				AnimationFlowTime[1] = fmod(AnimationFlowTime[1], upperDuration);
 			}
 			else if (m_currentUpperState == UpperState::SHOOT) {
-				AnimationFlowTime[1] = upperDuration - 0.001;
+				if (m_upperShootHoldTimer > 0.0f) {
+					AnimationFlowTime[1] = fmod(AnimationFlowTime[1], upperDuration);
+				}
+				else {
+					ChangeUpperState(UpperState::AIM);
+				}
 			}
+			else if (m_currentUpperState == UpperState::RELOAD) {
+				AnimationFlowTime[1] = (float)upperDuration;
+			}
+		}
+
+		if (m_currentUpperState == UpperState::AIM) {
+			m_upperAimPoseTime = AnimationFlowTime[1];
 		}
 	}
 
-	if (m_currentUpperState != UpperState::NONE)
-	{
-		m_animMask[0] = 0x7FULL;  // 0~6번 뼈 (하체)
-		m_animMask[1] = ~0x7FULL; // 7번 뼈 이상 (상체)
-	}
-	else
-	{
+	if (m_currentUpperState == UpperState::NONE) {
 		m_animMask[0] = 0xFFFFFFFFFFFFFFFFULL;
 		m_animMask[1] = 0ULL;
+	}
+	else {
+		m_animMask[0] = 0x7FULL;  // 0~6: lower body
+		m_animMask[1] = ~0x7FULL; // 7+: upper body
 	}
 
 	AnimationUpdate(deltaTime);
@@ -3429,7 +3648,7 @@ void Player::ClientUpdate(float deltaTime)
 			game.DeltaMousePos.y -= f;
 		}
 
-		if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) m_isZooming = true;
+		if (!m_weaponHolstered && (GetAsyncKeyState(VK_RBUTTON) & 0x8000)) m_isZooming = true;
 		else m_isZooming = false;
 
 		float targetFov = 60.0f;
@@ -3450,6 +3669,9 @@ void Player::ClientUpdate(float deltaTime)
 	switch (currentType)
 	{
 	case WeaponType::Pistol:
+	case WeaponType::DualPistol:
+	case WeaponType::DronePistol:
+	case WeaponType::SMG:
 	{
 		float recoilT = currentWeapon.GetRecoilAlpha();
 
@@ -3460,12 +3682,22 @@ void Player::ClientUpdate(float deltaTime)
 		float slideMove = -0.3f * powf(recoilT, 2.0f);
 
 		if (game.PistolModel && !game.Pistol_SlideIndices.empty()) {
-			XMMATRIX slideTrans = XMMatrixTranslation(0, slideMove, 0);
+			XMMATRIX slideTrans = XMMatrixTranslation(0.0f, 0.0f, slideMove);
 
 			for (int idx : game.Pistol_SlideIndices) {
-				game.PistolModel->Nodes[idx].transform = slideTrans * game.PistolModel->BindPose[idx];
+				game.PistolModel->Nodes[idx].transform = game.PistolModel->BindPose[idx] * slideTrans;
 			}
 		}
+	}
+	break;
+
+	case WeaponType::GrenadeGun:
+	{
+		float recoilT = weapon[SelectedWeapon].GetRecoilAlpha();
+		float zOffset = 0.3f - 0.24f * powf(recoilT, 2.0f);
+		float pitchAngle = weapon[SelectedWeapon].m_info.recoilVelocity * recoilT;
+		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) *
+			XMMatrixTranslation(0.0f, 0.0f, zOffset);
 	}
 	break;
 
@@ -3530,7 +3762,7 @@ void Player::ClientUpdate(float deltaTime)
 		}
 		gunMatrix_firstPersonView.mat = XMMatrixRotationX(-XMConvertToRadians(pitchAngle)) * XMMatrixTranslation(0.0f, 0.0f, zOffset);
 
-		float pumpZ = 0.0f;
+		float pumpMove = 0.0f;
 		float pumpStart = 0.3f;
 		float pumpEnd = 0.7f;
 
@@ -3539,13 +3771,13 @@ void Player::ClientUpdate(float deltaTime)
 
 			float curve = sinf(t * XM_PI);
 
-			pumpZ = 120.0f * curve;
+			pumpMove = 0.35f * curve;
 		}
 
 		if (game.ShotGunModel && !game.SG_PumpIndices.empty()) {
-			XMMATRIX pumpTrans = XMMatrixTranslation(pumpZ, 0, 0);
+			XMMATRIX pumpTrans = XMMatrixTranslation(pumpMove, 0.0f, 0.0f);
 			for (int idx : game.SG_PumpIndices) {
-				game.ShotGunModel->Nodes[idx].transform = pumpTrans * game.ShotGunModel->BindPose[idx];
+				game.ShotGunModel->Nodes[idx].transform = game.ShotGunModel->BindPose[idx] * pumpTrans;
 			}
 		}
 	}
@@ -3654,14 +3886,21 @@ void Player::ModifyLocalToWorld() {
 static bool TryFindHumanoidNodeIndex(Model* model, HumanoidAnimation::HumanBodyBones bone, int& outNodeIndex);
 static matrix GetAnimatedNodeLocalMatrix(SkinMeshGameObject* obj, Model* model, int nodeIndex);
 static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::HumanBodyBones bone, matrix& outBoneWorld);
-static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponType, matrix& outWeaponWorld);
+static bool TryBuildThirdPersonWeaponMatrix(Player* player, bool leftHand, matrix& outWeaponWorld);
+
+static int GetPlayerWeaponVisualKey(const Player* player)
+{
+	if (player == nullptr) return -1;
+	const int bladeMode = player->m_dualBladeVisualTimer > 0.0f ? 1 : 0;
+	return player->m_currentWeaponType + bladeMode * 256;
+}
 
 void Player::Render_ThirdPersonWeapon()
 {
 	if (game.bFirstPersonVision) return;
 	if (gd.isRaytracingRender) {
 		matrix gunmat;
-		if (!TryBuildThirdPersonWeaponMatrix(this, (WeaponType)m_currentWeaponType, gunmat)) {
+		if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
 			gunmat = gunMatrix_thirdPersonView;
 			gunmat *= XMMatrixRotationX(XM_PI);
 			gunmat.pos.y -= 0.40f;
@@ -3670,7 +3909,8 @@ void Player::Render_ThirdPersonWeapon()
 			gunmat *= worldMat;
 		}
 
-		for (int i = 0; i < 5; ++i) {
+		for (int i = 0; i < Game::MaxWeapon; ++i) {
+			if (game.PlayerWeaponObj[i] == nullptr) continue;
 			if (m_currentWeaponType != i) {
 				game.PlayerWeaponObj[i]->worldMat = 0;
 			}
@@ -3685,13 +3925,13 @@ void Player::Render_ThirdPersonWeapon()
 			return;
 		}
 
-		Model* pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
+		Model* pTargetModel = GetWeaponRenderModel(this);
 		if (!pTargetModel) {
 			return;
 		}
 
 		matrix gunmat;
-		if (!TryBuildThirdPersonWeaponMatrix(this, (WeaponType)m_currentWeaponType, gunmat)) {
+		if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
 			gunmat = gunMatrix_thirdPersonView;
 			gunmat *= XMMatrixRotationX(XM_PI);
 			gunmat.pos.y -= 0.40f;
@@ -3777,7 +4017,8 @@ void Player::Render_AfterDepthClear()
 			}
 
 			gunmat *= viewmat;
-			for (int i = 0; i < 5; ++i) {
+			for (int i = 0; i < Game::MaxWeapon; ++i) {
+				if (game.PlayerWeaponObj[i] == nullptr) continue;
 				if (m_currentWeaponType != i) {
 					game.PlayerWeaponObj[i]->worldMat = 0;
 				}
@@ -3790,14 +4031,122 @@ void Player::Render_AfterDepthClear()
 	}
 	else if (game.bFirstPersonVision)
 	{
-		pTargetModel = GetWeaponRenderModel((WeaponType)m_currentWeaponType);
+		pTargetModel = GetWeaponRenderModel(this);
 		if (!pTargetModel) {
 			goto GunRenderEnd;
 		}
 
 		if (pTargetModel) {
 			matrix gunmat = gunMatrix_firstPersonView;
+			const WeaponType weaponType = (WeaponType)m_currentWeaponType;
+			const float firstPersonReloadProgress = ReloadRemain > 0.0f
+				? min(1.0f, max(0.0f, 1.0f - ReloadRemain / max(GetPlayerReloadTime(this), 0.01f)))
+				: 0.0f;
+			const float firstPersonReloadArc = sinf(firstPersonReloadProgress * XM_PI);
 
+			if (weaponType == WeaponType::DualPistol) {
+				const bool bladeMode = m_dualBladeVisualTimer > 0.0f;
+
+				const float dualPistolScale = 3.50f;
+				const vec4 dualPistolLeftPosition = vec4(-0.82f, -0.78f, 1.45f, 1.0f);
+				const vec4 dualPistolRightPosition = vec4(0.82f, -0.78f, 1.45f, 1.0f);
+				const float dualBladeScale = 0.5f;
+				const vec4 dualBladeLeftPosition = vec4(-3.42f, -0.32f, 2.22f, 1.0f);
+				const vec4 dualBladeRightPosition = vec4(-1.82f, -0.32f, 2.22f, 1.0f);
+
+				const float bladeAttackProgress = bladeMode && m_dualBladeAttackVisualTimer > 0.0f
+					? 1.0f - min(1.0f, m_dualBladeAttackVisualTimer / 0.34f) : 0.0f;
+				const float bladeSwing = sinf(bladeAttackProgress * XM_PI);
+
+				auto RenderFirstPersonHandWeapon = [&](bool leftHand) {
+					const bool activeBlade = leftHand == m_dualBladeAttackAlternate;
+					const float handBladeSwing = activeBlade ? bladeSwing : 0.0f;
+					const float modelScale = bladeMode ? dualBladeScale : dualPistolScale;
+					matrix handWeapon = XMMatrixScaling(modelScale, modelScale, modelScale);
+					float recoilT = 0.0f;
+
+					if (!bladeMode) {
+						const float recoilTimer = leftHand ? m_dualLeftRecoilTimer : m_dualRightRecoilTimer;
+						const float recoilProgress = 1.0f - min(1.0f, recoilTimer / 0.22f);
+						recoilT = recoilTimer > 0.0f ? sinf(recoilProgress * XM_PI) : 0.0f;
+						handWeapon *= XMMatrixRotationX(-XMConvertToRadians(10.0f * recoilT));
+						handWeapon *= XMMatrixRotationZ(XMConvertToRadians((leftHand ? -2.5f : 2.5f) * recoilT));
+					}
+
+					if (bladeMode && leftHand) {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(0.0f), XMConvertToRadians(90.0f), XMConvertToRadians(-40.0f));
+					}
+					else if (bladeMode) {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(0.0f), XMConvertToRadians(90.0f), XMConvertToRadians(-40.0f));
+					}
+					else if (leftHand) {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(-90.0f), XMConvertToRadians(-90.0f), XMConvertToRadians(0.0f));
+					}
+					else {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(-90.0f), XMConvertToRadians(-90.0f), XMConvertToRadians(0.0f));
+					}
+					if (!bladeMode && firstPersonReloadArc > 0.0f) {
+						handWeapon *= XMMatrixRotationZ(XMConvertToRadians(
+							(leftHand ? -16.0f : 16.0f) * firstPersonReloadArc));
+					}
+
+					if (bladeMode) {
+						handWeapon.pos = leftHand ? dualBladeLeftPosition : dualBladeRightPosition;
+					}
+					else {
+						handWeapon.pos = leftHand ? dualPistolLeftPosition : dualPistolRightPosition;
+					}
+
+					if (bladeMode && activeBlade) {
+						handWeapon.pos.x += (leftHand ? 0.34f : -0.34f) * handBladeSwing;
+						handWeapon.pos.y -= 0.16f * handBladeSwing;
+					}
+					if (!bladeMode) {
+						handWeapon.pos.x += (leftHand ? -0.018f : 0.018f) * recoilT;
+						handWeapon.pos.y += 0.26f * recoilT;
+						handWeapon.pos.z -= 0.12f * recoilT;
+						handWeapon.pos.x += (leftHand ? -0.12f : 0.12f) * firstPersonReloadArc;
+						handWeapon.pos.y -= 0.68f * firstPersonReloadArc;
+						handWeapon.pos.z -= 0.10f * firstPersonReloadArc;
+					}
+
+					handWeapon *= viewmat;
+					pTargetModel->Render(gd.gpucmd, handWeapon);
+				};
+				RenderFirstPersonHandWeapon(false);
+				RenderFirstPersonHandWeapon(true);
+				pTargetModel = nullptr;
+			}
+			else if (weaponType == WeaponType::SMG) {
+				const float recoilT = powf(min(1.0f, weapon[SelectedWeapon].GetRecoilAlpha()), 0.62f);
+				gunmat = XMMatrixScaling(3.0f, 3.0f, 3.0f);
+				gunmat *= XMMatrixRotationRollPitchYaw(
+					XMConvertToRadians(0.0f), XMConvertToRadians(180.0f), XMConvertToRadians(0.0f));
+				gunmat *= XMMatrixRotationX(-XMConvertToRadians(4.5f * recoilT));
+				gunmat *= XMMatrixRotationZ(XMConvertToRadians(-14.0f * firstPersonReloadArc));
+				gunmat.pos = vec4(-4.38f, -0.72f, 2.35f, 1.0f);
+				gunmat.pos.x += 0.14f * firstPersonReloadArc;
+				gunmat.pos.y += 0.075f * recoilT - 0.18f * firstPersonReloadArc;
+				gunmat.pos.z -= 0.11f * recoilT + 0.08f * firstPersonReloadArc;
+			}
+			else if (weaponType == WeaponType::GrenadeGun) {
+				const float recoilT = powf(min(1.0f, weapon[SelectedWeapon].GetRecoilAlpha()), 0.72f);
+				gunmat = XMMatrixScaling(15.0f, 15.0f, 15.0f);
+				gunmat *= XMMatrixRotationRollPitchYaw(
+					XMConvertToRadians(0.0f), XMConvertToRadians(180.0f), XMConvertToRadians(0.0f));
+				gunmat *= XMMatrixRotationX(-XMConvertToRadians(13.0f * recoilT));
+				gunmat *= XMMatrixRotationZ(XMConvertToRadians(-20.0f * firstPersonReloadArc));
+				gunmat.pos = vec4(0.92f, -0.58f, 1.50f, 1.0f);
+				gunmat.pos.x += 0.18f * firstPersonReloadArc;
+				gunmat.pos.y += 0.16f * recoilT - 0.78f * firstPersonReloadArc;
+				gunmat.pos.z -= 0.32f * recoilT + 0.12f * firstPersonReloadArc;
+			}
+
+			if (pTargetModel != nullptr && weaponType != WeaponType::SMG && weaponType != WeaponType::GrenadeGun)
 			switch ((WeaponType)m_currentWeaponType)
 			{
 			case WeaponType::MachineGun:
@@ -3823,6 +4172,7 @@ void Player::Render_AfterDepthClear()
 				}
 				break;
 			case WeaponType::Pistol:
+			case WeaponType::DronePistol:
 				gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
 				gunmat.pos.y -= 1.20f;
 				gunmat.pos.x += 1.00f;
@@ -3901,10 +4251,26 @@ void Player::UpdateGunBarrelNodes()
 	if ((WeaponType)m_currentWeaponType != WeaponType::MachineGun) return;
 	if (!game.MachineGunModel || game.MG_BarrelIndices.empty()) return;
 
-	matrix rot = XMMatrixRotationZ(gunBarrelAngle);
+	vec4 pivot(0, 0, 0, 1);
+	for (int idx : game.MG_BarrelIndices) {
+		pivot.x += game.MachineGunModel->BindPose[idx].pos.x;
+		pivot.y += game.MachineGunModel->BindPose[idx].pos.y;
+		pivot.z += game.MachineGunModel->BindPose[idx].pos.z;
+	}
+	const float invCount = 1.0f / static_cast<float>(game.MG_BarrelIndices.size());
+	pivot.x *= invCount;
+	pivot.y *= invCount;
+	pivot.z *= invCount;
+
+	XMMATRIX axisRot = XMMatrixRotationZ(gunBarrelAngle);
+
+	XMMATRIX barrelOrbit =
+		XMMatrixTranslation(-pivot.x, -pivot.y, -pivot.z) *
+		axisRot *
+		XMMatrixTranslation(pivot.x, pivot.y, pivot.z);
 
 	for (int idx : game.MG_BarrelIndices) {
-		game.MachineGunModel->Nodes[idx].transform = rot * game.MachineGunModel->BindPose[idx];
+		game.MachineGunModel->Nodes[idx].transform = game.MachineGunModel->BindPose[idx] * barrelOrbit;
 	}
 }
 
@@ -3958,15 +4324,39 @@ static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::Hum
 	}
 
 	int upperAnim = player->PlayingAnimationIndex[1];
+	float upperAnimTime = player->AnimationFlowTime[1];
+	if (player->m_currentUpperState == Player::UpperState::SHOOT) {
+		upperAnim = GetPlayerUpperAnimationIndex(
+			(WeaponType)player->m_currentWeaponType, Player::UpperState::AIM);
+		upperAnimTime = player->m_upperAimPoseTime;
+	}
 	if (upperAnim >= 0 && upperAnim < game.HumanoidAnimationTable.size()) {
 		std::vector<matrix> upperLocal(model->nodeCount);
 		for (int i = 0; i < model->nodeCount; ++i) {
 			upperLocal[i].Id();
 		}
 
-		player->GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[upperAnim], upperLocal.data(), player->AnimationFlowTime[1]);
+		player->GetBoneLocalMatrixAtTime(&game.HumanoidAnimationTable[upperAnim], upperLocal.data(), upperAnimTime);
+		const float upperBodyYawCorrection = GetPlayerUpperBodyYawCorrection(upperAnim);
+		const float maxUpperBodyPitch = XMConvertToRadians(45.0f);
+		const float upperBodyPitchBias = XMConvertToRadians(-10.0f);
+		const bool applyUpperBodyPitch =
+			player->m_currentUpperState == Player::UpperState::AIM ||
+			player->m_currentUpperState == Player::UpperState::SHOOT;
+		const float upperBodyPitchCorrection = applyUpperBodyPitch
+			? max(-maxUpperBodyPitch, min(maxUpperBodyPitch,
+				player->m_pitch + upperBodyPitchBias))
+			: 0.0f;
 		for (int i = 0; i < model->nodeCount; ++i) {
 			int humanoidIndex = model->Humanoid_retargeting ? model->Humanoid_retargeting[i] : -1;
+			if (humanoidIndex == HumanoidAnimation::Spine &&
+				(upperBodyYawCorrection != 0.0f || upperBodyPitchCorrection != 0.0f)) {
+				vec4 spinePosition = upperLocal[i].pos;
+				// Align the torso to the weapon pose first, then pitch on that corrected axis.
+				upperLocal[i] *= XMMatrixRotationY(upperBodyYawCorrection);
+				upperLocal[i] *= XMMatrixRotationX(upperBodyPitchCorrection);
+				upperLocal[i].pos = spinePosition;
+			}
 			if (humanoidIndex >= 0 && humanoidIndex < 64) {
 				if (player->m_animMask[1] & (1ULL << humanoidIndex)) {
 					blendedLocal[i] = upperLocal[i];
@@ -3992,58 +4382,158 @@ static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::Hum
 	return true;
 }
 
-static bool TryBuildThirdPersonWeaponMatrix(Player* player, WeaponType weaponType, matrix& outWeaponWorld)
+static bool TryBuildThirdPersonWeaponMatrix(Player* player, bool leftHand, matrix& outWeaponWorld)
 {
 	matrix handWorld;
-	if (!TryGetHumanoidBoneWorldMatrix(player, HumanoidAnimation::RightHand, handWorld)) {
+	const HumanoidAnimation::HumanBodyBones handBone = leftHand
+		? HumanoidAnimation::LeftHand
+		: HumanoidAnimation::RightHand;
+	if (!TryGetHumanoidBoneWorldMatrix(player, handBone, handWorld)) {
 		return false;
 	}
 
-	matrix attachWorld = player->worldMat;
-	attachWorld.pos = handWorld.pos;
-
 	matrix weaponLocal;
 	weaponLocal.Id();
+	const WeaponType weaponType = (WeaponType)player->m_currentWeaponType;
+	const float genericRecoilT = powf(min(1.0f, player->weapon[player->SelectedWeapon].GetRecoilAlpha()), 0.65f);
+	const float genericRecoilStrength = min(1.35f, max(0.65f, player->weapon[player->SelectedWeapon].m_info.recoilVelocity / 10.0f));
+
+	if (weaponType == WeaponType::DualPistol) {
+		const bool bladeMode = player->m_dualBladeVisualTimer > 0.0f;
+		const float bladeAttackProgress = bladeMode && player->m_dualBladeAttackVisualTimer > 0.0f
+			? 1.0f - min(1.0f, player->m_dualBladeAttackVisualTimer / 0.34f) : 0.0f;
+		const float bladeSwing = sinf(bladeAttackProgress * XM_PI);
+		const bool activeBlade = leftHand == player->m_dualBladeAttackAlternate;
+		const float handBladeSwing = activeBlade ? bladeSwing : 0.0f;
+		float recoilT = 0.0f;
+		if (!bladeMode) {
+			const float recoilTimer = leftHand ? player->m_dualLeftRecoilTimer : player->m_dualRightRecoilTimer;
+			recoilT = powf(min(1.0f, recoilTimer / 0.22f), 0.55f);
+			weaponLocal *= XMMatrixRotationX(-XMConvertToRadians(21.0f * recoilT));
+			weaponLocal *= XMMatrixRotationZ(XMConvertToRadians((leftHand ? -3.0f : 3.0f) * recoilT));
+		}
+		if (bladeMode && leftHand) {
+			weaponLocal *= XMMatrixScaling(0.3f, 0.3f, 0.3f);
+			weaponLocal *= XMMatrixRotationRollPitchYaw(
+				XMConvertToRadians(0.658f),
+				XMConvertToRadians(-2.367f),
+				XMConvertToRadians(-122.515f));
+			weaponLocal.pos = vec4(0.155f + 0.22f * handBladeSwing,
+				0.874f - 0.20f * handBladeSwing, -1.501f, 1.0f);
+		}
+		else if (bladeMode) {
+			weaponLocal *= XMMatrixScaling(0.3f, 0.3f, 0.3f);
+			weaponLocal *= XMMatrixRotationRollPitchYaw(
+				XMConvertToRadians(179.658f),
+				XMConvertToRadians(4.1289f),
+				XMConvertToRadians(45.72f));
+			weaponLocal.pos = vec4(-0.040f - 0.22f * handBladeSwing,
+				0.754f - 0.20f * handBladeSwing, 1.594f, 1.0f);
+		}
+		else if (leftHand) {
+			weaponLocal *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
+			weaponLocal *= XMMatrixRotationRollPitchYaw(
+				XMConvertToRadians(-3.743f),
+				XMConvertToRadians(95.270f),
+				XMConvertToRadians(90.928f));
+			weaponLocal.pos = vec4(-0.143f, 0.317f, 0.062f, 1.0f);
+		}
+		else {
+			weaponLocal *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
+			weaponLocal *= XMMatrixRotationRollPitchYaw(
+				XMConvertToRadians(-6.246f),
+				XMConvertToRadians(-88.443f),
+				XMConvertToRadians(93.788f));
+			weaponLocal.pos = vec4(0.171f, 0.332f, 0.003f, 1.0f);
+		}
+		if (!bladeMode) {
+			weaponLocal.pos.x += (leftHand ? -0.02f : 0.02f) * recoilT;
+			weaponLocal.pos.y += 0.07f * recoilT;
+			weaponLocal.pos.z -= 0.16f * recoilT;
+		}
+
+		outWeaponWorld = weaponLocal * handWorld;
+		return true;
+	}
+
+	if (leftHand) return false;
+
+	if (weaponType == WeaponType::SMG) {
+		weaponLocal *= XMMatrixScaling(1.2f, 1.2f, 1.2f);
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(78.156f),
+			XMConvertToRadians(-33.953f),
+			XMConvertToRadians(51.740f));
+		weaponLocal.pos = vec4(0.106f, 0.585f, 2.098f, 1.0f);
+		weaponLocal.pos.y += 0.035f * genericRecoilT * genericRecoilStrength;
+		weaponLocal.pos.z -= 0.080f * genericRecoilT * genericRecoilStrength;
+		outWeaponWorld = weaponLocal * handWorld;
+		return true;
+	}
+
+	if (weaponType == WeaponType::GrenadeGun) {
+		weaponLocal *= XMMatrixScaling(10.0f, 10.0f, 10.0f);
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(80.743f),
+			XMConvertToRadians(-120.033f),
+			XMConvertToRadians(-392.430f));
+		weaponLocal.pos = vec4(0.038f, 0.337f, -0.118f, 1.0f);
+		weaponLocal.pos.y += 0.035f * genericRecoilT * genericRecoilStrength;
+		weaponLocal.pos.z -= 0.080f * genericRecoilT * genericRecoilStrength;
+		outWeaponWorld = weaponLocal * handWorld;
+		return true;
+	}
 
 	switch (weaponType)
 	{
 	case WeaponType::Sniper:
-		weaponLocal *= XMMatrixScaling(0.42f, 0.42f, 0.42f);
-		weaponLocal.pos.x += 0.10f;
-		weaponLocal.pos.y += 0.02f;
-		weaponLocal.pos.z += 0.38f;
+		weaponLocal *= XMMatrixScaling(0.5f, 0.5f, 0.5f);
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(-44.013f),
+			XMConvertToRadians(87.456f),
+			XMConvertToRadians(-26.701f));
+		weaponLocal.pos = vec4(0.453f, 0.540f, 0.046f, 1.0f);
 		break;
 	case WeaponType::MachineGun:
-		weaponLocal *= XMMatrixScaling(0.45f, 0.45f, 0.45f);
-		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(180.0f));
-		weaponLocal *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
-		weaponLocal.pos.x += 0.04f;
-		weaponLocal.pos.y -= 0.05f;
-		weaponLocal.pos.z += 0.10f;
+		weaponLocal *= XMMatrixScaling(0.6f, 0.6f, 0.6f);
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(127.585f),
+			XMConvertToRadians(95.144f),
+			XMConvertToRadians(26.07899f));
+		weaponLocal.pos = vec4(0.385f, 0.374f, 0.107f, 1.0f);
 		break;
 	case WeaponType::Shotgun:
-		weaponLocal *= XMMatrixScaling(0.7f, 0.7f, 0.7f);
-		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(90.0f));
-		weaponLocal.pos.x += 0.06f;
-		weaponLocal.pos.y -= 0.05f;
-		weaponLocal.pos.z += 0.11f;
+		weaponLocal *= XMMatrixScaling(0.8f, 0.8f, 0.8f);
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(16.847f),
+			XMConvertToRadians(155.659f),
+			XMConvertToRadians(-51.269f));
+		weaponLocal.pos = vec4(0.489f, 0.605f, 0.091f, 1.0f);
 		break;
 	case WeaponType::Rifle:
-		weaponLocal *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
-		weaponLocal *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
-		weaponLocal.pos.x += 0.06f;
-		weaponLocal.pos.y -= 0.06f;
-		weaponLocal.pos.z += 0.12f;
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(-15.929f),
+			XMConvertToRadians(-26.220f),
+			XMConvertToRadians(52.339f));
+		weaponLocal.pos = vec4(0.030f, 0.368f, -0.034f, 1.0f);
 		break;
 	case WeaponType::Pistol:
+	case WeaponType::DronePistol:
 		weaponLocal *= XMMatrixScaling(0.7f, 0.7f, 0.7f);
-		weaponLocal.pos.x += 0.03f;
-		weaponLocal.pos.y -= 0.14f;
-		weaponLocal.pos.z += 0.08f;
+		weaponLocal *= XMMatrixRotationRollPitchYaw(
+			XMConvertToRadians(-80.942f),
+			XMConvertToRadians(61.686f),
+			XMConvertToRadians(32.417f));
+		weaponLocal.pos = vec4(0.147f, 0.246f, 0.015f, 1.0f);
 		break;
 	}
 
-	outWeaponWorld = weaponLocal * attachWorld;
+	weaponLocal.pos.y += 0.035f * genericRecoilT * genericRecoilStrength;
+	weaponLocal.pos.z -= 0.080f * genericRecoilT * genericRecoilStrength;
+
+	// The stable aim hand supplies the attachment anchor while the local offset
+	// provides visible firing kick without inheriting discontinuous clip positions.
+	outWeaponWorld = weaponLocal * handWorld;
 	return true;
 }
 
@@ -4074,6 +4564,11 @@ void Player::RecvSTC_SyncObj(char* data) {
 	memcpy(SkillCooldown, stcsod.SkillCooldown, sizeof(SkillCooldown));
 	memcpy(SkillCooldownFlow, stcsod.SkillCooldownFlow, sizeof(SkillCooldownFlow));
 	m_currentWeaponType = stcsod.m_currentWeaponType;
+	m_weaponHolstered = stcsod.m_weaponHolstered;
+	ReloadRemain = stcsod.ReloadRemain;
+	m_sniperDmrMode = stcsod.m_sniperDmrMode;
+	m_bomberHealAmmoMode = stcsod.m_bomberHealAmmoMode;
+	isGround = stcsod.isGround;
 	m_yaw = stcsod.m_yaw;
 	m_pitch = stcsod.m_pitch;
 	weapon[0] = stcsod.weapon[0];
@@ -4151,27 +4646,46 @@ void Player::ChangeState(State newState)
 	case State::RUN:
 		PlayingAnimationIndex[0] = 2;
 		break;
+	case State::JUMP:
+		PlayingAnimationIndex[0] = 7;
+		break;
 	}
 }
 
-void Player::ChangeUpperState(UpperState newState)
+void Player::ChangeUpperState(UpperState newState, bool restart)
 {
-	if (m_currentUpperState == newState) return;
+	int targetAnimationIndex = GetPlayerUpperAnimationIndex(
+		(WeaponType)m_currentWeaponType, newState);
+	if (!restart && m_currentUpperState == newState && PlayingAnimationIndex[1] == targetAnimationIndex) return;
+
+	UpperState previousState = m_currentUpperState;
+	if (previousState == UpperState::AIM) {
+		m_upperAimPoseTime = AnimationFlowTime[1];
+	}
 
 	m_currentUpperState = newState;
-	AnimationFlowTime[1] = 0.0f;
+	AnimationFlowTime[1] =
+		(newState == UpperState::AIM && previousState == UpperState::SHOOT)
+		? m_upperAimPoseTime
+		: 0.0f;
+	PlayingAnimationIndex[1] = targetAnimationIndex;
+}
 
-	switch (m_currentUpperState) {
-	case UpperState::NONE:
-		PlayingAnimationIndex[1] = -1;
-		break;
-	case UpperState::AIM:
-		PlayingAnimationIndex[1] = 3;
-		break;
-	case UpperState::SHOOT:
-		PlayingAnimationIndex[1] = 4;
-		break;
-	}
+void Player::TriggerUpperShoot()
+{
+	if (m_weaponHolstered) return;
+
+	const bool dualPistol = (WeaponType)m_currentWeaponType == WeaponType::DualPistol;
+	m_upperShootHoldTimer = dualPistol ? 0.24f : 0.18f;
+	// Each hand is a distinct revolver shot, so restart the dual-gun clip for the second hand.
+	ChangeUpperState(UpperState::SHOOT, dualPistol || m_currentUpperState != UpperState::SHOOT);
+}
+
+void Player::TriggerDualPistolRecoil(bool leftHand)
+{
+	if ((WeaponType)m_currentWeaponType != WeaponType::DualPistol) return;
+	if (leftHand) m_dualLeftRecoilTimer = 0.22f;
+	else m_dualRightRecoilTimer = 0.22f;
 }
 
 void Player::Release() {
@@ -4984,5 +5498,51 @@ NPCTalkData::NPCTalkData(const wchar_t* speaker, const wchar_t* txt, bool nxtEsc
 		sel[1] = sel2;
 		sel[2] = sel3;
 		sel[3] = sel4;
+	}
+}
+
+
+void Player::UpdateThirdPersonWeaponAttachmentCache()
+{
+	matrix rightHandWorld;
+	if (TryGetHumanoidBoneWorldMatrix(this, HumanoidAnimation::RightHand, rightHandWorld)) {
+		cachedThirdPersonRightHandMatrix = rightHandWorld;
+		cachedThirdPersonRightHandMatrixValid = true;
+	}
+	else {
+		cachedThirdPersonRightHandMatrixValid = false;
+	}
+	matrix leftHandWorld;
+	if (TryGetHumanoidBoneWorldMatrix(this, HumanoidAnimation::LeftHand, leftHandWorld)) {
+		cachedThirdPersonLeftHandMatrix = leftHandWorld;
+		cachedThirdPersonLeftHandMatrixValid = true;
+	}
+	else {
+		cachedThirdPersonLeftHandMatrixValid = false;
+	}
+
+	matrix weaponWorld;
+	if (TryBuildThirdPersonWeaponMatrix(this, false, weaponWorld)) {
+		cachedThirdPersonWeaponMatrix = weaponWorld;
+		cachedThirdPersonWeaponType = GetPlayerWeaponVisualKey(this);
+		cachedThirdPersonWeaponMatrixValid = true;
+	}
+	else {
+		cachedThirdPersonWeaponMatrixValid = false;
+		cachedThirdPersonWeaponType = -1;
+	}
+
+	if ((WeaponType)m_currentWeaponType == WeaponType::DualPistol) {
+		matrix leftWeaponWorld;
+		if (TryBuildThirdPersonWeaponMatrix(this, true, leftWeaponWorld)) {
+			cachedThirdPersonLeftWeaponMatrix = leftWeaponWorld;
+			cachedThirdPersonLeftWeaponMatrixValid = true;
+		}
+		else {
+			cachedThirdPersonLeftWeaponMatrixValid = false;
+		}
+	}
+	else {
+		cachedThirdPersonLeftWeaponMatrixValid = false;
 	}
 }

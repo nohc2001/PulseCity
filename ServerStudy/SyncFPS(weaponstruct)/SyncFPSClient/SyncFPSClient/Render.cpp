@@ -3404,7 +3404,14 @@ void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui3
 	if (IndexNum > 0)
 	{
 		pCommandList->IASetIndexBuffer(&IndexBufferView);
-		pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		if (SubMeshIndexStart != nullptr && slotIndex + 1 < (ui32)(subMeshNum + 1))
+		{
+			pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		}
+		else
+		{
+			pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
+		}
 	}
 	else
 	{
@@ -3507,6 +3514,87 @@ void Mesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 
 	IndexNum = indices.size();
 	VertexNum = vertices.size();
+
+	subMeshNum = 1;
+	SubMeshIndexStart = new int[2];
+	SubMeshIndexStart[0] = 0;
+	SubMeshIndexStart[1] = IndexNum;
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void Mesh::CreateFlatDiskMesh(float outerRadius, float innerRadius, int segmentCount, vec4 color)
+{
+	if (outerRadius < 0.01f) outerRadius = 0.01f;
+	if (innerRadius < 0.0f) innerRadius = 0.0f;
+	if (innerRadius > outerRadius - 0.001f) innerRadius = outerRadius - 0.001f;
+	if (segmentCount < 8) segmentCount = 8;
+
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+	const float twoPi = XM_2PI;
+	const bool isRing = innerRadius > 0.0f;
+
+	if (!isRing) {
+		vertices.push_back(Vertex(XMFLOAT3(0.0f, 0.0f, 0.0f), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+		for (int i = 0; i < segmentCount; ++i) {
+			float theta = twoPi * (float)i / (float)segmentCount;
+			vertices.push_back(Vertex(XMFLOAT3(cosf(theta) * outerRadius, 0.0f, sinf(theta) * outerRadius), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+		}
+
+		for (int i = 0; i < segmentCount; ++i) {
+			UINT cur = (UINT)i + 1;
+			UINT next = (UINT)((i + 1) % segmentCount) + 1;
+			indices.push_back(0); indices.push_back(next); indices.push_back(cur);
+			indices.push_back(0); indices.push_back(cur); indices.push_back(next);
+		}
+	}
+	else {
+		for (int i = 0; i < segmentCount; ++i) {
+			float theta = twoPi * (float)i / (float)segmentCount;
+			vertices.push_back(Vertex(XMFLOAT3(cosf(theta) * outerRadius, 0.0f, sinf(theta) * outerRadius), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+			vertices.push_back(Vertex(XMFLOAT3(cosf(theta) * innerRadius, 0.0f, sinf(theta) * innerRadius), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+		}
+
+		for (int i = 0; i < segmentCount; ++i) {
+			UINT outer0 = (UINT)(i * 2);
+			UINT inner0 = outer0 + 1;
+			UINT outer1 = (UINT)(((i + 1) % segmentCount) * 2);
+			UINT inner1 = outer1 + 1;
+			indices.push_back(outer0); indices.push_back(outer1); indices.push_back(inner0);
+			indices.push_back(outer1); indices.push_back(inner1); indices.push_back(inner0);
+			indices.push_back(outer0); indices.push_back(inner0); indices.push_back(outer1);
+			indices.push_back(outer1); indices.push_back(inner0); indices.push_back(inner1);
+		}
+	}
+
+	OBB_Tr = { 0, 0, 0 };
+	OBB_Ext = XMFLOAT3(outerRadius, 0.001f, outerRadius);
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (int)indices.size();
+	VertexNum = (int)vertices.size();
 
 	subMeshNum = 1;
 	SubMeshIndexStart = new int[2];
@@ -4004,6 +4092,201 @@ void UVMesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 
 	IndexNum = indices.size();
 	VertexNum = vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void UVMesh::CreateSphereMesh(float radius, int sliceCount, int stackCount, vec4 color)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	OBB_Tr = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	OBB_Ext = XMFLOAT3(radius, radius, radius);
+
+	for (int i = 0; i <= stackCount; ++i) {
+		float phi = XM_PI * (float)i / (float)stackCount;
+		float v = (float)i / (float)stackCount;
+
+		for (int j = 0; j <= sliceCount; ++j) {
+			float theta = XM_2PI * (float)j / (float)sliceCount;
+			float u = (float)j / (float)sliceCount;
+
+			XMFLOAT3 pos(
+				radius * sinf(phi) * cosf(theta),
+				radius * cosf(phi),
+				radius * sinf(phi) * sinf(theta)
+			);
+
+			XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&pos));
+			XMFLOAT3 normal;
+			XMStoreFloat3(&normal, n);
+
+			vertices.push_back(Vertex(pos, color, normal, XMFLOAT2(u, v)));
+		}
+	}
+
+	UINT ring = (UINT)sliceCount + 1;
+	for (UINT i = 0; i < (UINT)stackCount; ++i) {
+		for (UINT j = 0; j < (UINT)sliceCount; ++j) {
+			indices.push_back(i * ring + j);
+			indices.push_back((i + 1) * ring + j + 1);
+			indices.push_back((i + 1) * ring + j);
+
+			indices.push_back(i * ring + j);
+			indices.push_back(i * ring + j + 1);
+			indices.push_back((i + 1) * ring + j + 1);
+		}
+	}
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void UVMesh::CreateBeamMesh(vec4 color)
+{
+	CreateBeamMesh(color, 1.0f, 1.0f);
+}
+
+void UVMesh::CreateBeamMesh(vec4 color, float frameU, float frameV)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	const float u0 = 0.0f;
+	const float u1 = frameU;
+	const float v0 = 0.0f;
+	const float v1 = frameV;
+
+	auto PushQuad = [&](XMFLOAT3 a, XMFLOAT3 b, XMFLOAT3 c, XMFLOAT3 d, XMFLOAT3 normal) {
+		UINT base = (UINT)vertices.size();
+		vertices.push_back(Vertex(a, color, normal, XMFLOAT2(u0, v1)));
+		vertices.push_back(Vertex(b, color, normal, XMFLOAT2(u0, v0)));
+		vertices.push_back(Vertex(c, color, normal, XMFLOAT2(u1, v0)));
+		vertices.push_back(Vertex(d, color, normal, XMFLOAT2(u1, v1)));
+		indices.push_back(base + 0); indices.push_back(base + 1); indices.push_back(base + 2);
+		indices.push_back(base + 2); indices.push_back(base + 3); indices.push_back(base + 0);
+	};
+
+	PushQuad(
+		XMFLOAT3(-1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, 1.0f),
+		XMFLOAT3(-1.0f, 0.0f, 1.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f));
+	indices.push_back(0); indices.push_back(2); indices.push_back(1);
+	indices.push_back(2); indices.push_back(0); indices.push_back(3);
+
+	OBB_Tr = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	OBB_Ext = XMFLOAT3(1.0f, 1.0f, 1.0f);
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void UVMesh::CreateMissileSpriteMesh(vec4 color, float frameU, float frameV)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	const float u0 = 0.0f;
+	const float u1 = frameU;
+	const float v0 = 0.0f;
+	const float v1 = frameV;
+
+	auto PushQuad = [&](XMFLOAT3 a, XMFLOAT3 b, XMFLOAT3 c, XMFLOAT3 d, XMFLOAT3 normal) {
+		UINT base = (UINT)vertices.size();
+		vertices.push_back(Vertex(a, color, normal, XMFLOAT2(u0, v1)));
+		vertices.push_back(Vertex(b, color, normal, XMFLOAT2(u0, v0)));
+		vertices.push_back(Vertex(c, color, normal, XMFLOAT2(u1, v0)));
+		vertices.push_back(Vertex(d, color, normal, XMFLOAT2(u1, v1)));
+		indices.push_back(base + 0); indices.push_back(base + 1); indices.push_back(base + 2);
+		indices.push_back(base + 2); indices.push_back(base + 3); indices.push_back(base + 0);
+	};
+
+	PushQuad(
+		XMFLOAT3(-1.0f, 0.0f, 1.0f),
+		XMFLOAT3(-1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, 1.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f));
+
+	PushQuad(
+		XMFLOAT3(0.0f, -1.0f, 1.0f),
+		XMFLOAT3(0.0f, -1.0f, -1.0f),
+		XMFLOAT3(0.0f, 1.0f, -1.0f),
+		XMFLOAT3(0.0f, 1.0f, 1.0f),
+		XMFLOAT3(1.0f, 0.0f, 0.0f));
+
+	OBB_Tr = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	OBB_Ext = XMFLOAT3(1.0f, 1.0f, 1.0f);
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
@@ -4760,7 +5043,14 @@ void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instance
 	if (IndexNum > 0)
 	{
 		pCommandList->IASetIndexBuffer(&IndexBufferView);
-		pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		if (SubMeshIndexStart != nullptr && slotIndex + 1 < (ui32)(subMeshNum + 1))
+		{
+			pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		}
+		else
+		{
+			pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
+		}
 	}
 	else
 	{
@@ -5612,19 +5902,13 @@ void Model::LoadModelFile2(string filename, int ZoneId)
 
 	RootNode = &Nodes[0];
 
-	// GPU animation resources read this for every model shape. Static models keep identity T-pose.
-
-	//calcul normal Node Local Tr Mats (WhenSkinMesh enabled)
-	if (mNumSkinMesh > 0) {
-		DefaultNodelocalTr = new matrix[nodeCount];
-		for (int i = 0; i < nodeCount; ++i) {
-			DefaultNodelocalTr[i].Id();
-		}
+	// GPU animation resources can be requested for any model shape. Keep an
+	// identity fallback for static models; skinned models overwrite the entries
+	// below with their calculated bind-pose local transforms.
+	DefaultNodelocalTr = new matrix[nodeCount];
+	for (int i = 0; i < nodeCount; ++i) {
+		DefaultNodelocalTr[i].Id();
 	}
-	//DefaultNodelocalTr = new matrix[nodeCount];
-	//for (int i = 0; i < nodeCount; ++i) {
-	//	DefaultNodelocalTr[i].Id();
-	//}
 
 	NodeOffsetMatrixArr = new matrix[nodeCount];
 	for (int i = 0; i < mNumSkinMesh; ++i) {
@@ -6452,8 +6736,8 @@ void OnlyColorShader::CreatePipelineState()
 	d3dBlendDesc.IndependentBlendEnable = FALSE;
 	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
 	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
-	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
 	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
 	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
 	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
@@ -6469,7 +6753,7 @@ void OnlyColorShader::CreatePipelineState()
 	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
 	//Output Merger - DepthStencil - depth
 	depthStencilDesc.DepthEnable = TRUE;
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
 	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
 	//Output Merger - DepthStencil - stencil
@@ -7088,6 +7372,129 @@ void ScreenShader::RenderAllSDFTexts() {
 
 #pragma endregion
 
+#pragma region WorldTextureShaderCode
+void WorldTextureShader::InitShader()
+{
+	CreateRootSignature();
+	CreatePipelineState();
+}
+
+void WorldTextureShader::CreateRootSignature()
+{
+	CD3DX12_ROOT_PARAMETER rootParams[RootParamCapacity];
+	rootParams[Const_Camera].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParams[Const_Transform].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParams[Const_Tint].InitAsConstants(4, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParams[Const_UVAnim].InitAsConstants(4, 2, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
+	CD3DX12_DESCRIPTOR_RANGE srvRange;
+	srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	rootParams[SRVTable_Texture].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	CD3DX12_STATIC_SAMPLER_DESC samplerDesc(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
+	rsDesc.Init(_countof(rootParams), rootParams, 1, &samplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ID3DBlob* sigBlob = nullptr;
+	ID3DBlob* errBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
+	if (FAILED(hr)) {
+		if (errBlob != nullptr) OutputDebugStringA((char*)errBlob->GetBufferPointer());
+		if (errBlob != nullptr) errBlob->Release();
+		return;
+	}
+
+	gd.pDevice->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&pRootSignature));
+	if (sigBlob != nullptr) sigBlob->Release();
+	if (errBlob != nullptr) errBlob->Release();
+}
+
+void WorldTextureShader::CreatePipelineState()
+{
+	ID3DBlob* vsBlob = nullptr;
+	ID3DBlob* psBlob = nullptr;
+
+	Shader::GetShaderByteCode(L"Resources/Shaders/WorldTextureShader.hlsl", "VSMain", "vs_5_1", &vsBlob);
+	Shader::GetShaderByteCode(L"Resources/Shaders/WorldTextureShader.hlsl", "PSMain", "ps_5_1", &psBlob);
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+	psoDesc.pRootSignature = pRootSignature;
+
+	D3D12_INPUT_ELEMENT_DESC inputElementDesc[4] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+	psoDesc.InputLayout = { inputElementDesc, _countof(inputElementDesc) };
+
+	psoDesc.VS = { vsBlob->GetBufferPointer(), vsBlob->GetBufferSize() };
+	psoDesc.PS = { psBlob->GetBufferPointer(), psBlob->GetBufferSize() };
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+	D3D12_BLEND_DESC blendDesc = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	psoDesc.BlendState = blendDesc;
+
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState.DepthEnable = TRUE;
+	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.RTVFormats[0] = gd.MainRenderTarget_PixelFormat;
+	psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	psoDesc.SampleDesc.Count = gd.m_bMsaa4xEnable ? 4 : 1;
+	psoDesc.SampleDesc.Quality = gd.m_bMsaa4xEnable ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+
+	HRESULT hr = gd.pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pPipelineState));
+	if (FAILED(hr)) OutputDebugStringA("[ERROR] WorldTextureShader PSO Create Failed\n");
+
+	if (vsBlob != nullptr) vsBlob->Release();
+	if (psBlob != nullptr) psBlob->Release();
+}
+
+void WorldTextureShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg)
+{
+	cmd->SetGraphicsRootSignature(pRootSignature);
+	cmd->SetPipelineState(pPipelineState);
+}
+
+void WorldTextureShader::SetTextureCommand(GPUResource* texture)
+{
+	if (texture == nullptr || texture->resource == nullptr) return;
+
+	DescHandle descH;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 1);
+	gd.pDevice->CopyDescriptorsSimple(1, descH.hcpu, texture->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_Texture, descH.hgpu);
+}
+
+void WorldTextureShader::Release()
+{
+	if (pPipelineState != nullptr) pPipelineState->Release();
+	if (pRootSignature != nullptr) pRootSignature->Release();
+	pPipelineState = nullptr;
+	pRootSignature = nullptr;
+}
+#pragma endregion
+
 #pragma region PBRShaderCode
 void PBRShader1::InitShader()
 {
@@ -7212,6 +7619,8 @@ void PBRShader1::CreateRootSignature_withShadow()
 	DescTable5.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParam[RootParamId::SRVTable_Chunck_StaticLightStructuredBuffer] = DescTable5;
 
+	rootParam[RootParamId::Const_ModelHitFlash] =
+		RootParam1::Const32s(GRegID('b', 5), 4, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
@@ -9140,6 +9549,11 @@ void ParticleShader::CreatePipelineState()
 
 void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount)
 {
+	if (cmd == nullptr || particleBuffer == nullptr || particleBuffer->resource == nullptr ||
+		FireTexture == nullptr || FireTexture->resource == nullptr || particleCount == 0) {
+		return;
+	}
+
 	cmd->SetPipelineState(ParticlePSO);
 	cmd->SetGraphicsRootSignature(ParticleRootSig);
 

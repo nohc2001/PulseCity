@@ -354,13 +354,18 @@ void ElectricArcCS(uint3 id : SV_DispatchThreadID)
     if (p.Age >= p.LifeTime)
     {
         float orbit = randFromSeed(p.RandomSeed, 301.0f) * 6.2831853f;
-        float radius = EmitterRadius * (0.18f + randFromSeed(p.RandomSeed, 302.0f) * 0.42f);
-        float height = randFromSeed(p.RandomSeed, 303.0f) * 1.9f;
+        float fieldWide = EmitterRadius > 4.0f ? 1.0f : 0.0f;
+        float radius = fieldWide > 0.5f
+            ? EmitterRadius * (0.38f + randFromSeed(p.RandomSeed, 302.0f) * 0.62f)
+            : EmitterRadius * (0.18f + randFromSeed(p.RandomSeed, 302.0f) * 0.42f);
+        float height = fieldWide > 0.5f
+            ? randFromSeed(p.RandomSeed, 303.0f) * 1.25f
+            : randFromSeed(p.RandomSeed, 303.0f) * 1.9f;
         float2 ring = float2(cos(orbit), sin(orbit)) * radius;
 
         p.Position = centerPos + float3(ring.x, height, ring.y);
         p.Velocity = float3(-ring.y * (2.4f + randFromSeed(p.RandomSeed, 304.0f) * 1.8f),
-                            0.9f + randFromSeed(p.RandomSeed, 305.0f) * 2.4f,
+                            (fieldWide > 0.5f ? 1.6f : 0.9f) + randFromSeed(p.RandomSeed, 305.0f) * (fieldWide > 0.5f ? 3.0f : 2.4f),
                             ring.x * (2.4f + randFromSeed(p.RandomSeed, 306.0f) * 1.8f));
 
         resetParticleCommon(
@@ -368,8 +373,8 @@ void ElectricArcCS(uint3 id : SV_DispatchThreadID)
             0.38f + randFromSeed(p.RandomSeed, 307.0f) * 0.28f,
             float4(0.58f, 0.88f, 1.65f, 0.95f),
             float4(0.05f, 0.14f, 0.35f, 0.0f),
-            0.26f + randFromSeed(p.RandomSeed, 308.0f) * 0.14f,
-            0.06f,
+            (fieldWide > 0.5f ? 0.34f : 0.26f) + randFromSeed(p.RandomSeed, 308.0f) * (fieldWide > 0.5f ? 0.18f : 0.14f),
+            fieldWide > 0.5f ? 0.045f : 0.06f,
             orbit,
             -2.8f + randFromSeed(p.RandomSeed, 309.0f) * 5.6f,
             2.4f + randFromSeed(p.RandomSeed, 310.0f) * 1.4f,
@@ -377,12 +382,13 @@ void ElectricArcCS(uint3 id : SV_DispatchThreadID)
             1.05f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u,
+            32u,
             4u);
     }
 
-    float3 arcPull = (centerPos - p.Position) * float3(1.85f, 0.15f, 1.85f);
-    simulateParticle(p, float3(0.0f, 2.6f, 0.0f) + arcPull, 1.85f, 0.0f, 0.0f);
+    float fieldWide = EmitterRadius > 4.0f ? 1.0f : 0.0f;
+    float3 arcPull = (centerPos - p.Position) * (fieldWide > 0.5f ? float3(0.22f, 0.02f, 0.22f) : float3(1.85f, 0.15f, 1.85f));
+    simulateParticle(p, float3(0.0f, fieldWide > 0.5f ? 3.7f : 2.6f, 0.0f) + arcPull, fieldWide > 0.5f ? 1.25f : 1.85f, 0.0f, 0.0f);
     ParticlesRW[i] = p;
 }
 
@@ -393,39 +399,44 @@ void ElectricBurstCS(uint3 id : SV_DispatchThreadID)
     Particle p = ParticlesRW[i];
     applyEmitterReset(p);
     float3 centerPos = EmitterPosition;
+    bool aegisRepairBurst = EmitterRadius > 1.05f && EmitterRadius < 1.8f && EmitterDuration > 0.45f && EmitterDuration < 0.95f;
 
     if (p.Age >= p.LifeTime)
     {
         float angle = randFromSeed(p.RandomSeed, 401.0f) * 6.2831853f;
-        float radius = EmitterRadius * (0.08f + randFromSeed(p.RandomSeed, 402.0f) * 0.16f);
+        float radius = EmitterRadius * (aegisRepairBurst ? (0.18f + randFromSeed(p.RandomSeed, 402.0f) * 0.34f) : (0.08f + randFromSeed(p.RandomSeed, 402.0f) * 0.16f));
         float2 dir = float2(cos(angle), sin(angle));
 
-        p.Position = centerPos + float3(dir.x * radius, randFromSeed(p.RandomSeed, 403.0f) * 0.28f, dir.y * radius);
-        p.Velocity = float3(dir.x * (3.8f + randFromSeed(p.RandomSeed, 404.0f) * 2.1f),
-                            0.6f + randFromSeed(p.RandomSeed, 405.0f) * 1.2f,
-                            dir.y * (3.8f + randFromSeed(p.RandomSeed, 406.0f) * 2.1f));
+        p.Position = centerPos + float3(dir.x * radius, randFromSeed(p.RandomSeed, 403.0f) * (aegisRepairBurst ? 0.18f : 0.28f), dir.y * radius);
+        p.Velocity = aegisRepairBurst
+            ? float3(dir.x * (0.45f + randFromSeed(p.RandomSeed, 404.0f) * 0.85f),
+                     3.2f + randFromSeed(p.RandomSeed, 405.0f) * 2.4f,
+                     dir.y * (0.45f + randFromSeed(p.RandomSeed, 406.0f) * 0.85f))
+            : float3(dir.x * (3.8f + randFromSeed(p.RandomSeed, 404.0f) * 2.1f),
+                     0.6f + randFromSeed(p.RandomSeed, 405.0f) * 1.2f,
+                     dir.y * (3.8f + randFromSeed(p.RandomSeed, 406.0f) * 2.1f));
 
         resetParticleCommon(
             p,
-            0.24f + randFromSeed(p.RandomSeed, 407.0f) * 0.16f,
-            float4(0.65f, 0.95f, 1.90f, 1.0f),
-            float4(0.10f, 0.18f, 0.45f, 0.0f),
-            0.18f + randFromSeed(p.RandomSeed, 408.0f) * 0.10f,
-            0.045f,
+            aegisRepairBurst ? (0.38f + randFromSeed(p.RandomSeed, 407.0f) * 0.18f) : (0.24f + randFromSeed(p.RandomSeed, 407.0f) * 0.16f),
+            aegisRepairBurst ? float4(0.30f, 1.30f, 2.55f, 0.95f) : float4(0.65f, 0.95f, 1.90f, 1.0f),
+            aegisRepairBurst ? float4(0.05f, 0.35f, 0.95f, 0.0f) : float4(0.10f, 0.18f, 0.45f, 0.0f),
+            aegisRepairBurst ? (0.24f + randFromSeed(p.RandomSeed, 408.0f) * 0.16f) : (0.18f + randFromSeed(p.RandomSeed, 408.0f) * 0.10f),
+            aegisRepairBurst ? 0.08f : 0.045f,
             angle,
             -4.0f + randFromSeed(p.RandomSeed, 409.0f) * 8.0f,
-            3.6f + randFromSeed(p.RandomSeed, 410.0f) * 1.2f,
+            aegisRepairBurst ? (1.7f + randFromSeed(p.RandomSeed, 410.0f) * 0.8f) : (3.6f + randFromSeed(p.RandomSeed, 410.0f) * 1.2f),
             0.0f,
-            1.55f,
+            aegisRepairBurst ? 1.95f : 1.55f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u,
+            32u,
             4u);
     }
 
-    float3 snapBack = (centerPos - p.Position) * float3(0.55f, 0.08f, 0.55f);
-    float3 swirl = vortexForce(p.Position, centerPos, 2.6f);
-    simulateParticle(p, float3(0.0f, 1.2f, 0.0f) + snapBack + swirl, 2.15f, 0.0f, 0.0f);
+    float3 snapBack = (centerPos - p.Position) * (aegisRepairBurst ? float3(0.92f, 0.02f, 0.92f) : float3(0.55f, 0.08f, 0.55f));
+    float3 swirl = vortexForce(p.Position, centerPos, aegisRepairBurst ? 0.7f : 2.6f);
+    simulateParticle(p, float3(0.0f, aegisRepairBurst ? 2.7f : 1.2f, 0.0f) + snapBack + swirl, aegisRepairBurst ? 1.35f : 2.15f, 0.0f, 0.0f);
     ParticlesRW[i] = p;
 }
 
@@ -489,11 +500,11 @@ void BloodHitCS(uint3 id : SV_DispatchThreadID)
 
         resetParticleCommon(
             p,
-            lerp(0.34f, 0.58f, randFromSeed(p.RandomSeed, 905.0f)),
-            float4(1.30f, 0.10f, 0.06f, 1.0f),
-            float4(0.32f, 0.00f, 0.00f, 0.0f),
-            lerp(0.30f, 0.58f, randFromSeed(p.RandomSeed, 906.0f)),
-            0.09f,
+            lerp(0.40f, 0.68f, randFromSeed(p.RandomSeed, 905.0f)),
+            float4(1.75f, 0.04f, 0.025f, 1.45f),
+            float4(0.62f, 0.00f, 0.00f, 0.22f),
+            lerp(0.16f, 0.32f, randFromSeed(p.RandomSeed, 906.0f)),
+            0.035f,
             randFromSeed(p.RandomSeed, 907.0f) * 6.2831853f,
             lerp(-5.0f, 5.0f, randFromSeed(p.RandomSeed, 908.0f)),
             2.2f,
@@ -589,6 +600,122 @@ void RifleGrenadeTrailCS(uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(256, 1, 1)]
+void BomberFireProjectileCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
+    float3 forward = safeNormalize(EmitterDirection, float3(0.0f, -0.4f, 1.0f));
+
+    if (p.Age >= p.LifeTime)
+    {
+        float3 jitter = randomSphere(p.RandomSeed, 2201.0f) * max(EmitterRadius, 0.35f) * 0.16f;
+        p.Position = EmitterPosition + jitter;
+        p.Velocity = -forward * lerp(1.8f, 3.8f, randFromSeed(p.RandomSeed, 2202.0f)) +
+                     randomSphere(p.RandomSeed, 2203.0f) * 0.55f;
+
+        resetParticleCommon(
+            p,
+            lerp(0.22f, 0.38f, randFromSeed(p.RandomSeed, 2204.0f)),
+            float4(1.30f, 0.76f, 0.28f, 0.82f),
+            float4(0.18f, 0.16f, 0.14f, 0.0f),
+            lerp(0.20f, 0.36f, randFromSeed(p.RandomSeed, 2205.0f)),
+            lerp(0.42f, 0.78f, randFromSeed(p.RandomSeed, 2206.0f)),
+            randFromSeed(p.RandomSeed, 2207.0f) * 6.2831853f,
+            lerp(-2.0f, 2.0f, randFromSeed(p.RandomSeed, 2208.0f)),
+            1.8f,
+            0.06f,
+            0.42f,
+            0.0f,
+            PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
+            10u,
+            5u);
+    }
+
+    simulateParticle(p, float3(0.0f, -0.6f, 0.0f), 0.48f, 0.0f, 0.0f);
+    ParticlesRW[i] = p;
+}
+
+[numthreads(256, 1, 1)]
+void BomberHealProjectileCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
+    float3 forward = safeNormalize(EmitterDirection, float3(0.0f, -0.4f, 1.0f));
+
+    if (p.Age >= p.LifeTime)
+    {
+        float3 jitter = randomSphere(p.RandomSeed, 2301.0f) * max(EmitterRadius, 0.35f) * 0.16f;
+        p.Position = EmitterPosition + jitter;
+        p.Velocity = -forward * lerp(1.8f, 3.8f, randFromSeed(p.RandomSeed, 2302.0f)) +
+                     randomSphere(p.RandomSeed, 2303.0f) * 0.55f;
+
+        resetParticleCommon(
+            p,
+            lerp(0.22f, 0.38f, randFromSeed(p.RandomSeed, 2304.0f)),
+            float4(0.35f, 2.35f, 0.92f, 0.92f),
+            float4(0.02f, 0.40f, 0.16f, 0.0f),
+            lerp(0.20f, 0.36f, randFromSeed(p.RandomSeed, 2305.0f)),
+            lerp(0.42f, 0.78f, randFromSeed(p.RandomSeed, 2306.0f)),
+            randFromSeed(p.RandomSeed, 2307.0f) * 6.2831853f,
+            lerp(-2.0f, 2.0f, randFromSeed(p.RandomSeed, 2308.0f)),
+            1.8f,
+            0.06f,
+            0.42f,
+            0.0f,
+            PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
+            16u,
+            4u);
+    }
+
+    simulateParticle(p, float3(0.0f, -0.6f, 0.0f), 0.48f, 0.0f, 0.0f);
+    ParticlesRW[i] = p;
+}
+
+[numthreads(256, 1, 1)]
+void BomberHealExplosionCS(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    Particle p = ParticlesRW[i];
+    applyEmitterReset(p);
+    float3 centerPos = EmitterPosition;
+
+    if (p.Age >= p.LifeTime)
+    {
+        float angle = randFromSeed(p.RandomSeed, 2401.0f) * 6.2831853f;
+        float radius = sqrt(randFromSeed(p.RandomSeed, 2402.0f)) * max(EmitterRadius, 0.4f) * 0.22f;
+        float2 dir = float2(cos(angle), sin(angle));
+
+        p.Position = centerPos + float3(dir.x * radius, randFromSeed(p.RandomSeed, 2403.0f) * 0.18f, dir.y * radius);
+        p.Velocity = float3(dir.x * lerp(1.2f, 4.4f, randFromSeed(p.RandomSeed, 2404.0f)),
+                            lerp(0.7f, 2.4f, randFromSeed(p.RandomSeed, 2405.0f)),
+                            dir.y * lerp(1.2f, 4.4f, randFromSeed(p.RandomSeed, 2406.0f)));
+
+        resetParticleCommon(
+            p,
+            lerp(0.62f, 0.94f, randFromSeed(p.RandomSeed, 2407.0f)),
+            float4(0.42f, 2.75f, 1.05f, 1.0f),
+            float4(0.02f, 0.34f, 0.13f, 0.0f),
+            lerp(0.78f, 1.35f, randFromSeed(p.RandomSeed, 2408.0f)),
+            lerp(1.45f, 2.35f, randFromSeed(p.RandomSeed, 2409.0f)),
+            randFromSeed(p.RandomSeed, 2410.0f) * 6.2831853f,
+            lerp(-1.2f, 1.2f, randFromSeed(p.RandomSeed, 2411.0f)),
+            1.7f,
+            -0.05f,
+            0.18f,
+            0.0f,
+            PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
+            16u,
+            4u);
+    }
+
+    float3 outward = safeNormalize(p.Position - centerPos, float3(0.0f, 1.0f, 0.0f)) * 1.4f;
+    simulateParticle(p, outward + float3(0.0f, 0.12f, 0.0f), 0.28f, 0.0f, 0.0f);
+    ParticlesRW[i] = p;
+}
+
+[numthreads(256, 1, 1)]
 void RifleAirStrikeTrailCS(uint3 id : SV_DispatchThreadID)
 {
     uint i = id.x;
@@ -603,19 +730,19 @@ void RifleAirStrikeTrailCS(uint3 id : SV_DispatchThreadID)
         float2 ring = float2(cos(angle), sin(angle)) * radius;
 
         p.Position = EmitterPosition + float3(ring.x, randFromSeed(p.RandomSeed, 1403.0f) * 1.2f, ring.y);
-        p.Velocity = dropDir * lerp(13.0f, 19.0f, randFromSeed(p.RandomSeed, 1404.0f)) +
+        p.Velocity = dropDir * lerp(17.0f, 25.0f, randFromSeed(p.RandomSeed, 1404.0f)) +
                      float3(ring.x, 0.0f, ring.y) * 0.5f;
 
         resetParticleCommon(
             p,
-            lerp(0.34f, 0.56f, randFromSeed(p.RandomSeed, 1405.0f)),
+            lerp(0.52f, 0.82f, randFromSeed(p.RandomSeed, 1405.0f)),
             float4(1.45f, 0.86f, 0.32f, 0.92f),
             float4(0.12f, 0.10f, 0.09f, 0.0f),
-            lerp(0.42f, 0.72f, randFromSeed(p.RandomSeed, 1406.0f)),
-            lerp(0.80f, 1.25f, randFromSeed(p.RandomSeed, 1407.0f)),
+            lerp(0.62f, 1.05f, randFromSeed(p.RandomSeed, 1406.0f)),
+            lerp(1.05f, 1.70f, randFromSeed(p.RandomSeed, 1407.0f)),
             randFromSeed(p.RandomSeed, 1408.0f) * 6.2831853f,
             lerp(-1.5f, 1.5f, randFromSeed(p.RandomSeed, 1409.0f)),
-            4.2f,
+            6.4f,
             -0.12f,
             0.18f,
             0.0f,
@@ -624,7 +751,7 @@ void RifleAirStrikeTrailCS(uint3 id : SV_DispatchThreadID)
             8u);
     }
 
-    simulateParticle(p, dropDir * 2.8f, 0.10f, 0.0f, 0.0f);
+    simulateParticle(p, dropDir * 3.8f, 0.08f, 0.0f, 0.0f);
     ParticlesRW[i] = p;
 }
 
@@ -658,7 +785,7 @@ void RifleStimFieldCS(uint3 id : SV_DispatchThreadID)
             0.86f,
             0.0f,
             PARTICLE_FLAG_ADDITIVE | PARTICLE_FLAG_LOOPING,
-            36u,
+            32u,
             4u);
     }
 
@@ -870,10 +997,10 @@ void FrostBlizzardCS(uint3 id : SV_DispatchThreadID)
 
         resetParticleCommon(
             p,
-            lerp(0.94f, 1.66f, randFromSeed(p.RandomSeed, 807.0f)),
+            lerp(1.04f, 1.84f, randFromSeed(p.RandomSeed, 807.0f)),
             float4(0.62f, 1.20f, 1.85f, 0.76f),
             float4(0.05f, 0.18f, 0.38f, 0.0f),
-            lerp(0.18f, 0.38f, randFromSeed(p.RandomSeed, 808.0f)),
+            lerp(0.21f, 0.44f, randFromSeed(p.RandomSeed, 808.0f)),
             0.04f,
             angle,
             lerp(-5.0f, 5.0f, randFromSeed(p.RandomSeed, 809.0f)),

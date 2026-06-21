@@ -70,10 +70,11 @@ union STC_Protocol {
 
 		SyncQuestPrograss = 18,
 
-		// [party/dungeon] reassigned to 19/20 to avoid collision with NPC/Quest ids above.
-		DungeonQueueUpdate = 19,
+		BossState = 19,
 
-		DungeonEnter = 20,
+		DungeonQueueUpdate = 20,
+
+		DungeonEnter = 21,
 	};
 
 	short n;
@@ -186,6 +187,7 @@ struct STC_PlayerFire_Header {
 	STC_Protocol st = STC_Protocol::PlayerFire;
 	int zoneId = 0;
 	int objindex;
+	unsigned char fireHand = 0; // 0: right, 1: left
 };
 
 /*
@@ -252,7 +254,9 @@ enum class PlayerJob : int {
 	Mage,
 	Healer,
 	Gunner,
-	Tank,
+	DroneOperator,
+	Hacker,
+	Bomber,
 	Max
 };
 
@@ -291,6 +295,20 @@ enum class SkillEffectType : int {
 	DualPistol_DeathDash,
 	DualPistol_BladeMode,
 	DualPistol_Awaken,
+	Drone_Heal,
+	Drone_Assault,
+	Drone_Flight,
+	Hacker_Hack,
+	Hacker_EMPField,
+	Hacker_EMPBurst,
+	Bomber_SpeedBurst,
+	Bomber_AmmoSwitch,
+	Bomber_Meteor,
+	Bomber_FireProjectile,
+	Bomber_HealProjectile,
+	Bomber_FireExplosion,
+	Bomber_HealExplosion,
+	Bomber_MeteorTrail,
 	Blood_Hit,
 	Explosion_Blast,
 	Aegis_ShieldEnergy,
@@ -306,6 +324,8 @@ enum class StatusEffectType : int {
 	Burn,
 	Stun,
 	Paralyze,
+	Hack,
+	Heal,
 	Max
 };
 
@@ -370,6 +390,57 @@ struct STC_SyncQuestPrograss_Header {
 	int questID;
 	int questReqSiz;
 	// 이후로 questReqSiz 개수 만큼의 int 를 전달.
+};
+
+struct BossSyncCoreData {
+	vec4 position = vec4(0, 0, 0, 1);
+	float hp = 0.0f;
+	float maxHP = 0.0f;
+	bool active = false;
+};
+
+struct BossSyncAoEData {
+	int shape = 0;
+	vec4 position = vec4(0, 0, 0, 1);
+	vec4 direction = vec4(0, 0, 1, 0);
+	float radius = 0.0f;
+	float width = 0.0f;
+	float length = 0.0f;
+	float warningTime = 0.0f;
+	float age = 0.0f;
+	float damage = 0.0f;
+	float innerDamage = 0.0f;
+	float followTime = 0.0f;
+	float lockTime = 0.0f;
+	bool active = false;
+	bool followPlayer = false;
+	bool darkenOnLock = false;
+	bool visualSpawned = false;
+};
+
+constexpr int BossSyncWarningCapacity = 18;
+
+struct STC_BossState_Header {
+	unsigned int size = sizeof(STC_BossState_Header);
+	STC_Protocol st = STC_Protocol::BossState;
+	int zoneId = 0;
+	bool enabled = false;
+	int bossObjIndex = -1;
+	float bossHP = 0.0f;
+	float bossMaxHP = 0.0f;
+	vec4 center = vec4(0, 0, 0, 1);
+	vec4 aimDirection = vec4(0, 0, 1, 0);
+	vec4 railgunDirection = vec4(0, 0, 1, 0);
+	bool shieldActive = false;
+	float shieldDownTime = 0.0f;
+	float groggyTime = 0.0f;
+	int phase = 0;
+	float phaseTime = 0.0f;
+	int patternStep = 0;
+	int coreCount = 0;
+	BossSyncCoreData cores[3];
+	int warningCount = 0;
+	BossSyncAoEData warnings[BossSyncWarningCapacity];
 };
 
 union CTS_Protocol {
@@ -471,6 +542,7 @@ struct PlayerTransferData {
 	float SkillCooldown[(int)SkillSlot::Max] = {};
 	float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 	int m_currentWeaponType = 0;
+	bool m_weaponHolstered = false;
 	ItemStack Inventory[36] = {};
 	Weapon weapon[3];
 	int SelectedWeapone;

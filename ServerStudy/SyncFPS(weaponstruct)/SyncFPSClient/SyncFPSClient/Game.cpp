@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "main.h"
 #include "Render.h"
 #include "Game.h"
@@ -11,6 +11,7 @@ void BoxLOD_DebugUpdate(float deltaTime);
 #include "NetworkDefs.h"
 
 extern int dbgc[128];
+extern bool g_playGunSound;
 void dbgbreak(bool condition) {
 	if (condition) __debugbreak();
 }
@@ -25,7 +26,16 @@ Game game;
 
 namespace {
 	constexpr int kShadowCascadeResolutions[3] = { 4096, 2048, 1024 };
-	constexpr ui64 kShadowCascadeUpdateIntervals[3] = { 1, 2, 4 };
+	constexpr ui64 kShadowCascadeUpdateIntervals[4][3] = {
+		{ 1, 2, 4 },
+		{ 1, 3, 6 },
+		{ 1, 4, 8 },
+		{ 2, 4, 12 },
+	};
+	constexpr float kBossPrototypeNormalScale = 4.20f;
+	constexpr float kBossPrototypeGroggyScale = 4.20f;
+	constexpr float kBossPrototypeHeightOffset = -1.50f;
+	constexpr float kBossPrototypeShieldVisualRadius = 5.25f;
 
 	template <typename WaitFunc>
 	void MeasureGPUWait(double& phaseWaitMs, WaitFunc&& waitFunc)
@@ -46,7 +56,7 @@ namespace {
 	}
 
 	constexpr float BULLET_RAY_MISS_DISTANCE = 49.95f;
-	constexpr bool SHOW_BULLET_RAY_DEBUG_MESH = true;
+	constexpr bool SHOW_BULLET_RAY_DEBUG_MESH = false;
 
 	// StaticGameObjects에 등록된 Mesh/Model을 Auto LOD 프리로드 대상으로 수집한다.
 	void PrebuildStaticObjectAutoLOD()
@@ -70,6 +80,241 @@ namespace {
 		}
 
 		AutoLOD_ProcessPreloadQueue();
+	}
+
+	int GetModelNodeIndex(Model* model, ModelNode* node)
+	{
+		if (model == nullptr || node == nullptr || model->Nodes == nullptr) return -1;
+		return static_cast<int>(((char*)node - (char*)model->Nodes) / sizeof(ModelNode));
+	}
+
+	void DebugDumpModelNodes(Model* model, const char* label)
+	{
+		if (model == nullptr || model->Nodes == nullptr) return;
+
+		char msg[1024] = {};
+		sprintf_s(msg, "[ModelDump:%s] nodes=%d meshes=%u materials=%u\n",
+			label != nullptr ? label : "model",
+			model->nodeCount,
+			model->mNumMeshes,
+			model->mNumMaterials);
+		OutputDebugStringA(msg);
+		printf("%s", msg);
+
+		for (int i = 0; i < model->nodeCount; ++i) {
+			ModelNode& node = model->Nodes[i];
+			const int parentIndex = GetModelNodeIndex(model, node.parent);
+			sprintf_s(msg,
+				"[ModelDump:%s] node=%03d parent=%03d name=\"%s\" child=%u meshSlots=%u pos=(%.3f,%.3f,%.3f)\n",
+				label != nullptr ? label : "model",
+				i,
+				parentIndex,
+				node.name.c_str(),
+				node.numChildren,
+				node.numMesh,
+				node.transform.r[3].m128_f32[0],
+				node.transform.r[3].m128_f32[1],
+				node.transform.r[3].m128_f32[2]);
+			OutputDebugStringA(msg);
+			printf("%s", msg);
+
+			for (unsigned int meshSlot = 0; meshSlot < node.numMesh; ++meshSlot) {
+				const unsigned int meshIndex = node.Meshes != nullptr ? node.Meshes[meshSlot] : 0;
+				Mesh* mesh = meshIndex < model->mNumMeshes ? model->mMeshes[meshIndex] : nullptr;
+				const int subMeshCount = mesh != nullptr ? mesh->subMeshNum : 0;
+				const int meshType = mesh != nullptr ? static_cast<int>(mesh->type) : -1;
+				const int materialIndex = node.materialIndex != nullptr ? node.materialIndex[meshSlot] : -1;
+				const char* materialName = "null";
+				if (materialIndex >= 0 && materialIndex < static_cast<int>(game.MaterialTable.size()) && game.MaterialTable[materialIndex] != nullptr) {
+					materialName = game.MaterialTable[materialIndex]->name;
+				}
+
+				sprintf_s(msg,
+					"[ModelDump:%s]   meshSlot=%u mesh=%u type=%d subMeshes=%d material=%d \"%s\"\n",
+					label != nullptr ? label : "model",
+					meshSlot,
+					meshIndex,
+					meshType,
+					subMeshCount,
+					materialIndex,
+					materialName);
+				OutputDebugStringA(msg);
+				printf("%s", msg);
+			}
+		}
+		fflush(stdout);
+	}
+
+	void ScaleModelNodeVisual(Model* model, const char* nodeName, float scale)
+	{
+		if (model == nullptr || nodeName == nullptr) return;
+
+		const int nodeIndex = model->FindNodeIndexByName(nodeName);
+		if (nodeIndex < 0) return;
+
+		ModelNode& node = model->Nodes[nodeIndex];
+		node.transform.r[0] = XMVectorScale(node.transform.r[0], scale);
+		node.transform.r[1] = XMVectorScale(node.transform.r[1], scale);
+		node.transform.r[2] = XMVectorScale(node.transform.r[2], scale);
+	}
+
+	void FixTurretBossModelParts(Model* model)
+	{
+		if (model == nullptr) return;
+
+		ScaleModelNodeVisual(model, "sci-fi turret cable", 0.01f);
+		ScaleModelNodeVisual(model, "sci-fi turret gun", 0.01f);
+		model->BakeAABB();
+	}
+
+	void ApplyModelNodeTransforms(GameObject* object, Model* model)
+	{
+		if (object == nullptr || model == nullptr || model->Nodes == nullptr || model->nodeCount <= 0) return;
+
+		if (object->transforms_innerModel != nullptr) {
+			delete[] object->transforms_innerModel;
+			object->transforms_innerModel = nullptr;
+		}
+
+		object->transforms_innerModel = new matrix[model->nodeCount];
+		for (int i = 0; i < model->nodeCount; ++i) {
+			object->transforms_innerModel[i] = model->Nodes[i].transform;
+		}
+	}
+
+	void EnsureBossObjectUsesBossModel(Monster* boss)
+	{
+		if (boss == nullptr || game.BossPrototypeBossModel == nullptr) return;
+		if (game.BossPrototypeBossShapeIndex < 0 || game.BossPrototypeBossShapeIndex >= static_cast<int>(Shape::ShapeTable.size())) return;
+
+		bool needsNodeRefresh = boss->shape.GetModel() != game.BossPrototypeBossModel;
+		if (boss->transforms_innerModel == nullptr) {
+			needsNodeRefresh = true;
+		}
+
+		boss->shape = Shape::ShapeTable[game.BossPrototypeBossShapeIndex];
+		if (needsNodeRefresh) {
+			ApplyModelNodeTransforms(boss, game.BossPrototypeBossModel);
+		}
+	}
+
+	vec4 NormalizeOrFallback(vec4 v, vec4 fallback);
+
+	vec4 GetBossPrototypeVisualLookDirection(vec4 desiredDirection)
+	{
+		desiredDirection.y = 0.0f;
+		desiredDirection = NormalizeOrFallback(desiredDirection, vec4(0, 0, 1, 0));
+		return NormalizeOrFallback(vec4(desiredDirection.z, 0.0f, -desiredDirection.x, 0.0f), vec4(0, 0, 1, 0));
+	}
+
+	float Smooth01(float value)
+	{
+		value = min(1.0f, max(0.0f, value));
+		return value * value * (3.0f - 2.0f * value);
+	}
+
+	float ApproachFloat(float current, float target, float rate, float dt)
+	{
+		float blend = 1.0f - expf(-max(rate, 0.01f) * max(dt, 0.0f));
+		return current + (target - current) * blend;
+	}
+
+	vec4 ApproachDirection(vec4 current, vec4 target, float rate, float dt)
+	{
+		current.y = 0.0f;
+		target.y = 0.0f;
+		current = NormalizeOrFallback(current, target);
+		target = NormalizeOrFallback(target, current);
+		float blend = 1.0f - expf(-max(rate, 0.01f) * max(dt, 0.0f));
+		return NormalizeOrFallback(current + (target - current) * blend, target);
+	}
+
+	bool BossPrototypeShouldAimBody(Game::BossPrototypePhase phase)
+	{
+		return phase == Game::BossPrototypePhase::MissileLock ||
+			phase == Game::BossPrototypePhase::Bombardment ||
+			phase == Game::BossPrototypePhase::RailgunCharge ||
+			phase == Game::BossPrototypePhase::RotatingLaser;
+	}
+
+	vec4 GetBossPrototypePatternDirection(Game::BossPrototypePhase phase, vec4 defaultDirection)
+	{
+		if (phase == Game::BossPrototypePhase::RailgunCharge ||
+			phase == Game::BossPrototypePhase::RotatingLaser) {
+			return game.BossPrototypeRailgunDirection;
+		}
+		if (phase == Game::BossPrototypePhase::MissileLock ||
+			phase == Game::BossPrototypePhase::Bombardment) {
+			return game.BossPrototypeAimDirection;
+		}
+		return defaultDirection;
+	}
+
+	void ApplyBossPrototypeTurretPose(Monster* boss)
+	{
+		if (boss == nullptr || game.BossPrototypeBossModel == nullptr) return;
+		if (boss->transforms_innerModel == nullptr) {
+			ApplyModelNodeTransforms(boss, game.BossPrototypeBossModel);
+		}
+		if (boss->transforms_innerModel == nullptr) return;
+
+		for (int i = 0; i < game.BossPrototypeBossModel->nodeCount; ++i) {
+			boss->transforms_innerModel[i] = game.BossPrototypeBossModel->Nodes[i].transform;
+		}
+
+		if (game.BossPrototypeBossHeadNodeIndex < 0 ||
+			game.BossPrototypeBossHeadNodeIndex >= game.BossPrototypeBossModel->nodeCount) {
+			return;
+		}
+
+		matrix head = game.BossPrototypeBossModel->Nodes[game.BossPrototypeBossHeadNodeIndex].transform;
+		vec4 localPos = head.pos;
+
+		float targetPitch = game.BossPrototypeHeadPitch;
+		float targetDrop = game.BossPrototypeHeadDrop;
+		float targetRecoil = game.BossPrototypeHeadRecoil;
+		float yaw = 0.0f;
+		const float phaseTime = game.BossPrototypePhaseTime;
+		const float dt = min(game.DeltaTime, 1.0f / 20.0f);
+
+		if (game.BossPrototypeGroggyTime > 0.0f) {
+			float slump = 1.0f - expf(-game.BossPrototypeGroggyTime * 2.0f);
+			targetPitch = XMConvertToRadians(-28.0f) * slump;
+			targetDrop = -0.22f * slump;
+			targetRecoil = 0.0f;
+		}
+		else if (game.BossPrototypePhaseState == Game::BossPrototypePhase::MissileLock ||
+			game.BossPrototypePhaseState == Game::BossPrototypePhase::Bombardment) {
+			float missilePoseTime = phaseTime;
+			if (game.BossPrototypePhaseState == Game::BossPrototypePhase::Bombardment) {
+				missilePoseTime = fmodf(max(phaseTime, 0.0f), 2.2f);
+			}
+			float lift = Smooth01(missilePoseTime / 0.85f);
+			float settle = 1.0f - Smooth01((missilePoseTime - 1.35f) / 0.75f);
+			float amount = max(0.16f, lift * max(settle, 0.0f));
+			targetPitch = XMConvertToRadians(45.0f) * amount;
+			targetDrop = 0.0f;
+			targetRecoil = -0.07f * amount;
+		}
+		else if (game.BossPrototypePhaseState == Game::BossPrototypePhase::RailgunCharge ||
+			game.BossPrototypePhaseState == Game::BossPrototypePhase::RotatingLaser) {
+			float brace = Smooth01(phaseTime / 0.45f);
+			targetPitch = XMConvertToRadians(3.0f) * brace;
+			targetDrop = 0.0f;
+			targetRecoil = -0.035f * brace;
+		}
+
+		game.BossPrototypeHeadPitch = ApproachFloat(game.BossPrototypeHeadPitch, targetPitch, 5.2f, dt);
+		game.BossPrototypeHeadDrop = ApproachFloat(game.BossPrototypeHeadDrop, targetDrop, 5.0f, dt);
+		game.BossPrototypeHeadRecoil = ApproachFloat(game.BossPrototypeHeadRecoil, targetRecoil, 7.0f, dt);
+
+		vec4 pitchAxis = NormalizeOrFallback(head.look, vec4(0, 0, 1, 0));
+		XMMATRIX rot = XMMatrixRotationAxis(pitchAxis, game.BossPrototypeHeadPitch);
+		head.right = XMVector3TransformNormal(head.right, rot);
+		head.up = XMVector3TransformNormal(head.up, rot);
+		head.look = XMVector3TransformNormal(head.look, rot);
+		head.pos = localPos + vec4(0.0f, game.BossPrototypeHeadDrop, game.BossPrototypeHeadRecoil, 0.0f);
+		boss->transforms_innerModel[game.BossPrototypeBossHeadNodeIndex] = head;
 	}
 }
 
@@ -483,6 +728,13 @@ namespace
 		Blood,
 		Explosion,
 		Energy,
+		AirStrike,
+		Charge,
+		Beam,
+		Shield,
+		Yellow,
+		Hack,
+		Heal,
 	};
 
 	GPUResource gParticleSecondaryTexture;
@@ -492,17 +744,27 @@ namespace
 	GPUResource gParticleBloodTexture;
 	GPUResource gParticleExplosionTexture;
 	GPUResource gParticleEnergyTexture;
+	GPUResource gParticleAirStrikeTexture;
+	GPUResource gParticleSkillAirStrikeTexture;
+	GPUResource gParticleChargeTexture;
+	GPUResource gParticleBeamTexture;
+	GPUResource gParticleBossBeamTexture;
+	GPUResource gParticleShieldTexture;
+	GPUResource gParticleYellowTexture;
+	GPUResource gParticleHackTexture;
+	GPUResource gParticleHealTexture;
+	GPUResource gParticleSnowTexture;
 
 	constexpr UINT ELECTRIC_COUNT = 120;
 	constexpr UINT ELECTRIC_BURST_COUNT = 72;
 	constexpr UINT EMBER_SHOWER_COUNT = 120;
 	constexpr UINT FROST_CONE_COUNT = 120;
-	constexpr UINT FROST_ICE_BLOCK_COUNT = 190;
-	constexpr UINT FROST_BLIZZARD_COUNT = 220;
+	constexpr UINT FROST_ICE_BLOCK_COUNT = 160;
+	constexpr UINT FROST_BLIZZARD_COUNT = 540;
 	constexpr UINT MUZZLE_FLASH_COUNT = 384;
 	constexpr UINT BULLET_TRACER_COUNT = 256;
 	constexpr UINT ICE_PROJECTILE_COUNT = 224;
-	constexpr float MAX_PARTICLE_EFFECT_RADIUS = 8.0f;
+	constexpr float MAX_PARTICLE_EFFECT_RADIUS = 36.0f;
 	constexpr float MAX_PARTICLE_EFFECT_POWER = 60.0f;
 	constexpr float MAX_PARTICLE_EFFECT_DURATION = 4.0f;
 	constexpr UINT PARTICLE_FLAG_COLLIDE_GROUND = 1u;
@@ -518,10 +780,23 @@ namespace
 	ParticlePool gAegisShieldOrbitPool;
 	ParticlePool gRifleGrenadeTrailPool;
 	ParticlePool gRifleAirStrikeTrailPool;
+
 	ParticlePool gRifleStimFieldPool;
+	ParticlePool gBomberFireProjectilePool;
+	ParticlePool gBomberHealProjectilePool;
+	ParticlePool gBomberFireExplosionPool;
+	ParticlePool gBomberHealExplosionPool;
+	ParticlePool gBomberMeteorTrailPool;
+	ParticlePool gBomberMeteorPool;
 	ParticlePool gMuzzleFlashPool;
 	ParticlePool gBulletTracerPool;
 	ParticlePool gIceProjectilePool;
+	ParticlePool gBossExplosionPool;
+	ParticlePool gStatusIcePool;
+	ParticlePool gStatusFirePool;
+	ParticlePool gStatusYellowPool;
+	ParticlePool gStatusHackPool;
+	ParticlePool gStatusHealPool;
 	ParticleCompute* gElectricCS = nullptr;
 	ParticleCompute* gElectricBurstCS = nullptr;
 	ParticleCompute* gEmberShowerCS = nullptr;
@@ -534,13 +809,39 @@ namespace
 	ParticleCompute* gAegisShieldOrbitCS = nullptr;
 	ParticleCompute* gRifleGrenadeTrailCS = nullptr;
 	ParticleCompute* gRifleAirStrikeTrailCS = nullptr;
+
 	ParticleCompute* gRifleStimFieldCS = nullptr;
+	ParticleCompute* gBomberFireProjectileCS = nullptr;
+	ParticleCompute* gBomberHealProjectileCS = nullptr;
+	ParticleCompute* gBomberFireExplosionCS = nullptr;
+	ParticleCompute* gBomberHealExplosionCS = nullptr;
+	ParticleCompute* gBomberMeteorTrailCS = nullptr;
+	ParticleCompute* gBomberMeteorCS = nullptr;
 	GPUResource gMuzzleFlashUpload;
 	GPUResource gBulletTracerUpload;
 	GPUResource gIceProjectileUpload;
+	GPUResource gBossExplosionUpload;
+	GPUResource gStatusIceUpload;
+	GPUResource gStatusFireUpload;
+	GPUResource gStatusYellowUpload;
+	GPUResource gStatusHackUpload;
+	GPUResource gStatusHealUpload;
 	std::vector<Particle> gMuzzleFlashParticles;
 	std::vector<Particle> gBulletTracerParticles;
 	std::vector<Particle> gIceProjectileParticles;
+	std::vector<Particle> gBossExplosionParticles;
+	std::vector<Particle> gStatusIceParticles;
+	std::vector<Particle> gStatusFireParticles;
+	std::vector<Particle> gStatusYellowParticles;
+	std::vector<Particle> gStatusHackParticles;
+	std::vector<Particle> gStatusHealParticles;
+	struct DelayedWeaponFireVisual {
+		int ZoneId = 0;
+		int ObjectIndex = -1;
+		float Delay = 0.0f;
+		bool LeftHand = false;
+	};
+	std::vector<DelayedWeaponFireVisual> gDelayedWeaponFireVisuals;
 
 	// [party/dungeon] dungeon-entry portal rendered as swirling blue particles (replaces the cube mesh).
 	ParticlePool gPortalPool;
@@ -562,12 +863,22 @@ namespace
 	ParticleSpriteSlot gAegisShieldOrbitSpriteSlot = ParticleSpriteSlot::Energy;
 	ParticleSpriteSlot gRifleGrenadeTrailSpriteSlot = ParticleSpriteSlot::Explosion;
 	ParticleSpriteSlot gRifleAirStrikeTrailSpriteSlot = ParticleSpriteSlot::Explosion;
+
 	ParticleSpriteSlot gRifleStimFieldSpriteSlot = ParticleSpriteSlot::Electric;
+	ParticleSpriteSlot gBomberFireProjectileSpriteSlot = ParticleSpriteSlot::FireSecondary;
+	ParticleSpriteSlot gBomberHealProjectileSpriteSlot = ParticleSpriteSlot::Heal;
+	ParticleSpriteSlot gBomberFireExplosionSpriteSlot = ParticleSpriteSlot::Explosion;
+	ParticleSpriteSlot gBomberHealExplosionSpriteSlot = ParticleSpriteSlot::Heal;
+	ParticleSpriteSlot gBomberMeteorTrailSpriteSlot = ParticleSpriteSlot::FireSecondary;
+	ParticleSpriteSlot gBomberMeteorSpriteSlot = ParticleSpriteSlot::Explosion;
 	ParticleSpriteSlot gMuzzleFlashSpriteSlot = ParticleSpriteSlot::FirePrimary;
 	ParticleSpriteSlot gBulletTracerSpriteSlot = ParticleSpriteSlot::Electric;
+	ParticleSpriteSlot gBossExplosionSpriteSlot = ParticleSpriteSlot::Explosion;
 	UINT gTransientParticleSeed = 1u;
 
 	constexpr UINT PARTICLE_EMITTER_FLAG_RESET = 1u;
+	constexpr UINT BOSS_EXPLOSION_PARTICLE_COUNT = 384u;
+	constexpr UINT STATUS_PARTICLE_COUNT = 192u;
 
 	struct ParticleEffectRuntime
 	{
@@ -598,6 +909,136 @@ namespace
 
 	std::vector<StatusEffectVisual> gStatusEffectVisuals;
 
+	struct AegisShieldVisual
+	{
+		bool Active = false;
+		UINT OwnerId = 0;
+		vec4 Position = vec4(0, 0, 0, 1);
+		float Radius = 1.5f;
+		float Age = 0.0f;
+		float Duration = 0.35f;
+		bool GroundDisk = false;
+	};
+
+	std::vector<AegisShieldVisual> gAegisShieldVisuals;
+
+	struct RailgunBeamVisual
+	{
+		bool Active = false;
+		vec4 Origin = vec4(0, 0, 0, 1);
+		vec4 Direction = vec4(0, 0, 1, 0);
+		float Age = 0.0f;
+		float Duration = 0.22f;
+		float Length = 70.0f;
+		float Width = 0.82f;
+		vec4 Tint = vec4(0.66f, 0.96f, 1.45f, 0.16f);
+		bool UseEnergyTexture = false;
+	};
+
+	std::vector<RailgunBeamVisual> gRailgunBeamVisuals;
+
+	vec4 GetSupportDronePosition(const Player* player, bool leftDrone, float bobOffset = 0.0f)
+	{
+		if (player == nullptr) return vec4(0, 0, 0, 1);
+		const float side = leftDrone ? -1.0f : 1.0f;
+		vec4 position = player->worldMat.pos + player->worldMat.right * (1.35f * side) -
+			player->worldMat.look * 0.55f + player->worldMat.up * (1.75f + bobOffset);
+		position.w = 1.0f;
+		return position;
+	}
+
+	void QueueSupportBeam(vec4 origin, vec4 target, float width, float duration, vec4 tint,
+		bool useEnergyTexture = false)
+	{
+		vec4 direction = target - origin;
+		float length = direction.len3;
+		if (length <= 0.001f) return;
+		direction.len3 = 1.0f;
+
+		RailgunBeamVisual* slot = nullptr;
+		for (RailgunBeamVisual& visual : gRailgunBeamVisuals) {
+			if (!visual.Active) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			gRailgunBeamVisuals.push_back(RailgunBeamVisual{});
+			slot = &gRailgunBeamVisuals.back();
+		}
+		slot->Active = true;
+		slot->Origin = origin;
+		slot->Direction = direction;
+		slot->Age = 0.0f;
+		slot->Duration = max(duration, 0.04f);
+		slot->Length = length;
+		slot->Width = width;
+		slot->Tint = tint;
+		slot->UseEnergyTexture = useEnergyTexture;
+	}
+
+	struct RailgunOrbitVisual
+	{
+		bool Active = false;
+		UINT OwnerId = 0;
+		vec4 Position = vec4(0, 0, 0, 1);
+		float Age = 0.0f;
+		float Duration = 0.75f;
+		float Radius = 0.72f;
+		bool Yellow = false;
+	};
+
+	std::vector<RailgunOrbitVisual> gRailgunOrbitVisuals;
+
+	struct DualBladeFloorVisual
+	{
+		bool Active = false;
+		UINT OwnerId = 0;
+		vec4 Position = vec4(0, 0, 0, 1);
+		float Age = 0.0f;
+		float Duration = 10.0f;
+		float Radius = 1.15f;
+	};
+
+	std::vector<DualBladeFloorVisual> gDualBladeFloorVisuals;
+
+	struct HackerEmpVisual
+	{
+		bool Active = false;
+		bool GroundField = false;
+		UINT OwnerId = 0;
+		vec4 Position = vec4(0, 0, 0, 1);
+		float Age = 0.0f;
+		float Duration = 0.75f;
+		float Radius = 12.0f;
+	};
+
+	std::vector<HackerEmpVisual> gHackerEmpVisuals;
+
+	struct FrostSnowWaveVisual
+	{
+		bool Active = false;
+		bool HealWave = false;
+		vec4 Position = vec4(0, 0, 0, 1);
+		float Age = 0.0f;
+		float Duration = 1.05f;
+		float Radius = 8.0f;
+	};
+
+	std::vector<FrostSnowWaveVisual> gFrostSnowWaveVisuals;
+
+	struct SkillMissileVisual
+	{
+		bool Active = false;
+		vec4 Start = vec4(0, 0, 0, 1);
+		vec4 Target = vec4(0, 0, 0, 1);
+		float Age = 0.0f;
+		float Duration = 0.72f;
+		float Radius = 1.0f;
+	};
+
+	std::vector<SkillMissileVisual> gSkillMissileVisuals;
+
 	vec4 GetStatusEffectTint(StatusEffectType type)
 	{
 		switch (type) {
@@ -613,6 +1054,10 @@ namespace
 			return vec4(0.72f, 1.00f, 0.88f, 0.05f);
 		case StatusEffectType::Paralyze:
 			return vec4(0.70f, 0.48f, 0.05f, 1.00f);
+		case StatusEffectType::Hack:
+			return vec4(0.82f, 0.08f, 1.00f, 0.55f);
+		case StatusEffectType::Heal:
+			return vec4(0.10f, 1.00f, 0.35f, 0.35f);
 		case StatusEffectType::None:
 		default:
 			return vec4(0.0f, 1.0f, 1.0f, 1.0f);
@@ -628,10 +1073,14 @@ namespace
 			return 50;
 		case StatusEffectType::Paralyze:
 			return 45;
+		case StatusEffectType::Hack:
+			return 45;
 		case StatusEffectType::Taunt:
 			return 40;
 		case StatusEffectType::Burn:
 			return 30;
+		case StatusEffectType::Heal:
+			return 25;
 		case StatusEffectType::Slow:
 			return 20;
 		case StatusEffectType::None:
@@ -672,6 +1121,10 @@ namespace
 			return vec4(1.00f, 0.68f, 0.02f, 1.00f);
 		case StatusEffectType::Paralyze:
 			return vec4(0.78f, 0.28f, 1.00f, 1.00f);
+		case StatusEffectType::Hack:
+			return vec4(0.95f, 0.18f, 1.00f, 1.00f);
+		case StatusEffectType::Heal:
+			return vec4(0.18f, 1.00f, 0.48f, 1.00f);
 		case StatusEffectType::None:
 		default:
 			return vec4(0.94f, 0.06f, 0.10f, 1.00f);
@@ -685,8 +1138,18 @@ namespace
 		Monster* monster = dynamic_cast<Monster*>(game.DynmaicGameObjects[targetObjIndex]);
 		if (monster == nullptr) return;
 
+		if (game.BossPrototypeEnabled && targetObjIndex == game.BossPrototypeIndex) {
+			monster->SetStatusTint(vec4(0.0f, 1.0f, 1.0f, 1.0f));
+			return;
+		}
 		monster->SetStatusTint(GetStatusEffectTint(GetActiveStatusEffectType(targetObjIndex)));
 	}
+
+	void SpawnBurningStatusEffect(vec4 center, vec4 extents);
+	void SpawnIceStatusEffect(vec4 center, vec4 extents);
+	void SpawnParalyzeStatusEffect(vec4 center, vec4 extents);
+	void SpawnHackStatusEffect(vec4 center, vec4 extents);
+	void SpawnHealStatusEffect(vec4 center, vec4 extents, int count = 7);
 
 	void UpdateStatusEffectVisuals(float deltaTime)
 	{
@@ -710,16 +1173,42 @@ namespace
 				visual.Position.y += max(0.6f, visual.Extents.y * 0.5f);
 			}
 
-			if (visual.Type != StatusEffectType::Burn) continue;
-
 			visual.VisualPulseTimer -= dt;
 			if (visual.VisualPulseTimer > 0.0f) continue;
 
-			float radius = max(max(visual.Extents.x, visual.Extents.z) * 2.6f, 1.35f);
-			game.SpawnSkillEffect(SkillEffectType::Ember_Shower, visual.Position, vec4(0, 1, 0, 0),
-				(UINT)visual.TargetObjIndex, radius, max(visual.Power, 1.0f), 0.75f);
-			visual.VisualPulseTimer = 0.42f;
+			switch (visual.Type) {
+			case StatusEffectType::Freeze:
+			case StatusEffectType::Slow:
+				SpawnIceStatusEffect(visual.Position, visual.Extents);
+				visual.VisualPulseTimer = 0.28f;
+				break;
+			case StatusEffectType::Burn:
+				SpawnBurningStatusEffect(visual.Position, visual.Extents);
+				visual.VisualPulseTimer = 0.16f;
+				break;
+			case StatusEffectType::Stun:
+			case StatusEffectType::Paralyze:
+				SpawnParalyzeStatusEffect(visual.Position, visual.Extents);
+				visual.VisualPulseTimer = 0.20f;
+				break;
+			case StatusEffectType::Hack:
+				SpawnHackStatusEffect(visual.Position, visual.Extents);
+				visual.VisualPulseTimer = 0.24f;
+				break;
+			case StatusEffectType::Heal:
+				SpawnHealStatusEffect(visual.Position, visual.Extents);
+				visual.VisualPulseTimer = 0.26f;
+				break;
+			default:
+				visual.VisualPulseTimer = 0.35f;
+				break;
+			}
 		}
+	}
+
+	GPUResource* UseLoadedOrFallback(GPUResource& preferred, GPUResource& fallback)
+	{
+		return preferred.resource != nullptr ? &preferred : &fallback;
 	}
 
 	GPUResource* GetParticleSpriteResource(ParticleSpriteSlot slot)
@@ -739,6 +1228,20 @@ namespace
 			return &gParticleExplosionTexture;
 		case ParticleSpriteSlot::Energy:
 			return &gParticleEnergyTexture;
+		case ParticleSpriteSlot::AirStrike:
+			return UseLoadedOrFallback(gParticleSkillAirStrikeTexture, gParticleAirStrikeTexture);
+		case ParticleSpriteSlot::Charge:
+			return UseLoadedOrFallback(gParticleChargeTexture, gParticleElectricTexture);
+		case ParticleSpriteSlot::Beam:
+			return UseLoadedOrFallback(gParticleBeamTexture, gParticleElectricTexture);
+		case ParticleSpriteSlot::Shield:
+			return UseLoadedOrFallback(gParticleShieldTexture, gParticleEnergyTexture);
+		case ParticleSpriteSlot::Yellow:
+			return UseLoadedOrFallback(gParticleYellowTexture, gParticleElectricTexture);
+		case ParticleSpriteSlot::Hack:
+			return UseLoadedOrFallback(gParticleHackTexture, gParticleElectricTexture);
+		case ParticleSpriteSlot::Heal:
+			return UseLoadedOrFallback(gParticleHealTexture, gParticleElectricTexture);
 		case ParticleSpriteSlot::FirePrimary:
 		default:
 			return &game.FireTextureRes;
@@ -771,7 +1274,7 @@ namespace
 		static std::vector<ParticleEffectRuntime> effects;
 		if (!effects.empty()) return effects;
 
-		effects.reserve(16);
+		effects.reserve(24);
 		ParticleEmitterCB idleEmitter = MakeParticleEmitter(vec4(0.0f, 0.0f, 0.0f, 1.0f), vec4(0, 1, 0, 0), 1.0f, 1.0f, 0.0f, 0);
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Mage_FireBall, &game.FirePool, &game.FireCS, &gFireSpriteSlot, "FireCS", Game::FIRE_COUNT, idleEmitter, false, false });
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Fire_Pillar, &game.FirePillarPool, &game.FirePillarCS, &gFirePillarSpriteSlot, "FirePillarCS", Game::FIRE_PILLAR_COUNT, idleEmitter, false, false });
@@ -789,6 +1292,12 @@ namespace
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Rifle_GrenadeTrail, &gRifleGrenadeTrailPool, &gRifleGrenadeTrailCS, &gRifleGrenadeTrailSpriteSlot, "RifleGrenadeTrailCS", 48, idleEmitter, false, false });
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Rifle_AirStrikeTrail, &gRifleAirStrikeTrailPool, &gRifleAirStrikeTrailCS, &gRifleAirStrikeTrailSpriteSlot, "RifleAirStrikeTrailCS", 80, idleEmitter, false, false });
 		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Rifle_StimField, &gRifleStimFieldPool, &gRifleStimFieldCS, &gRifleStimFieldSpriteSlot, "RifleStimFieldCS", 72, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Bomber_FireProjectile, &gBomberFireProjectilePool, &gBomberFireProjectileCS, &gBomberFireProjectileSpriteSlot, "BomberFireProjectileCS", 48, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Bomber_HealProjectile, &gBomberHealProjectilePool, &gBomberHealProjectileCS, &gBomberHealProjectileSpriteSlot, "BomberHealProjectileCS", 48, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Bomber_FireExplosion, &gBomberFireExplosionPool, &gBomberFireExplosionCS, &gBomberFireExplosionSpriteSlot, "ExplosionBlastCS", 128, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Bomber_HealExplosion, &gBomberHealExplosionPool, &gBomberHealExplosionCS, &gBomberHealExplosionSpriteSlot, "BomberHealExplosionCS", 72, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Bomber_MeteorTrail, &gBomberMeteorTrailPool, &gBomberMeteorTrailCS, &gBomberMeteorTrailSpriteSlot, "FirePillarCS", 144, idleEmitter, false, false });
+		effects.push_back(ParticleEffectRuntime{ SkillEffectType::Bomber_Meteor, &gBomberMeteorPool, &gBomberMeteorCS, &gBomberMeteorSpriteSlot, "ExplosionBlastCS", 256, idleEmitter, false, false });
 		return effects;
 	}
 
@@ -799,6 +1308,39 @@ namespace
 			if (effect.Type == type) return &effect;
 		}
 		return nullptr;
+	}
+
+	GPUResource* GetBossBeamTextureResource()
+	{
+		return UseLoadedOrFallback(gParticleBossBeamTexture, gParticleBeamTexture);
+	}
+
+	GPUResource* GetPlayerBeamTextureResource()
+	{
+		return GetParticleSpriteResource(ParticleSpriteSlot::Beam);
+	}
+
+	GPUResource* GetBossShieldTextureResource()
+	{
+		return GetParticleSpriteResource(ParticleSpriteSlot::Shield);
+	}
+
+	GPUResource* GetBossAirStrikeTextureResource()
+	{
+		return UseLoadedOrFallback(gParticleAirStrikeTexture, gParticleExplosionTexture);
+	}
+
+	GPUResource* GetSkillAirStrikeTextureResource()
+	{
+		return GetParticleSpriteResource(ParticleSpriteSlot::AirStrike);
+	}
+
+	float GetBossVisualGroundY()
+	{
+		constexpr float BossVisualGroundLift = 1.3f;
+		game.BossPrototypeVisualGroundY = game.BossPrototypeCenter.y + BossVisualGroundLift;
+		game.BossPrototypeVisualGroundInitialized = true;
+		return game.BossPrototypeVisualGroundY;
 	}
 
 	float RandomUnit()
@@ -952,7 +1494,7 @@ namespace
 		);
 	}
 
-	void TryGetMuzzleBasis(Player* player, vec4& origin, vec4& forward, vec4& right, vec4& up)
+	void TryGetMuzzleBasis(Player* player, bool leftHand, vec4& origin, vec4& forward, vec4& right, vec4& up)
 	{
 		if (player == game.player && game.bFirstPersonVision) {
 			matrix view = gd.viewportArr[0].ViewMatrix;
@@ -962,18 +1504,113 @@ namespace
 			forward = NormalizeOrFallback(invView.look, vec4(0, 0, 1, 0));
 			right = NormalizeOrFallback(invView.right, vec4(1, 0, 0, 0));
 			up = NormalizeOrFallback(invView.up, vec4(0, 1, 0, 0));
-			origin = gd.viewportArr[0].Camera_Pos + forward * 0.72f + right * 0.15f - up * 0.10f;
+			const WeaponType weaponType = (WeaponType)player->m_currentWeaponType;
+			const bool dualPistol = weaponType == WeaponType::DualPistol;
+			float sideOffset = dualPistol ? (leftHand ? -0.48f : 0.48f) : 0.15f;
+			if (weaponType == WeaponType::Rifle && player->m_isZooming) {
+				const float zoomAlpha = min(1.0f, max(0.0f,
+					(60.0f - player->m_currentFov) / (60.0f - 40.0f)));
+				sideOffset *= 1.0f - zoomAlpha;
+			}
+			origin = gd.viewportArr[0].Camera_Pos + forward * 0.72f + right * sideOffset - up * 0.10f;
 			return;
 		}
 
-		forward = NormalizeOrFallback(player->worldMat.look, vec4(0, 0, 1, 0));
-		right = NormalizeOrFallback(player->worldMat.right, vec4(1, 0, 0, 0));
-		up = NormalizeOrFallback(player->worldMat.up, vec4(0, 1, 0, 0));
-		origin = player->worldMat.pos + right * 0.30f + up * 1.35f + forward * 0.48f;
+		if (leftHand && player->cachedThirdPersonLeftHandMatrixValid) {
+			origin = player->cachedThirdPersonLeftHandMatrix.pos;
+			origin.w = 1.0f;
+			forward = NormalizeOrFallback(player->worldMat.look, vec4(0, 0, 1, 0));
+			right = NormalizeOrFallback(player->worldMat.right, vec4(1, 0, 0, 0));
+			up = NormalizeOrFallback(player->worldMat.up, vec4(0, 1, 0, 0));
+		}
+
+		else if (player->cachedThirdPersonRightHandMatrixValid) {
+			const matrix& rightHandWorld = player->cachedThirdPersonRightHandMatrix;
+			float muzzlePitch = 0.0f;
+			if (player->m_currentUpperState == Player::UpperState::AIM ||
+				player->m_currentUpperState == Player::UpperState::SHOOT) {
+				const float maxMuzzlePitch = XMConvertToRadians(45.0f);
+				const float muzzlePitchBias = XMConvertToRadians(-10.0f);
+				muzzlePitch = max(-maxMuzzlePitch, min(maxMuzzlePitch,
+					player->m_pitch + muzzlePitchBias));
+			}
+			vec4 aimForward = XMVector3TransformNormal(
+				player->worldMat.look,
+				XMMatrixRotationAxis(player->worldMat.right, muzzlePitch));
+			aimForward = NormalizeOrFallback(aimForward, player->worldMat.look);
+			vec4 handAxes[3] = {
+				NormalizeOrFallback(rightHandWorld.right, player->worldMat.right),
+				NormalizeOrFallback(rightHandWorld.up, player->worldMat.up),
+				NormalizeOrFallback(rightHandWorld.look, player->worldMat.look)
+			};
+			auto dot3 = [](const vec4& a, const vec4& b) {
+				return a.x * b.x + a.y * b.y + a.z * b.z;
+			};
+
+			if (player->cachedRightHandForwardAxisIndex < 0 ||
+				player->cachedRightHandRightAxisIndex < 0) {
+				int forwardAxisIndex = 0;
+				float bestForwardDot = fabsf(dot3(handAxes[0], aimForward));
+				for (int axisIndex = 1; axisIndex < 3; ++axisIndex) {
+					float axisDot = fabsf(dot3(handAxes[axisIndex], aimForward));
+					if (axisDot > bestForwardDot) {
+						bestForwardDot = axisDot;
+						forwardAxisIndex = axisIndex;
+					}
+				}
+
+				int rightAxisIndex = (forwardAxisIndex == 0) ? 1 : 0;
+				float bestRightDot = -1.0f;
+				for (int axisIndex = 0; axisIndex < 3; ++axisIndex) {
+					if (axisIndex == forwardAxisIndex) continue;
+					float axisDot = fabsf(dot3(handAxes[axisIndex], player->worldMat.right));
+					if (axisDot > bestRightDot) {
+						bestRightDot = axisDot;
+						rightAxisIndex = axisIndex;
+					}
+				}
+
+				player->cachedRightHandForwardAxisIndex = forwardAxisIndex;
+				player->cachedRightHandRightAxisIndex = rightAxisIndex;
+				player->cachedRightHandForwardAxisSign =
+					dot3(handAxes[forwardAxisIndex], aimForward) < 0.0f ? -1.0f : 1.0f;
+				player->cachedRightHandRightAxisSign =
+					dot3(handAxes[rightAxisIndex], player->worldMat.right) < 0.0f ? -1.0f : 1.0f;
+			}
+
+			forward = handAxes[player->cachedRightHandForwardAxisIndex] *
+				player->cachedRightHandForwardAxisSign;
+			right = handAxes[player->cachedRightHandRightAxisIndex] *
+				player->cachedRightHandRightAxisSign;
+			up = NormalizeOrFallback(XMVector3Cross(forward, right), player->worldMat.up);
+			origin = rightHandWorld.pos;
+			origin.w = 1.0f;
+		}
+		else {
+			forward = NormalizeOrFallback(player->worldMat.look, vec4(0, 0, 1, 0));
+			right = NormalizeOrFallback(player->worldMat.right, vec4(1, 0, 0, 0));
+			up = NormalizeOrFallback(player->worldMat.up, vec4(0, 1, 0, 0));
+			origin = player->worldMat.pos + right * 0.30f + up * 1.35f + forward * 0.48f;
+		}
+
+		vec4 muzzleOffset(0.0f, 0.0f, 0.0f, 0.0f);
+		switch ((WeaponType)player->m_currentWeaponType) {
+		case WeaponType::MachineGun: muzzleOffset = vec4(0.10f, -1.20f, 1.15f, 0.0f); break;
+		case WeaponType::Shotgun:    muzzleOffset = vec4(-0.10f, -1.20f, 1.15f, 0.0f); break;
+		case WeaponType::Pistol:     muzzleOffset = vec4(-0.10f, 0.00f, 0.70f, 0.0f); break;
+		case WeaponType::DualPistol: muzzleOffset = vec4(-0.10f, 0.00f, 0.72f, 0.0f); break;
+		case WeaponType::DronePistol: muzzleOffset = vec4(-0.10f, 0.00f, 0.70f, 0.0f); break;
+		case WeaponType::SMG:        muzzleOffset = vec4(-0.10f, 0.00f, 0.70f, 0.0f); break;
+		case WeaponType::GrenadeGun: muzzleOffset = vec4(-0.10f, 0.00f, 0.70f, 0.0f); break;
+		case WeaponType::Rifle:      muzzleOffset = vec4(0.15f, -0.60f, 0.85f, 0.0f); break;
+		case WeaponType::Sniper:     muzzleOffset = vec4(-0.10f, -1.20f, 1.15f, 0.0f); break;
+		default: break;
+		}
+		origin += right * muzzleOffset.x;
+		origin += up * muzzleOffset.y;
+		origin += forward * muzzleOffset.z;
 	}
 
-	// [party/dungeon] big swirling blue particle ring at a portal position (spawned every frame; transient).
-	// Ring lies in the YZ plane (faces the X axis) so a player approaching along X sees a full circle.
 	void SpawnPortalParticles(const vec4& center)
 	{
 		const int count = 24;   // denser
@@ -1011,15 +1648,21 @@ namespace
 		}
 	}
 
-	void SpawnMuzzleFlash(Player* player)
+	void SpawnMuzzleFlash(Player* player, bool leftHand = false)
 	{
-		if (player == nullptr) return;
+		if (player == nullptr || player->m_weaponHolstered) return;
+		if (player == game.player && !game.bFirstPersonVision &&
+			(WeaponType)player->m_currentWeaponType == WeaponType::Sniper &&
+			player->m_isZooming && player->m_currentFov < 25.0f) return;
+		if (player != game.player || game.bFirstPersonVision == false) {
+			player->UpdateThirdPersonWeaponAttachmentCache();
+		}
 
 		vec4 origin;
 		vec4 forward;
 		vec4 right;
 		vec4 up;
-		TryGetMuzzleBasis(player, origin, forward, right, up);
+		TryGetMuzzleBasis(player, leftHand, origin, forward, right, up);
 
 		for (int i = 0; i < 12; ++i) {
 			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
@@ -1061,7 +1704,7 @@ namespace
 		}
 	}
 
-	void SpawnElectricTracer(vec4 start, vec4 direction, float distance)
+	void SpawnElectricTracer(vec4 start, vec4 direction, float distance, float sizeScale = 1.0f)
 	{
 		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
 		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
@@ -1082,8 +1725,8 @@ namespace
 			core->LifeTime = min(0.13f, 0.045f + distance * 0.00055f);
 			core->StartColor = XMFLOAT4(2.05f, 2.95f, 3.75f, 1.0f);
 			core->EndColor = XMFLOAT4(0.10f, 0.52f, 1.12f, 0.0f);
-			core->StartSize = RandomRange(0.060f, 0.082f);
-			core->EndSize = 0.020f;
+			core->StartSize = RandomRange(0.060f, 0.082f) * sizeScale;
+			core->EndSize = 0.020f * sizeScale;
 			core->Rotation = RandomRange(0.0f, XM_2PI);
 			core->RotationSpeed = RandomRange(-2.0f, 2.0f);
 			core->Drag = RandomRange(0.25f, 0.55f);
@@ -1119,8 +1762,8 @@ namespace
 			particle->LifeTime = tracerLife + RandomRange(-0.01f, 0.01f);
 			particle->StartColor = XMFLOAT4(0.42f, 1.12f, 2.05f, 0.72f);
 			particle->EndColor = XMFLOAT4(0.02f, 0.14f, 0.52f, 0.0f);
-			particle->StartSize = RandomRange(0.028f, 0.040f);
-			particle->EndSize = 0.006f;
+			particle->StartSize = RandomRange(0.028f, 0.040f) * sizeScale;
+			particle->EndSize = 0.006f * sizeScale;
 			particle->Rotation = RandomRange(0.0f, XM_2PI);
 			particle->RotationSpeed = RandomRange(-1.5f, 1.5f);
 			particle->Drag = RandomRange(0.55f, 0.95f);
@@ -1133,6 +1776,98 @@ namespace
 			particle->FrameCount = 6u;
 			particle->FrameCols = 6u;
 		}
+	}
+
+	void PlayPlayerFireVisual(Player* player, bool leftHand)
+	{
+		if (player == nullptr) return;
+		if (player->SelectedWeapon >= 0 && player->SelectedWeapon < 3) {
+			player->weapon[player->SelectedWeapon].OnFire();
+		}
+		player->TriggerDualPistolRecoil(leftHand);
+		SpawnMuzzleFlash(player, leftHand);
+		if (player == game.player) {
+			g_playGunSound = true;
+		}
+	}
+
+	void UpdateDelayedWeaponFireVisuals(float deltaTime)
+	{
+		for (size_t i = 0; i < gDelayedWeaponFireVisuals.size();) {
+			DelayedWeaponFireVisual& event = gDelayedWeaponFireVisuals[i];
+			event.Delay -= max(0.0f, deltaTime);
+			if (event.Delay > 0.0f) {
+				++i;
+				continue;
+			}
+
+			const int netObjIndex = game.GetDynamicObjectNetIndex(event.ZoneId, event.ObjectIndex);
+			if (netObjIndex >= 0 && netObjIndex < (int)game.DynmaicGameObjects.size()) {
+				GameObject* object = game.DynmaicGameObjects[netObjIndex];
+				if (object != nullptr && *(void**)object == GameObjectType::vptr[GameObjectType::_Player]) {
+					PlayPlayerFireVisual((Player*)object, event.LeftHand);
+				}
+			}
+			gDelayedWeaponFireVisuals.erase(gDelayedWeaponFireVisuals.begin() + i);
+		}
+	}
+
+	bool IsMonsterEffectOwner(UINT ownerId)
+	{
+		if (ownerId >= game.DynmaicGameObjects.size()) return false;
+		GameObject* owner = game.DynmaicGameObjects[ownerId];
+		if (owner == nullptr) return false;
+		return *(void**)owner == GameObjectType::vptr[GameObjectType::_Monster];
+	}
+
+	void SpawnMonsterGunShotEffect(vec4 position, vec4 direction, float radius, float power)
+	{
+		constexpr float kMonsterGunEffectScale = 1.5f;
+		vec4 forward = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 upHint = abs(forward.y) > 0.85f ? vec4(1, 0, 0, 0) : vec4(0, 1, 0, 0);
+		vec4 right = forward.cross(upHint);
+		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
+		vec4 up = right.cross(forward);
+		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
+
+		float flashRadius = max(radius, 0.28f) * kMonsterGunEffectScale;
+		for (int i = 0; i < 9; ++i) {
+			Particle* particle = AllocateTransientParticle(gMuzzleFlashParticles);
+			if (particle == nullptr) break;
+
+			vec4 dir = NormalizeOrFallback(
+				forward + right * RandomRange(-0.24f, 0.24f) + up * RandomRange(-0.16f, 0.16f),
+				forward);
+			vec4 pos = position
+				+ forward * RandomRange(0.00f, 0.10f)
+				+ right * RandomRange(-0.035f, 0.035f) * flashRadius
+				+ up * RandomRange(-0.030f, 0.030f) * flashRadius;
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(
+				dir.x * RandomRange(6.5f, 13.0f),
+				dir.y * RandomRange(6.5f, 13.0f),
+				dir.z * RandomRange(6.5f, 13.0f));
+			particle->Age = 0.0f;
+			particle->LifeTime = RandomRange(0.055f, 0.115f);
+			particle->StartColor = XMFLOAT4(2.45f, 1.35f, 0.55f, 1.0f);
+			particle->EndColor = XMFLOAT4(0.18f, 0.55f, 1.25f, 0.0f);
+			particle->StartSize = RandomRange(0.085f, 0.155f) * (1.0f + flashRadius * 0.32f) * kMonsterGunEffectScale;
+			particle->EndSize = 0.012f * kMonsterGunEffectScale;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-5.0f, 5.0f);
+			particle->Drag = RandomRange(5.5f, 9.0f);
+			particle->GravityScale = -0.08f;
+			particle->Stretch = RandomRange(1.0f, 2.2f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 36u;
+			particle->FrameCols = 6u;
+		}
+
+		SpawnElectricTracer(position, forward, max(power, 16.0f), kMonsterGunEffectScale);
 	}
 
 	void SpawnBulletImpact(vec4 start, vec4 direction, float distance)
@@ -1176,6 +1911,123 @@ namespace
 			particle->FrameCount = 36u;
 			particle->FrameCols = 6u;
 		}
+	}
+
+	void SpawnStatusParticles(std::vector<Particle>& particles, ParticleSpriteSlot slot, vec4 center, vec4 extents, int count, float radiusScale)
+	{
+		vec4 ground = center;
+		ground.y -= max(0.35f, extents.y * 0.45f);
+		float radius = max(max(extents.x, extents.z), 0.35f) * radiusScale;
+
+		for (int i = 0; i < count; ++i) {
+			Particle* particle = AllocateTransientParticle(particles);
+			if (particle == nullptr) break;
+
+			float angle = RandomRange(0.0f, XM_2PI);
+			float ring = RandomRange(0.10f, 1.0f) * radius;
+			vec4 pos = ground + vec4(cosf(angle) * ring, RandomRange(0.0f, max(0.15f, extents.y * 0.35f)), sinf(angle) * ring, 0.0f);
+			vec4 drift = vec4(cosf(angle) * RandomRange(0.05f, 0.55f), RandomRange(0.75f, 2.4f), sinf(angle) * RandomRange(0.05f, 0.55f), 0.0f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(drift.x, drift.y, drift.z);
+			particle->Age = 0.0f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-2.6f, 2.6f);
+			particle->Drag = RandomRange(0.75f, 1.75f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+
+			switch (slot) {
+			case ParticleSpriteSlot::Ice:
+				particle->LifeTime = RandomRange(0.42f, 0.72f);
+				particle->StartColor = XMFLOAT4(0.72f, 1.40f, 2.90f, 0.90f);
+				particle->EndColor = XMFLOAT4(0.20f, 0.62f, 1.35f, 0.0f);
+				particle->StartSize = RandomRange(0.18f, 0.34f) * max(radiusScale, 0.9f);
+				particle->EndSize = 0.035f;
+				particle->GravityScale = -0.06f;
+				particle->Stretch = RandomRange(0.9f, 1.7f);
+				particle->FrameIndex = rand() % 29;
+				particle->FrameCount = 29u;
+				particle->FrameCols = 5u;
+				break;
+			case ParticleSpriteSlot::FireSecondary:
+				particle->LifeTime = RandomRange(0.36f, 0.64f);
+				particle->StartColor = XMFLOAT4(2.75f, 0.92f, 0.20f, 0.92f);
+				particle->EndColor = XMFLOAT4(0.38f, 0.04f, 0.00f, 0.0f);
+				particle->StartSize = RandomRange(0.16f, 0.32f) * max(radiusScale, 0.9f);
+				particle->EndSize = 0.020f;
+				particle->GravityScale = -0.22f;
+				particle->Stretch = RandomRange(1.7f, 3.2f);
+				particle->FrameIndex = 0;
+				particle->FrameCount = 10u;
+				particle->FrameCols = 5u;
+				break;
+			case ParticleSpriteSlot::Yellow:
+				particle->LifeTime = RandomRange(0.20f, 0.36f);
+				particle->StartColor = XMFLOAT4(2.85f, 2.35f, 0.28f, 0.95f);
+				particle->EndColor = XMFLOAT4(0.90f, 0.32f, 0.02f, 0.0f);
+				particle->StartSize = RandomRange(0.24f, 0.48f);
+				particle->EndSize = 0.040f;
+				particle->GravityScale = 0.0f;
+				particle->Stretch = RandomRange(1.2f, 2.5f);
+				particle->FrameIndex = rand() % 16;
+				particle->FrameCount = 16u;
+				particle->FrameCols = 4u;
+				break;
+			case ParticleSpriteSlot::Hack:
+				particle->LifeTime = RandomRange(0.46f, 0.78f);
+				particle->StartColor = XMFLOAT4(1.75f, 0.34f, 2.85f, 0.90f);
+				particle->EndColor = XMFLOAT4(0.36f, 0.02f, 0.78f, 0.0f);
+				particle->StartSize = RandomRange(0.28f, 0.58f);
+				particle->EndSize = 0.045f;
+				particle->GravityScale = -0.04f;
+				particle->Stretch = RandomRange(0.9f, 1.8f);
+				particle->FrameIndex = rand() % 16;
+				particle->FrameCount = 16u;
+				particle->FrameCols = 4u;
+				break;
+			case ParticleSpriteSlot::Heal:
+				particle->LifeTime = RandomRange(0.52f, 0.86f);
+				particle->StartColor = XMFLOAT4(0.36f, 2.65f, 0.96f, 0.88f);
+				particle->EndColor = XMFLOAT4(0.02f, 0.56f, 0.28f, 0.0f);
+				particle->StartSize = RandomRange(0.24f, 0.52f);
+				particle->EndSize = 0.035f;
+				particle->GravityScale = -0.12f;
+				particle->Stretch = RandomRange(1.0f, 2.0f);
+				particle->FrameIndex = rand() % 16;
+				particle->FrameCount = 16u;
+				particle->FrameCols = 4u;
+				break;
+			default:
+				break;
+			}
+		}
+	}
+
+	void SpawnBurningStatusEffect(vec4 center, vec4 extents)
+	{
+		SpawnStatusParticles(gStatusFireParticles, ParticleSpriteSlot::FireSecondary, center, extents, 7, 1.18f);
+	}
+
+	void SpawnIceStatusEffect(vec4 center, vec4 extents)
+	{
+		SpawnStatusParticles(gStatusIceParticles, ParticleSpriteSlot::Ice, center, extents, 6, 1.20f);
+	}
+
+	void SpawnParalyzeStatusEffect(vec4 center, vec4 extents)
+	{
+		SpawnStatusParticles(gStatusYellowParticles, ParticleSpriteSlot::Yellow, center + vec4(0.0f, extents.y * 0.35f, 0.0f, 0.0f), extents, 5, 1.08f);
+	}
+
+	void SpawnHackStatusEffect(vec4 center, vec4 extents)
+	{
+		SpawnStatusParticles(gStatusHackParticles, ParticleSpriteSlot::Hack, center, extents, 6, 1.12f);
+	}
+
+	void SpawnHealStatusEffect(vec4 center, vec4 extents, int count)
+	{
+		SpawnStatusParticles(gStatusHealParticles, ParticleSpriteSlot::Heal, center, extents, max(count, 1), 1.25f);
 	}
 
 	vec4 RotateDirectionYaw(vec4 direction, float degree)
@@ -1321,9 +2173,9 @@ namespace
 		right = NormalizeOrFallback(right, vec4(1, 0, 0, 0));
 		vec4 up = right.cross(forward);
 		up = NormalizeOrFallback(up, vec4(0, 1, 0, 0));
-		vec4 nozzle = position + up * 1.18f + forward * 0.95f;
-		float flameRange = max(range, 32.0f);
-		float flameRadius = max(radius, 1.5f);
+		vec4 nozzle = position + up * 1.12f + forward * 0.28f;
+		float flameRange = max(range, 40.0f);
+		float flameRadius = max(radius, 1.9f);
 
 		const int coreCount = 42;
 		for (int i = 0; i < coreCount; ++i) {
@@ -1331,7 +2183,7 @@ namespace
 			if (particle == nullptr) break;
 
 			float t = RandomRange(0.0f, 1.0f);
-			float along = flameRange * (0.06f + t * 0.86f);
+			float along = flameRange * (0.015f + t * 0.86f);
 			float width = flameRadius * (0.10f + t * 0.62f);
 			vec4 lateral = right * RandomRange(-width, width) + up * RandomRange(-width * 0.28f, width * 0.48f);
 			vec4 pos = nozzle + forward * along + lateral;
@@ -1360,11 +2212,102 @@ namespace
 			particle->FrameCols = 6u;
 		}
 	}
+
+	void SpawnBossExplosionParticles(vec4 position, float radius, float power)
+	{
+		position.y += 0.35f;
+		float blastRadius = max(radius, 1.0f);
+		float blastPower = max(power, 1.0f);
+		const int particleCount = 58;
+
+		for (int i = 0; i < particleCount; ++i) {
+			Particle* particle = AllocateTransientParticle(gBossExplosionParticles);
+			if (particle == nullptr) break;
+
+			float t = static_cast<float>(i) / static_cast<float>(max(particleCount - 1, 1));
+			float angle = RandomRange(0.0f, XM_2PI);
+			float ring = sqrtf(RandomRange(0.0f, 1.0f));
+			vec4 radial = vec4(cosf(angle) * ring, 0.0f, sinf(angle) * ring, 0.0f);
+			vec4 scatter = NormalizeOrFallback(radial + vec4(0.0f, RandomRange(0.12f, 0.82f), 0.0f, 0.0f), vec4(0, 1, 0, 0));
+			vec4 pos = position
+				+ radial * (blastRadius * RandomRange(0.02f, 0.34f))
+				+ vec4(0.0f, RandomRange(0.0f, 0.28f), 0.0f, 0.0f);
+
+			bool coreFlash = i < 10;
+			bool smoke = t > 0.62f;
+			float speed = coreFlash ? RandomRange(2.2f, 5.2f) : RandomRange(3.2f, 8.8f);
+			speed *= 0.55f + blastPower * 0.018f;
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(
+				scatter.x * speed,
+				scatter.y * speed * (coreFlash ? 0.45f : 0.72f),
+				scatter.z * speed);
+			particle->Age = smoke ? RandomRange(0.04f, 0.14f) : 0.0f;
+			particle->LifeTime = coreFlash ? RandomRange(0.22f, 0.34f) : RandomRange(0.48f, 0.92f);
+			particle->StartColor = coreFlash
+				? XMFLOAT4(3.6f, 2.2f, 0.92f, 1.0f)
+				: (smoke ? XMFLOAT4(0.82f, 0.58f, 0.38f, 0.58f) : XMFLOAT4(2.4f, 1.08f, 0.36f, 0.92f));
+			particle->EndColor = smoke
+				? XMFLOAT4(0.10f, 0.09f, 0.08f, 0.0f)
+				: XMFLOAT4(0.30f, 0.08f, 0.02f, 0.0f);
+			particle->StartSize = (coreFlash ? RandomRange(0.70f, 1.20f) : RandomRange(0.46f, 1.05f)) * (0.75f + blastRadius * 0.18f);
+			particle->EndSize = smoke ? RandomRange(1.10f, 2.15f) * (0.85f + blastRadius * 0.15f) : RandomRange(0.12f, 0.32f);
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-4.0f, 4.0f);
+			particle->Drag = smoke ? RandomRange(1.4f, 2.8f) : RandomRange(2.4f, 4.6f);
+			particle->GravityScale = smoke ? -0.10f : 0.10f;
+			particle->Stretch = coreFlash ? 0.25f : RandomRange(0.45f, 1.15f);
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 64u;
+			particle->FrameCols = 8u;
+		}
+	}
 }
 
 void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction, UINT ownerId, float radius, float power, float duration)
 {
-	if (type == SkillEffectType::Juggernaut_FireProjectile) {
+	if (type == SkillEffectType::Drone_Heal) {
+		vec4 beamDirection = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		vec4 target = position + beamDirection * max(radius, 1.0f);
+		QueueSupportBeam(position, target, 0.12f, max(duration, 0.20f), vec4(0.28f, 1.65f, 0.62f, 0.24f));
+		SpawnHealStatusEffect(target, vec4(0.65f, 1.15f, 0.65f, 0.0f), 4);
+		return;
+	}
+	else if (type == SkillEffectType::Drone_Assault) {
+		Player* ownerPlayer = ownerId < DynmaicGameObjects.size() ? dynamic_cast<Player*>(DynmaicGameObjects[ownerId]) : nullptr;
+		if (ownerPlayer != nullptr) ownerPlayer->m_droneAssaultVisualTimer = max(ownerPlayer->m_droneAssaultVisualTimer, duration);
+		if (duration <= 0.5f) {
+			vec4 beamDirection = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+			vec4 target = position + beamDirection * max(radius, 1.0f);
+			QueueSupportBeam(position, target, 0.10f, max(duration, 0.16f), vec4(2.15f, 1.55f, 0.18f, 0.22f));
+			SpawnStatusParticles(gStatusYellowParticles, ParticleSpriteSlot::Yellow, position,
+				vec4(0.32f, 0.32f, 0.32f, 0.0f), 2, 0.72f);
+		}
+		return;
+	}
+	else if (type == SkillEffectType::Drone_Flight) {
+		Player* ownerPlayer = ownerId < DynmaicGameObjects.size() ? dynamic_cast<Player*>(DynmaicGameObjects[ownerId]) : nullptr;
+		if (ownerPlayer != nullptr) ownerPlayer->m_droneFlightVisualTimer = max(ownerPlayer->m_droneFlightVisualTimer, duration);
+		SpawnStatusParticles(gStatusYellowParticles, ParticleSpriteSlot::Yellow, position,
+			vec4(0.75f, 0.45f, 0.75f, 0.0f), duration > 1.0f ? 5 : 2, 0.82f);
+
+		FrostSnowWaveVisual healWave;
+		healWave.Active = true;
+		healWave.HealWave = true;
+		if (ownerPlayer != nullptr) healWave.Position = ownerPlayer->worldMat.pos;
+		else healWave.Position = position - vec4(0, 0.9f, 0, 0);
+		healWave.Position.w = 1.0f;
+		healWave.Age = 0.0f;
+		healWave.Duration = 0.92f;
+		healWave.Radius = 8.5f;
+		gFrostSnowWaveVisuals.push_back(healWave);
+		return;
+	}
+	else if (type == SkillEffectType::Juggernaut_FireProjectile) {
 		const float fireAngles[] = { -30.0f, 0.0f, 30.0f };
 		for (float angle : fireAngles) {
 			SpawnJuggernautFireball(position, RotateDirectionYaw(direction, angle), max(power, 18.0f), max(radius, 0.85f));
@@ -1372,11 +2315,205 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 		return;
 	}
 	else if (type == SkillEffectType::Juggernaut_UltimateFire) {
-		SpawnJuggernautFlamethrower(position, direction, min(max(power, 42.0f), 58.0f), max(radius, 2.0f));
+		SpawnJuggernautFlamethrower(position, direction, 56.0f, max(radius, 1.6f));
+		return;
+	}
+	else if (type == SkillEffectType::Aegis_ShieldAura) {
+		AegisShieldVisual* slot = nullptr;
+		for (AegisShieldVisual& visual : gAegisShieldVisuals) {
+			if (visual.Active && visual.OwnerId == ownerId && !visual.GroundDisk) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			for (AegisShieldVisual& visual : gAegisShieldVisuals) {
+				if (!visual.Active) {
+					slot = &visual;
+					break;
+				}
+			}
+		}
+		if (slot == nullptr) {
+			gAegisShieldVisuals.push_back(AegisShieldVisual{});
+			slot = &gAegisShieldVisuals.back();
+		}
+		slot->Active = true;
+		slot->OwnerId = ownerId;
+		slot->Position = position;
+		slot->Radius = min(max(radius, 1.35f), 2.35f);
+		slot->Age = 0.0f;
+		slot->Duration = min(max(duration, 0.36f), 1.05f);
+		slot->GroundDisk = false;
+		return;
+	}
+	else if (type == SkillEffectType::Sniper_Railgun) {
+		RailgunBeamVisual* slot = nullptr;
+		for (RailgunBeamVisual& visual : gRailgunBeamVisuals) {
+			if (!visual.Active) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			gRailgunBeamVisuals.push_back(RailgunBeamVisual{});
+			slot = &gRailgunBeamVisuals.back();
+		}
+		slot->Active = true;
+		slot->Origin = position;
+		slot->Direction = NormalizeOrFallback(direction, vec4(0, 0, 1, 0));
+		slot->Origin.y += 0.04f;
+		slot->Origin += slot->Direction * 1.85f;
+		slot->Age = 0.0f;
+		slot->Duration = max(duration, 0.42f);
+		slot->Length = 118.0f;
+		slot->Width = min(max(radius * 0.48f, 0.32f), 0.60f);
+		slot->Tint = vec4(0.66f, 0.96f, 1.45f, 0.16f);
+		return;
+	}
+	else if (type == SkillEffectType::Electric_Arc && radius <= 0.75f && duration <= 0.22f) {
+		RailgunOrbitVisual* slot = nullptr;
+		for (RailgunOrbitVisual& visual : gRailgunOrbitVisuals) {
+			if (visual.Active && visual.OwnerId == ownerId) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			for (RailgunOrbitVisual& visual : gRailgunOrbitVisuals) {
+				if (!visual.Active) {
+					slot = &visual;
+					break;
+				}
+			}
+		}
+		if (slot == nullptr) {
+			gRailgunOrbitVisuals.push_back(RailgunOrbitVisual{});
+			slot = &gRailgunOrbitVisuals.back();
+		}
+		slot->Active = true;
+		slot->OwnerId = ownerId;
+		slot->Position = position;
+		slot->Position.w = 1.0f;
+		slot->Age = 0.0f;
+		slot->Duration = 0.95f;
+		slot->Radius = 0.74f;
+		slot->Yellow = false;
+		return;
+	}
+	else if (type == SkillEffectType::DualPistol_Awaken) {
+		RailgunOrbitVisual* slot = nullptr;
+		for (RailgunOrbitVisual& visual : gRailgunOrbitVisuals) {
+			if (visual.Active && visual.OwnerId == ownerId && visual.Yellow) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			gRailgunOrbitVisuals.push_back(RailgunOrbitVisual{});
+			slot = &gRailgunOrbitVisuals.back();
+		}
+		slot->Active = true;
+		slot->OwnerId = ownerId;
+		slot->Position = position;
+		slot->Position.w = 1.0f;
+		slot->Age = 0.0f;
+		slot->Duration = max(duration, 0.95f);
+		slot->Radius = 0.68f;
+		slot->Yellow = true;
+		return;
+	}
+	else if (type == SkillEffectType::DualPistol_BladeMode) {
+		// Long casts own the persistent floor marker. Short casts only drive the blade swing.
+		if (duration > 0.5f) {
+			DualBladeFloorVisual* slot = nullptr;
+			for (DualBladeFloorVisual& visual : gDualBladeFloorVisuals) {
+				if (visual.Active && visual.OwnerId == ownerId) {
+					slot = &visual;
+					break;
+				}
+			}
+			if (slot == nullptr) {
+				gDualBladeFloorVisuals.push_back(DualBladeFloorVisual{});
+				slot = &gDualBladeFloorVisuals.back();
+			}
+			slot->Active = true;
+			slot->OwnerId = ownerId;
+			slot->Position = position;
+			slot->Position.w = 1.0f;
+			slot->Age = 0.0f;
+			slot->Duration = duration;
+			slot->Radius = 1.15f;
+		}
+		return;
+	}
+	else if (type == SkillEffectType::Hacker_EMPField || type == SkillEffectType::Hacker_EMPBurst) {
+		HackerEmpVisual* slot = nullptr;
+		const bool groundField = type == SkillEffectType::Hacker_EMPField;
+		for (HackerEmpVisual& visual : gHackerEmpVisuals) {
+			if (visual.GroundField == groundField && visual.OwnerId == ownerId) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			for (HackerEmpVisual& visual : gHackerEmpVisuals) {
+				if (!visual.Active) {
+					slot = &visual;
+					break;
+				}
+			}
+		}
+		if (slot == nullptr) {
+			gHackerEmpVisuals.push_back(HackerEmpVisual{});
+			slot = &gHackerEmpVisuals.back();
+		}
+		slot->Active = true;
+		slot->GroundField = groundField;
+		slot->OwnerId = ownerId;
+		slot->Position = position;
+		slot->Position.w = 1.0f;
+		slot->Age = 0.0f;
+		slot->Duration = groundField ? max(duration, 0.72f) : max(duration, 1.0f);
+		slot->Radius = groundField ? max(radius, 12.0f) : max(radius, 16.0f);
 		return;
 	}
 	else if (type == SkillEffectType::Frost_Cone) {
 		SpawnFrostShardProjectile(position, direction, max(power, 20.0f), max(radius, 1.1f));
+		return;
+	}
+	else if (type == SkillEffectType::Rifle_GrenadeTrail && IsMonsterEffectOwner(ownerId)) {
+		SpawnMonsterGunShotEffect(position, direction, radius, power);
+		return;
+	}
+
+	if (type == SkillEffectType::Aegis_ShieldEnergy && radius >= 3.0f && duration > 1.0f) {
+		AegisShieldVisual* slot = nullptr;
+		for (AegisShieldVisual& visual : gAegisShieldVisuals) {
+			if (visual.Active && visual.OwnerId == ownerId && visual.GroundDisk) {
+				slot = &visual;
+				break;
+			}
+		}
+		if (slot == nullptr) {
+			for (AegisShieldVisual& visual : gAegisShieldVisuals) {
+				if (!visual.Active) {
+					slot = &visual;
+					break;
+				}
+			}
+		}
+		if (slot == nullptr) {
+			gAegisShieldVisuals.push_back(AegisShieldVisual{});
+			slot = &gAegisShieldVisuals.back();
+		}
+		slot->Active = true;
+		slot->OwnerId = ownerId;
+		slot->Position = position;
+		slot->Radius = radius;
+		slot->Age = 0.0f;
+		slot->Duration = duration;
+		slot->GroundDisk = true;
 		return;
 	}
 
@@ -1392,13 +2529,13 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 		runtimeType = SkillEffectType::Fire_Ring;
 		break;
 	case SkillEffectType::Aegis_Barrier:
-		runtimeType = SkillEffectType::Aegis_ShieldEnergy;
+		runtimeType = SkillEffectType::Electric_Burst;
 		break;
 	case SkillEffectType::Aegis_ShieldAura:
 		runtimeType = SkillEffectType::Aegis_ShieldAura;
 		break;
 	case SkillEffectType::Aegis_ShieldCharge:
-		runtimeType = SkillEffectType::Electric_Arc;
+		runtimeType = SkillEffectType::Electric_Burst;
 		break;
 	case SkillEffectType::Rifle_TacticalGrenade:
 	case SkillEffectType::Rifle_MissileBarrage:
@@ -1433,6 +2570,18 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 	case SkillEffectType::DualPistol_BladeMode:
 		runtimeType = SkillEffectType::Electric_Arc;
 		break;
+	case SkillEffectType::Hacker_Hack:
+	case SkillEffectType::Hacker_EMPBurst:
+		runtimeType = SkillEffectType::Electric_Burst;
+		break;
+	case SkillEffectType::Hacker_EMPField:
+		runtimeType = SkillEffectType::Frost_Blizzard;
+		break;
+	case SkillEffectType::Bomber_SpeedBurst:
+		runtimeType = SkillEffectType::Bomber_HealExplosion;
+		break;
+	case SkillEffectType::Bomber_AmmoSwitch:
+		return;
 	default:
 		break;
 	}
@@ -1441,7 +2590,8 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 	if (effect == nullptr) return;
 
 	if (type == SkillEffectType::Healer_HealAura) {
-		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
+		*effect->SpriteSlot = ParticleSpriteSlot::Heal;
+		SpawnHealStatusEffect(position, vec4(max(radius * 0.55f, 0.45f), max(radius * 0.75f, 1.0f), max(radius * 0.55f, 0.45f), 0.0f));
 	}
 	else if (type == SkillEffectType::Tank_ShockWave) {
 		*effect->SpriteSlot = ParticleSpriteSlot::FireSecondary;
@@ -1451,41 +2601,241 @@ void Game::SpawnSkillEffect(SkillEffectType type, vec4 position, vec4 direction,
 	}
 	else if (type == SkillEffectType::Frost_Cone || type == SkillEffectType::Frost_IceBlock || type == SkillEffectType::Frost_Blizzard) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Ice;
+		if (type == SkillEffectType::Frost_Blizzard) {
+			FrostSnowWaveVisual wave;
+			wave.Active = true;
+			wave.Position = position;
+			wave.Position.w = 1.0f;
+			wave.Duration = 1.10f;
+			wave.Radius = max(radius * 1.12f, 9.0f);
+			gFrostSnowWaveVisuals.push_back(wave);
+			radius *= 1.22f;
+		}
 	}
-	else if (type == SkillEffectType::Aegis_ShieldCharge || type == SkillEffectType::Aegis_Barrier || type == SkillEffectType::Aegis_ShieldAura) {
-		*effect->SpriteSlot = (type == SkillEffectType::Aegis_ShieldCharge) ? ParticleSpriteSlot::Electric : ParticleSpriteSlot::Energy;
+	else if (type == SkillEffectType::Aegis_ShieldCharge) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
+		radius = min(max(radius, 1.05f), 1.35f);
+		duration = min(duration, 0.22f);
+	}
+	else if (type == SkillEffectType::Aegis_ShieldAura) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Shield;
+	}
+	else if (type == SkillEffectType::Aegis_Barrier) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
+		position.y += 0.35f;
+		radius = min(max(radius, 1.15f), 1.65f);
+		power = max(power, 18.0f);
+		duration = min(max(duration, 0.55f), 0.85f);
 	}
 	else if (type == SkillEffectType::Rifle_TacticalGrenade || type == SkillEffectType::Rifle_MissileBarrage) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
 	}
-	else if (type == SkillEffectType::Rifle_GrenadeTrail || type == SkillEffectType::Rifle_AirStrikeTrail) {
+	else if (type == SkillEffectType::Rifle_GrenadeTrail) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
+	}
+	else if (type == SkillEffectType::Rifle_AirStrikeTrail) {
+		*effect->SpriteSlot = ParticleSpriteSlot::AirStrike;
+		SkillMissileVisual visual;
+		vec4 dropDir = NormalizeOrFallback(direction, vec4(0, -1, 0, 0));
+		float dropDistance = min(max(position.y, 8.0f), 24.0f);
+		visual.Target = position + dropDir * dropDistance;
+		visual.Target.y += 0.25f;
+		visual.Target.w = 1.0f;
+		visual.Start = visual.Target + vec4(RandomRange(-1.2f, 1.2f), dropDistance, RandomRange(-1.2f, 1.2f), 0.0f);
+		visual.Start.w = 1.0f;
+		visual.Duration = max(duration, 0.55f);
+		visual.Radius = max(radius, 0.8f);
+		visual.Active = true;
+		gSkillMissileVisuals.push_back(visual);
 	}
 	else if (type == SkillEffectType::Rifle_StimField) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
 	}
+	else if (type == SkillEffectType::Hacker_Hack) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Hack;
+		radius = min(max(radius, 0.55f), 1.10f);
+		power = max(power, 10.0f);
+		duration = min(max(duration, 0.16f), 0.28f);
+	}
+	else if (type == SkillEffectType::Hacker_EMPField) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Hack;
+		position.y += 0.08f;
+		radius = min(max(radius, 8.0f), 12.0f);
+		power = max(power, 20.0f);
+		duration = min(max(duration, 0.38f), 0.62f);
+	}
+	else if (type == SkillEffectType::Hacker_EMPBurst) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Hack;
+		radius = min(max(radius, 12.0f), 16.0f);
+		power = max(power, 30.0f);
+		duration = min(max(duration, 0.65f), 1.10f);
+	}
+	else if (type == SkillEffectType::Bomber_SpeedBurst) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Heal;
+		position.y += 0.25f;
+		radius = min(max(radius, 1.5f), 2.2f);
+		power = max(power, 18.0f);
+		duration = min(max(duration, 0.65f), 0.95f);
+		SpawnHealStatusEffect(position, vec4(1.0f, 1.5f, 1.0f, 0.0f));
+	}
+	else if (type == SkillEffectType::Bomber_FireProjectile) {
+		*effect->SpriteSlot = ParticleSpriteSlot::FireSecondary;
+		radius = min(max(radius, 0.55f), 0.85f);
+		power = max(power, 12.0f);
+		duration = min(max(duration, 0.16f), 0.24f);
+	}
+	else if (type == SkillEffectType::Bomber_HealProjectile) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Heal;
+		radius = min(max(radius, 0.55f), 0.85f);
+		power = max(power, 10.0f);
+		duration = min(max(duration, 0.16f), 0.24f);
+	}
+	else if (type == SkillEffectType::Bomber_FireExplosion) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
+		radius = min(max(radius, 6.0f), 8.0f);
+		power = max(power, 20.0f);
+		duration = min(max(duration, 0.72f), 1.05f);
+	}
+	else if (type == SkillEffectType::Bomber_HealExplosion) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Heal;
+		radius = min(max(radius, 6.0f), 8.0f);
+		power = max(power, 18.0f);
+		duration = min(max(duration, 0.72f), 1.05f);
+		SpawnHealStatusEffect(position, vec4(radius * 0.65f, 1.8f, radius * 0.65f, 0.0f), 4);
+	}
+	else if (type == SkillEffectType::Bomber_MeteorTrail) {
+		*effect->SpriteSlot = ParticleSpriteSlot::FireSecondary;
+		radius = min(max(radius, 1.8f), 2.8f);
+		power = max(power, 35.0f);
+		duration = min(max(duration, 0.20f), 0.30f);
+	}
+	else if (type == SkillEffectType::Bomber_Meteor) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
+		radius = min(max(radius, 24.0f), 36.0f);
+		power = max(power, 90.0f);
+		duration = min(max(duration, 1.10f), 1.45f);
+		SpawnHealStatusEffect(position, vec4(radius * 0.22f, 2.5f, radius * 0.22f, 0.0f), 12);
+	}	else if (type == SkillEffectType::DualPistol_BladeMode) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
+		radius = min(max(radius * 0.48f, 0.65f), 0.95f);
+		power = min(max(power * 0.35f, 0.35f), 0.75f);
+		duration = min(max(duration, 0.18f), 0.38f);
+	}
 	else if (type == SkillEffectType::Blood_Hit) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Blood;
+		radius = min(max(radius * 0.62f, 0.45f), 1.15f);
+		power = min(max(power, 1.0f), 24.0f);
+		duration = min(max(duration, 0.24f), 0.42f);
 	}
 	else if (type == SkillEffectType::Explosion_Blast) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Explosion;
 	}
 	else if (type == SkillEffectType::Aegis_ShieldEnergy) {
-		*effect->SpriteSlot = ParticleSpriteSlot::Energy;
+		*effect->SpriteSlot = ParticleSpriteSlot::Shield;
 	}
 	else if (type == SkillEffectType::Rifle_StimPack ||
 		type == SkillEffectType::Sniper_GrappleHook ||
 		type == SkillEffectType::Sniper_ModeSwitch ||
-		type == SkillEffectType::Sniper_Railgun ||
 		type == SkillEffectType::DualPistol_DeathDash ||
 		type == SkillEffectType::DualPistol_BladeMode ||
 		type == SkillEffectType::DualPistol_Awaken) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
+	}
+	else if (type == SkillEffectType::Sniper_Railgun) {
+		*effect->SpriteSlot = ParticleSpriteSlot::Beam;
+	}
+	else if (type == SkillEffectType::Electric_Burst) {
 		*effect->SpriteSlot = ParticleSpriteSlot::Electric;
 	}
 
 	effect->Emitter = MakeParticleEmitter(position, direction, radius, power, duration, ownerId);
 	effect->Active = true;
 	effect->PendingReset = true;
+}
+
+void Game::NotifyPlayerDamaged(float damage)
+{
+	if (damage <= 0.0f) return;
+
+	float hpRate = 1.0f;
+	if (player != nullptr && player->MaxHP > 0.0f) {
+		hpRate = min(1.0f, max(0.0f, player->HP / player->MaxHP));
+	}
+
+	DamageBorderAlpha = max(DamageBorderAlpha, 0.70f);
+	DamageBorderFadeDuration = hpRate <= 0.53f ? 0.52f : 0.30f;
+
+	if (damage >= 70.0f) {
+		CameraShakeStrength = max(CameraShakeStrength, 0.22f);
+		CameraShakeDuration = 0.34f;
+		CameraShakeTimer = CameraShakeDuration;
+		WhiteDamageFlashAlpha = max(WhiteDamageFlashAlpha, 0.42f);
+	}
+	else if (damage >= 40.0f) {
+		CameraShakeStrength = max(CameraShakeStrength, 0.13f);
+		CameraShakeDuration = 0.26f;
+		CameraShakeTimer = CameraShakeDuration;
+	}
+	else if (damage >= 20.0f) {
+		CameraShakeStrength = max(CameraShakeStrength, 0.065f);
+		CameraShakeDuration = 0.18f;
+		CameraShakeTimer = CameraShakeDuration;
+	}
+}
+
+void Game::UpdateDamageFeedback(float deltaTime)
+{
+	const float dt = max(0.0f, deltaTime);
+	if (player != nullptr && player->MaxHP > 0.0f) {
+		const bool jobChanged = LastObservedPlayerJob >= 0 &&
+			player->m_currentJob != LastObservedPlayerJob;
+		const bool maxHPChanged = LastObservedPlayerMaxHP >= 0.0f &&
+			abs(player->MaxHP - LastObservedPlayerMaxHP) > 0.01f;
+		if (jobChanged || maxHPChanged) {
+			// Job changes legitimately replace MaxHP and may clamp current HP. That is
+			// loadout normalization, not combat damage, so reset the observation baseline.
+			PlayerDamageFeedbackSuppressionTime = max(PlayerDamageFeedbackSuppressionTime, 0.18f);
+		}
+
+		if (PlayerDamageFeedbackSuppressionTime > 0.0f) {
+			PlayerDamageFeedbackSuppressionTime -= dt;
+			if (PlayerDamageFeedbackSuppressionTime < 0.0f) PlayerDamageFeedbackSuppressionTime = 0.0f;
+		}
+		else if (LastObservedPlayerHP >= 0.0f && player->HP < LastObservedPlayerHP - 0.01f) {
+			const float damage = LastObservedPlayerHP - player->HP;
+			player->TriggerHitFlash(1.0f);
+			NotifyPlayerDamaged(damage);
+			SpawnSkillEffect(SkillEffectType::Blood_Hit,
+				player->worldMat.pos + vec4(0.0f, 1.0f, 0.0f, 0.0f),
+				vec4(0, 1, 0, 0), (UINT)playerGameObjectIndex, 0.95f, max(damage, 1.0f), 0.36f);
+		}
+		LastObservedPlayerHP = player->HP;
+		LastObservedPlayerMaxHP = player->MaxHP;
+		LastObservedPlayerJob = player->m_currentJob;
+	}
+	else {
+		LastObservedPlayerHP = -1.0f;
+		LastObservedPlayerMaxHP = -1.0f;
+		LastObservedPlayerJob = -1;
+		PlayerDamageFeedbackSuppressionTime = 0.0f;
+	}
+
+	if (DamageBorderAlpha > 0.0f) {
+		DamageBorderAlpha -= dt / max(DamageBorderFadeDuration, 0.05f) * 0.70f;
+		if (DamageBorderAlpha < 0.0f) DamageBorderAlpha = 0.0f;
+	}
+	if (CameraShakeTimer > 0.0f) {
+		CameraShakeTimer -= dt;
+		if (CameraShakeTimer <= 0.0f) {
+			CameraShakeTimer = 0.0f;
+			CameraShakeDuration = 0.0f;
+			CameraShakeStrength = 0.0f;
+		}
+	}
+	if (WhiteDamageFlashAlpha > 0.0f) {
+		WhiteDamageFlashAlpha -= dt * 2.8f;
+		if (WhiteDamageFlashAlpha < 0.0f) WhiteDamageFlashAlpha = 0.0f;
+	}
 }
 void Game::SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sourceObjIndex, bool active, vec4 position, vec4 extents, float duration, float remainTime, float power)
 {
@@ -1543,14 +2893,20 @@ void Game::SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sour
 		switch (type) {
 		case StatusEffectType::Freeze:
 		case StatusEffectType::Slow:
-			SpawnSkillEffect(SkillEffectType::Frost_IceBlock, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.6f), visualDuration);
+			SpawnIceStatusEffect(position, extents);
 			break;
 		case StatusEffectType::Burn:
-			SpawnSkillEffect(SkillEffectType::Ember_Shower, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.5f));
+			SpawnBurningStatusEffect(position, extents);
 			break;
 		case StatusEffectType::Stun:
 		case StatusEffectType::Paralyze:
-			SpawnSkillEffect(SkillEffectType::Electric_Burst, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.2f));
+			SpawnParalyzeStatusEffect(position, extents);
+			break;
+		case StatusEffectType::Hack:
+			SpawnHackStatusEffect(position, extents);
+			break;
+		case StatusEffectType::Heal:
+			SpawnHealStatusEffect(position, extents);
 			break;
 		case StatusEffectType::Taunt:
 			SpawnSkillEffect(SkillEffectType::Fire_Ring, position, vec4(0, 1, 0, 0), (UINT)targetObjIndex, radius, max(power, 1.0f), min(visualDuration, 1.0f));
@@ -1560,6 +2916,1247 @@ void Game::SpawnStatusEffect(StatusEffectType type, int targetObjIndex, int sour
 		}
 	}
 }
+
+void Game::ApplyBossState(const STC_BossState_Header& header)
+{
+	BossPrototypeServerSynced = true;
+	BossPrototypeEnabled = header.enabled;
+	if (!BossPrototypeEnabled) {
+		BossPrototypeVisualGroundInitialized = false;
+		return;
+	}
+
+	bool wasShieldActive = BossPrototypeShieldActive;
+	std::vector<BossPrototypeCore> previousCores = BossPrototypeCores;
+
+	BossPrototypeIndex = GetDynamicObjectNetIndex(header.zoneId, header.bossObjIndex);
+	BossPrototypeCenter = header.center;
+	BossPrototypeAimDirection = header.aimDirection;
+	BossPrototypeRailgunDirection = header.railgunDirection;
+	BossPrototypeShieldActive = header.shieldActive;
+	BossPrototypeShieldDownTime = header.shieldDownTime;
+	BossPrototypeGroggyTime = header.groggyTime;
+	BossPrototypePhaseState = (BossPrototypePhase)header.phase;
+	BossPrototypePhaseTime = header.phaseTime;
+	BossPrototypePatternStep = header.patternStep;
+	BossPrototypeConfigured = true;
+	BossPrototypeCoresInitialized = true;
+	const float visualGroundY = GetBossVisualGroundY();
+
+	if (BossPrototypeIndex >= 0 && BossPrototypeIndex < (int)DynmaicGameObjects.size()) {
+		Monster* boss = dynamic_cast<Monster*>(DynmaicGameObjects[BossPrototypeIndex]);
+		if (boss != nullptr) {
+			const float prevBossHP = boss->HP;
+			boss->HP = header.bossHP;
+			boss->MaxHP = header.bossMaxHP;
+			if (boss->HP < prevBossHP - 0.01f) {
+				boss->TriggerHitFlash(1.0f);
+			}
+			boss->SetStatusTint(vec4(0.0f, 1.0f, 1.0f, 1.0f));
+			if (BossPrototypeBossShapeIndex >= 0 && BossPrototypeBossShapeIndex < (int)Shape::ShapeTable.size()) {
+				boss->shape = Shape::ShapeTable[BossPrototypeBossShapeIndex];
+				ApplyModelNodeTransforms(boss, BossPrototypeBossModel);
+			}
+
+			vec4 bossDirection = BossPrototypeVisualLookDirection;
+			if (BossPrototypeShouldAimBody(BossPrototypePhaseState)) {
+				bossDirection = GetBossPrototypePatternDirection(BossPrototypePhaseState, BossPrototypeAimDirection);
+				bossDirection.y = 0.0f;
+				bossDirection = NormalizeOrFallback(bossDirection, vec4(0, 0, 1, 0));
+				bossDirection = GetBossPrototypeVisualLookDirection(bossDirection);
+				BossPrototypeVisualLookDirection = ApproachDirection(BossPrototypeVisualLookDirection, bossDirection, 3.2f, DeltaTime);
+			}
+			bossDirection = BossPrototypeVisualLookDirection;
+
+			const float BossScale = BossPrototypeGroggyTime > 0.0f ? kBossPrototypeGroggyScale : kBossPrototypeNormalScale;
+			matrix bossWorld;
+			bossWorld.LookAt(bossDirection);
+			bossWorld.right *= BossScale;
+			bossWorld.up *= BossScale;
+			bossWorld.look *= BossScale;
+			bossWorld.pos = BossPrototypeCenter;
+			bossWorld.pos.y = visualGroundY;
+			if (BossPrototypeBossModel != nullptr) {
+				bossWorld.pos -= bossWorld.right * BossPrototypeBossModel->OBB_Tr.x;
+				bossWorld.pos -= bossWorld.up * BossPrototypeBossModel->AABB[0].y;
+				bossWorld.pos -= bossWorld.look * BossPrototypeBossModel->OBB_Tr.z;
+				bossWorld.pos.y += 1.45f + kBossPrototypeHeightOffset;
+			}
+			bossWorld.pos.w = 1.0f;
+			boss->worldMat = bossWorld;
+			XMMatrixDecompose((XMVECTOR*)&boss->DestScale, (XMVECTOR*)&boss->DestRot, (XMVECTOR*)&boss->DestPos, bossWorld);
+			boss->LVelocity = vec4(0, 0, 0, 0);
+			ApplyBossPrototypeTurretPose(boss);
+		}
+	}
+
+	BossPrototypeCores.clear();
+	for (int i = 0; i < min(header.coreCount, 3); ++i) {
+		BossPrototypeCore core;
+		core.Position = header.cores[i].position;
+		core.Position.y = visualGroundY;
+		core.HP = header.cores[i].hp;
+		core.MaxHP = header.cores[i].maxHP;
+		core.Active = header.cores[i].active;
+
+		if (i < (int)previousCores.size()) {
+			const BossPrototypeCore& prev = previousCores[i];
+			core.HitFlashTimer = prev.HitFlashTimer;
+			core.HitFlashDuration = prev.HitFlashDuration;
+			if (core.HP < prev.HP) {
+				core.HitFlashDuration = 0.55f;
+				core.HitFlashTimer = core.HitFlashDuration;
+				SpawnFloatingDamageText(core.Position + vec4(0.0f, 1.05f, 0.0f, 0.0f), prev.HP - core.HP);
+				SpawnSkillEffect(SkillEffectType::Electric_Burst, core.Position + vec4(0.0f, 0.8f, 0.0f, 0.0f),
+					vec4(0, 1, 0, 0), 0, 1.6f, max(prev.HP - core.HP, 1.0f), 0.7f);
+			}
+			if (prev.Active && !core.Active) {
+				SpawnSkillEffect(SkillEffectType::Explosion_Blast, core.Position + vec4(0.0f, 0.7f, 0.0f, 0.0f),
+					vec4(0, 1, 0, 0), 0, 2.0f, 24.0f, 0.8f);
+				SpawnBossExplosionParticles(core.Position, 2.0f, 32.0f);
+			}
+		}
+		BossPrototypeCores.push_back(core);
+	}
+
+	if (wasShieldActive && !BossPrototypeShieldActive) {
+		SpawnSkillEffect(SkillEffectType::Aegis_ShieldEnergy, BossPrototypeCenter + vec4(0.0f, 2.0f, 0.0f, 0.0f),
+			vec4(0, 1, 0, 0), 0, 5.0f, 30.0f, 1.2f);
+	}
+
+	BossAoEWarnings.clear();
+	for (int i = 0; i < min(header.warningCount, BossSyncWarningCapacity); ++i) {
+		BossAoEWarning warning;
+		if (header.warnings[i].shape == 2) {
+			warning.Shape = BossAoEShape::SafeCircle;
+		}
+		else {
+			warning.Shape = header.warnings[i].shape == 1 ? BossAoEShape::Rectangle : BossAoEShape::Circle;
+		}
+		warning.Position = header.warnings[i].position;
+		warning.Direction = header.warnings[i].direction;
+		warning.Position.y = visualGroundY;
+		warning.Radius = header.warnings[i].radius;
+		warning.Width = header.warnings[i].width;
+		warning.Length = header.warnings[i].length;
+		warning.WarningTime = header.warnings[i].warningTime;
+		warning.Age = header.warnings[i].age;
+		warning.Damage = header.warnings[i].damage;
+		warning.InnerDamage = header.warnings[i].innerDamage;
+		warning.FollowTime = header.warnings[i].followTime;
+		warning.LockTime = header.warnings[i].lockTime;
+		warning.Active = header.warnings[i].active;
+		warning.FollowPlayer = false;
+		warning.DarkenOnLock = header.warnings[i].darkenOnLock;
+		warning.VisualSpawned = header.warnings[i].visualSpawned;
+		BossAoEWarnings.push_back(warning);
+
+		if (warning.Shape == BossAoEShape::Circle && warning.Age >= warning.FollowTime && warning.Age < warning.WarningTime) {
+			bool alreadySpawned = false;
+			for (const BossMissileVisual& visual : BossMissileVisuals) {
+				vec4 delta = visual.Target - warning.Position;
+				delta.y = 0.0f;
+				if (delta.fast_square_of_len3 < 0.35f * 0.35f) {
+					alreadySpawned = true;
+					break;
+				}
+			}
+			if (!alreadySpawned) {
+				BossMissileVisual visual;
+				visual.Target = warning.Position;
+				visual.Target.y = warning.Position.y + 0.25f;
+				visual.Target.w = 1.0f;
+				visual.Start = visual.Target + vec4(RandomRange(-1.4f, 1.4f), 18.0f, RandomRange(-1.4f, 1.4f), 0.0f);
+				visual.Start.w = 1.0f;
+				visual.Duration = max(warning.WarningTime - warning.Age, 0.55f);
+				visual.Radius = max(warning.Radius, 0.8f);
+				visual.Active = true;
+				BossMissileVisuals.push_back(visual);
+			}
+		}
+	}
+}
+
+void Game::UpdateBossPrototype(float deltaTime)
+{
+	if (!BossPrototypeEnabled || player == nullptr) return;
+
+	const float dt = max(0.0f, deltaTime);
+	Monster* syncedBoss = nullptr;
+	if (BossPrototypeIndex >= 0 && BossPrototypeIndex < (int)DynmaicGameObjects.size()) {
+		syncedBoss = dynamic_cast<Monster*>(DynmaicGameObjects[BossPrototypeIndex]);
+		if (syncedBoss != nullptr && (syncedBoss->isDead || syncedBoss->tag[GameObjectTag::Tag_Enable] == false)) {
+			syncedBoss = nullptr;
+		}
+		EnsureBossObjectUsesBossModel(syncedBoss);
+	}
+	auto PointInRectangleWarning = [](const BossAoEWarning& warning, vec4 point) {
+		vec4 forward = NormalizeOrFallback(warning.Direction, vec4(0, 0, 1, 0));
+		vec4 right = NormalizeOrFallback(vec4(forward.z, 0, -forward.x, 0), vec4(1, 0, 0, 0));
+		vec4 delta = point - warning.Position;
+		float along = delta.x * forward.x + delta.z * forward.z;
+		float side = delta.x * right.x + delta.z * right.z;
+		return along >= 0.0f && along <= warning.Length && fabsf(side) <= warning.Width * 0.5f;
+	};
+	auto SpawnBossMissileVisual = [&](vec4 target, float duration, float radius) {
+		BossMissileVisual visual;
+		visual.Target = target;
+		visual.Target.y = target.y + 0.25f;
+		visual.Target.w = 1.0f;
+		visual.Start = visual.Target + vec4(RandomRange(-1.4f, 1.4f), 18.0f, RandomRange(-1.4f, 1.4f), 0.0f);
+		visual.Start.w = 1.0f;
+		visual.Duration = max(duration, 0.18f);
+		visual.Radius = max(radius, 0.8f);
+		visual.Active = true;
+		BossMissileVisuals.push_back(visual);
+	};
+
+	if (BossPrototypeServerSynced) {
+		for (BossMissileVisual& visual : BossMissileVisuals) {
+			if (!visual.Active) continue;
+			visual.Age += dt;
+			if (visual.Age >= visual.Duration + 0.08f) {
+				SpawnBossExplosionParticles(visual.Target, visual.Radius, 35.0f);
+				visual.Active = false;
+			}
+		}
+		BossMissileVisuals.erase(std::remove_if(BossMissileVisuals.begin(), BossMissileVisuals.end(),
+			[](const BossMissileVisual& visual) {
+				return !visual.Active;
+			}), BossMissileVisuals.end());
+		for (BossAoEWarning& warning : BossAoEWarnings) {
+			if (!warning.Active) continue;
+			warning.Age += dt;
+			if (warning.Shape == BossAoEShape::Circle && warning.Age >= warning.FollowTime && warning.Age < warning.WarningTime) {
+				bool alreadySpawned = false;
+				for (const BossMissileVisual& visual : BossMissileVisuals) {
+					vec4 delta = visual.Target - warning.Position;
+					delta.y = 0.0f;
+					if (delta.fast_square_of_len3 < 0.35f * 0.35f) {
+						alreadySpawned = true;
+						break;
+					}
+				}
+				if (!alreadySpawned) {
+					SpawnBossMissileVisual(warning.Position, max(warning.WarningTime - warning.Age, 0.55f), warning.Radius);
+				}
+			}
+		}
+		return;
+	}
+
+	for (BossMissileVisual& visual : BossMissileVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += dt;
+		if (visual.Age >= visual.Duration + 0.08f) {
+			visual.Active = false;
+		}
+	}
+	BossMissileVisuals.erase(std::remove_if(BossMissileVisuals.begin(), BossMissileVisuals.end(),
+		[](const BossMissileVisual& visual) {
+			return !visual.Active;
+		}), BossMissileVisuals.end());
+
+	for (BossAoEWarning& warning : BossAoEWarnings) {
+		if (!warning.Active) continue;
+		warning.Age += dt;
+		if (warning.FollowPlayer && warning.Age < warning.FollowTime) {
+			warning.Position.x = player->worldMat.pos.x;
+			warning.Position.z = player->worldMat.pos.z;
+			warning.Position.y = GetBossVisualGroundY();
+			warning.Position.w = 1.0f;
+		}
+		if (warning.Shape == BossAoEShape::Circle && !warning.VisualSpawned && warning.Age >= warning.FollowTime) {
+			SpawnBossMissileVisual(warning.Position, max(warning.WarningTime - warning.Age, 0.25f), warning.Radius);
+			warning.VisualSpawned = true;
+		}
+		if (warning.Age < warning.WarningTime || warning.DamageApplied) continue;
+
+		vec4 playerPos = player->worldMat.pos;
+		bool hit = false;
+		float damage = warning.Damage;
+		if (warning.Shape == BossAoEShape::Circle) {
+			vec4 delta = playerPos - warning.Position;
+			delta.y = 0.0f;
+			hit = delta.fast_square_of_len3 <= warning.Radius * warning.Radius;
+			if (hit && warning.InnerDamage > 0.0f && delta.fast_square_of_len3 <= warning.Radius * warning.Radius * 0.35f) {
+				damage = warning.InnerDamage;
+			}
+		}
+		else {
+			hit = PointInRectangleWarning(warning, playerPos);
+		}
+
+		if (hit) {
+			player->HP = max(0.0f, player->HP - damage);
+			NotifyPlayerDamaged(damage);
+			player->TriggerHitFlash(1.0f);
+			SpawnFloatingDamageText(playerPos, damage);
+			SpawnSkillEffect(SkillEffectType::Blood_Hit, playerPos + vec4(0.0f, 1.0f, 0.0f, 0.0f),
+				vec4(0, 1, 0, 0), (UINT)playerGameObjectIndex, 1.3f, damage, 0.45f);
+		}
+
+		warning.DamageApplied = true;
+		warning.Active = false;
+		SpawnBossExplosionParticles(warning.Position, max(warning.Radius, warning.Width), 35.0f);
+	}
+
+	BossAoEWarnings.erase(std::remove_if(BossAoEWarnings.begin(), BossAoEWarnings.end(),
+		[](const BossAoEWarning& warning) {
+			return !warning.Active && warning.Age > warning.WarningTime + 0.25f;
+		}), BossAoEWarnings.end());
+
+	Monster* boss = syncedBoss;
+
+	if (boss == nullptr) {
+		BossPrototypeIndex = -1;
+		for (int i = 0; i < (int)DynmaicGameObjects.size(); ++i) {
+			Monster* candidate = dynamic_cast<Monster*>(DynmaicGameObjects[i]);
+			if (candidate == nullptr || candidate->isDead || candidate->tag[GameObjectTag::Tag_Enable] == false) continue;
+			BossPrototypeIndex = i;
+			boss = candidate;
+			BossPrototypePhaseState = BossPrototypePhase::FindBoss;
+			BossPrototypePhaseTime = 0.0f;
+			BossPrototypePatternCooldown = 0.0f;
+			BossPrototypeConfigured = false;
+			BossPrototypeCoresInitialized = false;
+			OutputDebugStringA("[BossProto] selected first live monster as turret boss prototype\n");
+			break;
+		}
+		if (boss == nullptr) return;
+	}
+
+	if (!BossPrototypeConfigured) {
+		BossPrototypeCenter = boss->worldMat.pos;
+		BossPrototypeCenter.x = 0.0f;
+		BossPrototypeCenter.z = 0.0f;
+		BossPrototypeCenter.w = 1.0f;
+		boss->MaxHP = 7500.0f;
+		boss->HP = 7500.0f;
+		if (BossPrototypeBossShapeIndex >= 0 && BossPrototypeBossShapeIndex < (int)Shape::ShapeTable.size()) {
+			boss->shape = Shape::ShapeTable[BossPrototypeBossShapeIndex];
+			ApplyModelNodeTransforms(boss, BossPrototypeBossModel);
+		}
+		BossPrototypeConfigured = true;
+	}
+
+	if (!BossPrototypeCoresInitialized || (!BossPrototypeShieldActive && BossPrototypeShieldDownTime <= 0.0f)) {
+		BossPrototypeCores.clear();
+		BossAoEWarnings.clear();
+		const float coreRadius = 20.0f;
+		const float coreGroundY = GetBossVisualGroundY();
+		for (int i = 0; i < 3; ++i) {
+			float angle = XM_2PI * (float)i / 3.0f + XM_PIDIV2;
+			BossPrototypeCore core;
+			core.Position = BossPrototypeCenter + vec4(cosf(angle) * coreRadius, 0.0f, sinf(angle) * coreRadius, 0.0f);
+			core.Position.y = coreGroundY;
+			core.Position.w = 1.0f;
+			core.HP = 1200.0f;
+			core.MaxHP = 1200.0f;
+			core.Active = true;
+			BossPrototypeCores.push_back(core);
+		}
+		BossPrototypeShieldActive = true;
+		BossPrototypeCoresInitialized = true;
+		BossPrototypeShieldDownTime = 0.0f;
+		BossPrototypeGroggyTime = 0.0f;
+		BossPrototypePhaseState = BossPrototypePhase::Rest;
+		BossPrototypePhaseTime = 0.0f;
+		BossPrototypePatternCooldown = 0.8f;
+	}
+
+	if (!BossPrototypeShieldActive) {
+		bool wasGroggy = BossPrototypeGroggyTime > 0.0f;
+		BossPrototypeShieldDownTime -= dt;
+		BossPrototypeGroggyTime = max(0.0f, BossPrototypeGroggyTime - dt);
+		if (wasGroggy && BossPrototypeGroggyTime <= 0.0f) {
+			BossAoEWarnings.clear();
+			BossPrototypePhaseState = BossPrototypePhase::Rest;
+			BossPrototypePhaseTime = 0.0f;
+			BossPrototypePatternCooldown = 0.6f;
+		}
+	}
+
+	BossPrototypeAimDirection = NormalizeOrFallback(player->worldMat.pos - BossPrototypeCenter, vec4(0, 0, 1, 0));
+	BossPrototypeAimDirection.y = 0.0f;
+	BossPrototypeAimDirection = NormalizeOrFallback(BossPrototypeAimDirection, vec4(0, 0, 1, 0));
+
+	vec4 bossFacingDirection = BossPrototypeVisualLookDirection;
+	if (BossPrototypeShouldAimBody(BossPrototypePhaseState)) {
+		bossFacingDirection = GetBossPrototypePatternDirection(BossPrototypePhaseState, BossPrototypeAimDirection);
+		bossFacingDirection.y = 0.0f;
+		bossFacingDirection = NormalizeOrFallback(bossFacingDirection, BossPrototypeAimDirection);
+		bossFacingDirection = GetBossPrototypeVisualLookDirection(bossFacingDirection);
+		BossPrototypeVisualLookDirection = ApproachDirection(BossPrototypeVisualLookDirection, bossFacingDirection, 3.2f, DeltaTime);
+	}
+	bossFacingDirection = BossPrototypeVisualLookDirection;
+
+	const float BossScale = BossPrototypeGroggyTime > 0.0f ? kBossPrototypeGroggyScale : kBossPrototypeNormalScale;
+	matrix bossWorld;
+	bossWorld.LookAt(bossFacingDirection);
+	bossWorld.right *= BossScale;
+	bossWorld.up *= BossScale;
+	bossWorld.look *= BossScale;
+	bossWorld.pos = BossPrototypeCenter;
+	bossWorld.pos.y = GetBossVisualGroundY();
+	if (BossPrototypeBossModel != nullptr) {
+		bossWorld.pos -= bossWorld.right * BossPrototypeBossModel->OBB_Tr.x;
+		bossWorld.pos -= bossWorld.up * BossPrototypeBossModel->AABB[0].y;
+		bossWorld.pos -= bossWorld.look * BossPrototypeBossModel->OBB_Tr.z;
+		bossWorld.pos.y += 1.45f + kBossPrototypeHeightOffset;
+	}
+	bossWorld.pos.w = 1.0f;
+	boss->worldMat = bossWorld;
+	XMMatrixDecompose((XMVECTOR*)&boss->DestScale, (XMVECTOR*)&boss->DestRot, (XMVECTOR*)&boss->DestPos, bossWorld);
+	boss->LVelocity = vec4(0, 0, 0, 0);
+	boss->ChangeState(Monster::State::IDLE);
+	ApplyBossPrototypeTurretPose(boss);
+
+	BossPrototypePhaseTime += dt;
+	switch (BossPrototypePhaseState) {
+	case BossPrototypePhase::FindBoss:
+		BossPrototypePhaseState = BossPrototypePhase::Rest;
+		BossPrototypePhaseTime = 0.0f;
+		BossPrototypePatternCooldown = 1.0f;
+		break;
+	case BossPrototypePhase::MissileLock:
+		if (BossPrototypePhaseTime <= dt + 0.001f) {
+			BossAoEWarning warning;
+			warning.Shape = BossAoEShape::Circle;
+			warning.Position = player->worldMat.pos;
+			warning.Position.y = GetBossVisualGroundY();
+			warning.Position.w = 1.0f;
+			warning.Radius = 2.4f;
+			warning.WarningTime = 5.0f;
+			warning.FollowTime = 4.0f;
+			warning.LockTime = 1.0f;
+			warning.Damage = 30.0f;
+			warning.InnerDamage = 55.0f;
+			warning.FollowPlayer = true;
+			warning.DarkenOnLock = true;
+			BossAoEWarnings.push_back(warning);
+			SpawnSkillEffect(SkillEffectType::Rifle_AirStrikeTrail, BossPrototypeCenter + vec4(0.0f, 3.0f, 0.0f, 0.0f),
+				BossPrototypeAimDirection, (UINT)BossPrototypeIndex, 1.4f, 18.0f, 0.8f);
+		}
+		if (BossPrototypePhaseTime >= 5.25f) {
+			BossPrototypePhaseState = BossPrototypePhase::Rest;
+			BossPrototypePhaseTime = 0.0f;
+			BossPrototypePatternCooldown = 2.0f;
+		}
+		break;
+	case BossPrototypePhase::RailgunCharge:
+		if (BossPrototypePhaseTime <= dt + 0.001f) {
+			BossPrototypeRailgunDirection = BossPrototypeAimDirection;
+			BossAoEWarning warning;
+			warning.Shape = BossAoEShape::Rectangle;
+			warning.Position = BossPrototypeCenter;
+			warning.Position.y = GetBossVisualGroundY();
+			warning.Direction = BossPrototypeRailgunDirection;
+			warning.Width = 2.3f;
+			warning.Length = 36.0f;
+			warning.Radius = 2.0f;
+			warning.WarningTime = 2.8f;
+			warning.Damage = 95.0f;
+			BossAoEWarnings.push_back(warning);
+			SpawnSkillEffect(SkillEffectType::Sniper_Railgun, BossPrototypeCenter + BossPrototypeRailgunDirection * 2.0f + vec4(0.0f, 2.0f, 0.0f, 0.0f),
+				BossPrototypeRailgunDirection, (UINT)BossPrototypeIndex, 2.0f, 30.0f, 2.6f);
+		}
+		if (BossPrototypePhaseTime >= 4.75f) {
+			BossPrototypePhaseState = BossPrototypePhase::Rest;
+			BossPrototypePhaseTime = 0.0f;
+			BossPrototypePatternCooldown = 2.4f;
+		}
+		break;
+	case BossPrototypePhase::Bombardment:
+		if (BossPrototypePhaseTime <= dt + 0.001f) {
+			const int bombCount = 3;
+			for (int i = 0; i < bombCount; ++i) {
+				float angle = XM_2PI * (float)i / (float)bombCount;
+				float dist = 3.5f + (float)(i % 2) * 2.2f;
+				BossAoEWarning warning;
+				warning.Shape = BossAoEShape::Circle;
+				warning.Position = player->worldMat.pos + vec4(cosf(angle) * dist, 0.0f, sinf(angle) * dist, 0.0f);
+				warning.Position.y = GetBossVisualGroundY();
+				warning.Position.w = 1.0f;
+				warning.Radius = 2.1f;
+				warning.WarningTime = 1.8f;
+				warning.Damage = 35.0f;
+				BossAoEWarnings.push_back(warning);
+			}
+			SpawnSkillEffect(SkillEffectType::Rifle_AirStrikeTrail, BossPrototypeCenter + vec4(0.0f, 3.0f, 0.0f, 0.0f),
+				vec4(0, 1, 0, 0), (UINT)BossPrototypeIndex, 2.2f, 18.0f, 1.0f);
+		}
+		if (BossPrototypePhaseTime >= 2.1f) {
+			BossPrototypePhaseState = BossPrototypePhase::Rest;
+			BossPrototypePhaseTime = 0.0f;
+			BossPrototypePatternCooldown = 2.8f;
+		}
+		break;
+	case BossPrototypePhase::Rest:
+		if (BossPrototypePhaseTime >= BossPrototypePatternCooldown) {
+			int step = BossPrototypePatternStep++ % 3;
+			if (step == 0) BossPrototypePhaseState = BossPrototypePhase::MissileLock;
+			else if (step == 1) BossPrototypePhaseState = BossPrototypePhase::RailgunCharge;
+			else BossPrototypePhaseState = BossPrototypePhase::Bombardment;
+			BossPrototypePhaseTime = 0.0f;
+		}
+		break;
+	default:
+		break;
+	}
+}
+void Game::RenderBossPrototypeObjects()
+{
+	if (!BossPrototypeEnabled || BossPrototypeCoreModel == nullptr || BossPrototypeCores.empty() || Current_Zone == nullptr) return;
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
+	game.PresentShaderType = ShaderType::RenderWithShadow;
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	{
+		using PRID = PBRShader1::RootParamId;
+		gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+		gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
+		gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+		gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+		if (game.Current_Zone->bReqireBakeLight_Raster == false) {
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+		}
+	}
+
+	for (const BossPrototypeCore& core : BossPrototypeCores) {
+		if (!core.Active) continue;
+		matrix world;
+		world.Id();
+		world.right *= 1.65f;
+		world.up *= 1.65f;
+		world.look *= 1.65f;
+		world.pos = core.Position;
+		if (BossPrototypeCoreModel != nullptr) {
+			world.pos -= world.up * BossPrototypeCoreModel->AABB[0].y;
+		}
+		world.pos.y += 0.16f;
+		world.pos.w = 1.0f;
+		float hitRate = core.HitFlashDuration > 0.0f ? min(1.0f, max(0.0f, core.HitFlashTimer / core.HitFlashDuration)) : 0.0f;
+		ModelRenderTintOverrideActive = true;
+		ModelRenderTintOverride = vec4(hitRate * 1.35f, 1.0f, 0.0f, 0.0f);
+		BossPrototypeCoreModel->Render<false>(gd.gpucmd, world, nullptr);
+		ModelRenderTintOverrideActive = false;
+	}
+}
+
+void Game::RenderBossPrototypeAoEs()
+{
+	if (!BossPrototypeEnabled || BossAoEWarnings.empty() || BossPrototypeCircleMesh == nullptr ||
+		BossPrototypeCircleOutlineMesh == nullptr || BossPrototypeSafeCircleMesh == nullptr ||
+		BossPrototypeSafeCircleOutlineMesh == nullptr || BossPrototypeRectMesh == nullptr) return;
+
+	using OCSRP = OnlyColorShader::RootParamId;
+	gd.gpucmd.SetShader(MyOnlyColorShader);
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+	gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Camera, 16, &view, 0);
+
+	for (const BossAoEWarning& warning : BossAoEWarnings) {
+		if (!warning.Active) continue;
+		if (warning.Shape == BossAoEShape::Rectangle && warning.Length >= 38.0f && warning.Age >= warning.WarningTime) continue;
+
+		matrix world;
+		world.Id();
+		if (warning.Shape == BossAoEShape::Circle || warning.Shape == BossAoEShape::SafeCircle) {
+			float pulse = 1.0f + 0.10f * sinf(warning.Age * 18.0f);
+			Mesh* fillMesh = warning.Shape == BossAoEShape::SafeCircle ? BossPrototypeSafeCircleMesh : BossPrototypeCircleMesh;
+			Mesh* outlineMesh = warning.Shape == BossAoEShape::SafeCircle ? BossPrototypeSafeCircleOutlineMesh : BossPrototypeCircleOutlineMesh;
+			world = XMMatrixScaling(warning.Radius * pulse, 0.035f, warning.Radius * pulse);
+			world.pos = warning.Position + vec4(0.0f, 0.255f, 0.0f, 0.0f);
+			world.pos.w = 1.0f;
+			world.transpose();
+			gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Transform, 16, &world, 0);
+			fillMesh->Render(gd.gpucmd, 1, 0);
+
+			matrix ringWorld = XMMatrixScaling(warning.Radius * 1.02f * pulse, 1.0f, warning.Radius * 1.02f * pulse);
+			ringWorld.pos = warning.Position + vec4(0.0f, 0.270f, 0.0f, 0.0f);
+			ringWorld.pos.w = 1.0f;
+			ringWorld.transpose();
+			gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Transform, 16, &ringWorld, 0);
+			outlineMesh->Render(gd.gpucmd, 1, 0);
+		}
+		else {
+			vec4 forward = NormalizeOrFallback(warning.Direction, vec4(0, 0, 1, 0));
+			world.LookAt(forward);
+			world.right *= warning.Width * 0.5f;
+			world.up *= 0.035f;
+			world.look *= warning.Length * 0.5f;
+			world.pos = warning.Position + forward * (warning.Length * 0.5f) + vec4(0.0f, 0.255f, 0.0f, 0.0f);
+			world.pos.w = 1.0f;
+			world.transpose();
+			gd.gpucmd->SetGraphicsRoot32BitConstants(OCSRP::Const_Transform, 16, &world, 0);
+			BossPrototypeRectMesh->Render(gd.gpucmd, 1, 0);
+		}
+	}
+}
+
+void Game::RenderBossPrototypeShield()
+{
+	if (!BossPrototypeEnabled || !BossPrototypeShieldActive || MyWorldTextureShader == nullptr || BossPrototypeShieldMesh == nullptr) return;
+
+	GPUResource* shieldTexture = GetBossShieldTextureResource();
+	if (shieldTexture == nullptr || shieldTexture->resource == nullptr) return;
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	const float pulse = 0.5f + 0.5f * sinf(BossPrototypePhaseTime * 2.8f);
+	const float shieldRadius = kBossPrototypeShieldVisualRadius + 0.14f * pulse;
+	matrix world = XMMatrixRotationY(BossPrototypePhaseTime * 0.35f) * XMMatrixScaling(shieldRadius, shieldRadius, shieldRadius);
+	world.pos = BossPrototypeCenter;
+	world.pos.y = GetBossVisualGroundY() + 1.55f;
+	world.pos.w = 1.0f;
+	world.transpose();
+
+	vec4 tint = vec4(0.48f, 1.35f, 2.25f, 0.24f + 0.06f * pulse);
+
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+	vec4 uvAnim = vec4(1.0f, 1.0f, 0.0f, 0.0f);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+	MyWorldTextureShader->SetTextureCommand(shieldTexture);
+	BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
+}
+
+void Game::RenderAegisShieldVisuals()
+{
+	if (MyWorldTextureShader == nullptr || BossPrototypeShieldMesh == nullptr) return;
+
+	GPUResource* shieldTexture = GetBossShieldTextureResource();
+	if (shieldTexture == nullptr || shieldTexture->resource == nullptr) return;
+
+	bool hasActive = false;
+	for (AegisShieldVisual& visual : gAegisShieldVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age > visual.Duration) {
+			visual.Active = false;
+			continue;
+		}
+		hasActive = true;
+	}
+	if (!hasActive) return;
+	static float sAegisShieldVisualTime = 0.0f;
+	sAegisShieldVisualTime += max(0.0f, DeltaTime);
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	MyWorldTextureShader->SetTextureCommand(shieldTexture);
+
+	for (AegisShieldVisual& visual : gAegisShieldVisuals) {
+		if (!visual.Active) continue;
+
+		vec4 center = visual.Position;
+		if (visual.OwnerId < DynmaicGameObjects.size() && DynmaicGameObjects[visual.OwnerId] != nullptr) {
+			center = DynmaicGameObjects[visual.OwnerId]->worldMat.pos + (visual.GroundDisk ? vec4(0.0f, 0.08f, 0.0f, 0.0f) : vec4(0.0f, 1.05f, 0.0f, 0.0f));
+		}
+
+		float normalizedAge = visual.Age / max(visual.Duration, 0.001f);
+		float pulse = 0.5f + 0.5f * sinf((sAegisShieldVisualTime + normalizedAge) * 8.0f);
+		float radius = visual.Radius * (1.0f + 0.035f * pulse);
+
+		matrix world = XMMatrixRotationY(sAegisShieldVisualTime * 0.45f) *
+			(visual.GroundDisk ? XMMatrixScaling(radius, 0.035f, radius) : XMMatrixScaling(radius, radius, radius));
+		world.pos = center;
+		world.pos.w = 1.0f;
+		world.transpose();
+
+		vec4 tint = visual.GroundDisk
+			? vec4(0.28f, 0.92f, 1.95f, 0.13f + 0.025f * pulse)
+			: vec4(0.42f, 1.22f, 2.15f, 0.11f + 0.025f * pulse);
+		vec4 uvAnim = vec4(1.0f, 1.0f, sAegisShieldVisualTime * 0.04f, sAegisShieldVisualTime * 0.015f);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+		BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
+	}
+}
+
+void Game::RenderFrostBlizzardSnowWaves()
+{
+	if (MyWorldTextureShader == nullptr || BossPrototypeShieldMesh == nullptr || gFrostSnowWaveVisuals.empty()) return;
+	GPUResource* snowTexture = (gParticleSnowTexture.resource != nullptr) ? &gParticleSnowTexture : &gParticleIceTexture;
+	if (snowTexture == nullptr || snowTexture->resource == nullptr || gParticleHealTexture.resource == nullptr) return;
+
+	bool hasActive = false;
+	for (FrostSnowWaveVisual& visual : gFrostSnowWaveVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age > visual.Duration) {
+			visual.Active = false;
+			continue;
+		}
+		hasActive = true;
+	}
+	gFrostSnowWaveVisuals.erase(std::remove_if(gFrostSnowWaveVisuals.begin(), gFrostSnowWaveVisuals.end(),
+		[](const FrostSnowWaveVisual& visual) {
+			return !visual.Active;
+		}), gFrostSnowWaveVisuals.end());
+	if (!hasActive) return;
+
+	static float sFrostSnowWaveTime = 0.0f;
+	sFrostSnowWaveTime += max(0.0f, DeltaTime);
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+
+	for (const FrostSnowWaveVisual& visual : gFrostSnowWaveVisuals) {
+		if (!visual.Active) continue;
+		MyWorldTextureShader->SetTextureCommand(visual.HealWave ? &gParticleHealTexture : snowTexture);
+
+		float t = min(max(visual.Age / max(visual.Duration, 0.001f), 0.0f), 1.0f);
+		float eased = 1.0f - powf(1.0f - t, 2.35f);
+		float radius = max(1.0f, visual.Radius * eased);
+		float alpha = sinf(t * XM_PI) * (visual.HealWave ? 0.30f : 0.24f);
+		float spin = sFrostSnowWaveTime * 0.42f + visual.Position.x * 0.017f + visual.Position.z * 0.021f;
+
+		matrix world = XMMatrixRotationY(spin) * XMMatrixScaling(radius, 0.030f, radius);
+		world.pos = visual.Position + vec4(0.0f, 0.10f, 0.0f, 0.0f);
+		world.pos.w = 1.0f;
+		world.transpose();
+
+		const int frameCols = 4;
+		const int frameRows = 4;
+		int frame = min((int)(t * 13.0f), frameCols * frameRows - 1);
+		vec4 uvAnim = vec4(1.0f / (float)frameCols, 1.0f / (float)frameRows,
+			(float)(frame % frameCols) / (float)frameCols,
+			(float)(frame / frameCols) / (float)frameRows);
+		vec4 tint = visual.HealWave
+			? vec4(0.25f, 1.65f, 0.72f, alpha)
+			: vec4(0.72f, 1.08f, 1.95f, alpha);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+		BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
+	}
+}
+
+void Game::RenderStatusEffectOverlays()
+{
+	return;
+}
+
+void Game::RenderRailgunOrbitVisuals()
+{
+	if (MyWorldTextureShader == nullptr || BossPrototypeShieldMesh == nullptr || gRailgunOrbitVisuals.empty()) return;
+	if (gParticleElectricTexture.resource == nullptr && gParticleYellowTexture.resource == nullptr) return;
+
+	bool hasActive = false;
+	for (RailgunOrbitVisual& visual : gRailgunOrbitVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age > visual.Duration) {
+			visual.Active = false;
+			continue;
+		}
+		hasActive = true;
+	}
+	if (!hasActive) return;
+
+	static float sRailgunOrbitTime = 0.0f;
+	sRailgunOrbitTime += max(0.0f, DeltaTime);
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	for (const RailgunOrbitVisual& visual : gRailgunOrbitVisuals) {
+		if (!visual.Active) continue;
+		GPUResource* orbitTexture = visual.Yellow && gParticleYellowTexture.resource != nullptr
+			? &gParticleYellowTexture : &gParticleElectricTexture;
+		if (orbitTexture->resource == nullptr) continue;
+		MyWorldTextureShader->SetTextureCommand(orbitTexture);
+
+		vec4 center = visual.Position;
+		if (visual.OwnerId < DynmaicGameObjects.size() && DynmaicGameObjects[visual.OwnerId] != nullptr) {
+			center = DynmaicGameObjects[visual.OwnerId]->worldMat.pos + vec4(0.0f, visual.Yellow ? 0.92f : 1.05f, 0.0f, 0.0f);
+		}
+
+		float life = min(max(visual.Age / max(visual.Duration, 0.001f), 0.0f), 1.0f);
+		float alpha = min(life * 5.0f, 1.0f) * min((1.0f - life) * 7.0f, 1.0f);
+		const int orbitCount = visual.Yellow ? 6 : 5;
+		for (int i = 0; i < orbitCount; ++i) {
+			float angle = sRailgunOrbitTime * 5.8f + i * (XM_2PI / (float)orbitCount);
+			float bob = sinf(sRailgunOrbitTime * 8.0f + i * 1.7f) * 0.12f;
+			vec4 orbPos = center + vec4(cosf(angle) * visual.Radius, bob, sinf(angle) * visual.Radius, 0.0f);
+			float orbScale = 0.22f + 0.040f * sinf(sRailgunOrbitTime * 11.0f + i);
+
+			matrix world = XMMatrixScaling(orbScale, orbScale, orbScale);
+			world.pos = orbPos;
+			world.pos.w = 1.0f;
+			world.transpose();
+
+			vec4 tint = visual.Yellow
+				? vec4(2.55f, 1.48f, 0.18f, 0.56f * alpha)
+				: vec4(0.50f, 1.02f, 2.55f, 0.50f * alpha);
+			int frame = visual.Yellow
+				? (((int)(sRailgunOrbitTime * 14.0f) + i * 2) % 16)
+				: (((int)(sRailgunOrbitTime * 16.0f) + i * 3) % 32);
+			vec4 uvAnim = visual.Yellow
+				? vec4(0.25f, 0.25f, (float)(frame % 4) * 0.25f, (float)(frame / 4) * 0.25f)
+				: vec4(0.25f, 0.125f, (float)(frame % 4) * 0.25f, (float)(frame / 4) * 0.125f);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+			BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
+		}
+	}
+}
+
+void Game::RenderDualBladeFloorVisuals()
+{
+	if (MyWorldTextureShader == nullptr || BossPrototypeShieldMesh == nullptr || gDualBladeFloorVisuals.empty()) return;
+	if (gParticleElectricTexture.resource == nullptr) return;
+
+	bool hasActive = false;
+	for (DualBladeFloorVisual& visual : gDualBladeFloorVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age > visual.Duration) {
+			visual.Active = false;
+			continue;
+		}
+		hasActive = true;
+	}
+	if (!hasActive) return;
+
+	static float sDualBladeFloorTime = 0.0f;
+	sDualBladeFloorTime += max(0.0f, DeltaTime);
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	MyWorldTextureShader->SetTextureCommand(&gParticleElectricTexture);
+
+	for (const DualBladeFloorVisual& visual : gDualBladeFloorVisuals) {
+		if (!visual.Active) continue;
+		vec4 center = visual.Position;
+		if (visual.OwnerId < DynmaicGameObjects.size() && DynmaicGameObjects[visual.OwnerId] != nullptr) {
+			center = DynmaicGameObjects[visual.OwnerId]->worldMat.pos;
+		}
+		float life = min(max(visual.Age / max(visual.Duration, 0.001f), 0.0f), 1.0f);
+		float fade = min(life * 7.0f, 1.0f) * min((1.0f - life) * 8.0f, 1.0f);
+		float pulse = 0.94f + sinf(sDualBladeFloorTime * 5.5f) * 0.06f;
+		matrix world = XMMatrixRotationY(sDualBladeFloorTime * 0.65f) *
+			XMMatrixScaling(visual.Radius * pulse, 0.025f, visual.Radius * pulse);
+		world.pos = center + vec4(0.0f, 0.07f, 0.0f, 0.0f);
+		world.pos.w = 1.0f;
+		world.transpose();
+		vec4 tint = vec4(0.30f, 0.82f, 2.10f, 0.20f * fade);
+		int frame = ((int)(sDualBladeFloorTime * 12.0f)) % 32;
+		vec4 uvAnim = vec4(0.25f, 0.125f, (float)(frame % 4) * 0.25f, (float)(frame / 4) * 0.125f);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+		BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
+	}
+}
+
+void Game::RenderHackerEmpVisuals()
+{
+	if (MyWorldTextureShader == nullptr || BossPrototypeShieldMesh == nullptr || gHackerEmpVisuals.empty()) return;
+	if (gParticleHackTexture.resource == nullptr) return;
+	static float visualTime = 0.0f;
+	bool active = false;
+	for (HackerEmpVisual& visual : gHackerEmpVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age > visual.Duration) {
+			visual.Active = false;
+			continue;
+		}
+		active = true;
+	}
+	if (!active) return;
+	visualTime = fmodf(visualTime + max(0.0f, DeltaTime), 40.0f);
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	MyWorldTextureShader->SetTextureCommand(&gParticleHackTexture);
+	for (const HackerEmpVisual& visual : gHackerEmpVisuals) {
+		if (!visual.Active) continue;
+		vec4 center = visual.Position;
+		if (visual.GroundField && visual.OwnerId < DynmaicGameObjects.size() && DynmaicGameObjects[visual.OwnerId] != nullptr)
+			center = DynmaicGameObjects[visual.OwnerId]->worldMat.pos;
+		float t = min(max(visual.Age / max(visual.Duration, 0.001f), 0.0f), 1.0f);
+		float eased = 1.0f - powf(1.0f - t, 2.6f);
+		float scale = visual.GroundField ? visual.Radius : max(0.25f, visual.Radius * eased);
+		matrix world = XMMatrixRotationY(visualTime * 0.28f) * XMMatrixScaling(scale,
+			visual.GroundField ? 0.035f : scale, scale);
+		world.pos = center + vec4(0.0f, visual.GroundField ? 0.09f : 1.0f, 0.0f, 0.0f);
+		world.pos.w = 1.0f;
+		world.transpose();
+		float alpha = visual.GroundField ? 0.18f : powf(1.0f - t, 0.65f) * 0.42f;
+		vec4 tint = vec4(1.65f, 0.28f, 2.55f, alpha);
+		vec4 uvAnim = vec4(1, 1, 0, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+		BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
+	}
+}
+
+void Game::RenderBossPrototypeBeam()
+{
+	if (!BossPrototypeEnabled || MyWorldTextureShader == nullptr || BossPrototypeBeamMesh == nullptr) return;
+	bool isRailgun = BossPrototypePhaseState == BossPrototypePhase::RailgunCharge;
+	bool isRotatingLaser = BossPrototypePhaseState == BossPrototypePhase::RotatingLaser;
+	if (!isRailgun && !isRotatingLaser) return;
+
+	const float fireStart = isRotatingLaser ? 0.85f : 2.55f;
+	const float fireEnd = isRotatingLaser ? 8.1f : 4.65f;
+	if (BossPrototypePhaseTime < fireStart || BossPrototypePhaseTime > fireEnd) return;
+
+	GPUResource* beamTexture = GetBossBeamTextureResource();
+	if (beamTexture == nullptr || beamTexture->resource == nullptr) return;
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	MyWorldTextureShader->SetTextureCommand(beamTexture);
+
+	auto SetBeamFrame = [&](float age, int seedOffset, float cropU0, float cropU1, float cropV0, float cropV1) {
+		const int frameCols = 3;
+		const int frameRows = 2;
+		const int frameCount = frameCols * frameRows;
+		int frame = ((int)(age * 18.0f) + seedOffset) % frameCount;
+		if (frame < 0) frame += frameCount;
+		const float cellU = 1.0f / (float)frameCols;
+		const float cellV = 1.0f / (float)frameRows;
+		vec4 uvAnim = vec4(cellU * (cropU1 - cropU0), cellV * (cropV1 - cropV0),
+			(float)(frame % frameCols) * cellU + cropU0 * cellU,
+			(float)(frame / frameCols) * cellV + cropV0 * cellV);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+	};
+
+	auto RenderBeamPass = [&](vec4 origin, vec4 beamDirection, float beamLength, float halfWidth, float halfHeight, float pulse, vec4 tint, float volumeAlphaScale) {
+		vec4 beamCenter = origin + beamDirection * (beamLength * 0.5f);
+		vec4 side = NormalizeOrFallback(vec4(0, 1, 0, 0).cross(beamDirection), vec4(1, 0, 0, 0));
+		vec4 up = NormalizeOrFallback(beamDirection.cross(side), vec4(0, 1, 0, 0));
+		auto RenderPlane = [&](vec4 planeSide, float widthScale, vec4 planeTint) {
+			matrix world;
+			vec4 planeUp = NormalizeOrFallback(beamDirection.cross(planeSide), up);
+			world.Id();
+			world.right = planeSide * halfWidth * widthScale * (1.0f + 0.06f * pulse);
+			world.up = planeUp * halfHeight;
+			world.look = beamDirection * (beamLength * 0.5f);
+			world.pos = beamCenter;
+			world.pos.w = 1.0f;
+			world.transpose();
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &planeTint, 0);
+			BossPrototypeBeamMesh->Render(gd.gpucmd, 1);
+		};
+
+		RenderPlane(side, 1.0f, tint);
+
+		if (volumeAlphaScale > 0.001f) {
+			vec4 volumeTint = vec4(tint.x * 0.72f, tint.y * 0.78f, tint.z * 0.88f, tint.w * volumeAlphaScale);
+			RenderPlane(up, 0.86f, volumeTint);
+			RenderPlane(NormalizeOrFallback(side + up, side), 0.70f, volumeTint);
+			RenderPlane(NormalizeOrFallback(side - up, side), 0.70f, volumeTint);
+		}
+	};
+
+	if (isRotatingLaser) {
+		for (const BossAoEWarning& warning : BossAoEWarnings) {
+			if (!warning.Active || warning.Shape != BossAoEShape::Rectangle || warning.Length < 38.0f) continue;
+			if (warning.Age < warning.WarningTime) continue;
+
+			vec4 beamDirection = NormalizeOrFallback(warning.Direction, BossPrototypeAimDirection);
+			beamDirection.y = 0.0f;
+			beamDirection = NormalizeOrFallback(beamDirection, vec4(0, 0, 1, 0));
+
+			const float beamAge = warning.Age - warning.WarningTime;
+			const float pulse = 0.82f + 0.18f * sinf((BossPrototypePhaseTime + warning.Age) * 82.0f);
+			SetBeamFrame(beamAge, (int)(warning.Direction.x * 17.0f + warning.Direction.z * 23.0f), 0.22f, 0.82f, 0.08f, 0.92f);
+			vec4 muzzleOrigin = BossPrototypeCenter + beamDirection * 1.15f;
+			muzzleOrigin.y = GetBossVisualGroundY() + 1.95f;
+			muzzleOrigin.w = 1.0f;
+			RenderBeamPass(muzzleOrigin, beamDirection, warning.Length, 1.08f, 1.16f, pulse,
+				vec4(1.55f, 0.32f, 0.28f, 0.20f + 0.05f * pulse), 0.52f);
+		}
+		return;
+	}
+
+	const float beamLength = isRotatingLaser ? 40.0f : 36.0f;
+	const float beamHalfWidth = isRotatingLaser ? 1.05f : 1.18f;
+	const float beamHalfHeight = 1.16f;
+	const float t = (BossPrototypePhaseTime - fireStart) / max(fireEnd - fireStart, 0.001f);
+	const float pulse = (isRotatingLaser ? 0.82f : 0.72f) + (isRotatingLaser ? 0.18f : 0.28f) * sinf(BossPrototypePhaseTime * 82.0f);
+	vec4 beamDirection = NormalizeOrFallback(BossPrototypeRailgunDirection, BossPrototypeAimDirection);
+	beamDirection.y = 0.0f;
+	beamDirection = NormalizeOrFallback(beamDirection, vec4(0, 0, 1, 0));
+
+	vec4 tint = isRotatingLaser ? vec4(1.55f, 0.32f, 0.28f, 0.20f + 0.05f * pulse)
+		: vec4(1.60f, 0.34f, 0.30f, 0.22f + 0.05f * pulse + 0.02f * (1.0f - t));
+	SetBeamFrame(BossPrototypePhaseTime - fireStart, 0, 0.22f, 0.82f, 0.08f, 0.92f);
+	vec4 railOrigin = BossPrototypeCenter + beamDirection * 1.15f;
+	railOrigin.y = GetBossVisualGroundY() + 1.95f;
+	railOrigin.w = 1.0f;
+	RenderBeamPass(railOrigin, beamDirection, beamLength, beamHalfWidth, beamHalfHeight, pulse, tint, 0.52f);
+}
+
+void Game::RenderSupportDrones()
+{
+	if (SupportDroneModel == nullptr) return;
+	static float droneBobTime = 0.0f;
+	droneBobTime += max(0.0f, DeltaTime);
+
+	for (GameObject* object : DynmaicGameObjects) {
+		Player* droneOwner = dynamic_cast<Player*>(object);
+		if (droneOwner == nullptr || (PlayerJob)droneOwner->m_currentJob != PlayerJob::DroneOperator) continue;
+		if (!droneOwner->tag[GameObjectTag::Tag_Enable]) continue;
+
+		for (int droneIndex = 0; droneIndex < 2; ++droneIndex) {
+			const bool leftDrone = droneIndex == 0;
+			const float phase = droneBobTime * 2.6f + (leftDrone ? 0.0f : XM_PI);
+			const float bob = sinf(phase) * 0.09f;
+			vec4 dronePosition = GetSupportDronePosition(droneOwner, leftDrone, bob);
+
+			matrix droneWorld = XMMatrixRotationY(XMConvertToRadians(-90.0f)) *
+				(XMMATRIX)droneOwner->worldMat;
+			droneWorld.right *= 0.24f;
+			droneWorld.up *= 0.24f;
+			droneWorld.look *= 0.24f;
+			droneWorld.pos = dronePosition;
+			droneWorld.pos.w = 1.0f;
+			SupportDroneModel->Render<false>(gd.gpucmd, droneWorld, nullptr);
+
+			if (droneOwner->m_droneFlightVisualTimer > 0.0f) {
+				const float side = leftDrone ? -1.0f : 1.0f;
+				vec4 tetherTarget = droneOwner->worldMat.pos + droneOwner->worldMat.up * 1.05f +
+					droneOwner->worldMat.right * (0.28f * side);
+				tetherTarget.w = 1.0f;
+				QueueSupportBeam(dronePosition, tetherTarget, 0.035f, 0.14f,
+					vec4(0.32f, 1.48f, 0.82f, 0.34f));
+				QueueSupportBeam(dronePosition, tetherTarget, 0.072f, 0.14f,
+					vec4(0.72f, 1.72f, 1.35f, 0.25f), true);
+			}
+		}
+	}
+}
+
+void Game::RenderPlayerRailgunBeams()
+{
+	if (MyWorldTextureShader == nullptr || BossPrototypeBeamMesh == nullptr) return;
+
+	bool hasActive = false;
+	for (RailgunBeamVisual& visual : gRailgunBeamVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age > visual.Duration) {
+			visual.Active = false;
+			continue;
+		}
+		hasActive = true;
+	}
+	if (!hasActive) return;
+
+	GPUResource* beamTexture = GetPlayerBeamTextureResource();
+	if (beamTexture == nullptr || beamTexture->resource == nullptr) return;
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+	static float supportBeamAnimationTime = 0.0f;
+	supportBeamAnimationTime = fmodf(supportBeamAnimationTime + max(0.0f, DeltaTime), 30.0f);
+
+	auto SetBeamFrame = [&](float age, bool useEnergyTexture) {
+		const int frameCols = useEnergyTexture ? 8 : 3;
+		const int frameRows = useEnergyTexture ? 8 : 2;
+		const int frameCount = frameCols * frameRows;
+		int frame = ((int)(age * (useEnergyTexture ? 28.0f : 22.0f))) % frameCount;
+		const float cellU = 1.0f / (float)frameCols;
+		const float cellV = 1.0f / (float)frameRows;
+		vec4 uvAnim = useEnergyTexture
+			? vec4(cellU, cellV, (float)(frame % frameCols) * cellU,
+				(float)(frame / frameCols) * cellV)
+			: vec4(cellU * 0.60f, cellV * 0.84f,
+				(float)(frame % frameCols) * cellU + 0.22f * cellU,
+				(float)(frame / frameCols) * cellV + 0.08f * cellV);
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+	};
+
+	for (const RailgunBeamVisual& visual : gRailgunBeamVisuals) {
+		if (!visual.Active) continue;
+
+		float t = visual.Age / max(visual.Duration, 0.001f);
+		float fade = powf(max(1.0f - t, 0.0f), 0.55f);
+		float pulse = 0.75f + 0.25f * sinf(visual.Age * 95.0f);
+		vec4 dir = NormalizeOrFallback(visual.Direction, vec4(0, 0, 1, 0));
+		vec4 center = visual.Origin + dir * (visual.Length * 0.5f);
+		vec4 side = NormalizeOrFallback(vec4(0, 1, 0, 0).cross(dir), vec4(1, 0, 0, 0));
+		vec4 up = NormalizeOrFallback(dir.cross(side), vec4(0, 1, 0, 0));
+		float halfWidth = visual.Width * (1.0f + 0.05f * pulse);
+		float halfHeight = visual.Width * 0.62f;
+		vec4 tint = visual.Tint;
+		tint.w *= (0.82f + 0.18f * pulse) * fade;
+
+		const bool useEnergyTexture = visual.UseEnergyTexture && gParticleEnergyTexture.resource != nullptr;
+		MyWorldTextureShader->SetTextureCommand(useEnergyTexture ? &gParticleEnergyTexture : beamTexture);
+		SetBeamFrame(useEnergyTexture ? supportBeamAnimationTime : visual.Age, useEnergyTexture);
+		auto RenderPlane = [&](vec4 planeSide, float widthScale, vec4 planeTint) {
+			matrix world;
+			vec4 planeUp = NormalizeOrFallback(dir.cross(planeSide), up);
+			world.Id();
+			world.right = planeSide * halfWidth * widthScale;
+			world.up = planeUp * halfHeight;
+			world.look = dir * (visual.Length * 0.5f);
+			world.pos = center;
+			world.pos.w = 1.0f;
+			world.transpose();
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &planeTint, 0);
+			BossPrototypeBeamMesh->Render(gd.gpucmd, 1);
+		};
+
+		RenderPlane(side, 1.0f, tint);
+		vec4 afterImageTint = vec4(tint.x * 0.65f, tint.y * 0.72f, tint.z, tint.w * 0.22f);
+		RenderPlane(side, 1.55f, afterImageTint);
+		vec4 volumeTint = vec4(tint.x * 0.72f, tint.y * 0.78f, tint.z * 0.88f, tint.w * 0.24f);
+		RenderPlane(up, 0.84f, volumeTint);
+	}
+}
+
+void Game::RenderBossPrototypeMissiles()
+{
+	for (SkillMissileVisual& visual : gSkillMissileVisuals) {
+		if (!visual.Active) continue;
+		visual.Age += max(0.0f, DeltaTime);
+		if (visual.Age >= visual.Duration + 0.08f) {
+			visual.Active = false;
+		}
+	}
+	gSkillMissileVisuals.erase(std::remove_if(gSkillMissileVisuals.begin(), gSkillMissileVisuals.end(),
+		[](const SkillMissileVisual& visual) {
+			return !visual.Active;
+		}), gSkillMissileVisuals.end());
+
+	if (MyWorldTextureShader == nullptr || BossPrototypeMissileMesh == nullptr ||
+		(BossMissileVisuals.empty() && gSkillMissileVisuals.empty())) return;
+
+	GPUResource* bossMissileTexture = GetBossAirStrikeTextureResource();
+	GPUResource* skillMissileTexture = GetSkillAirStrikeTextureResource();
+	bool canRenderBossMissiles = bossMissileTexture != nullptr && bossMissileTexture->resource != nullptr;
+	bool canRenderSkillMissiles = skillMissileTexture != nullptr && skillMissileTexture->resource != nullptr;
+	if (!canRenderBossMissiles && !canRenderSkillMissiles) return;
+
+	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
+	view.transpose();
+
+	using WTSRP = WorldTextureShader::RootParamId;
+	gd.gpucmd.SetShader(MyWorldTextureShader);
+	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
+
+	if (canRenderBossMissiles) {
+		MyWorldTextureShader->SetTextureCommand(bossMissileTexture);
+		for (const BossMissileVisual& visual : BossMissileVisuals) {
+			if (!visual.Active) continue;
+
+			float t = min(max(visual.Age / max(visual.Duration, 0.001f), 0.0f), 1.0f);
+			float eased = t * t * (3.0f - 2.0f * t);
+			vec4 pos = visual.Start * (1.0f - eased) + visual.Target * eased;
+			pos.w = 1.0f;
+
+			vec4 dir = NormalizeOrFallback(visual.Target - visual.Start, vec4(0, -1, 0, 0));
+			float flare = 1.0f + 0.55f * sinf((visual.Age + visual.Radius) * 28.0f);
+			float fadeIn = min(t * 4.0f, 1.0f);
+			float fadeOut = min((1.0f - t) * 5.0f, 1.0f);
+
+			matrix world;
+			world.LookAt(dir);
+			world.right *= visual.Radius * 1.18f * flare;
+			world.up *= visual.Radius * 1.18f * flare;
+			world.look *= 4.2f + visual.Radius * 1.25f;
+			world.pos = pos;
+			world.pos.w = 1.0f;
+			world.transpose();
+
+			vec4 tint = vec4(3.2f, 1.75f, 0.72f, 1.0f * fadeIn * fadeOut);
+			const int frameCols = 4;
+			const int frameRows = 3;
+			const int frame = 0;
+			vec4 uvAnim = vec4(1.0f / (float)frameCols, 1.0f / (float)frameRows,
+				(float)(frame % frameCols) / (float)frameCols,
+				(float)(frame / frameCols) / (float)frameRows);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+			BossPrototypeMissileMesh->Render(gd.gpucmd, 1);
+		}
+	}
+
+	if (canRenderSkillMissiles) {
+		MyWorldTextureShader->SetTextureCommand(skillMissileTexture);
+		for (const SkillMissileVisual& visual : gSkillMissileVisuals) {
+			if (!visual.Active) continue;
+
+			float t = min(max(visual.Age / max(visual.Duration, 0.001f), 0.0f), 1.0f);
+			float eased = t * t * (3.0f - 2.0f * t);
+			vec4 pos = visual.Start * (1.0f - eased) + visual.Target * eased;
+			pos.w = 1.0f;
+
+			vec4 dir = NormalizeOrFallback(visual.Target - visual.Start, vec4(0, -1, 0, 0));
+			float flare = 1.0f + 0.55f * sinf((visual.Age + visual.Radius) * 28.0f);
+			float fadeIn = min(t * 4.0f, 1.0f);
+			float fadeOut = min((1.0f - t) * 5.0f, 1.0f);
+
+			matrix world;
+			world.LookAt(dir);
+			world.right *= visual.Radius * 1.18f * flare;
+			world.up *= visual.Radius * 1.18f * flare;
+			world.look *= 4.2f + visual.Radius * 1.25f;
+			world.pos = pos;
+			world.pos.w = 1.0f;
+			world.transpose();
+
+			vec4 tint = vec4(0.74f, 1.32f, 3.4f, 1.0f * fadeIn * fadeOut);
+			const int frameCols = 4;
+			const int frameRows = 3;
+			const int frame = 0;
+			vec4 uvAnim = vec4(1.0f / (float)frameCols, 1.0f / (float)frameRows,
+				(float)(frame % frameCols) / (float)frameCols,
+				(float)(frame / frameCols) / (float)frameRows);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Transform, 16, &world, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Tint, 4, &tint, 0);
+			BossPrototypeMissileMesh->Render(gd.gpucmd, 1);
+		}
+	}
+}
+
 void Game::InitParticlePool(ParticlePool& pool, UINT count)
 {
 	pool.Count = count;
@@ -1750,6 +4347,9 @@ void Game::Init()
 		MyScreenShader = new ScreenShader();
 		MyScreenShader->InitShader();
 
+		MyWorldTextureShader = new WorldTextureShader();
+		MyWorldTextureShader->InitShader();
+
 		MyPBRShader1 = new PBRShader1();
 		MyPBRShader1->InitShader();
 
@@ -1778,11 +4378,21 @@ void Game::Init()
 		FireTextureRes.CreateTexture_fromFile(L"Resources/fire.jpg", game.basicTexFormat, game.basicTexMip /*DXGI_FORMAT_UNKNOWN, 1*/, true);
 		gParticleSecondaryTexture.CreateTexture_fromFile(L"Resources/fire2.jpg", game.basicTexFormat, game.basicTexMip, true);
 		gParticleFlipbookTexture.CreateTexture_fromFile(L"Resources/fire.dds", game.basicTexFormat, game.basicTexMip, true);
-		gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.jpg", game.basicTexFormat, game.basicTexMip, true);
+		gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleIceTexture.CreateTexture_fromFile(L"Resources/ice.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleBloodTexture.CreateTexture_fromFile(L"Resources/blood.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleExplosionTexture.CreateTexture_fromFile(L"Resources/explosion.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleEnergyTexture.CreateTexture_fromFile(L"Resources/energy.jpg", game.basicTexFormat, game.basicTexMip, true);
+		gParticleAirStrikeTexture.CreateTexture_fromFile(L"Resources/misaile.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleSkillAirStrikeTexture.CreateTexture_fromFile(L"Resources/rifle_missile_blue.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleChargeTexture.CreateTexture_fromFile(L"Resources/charge.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleBeamTexture.CreateTexture_fromFile(L"Resources/beam.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleBossBeamTexture.CreateTexture_fromFile(L"Resources/boss_beam_red.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleShieldTexture.CreateTexture_fromFile(L"Resources/shield.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleYellowTexture.CreateTexture_fromFile(L"Resources/yellowEffect.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleHackTexture.CreateTexture_fromFile(L"Resources/HackingEffect.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleHealTexture.CreateTexture_fromFile(L"Resources/HealEffect.png", game.basicTexFormat, game.basicTexMip, true);
+		gParticleSnowTexture.CreateTexture_fromFile(L"Resources/snow.png", game.basicTexFormat, game.basicTexMip, true);
 
 		//텍스트 출력에 사용할 메쉬를 가져온다.
 		TextMesh = new UVMesh();
@@ -1819,7 +4429,13 @@ void Game::Init()
 			InitTransientParticlePool(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles, MUZZLE_FLASH_COUNT);
 			InitTransientParticlePool(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles, BULLET_TRACER_COUNT);
 			InitTransientParticlePool(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles, ICE_PROJECTILE_COUNT);
-			InitTransientParticlePool(gPortalPool, gPortalUpload, gPortalParticles, 1024);   // [party/dungeon] portal particles
+			InitTransientParticlePool(gPortalPool, gPortalUpload, gPortalParticles, 1024);
+			InitTransientParticlePool(gBossExplosionPool, gBossExplosionUpload, gBossExplosionParticles, BOSS_EXPLOSION_PARTICLE_COUNT);
+			InitTransientParticlePool(gStatusIcePool, gStatusIceUpload, gStatusIceParticles, STATUS_PARTICLE_COUNT);
+			InitTransientParticlePool(gStatusFirePool, gStatusFireUpload, gStatusFireParticles, STATUS_PARTICLE_COUNT);
+			InitTransientParticlePool(gStatusYellowPool, gStatusYellowUpload, gStatusYellowParticles, STATUS_PARTICLE_COUNT);
+			InitTransientParticlePool(gStatusHackPool, gStatusHackUpload, gStatusHackParticles, STATUS_PARTICLE_COUNT);
+			InitTransientParticlePool(gStatusHealPool, gStatusHealUpload, gStatusHealParticles, STATUS_PARTICLE_COUNT);
 		}
 
 		ParticleDraw = new ParticleShader();
@@ -1829,6 +4445,30 @@ void Game::Init()
 
 		OBBDebugMesh = new Mesh();
 		OBBDebugMesh->CreateWallMesh(1.0f, 1.0f, 1.0f, vec4(1, 1, 1, 1));
+
+		BossPrototypeCircleMesh = new Mesh();
+		BossPrototypeCircleMesh->CreateFlatDiskMesh(1.0f, 0.0f, 72, vec4(1.0f, 0.02f, 0.02f, 0.16f));
+
+		BossPrototypeCircleOutlineMesh = new Mesh();
+		BossPrototypeCircleOutlineMesh->CreateFlatDiskMesh(1.0f, 0.965f, 72, vec4(1.0f, 0.02f, 0.02f, 0.72f));
+
+		BossPrototypeSafeCircleMesh = new Mesh();
+		BossPrototypeSafeCircleMesh->CreateFlatDiskMesh(1.0f, 0.0f, 72, vec4(0.05f, 0.35f, 1.0f, 0.20f));
+
+		BossPrototypeSafeCircleOutlineMesh = new Mesh();
+		BossPrototypeSafeCircleOutlineMesh->CreateFlatDiskMesh(1.0f, 0.965f, 72, vec4(0.12f, 0.62f, 1.0f, 0.86f));
+
+		BossPrototypeRectMesh = new Mesh();
+		BossPrototypeRectMesh->CreateWallMesh(1.0f, 1.0f, 1.0f, vec4(1.0f, 0.02f, 0.02f, 0.42f));
+
+		BossPrototypeBeamMesh = new UVMesh();
+		BossPrototypeBeamMesh->CreateBeamMesh(vec4(1.0f, 1.0f, 1.0f, 1.0f), 1.0f, 1.0f);
+
+		BossPrototypeMissileMesh = new UVMesh();
+		BossPrototypeMissileMesh->CreateMissileSpriteMesh(vec4(1.0f, 1.0f, 1.0f, 1.0f), 1.0f, 1.0f);
+
+		BossPrototypeShieldMesh = new UVMesh();
+		BossPrototypeShieldMesh->CreateSphereMesh(1.0f, 48, 24, vec4(1.0f, 1.0f, 1.0f, 0.55f));
 
 		SetLight();
 
@@ -1855,13 +4495,41 @@ void Game::Init()
 		animRun.LoadHumanoidAnimation("Resources/Animation/Run.Humanoid_animation");
 		HumanoidAnimationTable.push_back(animRun);  // Run
 
-		HumanoidAnimation animAim;
-		animAim.LoadHumanoidAnimation("Resources/Animation/Aim.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animAim);  // 3: Aim
+		HumanoidAnimation animRifleAimIdle;
+		animRifleAimIdle.LoadHumanoidAnimation("Resources/Animation/rifle_aim_idle.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animRifleAimIdle); // 3: Rifle Aim Idle
 
-		HumanoidAnimation animShoot;
-		animShoot.LoadHumanoidAnimation("Resources/Animation/Shoot.Humanoid_animation");
-		HumanoidAnimationTable.push_back(animShoot); // 4: Shoot
+		HumanoidAnimation animRifleAimShoot;
+		animRifleAimShoot.LoadHumanoidAnimation("Resources/Animation/rifle_aim_shoot.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animRifleAimShoot); // 4: Rifle Aim Shoot
+
+		HumanoidAnimation animPistolAimIdle;
+		animPistolAimIdle.LoadHumanoidAnimation("Resources/Animation/pistol_aim_idle.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animPistolAimIdle); // 5: Pistol Aim Idle
+
+		HumanoidAnimation animPistolAimShoot;
+		animPistolAimShoot.LoadHumanoidAnimation("Resources/Animation/pistol_aim_shoot.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animPistolAimShoot); // 6: Pistol Aim Shoot
+
+		HumanoidAnimation animJump;
+		animJump.LoadHumanoidAnimation("Resources/Animation/jump.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animJump); // 7: Jump
+
+		HumanoidAnimation animReload;
+		animReload.LoadHumanoidAnimation("Resources/Animation/Reloading.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animReload); // 8: Rifle Reload
+
+		HumanoidAnimation animPistolReload;
+		animPistolReload.LoadHumanoidAnimation("Resources/Animation/DualGun_Reload.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animPistolReload); // 9: Pistol Reload
+
+		HumanoidAnimation animDualGunAim;
+		animDualGunAim.LoadHumanoidAnimation("Resources/Animation/DualGun_Aim.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animDualGunAim); // 10: Dual Gun Aim
+
+		HumanoidAnimation animDualGunShoot;
+		animDualGunShoot.LoadHumanoidAnimation("Resources/Animation/DualGun_Aim_Shoot.Humanoid_animation");
+		HumanoidAnimationTable.push_back(animDualGunShoot); // 11: Dual Gun Shoot
 
 		Model* PlayerModel = new Model();
 		PlayerModel->LoadModelFile2("Resources/Model/Remy.model");
@@ -1876,10 +4544,25 @@ void Game::Init()
 		Model* DroneModel = new Model();
 		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
 		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
+		game.SupportDroneModel = DroneModel;
 
 		Model* TurretModel = new Model();
 		TurretModel->LoadModelFile2("Resources/Model/turret.model");
 		int turretMesh_index = Shape::AddModel("MonsterTurret", TurretModel);
+
+		BossPrototypeBossModel = new Model();
+		BossPrototypeBossModel->LoadModelFile2("Resources/Model/turret_boss_mini.model");
+		BossPrototypeBossShapeIndex = Shape::AddModel("TurretBoss", BossPrototypeBossModel);
+		BossPrototypeBossPlatformNodeIndex = BossPrototypeBossModel->FindNodeIndexByName("Rotational Platform");
+		BossPrototypeBossHeadNodeIndex = BossPrototypeBossModel->FindNodeIndexByName("Turret Head");
+
+		BossPrototypeMiniTurretModel = new Model();
+		BossPrototypeMiniTurretModel->LoadModelFile2("Resources/Model/turret_boss_mini.model");
+		BossPrototypeMiniTurretShapeIndex = Shape::AddModel("TurretBossMini", BossPrototypeMiniTurretModel);
+
+		BossPrototypeCoreModel = new Model();
+		BossPrototypeCoreModel->LoadModelFile2("Resources/Model/turret_core.model");
+		BossPrototypeCoreShapeIndex = Shape::AddModel("TurretCore", BossPrototypeCoreModel);
 
 		Mesh* portalMesh = new Mesh();
 		portalMesh->CreateWallMesh(2.0f, 3.0f, 0.2f, 0.0f);
@@ -1992,6 +4675,29 @@ void Game::Init()
 				addBarrel("Cylinder.109");
 				addBarrel("Cylinder.110");
 			}*/
+
+			auto LoadJobWeaponModel = [&](const char* shapeName, const char* modelPath) -> Model* {
+				Model* model = new Model();
+				model->LoadModelFile2(modelPath);
+				Shape::AddModel(shapeName, model);
+				return model;
+			};
+			game.DualRevolverModel = LoadJobWeaponModel("DualRevolver", "Resources/Model/revolver.model");
+			game.DualGunBladeModel = LoadJobWeaponModel("DualGunBlade", "Resources/Model/GunBlade.model");
+			game.HackerSMGModel = LoadJobWeaponModel("HackerSMG", "Resources/Model/smg.model");
+			game.BomberGrenadeGunModel = LoadJobWeaponModel("BomberGrenadeGun", "Resources/Model/granadeGun.model");
+
+			auto RegisterPlayerWeaponObject = [&](WeaponType type, Model* model) {
+				const int weaponIndex = (int)type;
+				if (weaponIndex < 0 || weaponIndex >= Game::MaxWeapon || model == nullptr) return;
+				PlayerWeaponObj[weaponIndex] = new GameObject();
+				PlayerWeaponObj[weaponIndex]->worldMat = 0;
+				PlayerWeaponObj[weaponIndex]->SetShape(model);
+			};
+			RegisterPlayerWeaponObject(WeaponType::DualPistol, game.DualRevolverModel);
+			RegisterPlayerWeaponObject(WeaponType::DronePistol, game.PistolModel);
+			RegisterPlayerWeaponObject(WeaponType::SMG, game.HackerSMGModel);
+			RegisterPlayerWeaponObject(WeaponType::GrenadeGun, game.BomberGrenadeGunModel);
 		}
 
 		game.GunModel = game.SniperModel;
@@ -2634,6 +5340,12 @@ void Game::Render() {
 
 	//render begin ----------------------------------------------------------------
 
+	// UI is rendered with the same depth buffer at the end of the previous
+	// frame. Clear that depth before drawing the far-plane skybox so full-screen
+	// overlays cannot mask the sky on the following frame.
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
 	MySkyBoxShader->RenderSkyBox();
 
 	// 14. 하늘 상자가 모든 오브젝트 뒤에 보이도록 DepthStencil을 클리어
@@ -2744,6 +5456,10 @@ void Game::Render() {
 				BindStaticPBRRenderState();
 				game.player->Render_ThirdPersonWeapon();
 			}
+			// Job 7 owns two shoulder drones. They are separate support models rather
+			// than part of the player skin, so render them explicitly in the PBR pass.
+			BindStaticPBRRenderState();
+			RenderSupportDrones();
 			BoxLOD_FlushQueued();
 		}
 	}
@@ -2834,10 +5550,22 @@ void Game::Render() {
 		TickTransientParticles(gBulletTracerParticles, DeltaTime);
 		TickTransientParticles(gIceProjectileParticles, DeltaTime);
 		TickTransientParticles(gPortalParticles, DeltaTime);
+		TickTransientParticles(gBossExplosionParticles, DeltaTime);
+		TickTransientParticles(gStatusIceParticles, DeltaTime);
+		TickTransientParticles(gStatusFireParticles, DeltaTime);
+		TickTransientParticles(gStatusYellowParticles, DeltaTime);
+		TickTransientParticles(gStatusHackParticles, DeltaTime);
+		TickTransientParticles(gStatusHealParticles, DeltaTime);
 		UploadTransientParticles(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles);
 		UploadTransientParticles(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles);
 		UploadTransientParticles(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles);
 		UploadTransientParticles(gPortalPool, gPortalUpload, gPortalParticles);
+		UploadTransientParticles(gBossExplosionPool, gBossExplosionUpload, gBossExplosionParticles);
+		UploadTransientParticles(gStatusIcePool, gStatusIceUpload, gStatusIceParticles);
+		UploadTransientParticles(gStatusFirePool, gStatusFireUpload, gStatusFireParticles);
+		UploadTransientParticles(gStatusYellowPool, gStatusYellowUpload, gStatusYellowParticles);
+		UploadTransientParticles(gStatusHackPool, gStatusHackUpload, gStatusHackParticles);
+		UploadTransientParticles(gStatusHealPool, gStatusHealUpload, gStatusHealParticles);
 
 		ParticleDraw->FireTexture = GetParticleSpriteResource(gMuzzleFlashSpriteSlot);
 		ParticleDraw->Render(gd.gpucmd, &gMuzzleFlashPool.Buffer, gMuzzleFlashPool.Count);
@@ -2848,9 +5576,40 @@ void Game::Render() {
 		ParticleDraw->FireTexture = &gParticleIceTexture;
 		ParticleDraw->Render(gd.gpucmd, &gIceProjectilePool.Buffer, gIceProjectilePool.Count);
 
-		ParticleDraw->FireTexture = &gParticleIceTexture;   // [party/dungeon] blue portal particles
+		ParticleDraw->FireTexture = &gParticleIceTexture;
 		ParticleDraw->Render(gd.gpucmd, &gPortalPool.Buffer, gPortalPool.Count);
+
+		ParticleDraw->FireTexture = &gParticleIceTexture;
+		ParticleDraw->Render(gd.gpucmd, &gStatusIcePool.Buffer, gStatusIcePool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::FireSecondary);
+		ParticleDraw->Render(gd.gpucmd, &gStatusFirePool.Buffer, gStatusFirePool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Yellow);
+		ParticleDraw->Render(gd.gpucmd, &gStatusYellowPool.Buffer, gStatusYellowPool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Hack);
+		ParticleDraw->Render(gd.gpucmd, &gStatusHackPool.Buffer, gStatusHackPool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Heal);
+		ParticleDraw->Render(gd.gpucmd, &gStatusHealPool.Buffer, gStatusHealPool.Count);
+
 	}
+
+	RenderBossPrototypeObjects();
+	RenderBossPrototypeShield();
+	RenderAegisShieldVisuals();
+	RenderFrostBlizzardSnowWaves();
+	RenderStatusEffectOverlays();
+	RenderBossPrototypeMissiles();
+	RenderBossPrototypeBeam();
+	RenderRailgunOrbitVisuals();
+	RenderDualBladeFloorVisuals();
+	RenderHackerEmpVisuals();
+	RenderPlayerRailgunBeams();
+	RenderBossPrototypeAoEs();
+	ParticleDraw->FireTexture = GetParticleSpriteResource(gBossExplosionSpriteSlot);
+	ParticleDraw->Render(gd.gpucmd, &gBossExplosionPool.Buffer, gBossExplosionPool.Count);
 
 	{
 		gd.gpucmd.SetShader(MyOnlyColorShader);
@@ -2962,6 +5721,15 @@ void Game::Render() {
 		for (int i = 0;i < SkinMeshGameObject::collection.size();++i) {
 			SkinMeshGameObject::collection[i]->ModifyLocalToWorld();
 		}
+		// Skin matrices computed here are displayed on the next render pass.
+		// Cache weapon attachments at the same point so the weapon and hand use
+		// the same animation/world frame instead of drifting by one frame.
+		for (SkinMeshGameObject* skinObject : SkinMeshGameObject::collection) {
+			Player* playerObject = dynamic_cast<Player*>(skinObject);
+			if (playerObject != nullptr) {
+				playerObject->UpdateThirdPersonWeaponAttachmentCache();
+			}
+		}
 	}
 
 	hResult = gd.CScmd.Close();
@@ -3021,10 +5789,25 @@ void Game::Render() {
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
 
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	// Composite the full-screen damage feedback first. Screen UI currently uses
+	// a depth-writing pipeline, so clear only its depth afterward and draw every
+	// HUD element and SDF label cleanly on top of the retained color overlay.
+	RenderDamageFeedbackHUD();
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+	// The scope belongs above the world but below every gameplay HUD element.
+	// Clear only depth again so ammo/cooldown SDF text cannot be rejected by it.
+	RenderSniperScopeHUD();
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
 	RenderGameplayStatusHUD();
+	RenderBossPrototypeHUD();
+	RenderBossPrototypeCoreHealthPlates();
 	RenderMonsterHealthPlates();
 	RenderFloatingDamageTexts();
 	RenderGameplaySkillHUD();
+	RenderAmmoHUD();
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
 	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
@@ -3392,6 +6175,7 @@ void Game::Render_ShadowPass()
 	HRESULT hResult = gd.gpucmd.Reset();
 	const bool enableShadowMeshLOD = AutoLOD_IsModelLODRenderActive();
 	const ui64 currentShadowFrame = shadowFrameIndex++;
+	const int shadowStabilityLevel = (std::max)(0, (std::min)(game.AutoLODShadowStabilityLevel, 3));
 	if (previousShadowZone != game.Current_Zone) {
 		shadowCascadeInitialized[0] = false;
 		shadowCascadeInitialized[1] = false;
@@ -3403,7 +6187,7 @@ void Game::Render_ShadowPass()
 		const bool updateShadowCascade =
 			!enableShadowMeshLOD ||
 			!shadowCascadeInitialized[i] ||
-			(currentShadowFrame % kShadowCascadeUpdateIntervals[i]) == 0;
+			(currentShadowFrame % kShadowCascadeUpdateIntervals[shadowStabilityLevel][i]) == 0;
 		if (!updateShadowCascade) continue;
 		shadowCascadeInitialized[i] = true;
 
@@ -3659,8 +6443,10 @@ void Game::Update()
 	AutoLOD_ProcessRuntimeQueue(1);
 	BoxLOD_DebugUpdate(DeltaTime);
 	UpdateGameplaySkillHUD(DeltaTime);
+	UpdateDamageFeedback(DeltaTime);
 	UpdateStatusEffectVisuals(DeltaTime);
 	UpdateFloatingDamageTexts(DeltaTime);
+	UpdateDelayedWeaponFireVisuals(DeltaTime);
 
 	static bool wasLODKeyDown = false;
 	const bool isLODKeyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
@@ -3789,6 +6575,10 @@ void Game::Update()
 		// 플레이어 회전 정보 전송
 		if (player != nullptr) {
 			//dbglog1(L"playerpos y : %f \n", player->worldMat.pos.y);
+			if (!std::isfinite(player->m_pitch) || !std::isfinite(player->m_yaw)) {
+				player->m_pitch = 0.0f;
+				player->m_yaw = 0.0f;
+			}
 
 			const float rate = 0.005f;
 
@@ -3878,6 +6668,14 @@ void Game::Update()
 		}
 		//gd.AverageSecPer60End(Update_ClientUpdate);
 
+		UpdateBossPrototype(DeltaTime);
+		for (BossPrototypeCore& core : BossPrototypeCores) {
+			if (core.HitFlashTimer > 0.0f) {
+				core.HitFlashTimer -= DeltaTime;
+				if (core.HitFlashTimer < 0.0f) core.HitFlashTimer = 0.0f;
+			}
+		}
+
 		if (player != nullptr) {
 			XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, player->m_yaw, 0);
 			vec4 currentPos = player->worldMat.pos;
@@ -3908,6 +6706,18 @@ void Game::Update()
 				const float cameraLift = minCameraY - peye.y;
 				peye.y = minCameraY;
 				pat.y += cameraLift;
+			}
+
+			if (CameraShakeTimer > 0.0f && CameraShakeDuration > 0.0f && CameraShakeStrength > 0.0f) {
+				float shakeRate = min(1.0f, max(0.0f, CameraShakeTimer / CameraShakeDuration));
+				float shakeAmount = CameraShakeStrength * shakeRate * shakeRate;
+				float phase = (CameraShakeDuration - CameraShakeTimer) * 78.0f;
+				vec4 shakeRight = NormalizeOrFallback(player->worldMat.right, vec4(1, 0, 0, 0));
+				vec4 shakeUp = NormalizeOrFallback(player->worldMat.up, vec4(0, 1, 0, 0));
+				vec4 shakeOffset = shakeRight * (sinf(phase * 1.37f) * shakeAmount)
+					+ shakeUp * (cosf(phase * 1.91f) * shakeAmount * 0.62f);
+				peye += shakeOffset;
+				pat -= shakeOffset * 0.35f;
 			}
 
 			XMFLOAT3 Up = { 0, 1, 0 };
@@ -4381,18 +7191,24 @@ READ_START:
 				Player* pTarget = (Player*)pObj;
 
 				if (pTarget) {
-					pTarget->weapon[pTarget->SelectedWeapon].OnFire();
-					SpawnMuzzleFlash(pTarget);
-					// [sfx] This is the server-authoritative "a bullet actually fired" event (fire-rate
-					// and ammo already validated server-side). Play the gunshot only for the local
-					// player's own shots here, instead of on every mouse click. Audio lives in main.cpp.
-					if (pTarget == game.player) {
-						extern bool g_playGunSound;
-						g_playGunSound = true;
+					if (header.fireHand == 2 && (WeaponType)pTarget->m_currentWeaponType == WeaponType::DualPistol) {
+						pTarget->m_dualBladeAttackVisualTimer = 0.34f;
+						pTarget->m_dualBladeAttackAlternate = !pTarget->m_dualBladeAttackAlternate;
+						currentPivot += header.size;
+						offset += header.size;
+						break;
+					}
+
+					const bool leftHand = header.fireHand != 0;
+					if ((WeaponType)pTarget->m_currentWeaponType == WeaponType::DualPistol && !leftHand) {
+						gDelayedWeaponFireVisuals.push_back({ header.zoneId, header.objindex, 0.11f, false });
+					}
+					else {
+						PlayPlayerFireVisual(pTarget, leftHand);
 					}
 				}
-			}
 		}
+	}
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -4401,6 +7217,13 @@ READ_START:
 	{
 		STC_SkillCast_Header& header = *(STC_SkillCast_Header*)currentPivot;
 		int netOwnerIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.ownerObjIndex);
+		if (header.effectType == SkillEffectType::DualPistol_BladeMode &&
+			netOwnerIndex >= 0 && netOwnerIndex < (int)game.DynmaicGameObjects.size()) {
+			Player* ownerPlayer = dynamic_cast<Player*>(game.DynmaicGameObjects[netOwnerIndex]);
+				if (ownerPlayer != nullptr && header.duration > 0.5f) {
+					ownerPlayer->m_dualBladeVisualTimer = max(ownerPlayer->m_dualBladeVisualTimer, header.duration);
+				}
+		}
 		SpawnSkillEffect(header.effectType, header.position, header.direction, (UINT)netOwnerIndex, header.radius, header.power, header.duration);
 		currentPivot += header.size;
 		offset += header.size;
@@ -4416,23 +7239,17 @@ READ_START:
 		offset += header.size;
 	}
 	break;
+	case STC_Protocol::BossState:
+	{
+		STC_BossState_Header& header = *(STC_BossState_Header*)currentPivot;
+		ApplyBossState(header);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
 	case STC_Protocol::DungeonQueueUpdate:
 	{
-		// [party/dungeon] store the latest waiting-queue snapshot so the (teammate's) party UI can read it.
 		STC_DungeonQueueUpdate_Header& header = *(STC_DungeonQueueUpdate_Header*)currentPivot;
-		// [party/dungeon] confirm queue membership on the client (log only when the count changes).
-		{
-			static int _lastQueueCount = -1;
-			if (header.count != _lastQueueCount) {
-				_lastQueueCount = header.count;
-				char _d[160] = {};
-				if (header.count > 0)
-					sprintf_s(_d, "[Dungeon] IN QUEUE (%d/%d). Press F to start the dungeon.\n", header.count, header.maxCount);
-				else
-					sprintf_s(_d, "[Dungeon] queue cleared.\n");
-				OutputDebugStringA(_d); printf("%s", _d);
-			}
-		}
 		game.m_dungeonQueue.count = header.count;
 		game.m_dungeonQueue.maxCount = header.maxCount;
 		game.m_dungeonQueue.active = (header.count > 0);
@@ -4448,13 +7265,11 @@ READ_START:
 	break;
 	case STC_Protocol::DungeonEnter:
 	{
-		// [party/dungeon][phase2] portal teleport: disconnect and reconnect FRESH to the dungeon server.
 		STC_DungeonEnter_Header& header = *(STC_DungeonEnter_Header*)currentPivot;
 		game.BeginPortalEnter(header.ip, header.port, header.dstZoneId);
-		return totallen;   // connection changed; stop processing this (now-stale) buffer
+		return totallen;
 	}
-	break;
-	case STC_Protocol::SyncGameState:
+	break;	case STC_Protocol::SyncGameState:
 	{
         //OutputDebugStringA("[ClientReceiving] SyncGameState\n");
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)currentPivot;
@@ -4994,6 +7809,335 @@ void Game::RenderGameplayStatusHUD()
 	}
 }
 
+void Game::RenderAmmoHUD()
+{
+	if (player == nullptr || AmmoHUDFrameTextureIndex < 0 || AmmoHUDBulletTextureIndex < 0) return;
+
+	int weaponTypeIndex = player->m_currentWeaponType;
+	if (weaponTypeIndex < 0 || weaponTypeIndex >= (int)WeaponType::Max) return;
+	int weaponTextureIndex = AmmoHUDWeaponTextureIndices[weaponTypeIndex];
+	if (weaponTextureIndex < 0 || weaponTextureIndex >= (int)UITextureTable.size()) return;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.72f, screenHeight / 960.0f);
+	const float depth = 0.0185f;
+	const float panelWidth = 320.0f * scale;
+	const float panelHeight = 168.0f * scale;
+	const float right = screenWidth * 0.5f - 34.0f * scale;
+	const float bottom = -screenHeight * 0.5f + 34.0f * scale;
+	const float left = right - panelWidth;
+	const float top = bottom + panelHeight;
+	vec4 panelRt = vec4(left, bottom, right, top);
+
+	UIDraw_TextureRect(panelRt, vec4(1.0f, 1.0f, 1.0f, 0.96f), depth, AmmoHUDFrameTextureIndex);
+
+	float iconWidth = 196.0f * scale;
+	float iconHeight = 66.0f * scale;
+	switch ((WeaponType)weaponTypeIndex) {
+	case WeaponType::Sniper:
+		iconWidth = 212.0f * scale;
+		iconHeight = 50.0f * scale;
+		break;
+	case WeaponType::Shotgun:
+		iconWidth = 198.0f * scale;
+		iconHeight = 55.0f * scale;
+		break;
+	case WeaponType::Rifle:
+		iconWidth = 212.0f * scale;
+		iconHeight = 64.0f * scale;
+		break;
+	case WeaponType::Pistol:
+	case WeaponType::DronePistol:
+		iconWidth = 100.0f * scale;
+		iconHeight = 72.0f * scale;
+		break;
+	case WeaponType::DualPistol:
+		// The dual-pistol source has generous transparent vertical padding.
+		iconWidth = 230.0f * scale;
+		iconHeight = 150.0f * scale;
+		break;
+	case WeaponType::SMG:
+		iconWidth = 260.0f * scale;
+		iconHeight = 120.0f * scale;
+		break;
+	case WeaponType::GrenadeGun:
+		iconWidth = 250.0f * scale;
+		iconHeight = 145.0f * scale;
+		break;
+	case WeaponType::MachineGun:
+	default:
+		break;
+	}
+
+	const float iconCenterX = left + panelWidth * 0.56f;
+	const float iconCenterY = bottom + panelHeight * 0.69f;
+	vec4 weaponRt = vec4(iconCenterX - iconWidth * 0.5f, iconCenterY - iconHeight * 0.5f,
+		iconCenterX + iconWidth * 0.5f, iconCenterY + iconHeight * 0.5f);
+	bool isReloading = player->ReloadRemain > 0.0f;
+	vec4 weaponColor = isReloading ? vec4(0.46f, 0.54f, 0.58f, 0.72f) : vec4(1.0f, 1.0f, 1.0f, 0.96f);
+	UIDraw_TextureRect(weaponRt, weaponColor, depth - ui_depth_epsilon, weaponTextureIndex);
+
+	vec4 bulletRt = vec4(left + 25.0f * scale, bottom + 25.0f * scale,
+		left + 48.0f * scale, bottom + 78.0f * scale);
+	UIDraw_TextureRect(bulletRt, vec4(1.0f, 1.0f, 1.0f, 0.94f), depth - ui_depth_epsilon * 2, AmmoHUDBulletTextureIndex);
+
+	// WeaponType is the authoritative replicated selection. Use the shared table
+	// for HUD capacity so a transient/stale loadout slot cannot display garbage.
+	WeaponData weaponData = GWeaponTable[weaponTypeIndex];
+	if ((WeaponType)weaponTypeIndex == WeaponType::Sniper) {
+		weaponData.maxBullets = player->m_sniperDmrMode ? 15 : 5;
+		weaponData.reloadTime = player->m_sniperDmrMode ? 1.4f : 2.0f;
+	}
+	int magazineCapacity = max(0, weaponData.maxBullets);
+	int currentBullets = min(max(0, player->bullets), magazineCapacity);
+	wchar_t currentText[16] = {};
+	wchar_t capacityText[16] = {};
+	swprintf_s(currentText, L"%d", currentBullets);
+	swprintf_s(capacityText, L"%d", magazineCapacity);
+
+	vec4 currentRt = vec4(left + 58.0f * scale, bottom + 18.0f * scale,
+		left + 181.0f * scale, bottom + 83.0f * scale);
+	vec4 slashRt = vec4(left + 174.0f * scale, bottom + 24.0f * scale,
+		left + 208.0f * scale, bottom + 76.0f * scale);
+	vec4 capacityRt = vec4(left + 202.0f * scale, bottom + 25.0f * scale,
+		right - 20.0f * scale, bottom + 75.0f * scale);
+	vec4 currentColor = currentBullets <= max(1, magazineCapacity / 4)
+		? vec4(1.0f, 0.30f, 0.20f, 1.0f)
+		: vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	RenderSDFText(currentText, (int)wcslen(currentText), currentRt, 43.0f * scale, currentColor, nullptr, nullptr, depth - ui_depth_epsilon * 3);
+	RenderSDFText(L"/", 1, slashRt, 31.0f * scale, vec4(0.18f, 0.88f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+	RenderSDFText(capacityText, (int)wcslen(capacityText), capacityRt, 27.0f * scale, vec4(0.92f, 0.95f, 0.98f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+
+	if ((WeaponType)weaponTypeIndex == WeaponType::Sniper) {
+		const wchar_t* modeText = player->m_sniperDmrMode ? L"DMR" : L"SR";
+		vec4 modeRt = vec4(right - 116.0f * scale, top - 48.0f * scale,
+			right - 22.0f * scale, top - 13.0f * scale);
+		RenderSDFText(modeText, (int)wcslen(modeText), modeRt, 24.0f * scale,
+			vec4(0.24f, 0.90f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+	}
+
+	if ((PlayerJob)player->m_currentJob == PlayerJob::Bomber && (WeaponType)weaponTypeIndex == WeaponType::GrenadeGun) {
+		const wchar_t* modeText = player->m_bomberHealAmmoMode ? L"HEAL" : L"FIRE";
+		vec4 modeRt = vec4(right - 126.0f * scale, top - 49.0f * scale,
+			right - 20.0f * scale, top - 12.0f * scale);
+		vec4 modeColor = player->m_bomberHealAmmoMode
+			? vec4(0.24f, 1.0f, 0.48f, 1.0f)
+			: vec4(1.0f, 0.38f, 0.10f, 1.0f);
+		RenderSDFText(modeText, (int)wcslen(modeText), modeRt, 22.0f * scale,
+			modeColor, nullptr, nullptr, depth - ui_depth_epsilon * 3);
+	}
+	if (isReloading && AmmoHUDReloadTextureIndex >= 0) {
+		float reloadTime = max(weaponData.reloadTime, 0.01f);
+		float reloadRate = min(1.0f, max(0.0f, 1.0f - player->ReloadRemain / reloadTime));
+		vec4 reloadRt = vec4(right - 54.0f * scale, top - 55.0f * scale,
+			right - 20.0f * scale, top - 21.0f * scale);
+		UIDraw_TextureRect(reloadRt, vec4(0.72f, 0.96f, 1.0f, 0.92f), depth - ui_depth_epsilon * 2, AmmoHUDReloadTextureIndex);
+		vec4 reloadBack = vec4(left + 24.0f * scale, bottom + 12.0f * scale,
+			right - 24.0f * scale, bottom + 17.0f * scale);
+		vec4 reloadFill = reloadBack;
+		reloadFill.z = reloadFill.x + (reloadBack.z - reloadBack.x) * reloadRate;
+		UIDraw_SolidRect(reloadBack, vec4(0.02f, 0.08f, 0.10f, 0.82f), depth - ui_depth_epsilon * 4);
+		UIDraw_SolidRect(reloadFill, vec4(0.16f, 0.88f, 1.0f, 0.98f), depth - ui_depth_epsilon * 5);
+		vec4 reloadTextRt = vec4(left + 92.0f * scale, top - 43.0f * scale,
+			right - 60.0f * scale, top - 14.0f * scale);
+		RenderSDFText(L"RELOADING", 9, reloadTextRt, 17.0f * scale,
+			vec4(0.72f, 0.96f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+	}
+}
+
+void Game::RenderSniperScopeHUD()
+{
+	if (player == nullptr || ScopeOverlayTextureIndex < 0) return;
+	if (ScopeOverlayTextureIndex >= (int)UITextureTable.size()) return;
+	if (!player->m_isZooming) return;
+	if ((WeaponType)player->m_currentWeaponType != WeaponType::Sniper) return;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	if (screenWidth <= 0.0f || screenHeight <= 0.0f) return;
+
+	const float zoomAlpha = min(1.0f, max(0.0f, (60.0f - player->m_currentFov) / (60.0f - 9.0f)));
+	const float alpha = 0.10f + 0.50f * zoomAlpha;
+	const float depth = 0.001f;
+	vec4 scopeRt = vec4(-screenWidth * 0.5f, -screenHeight * 0.5f, screenWidth * 0.5f, screenHeight * 0.5f);
+	UIDraw_TextureRect(scopeRt, vec4(1.0f, 1.0f, 1.0f, alpha), depth, ScopeOverlayTextureIndex);
+}
+
+void Game::RenderDamageFeedbackHUD()
+{
+	if (UITextureTable.empty()) return;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	if (screenWidth <= 0.0f || screenHeight <= 0.0f) return;
+
+	float hpRate = 1.0f;
+	if (player != nullptr && player->MaxHP > 0.0f) {
+		hpRate = min(1.0f, max(0.0f, player->HP / player->MaxHP));
+	}
+
+	float lowHpAlpha = 0.0f;
+	if (hpRate <= 0.13f) {
+		lowHpAlpha = 0.16f + 0.13f * (0.5f + 0.5f * sinf(highFrequencyFlow * 9.0f));
+	}
+	else if (hpRate <= 0.27f) {
+		lowHpAlpha = 0.16f;
+	}
+
+	const float alpha = min(0.78f, max(DamageBorderAlpha, lowHpAlpha));
+	// Screen-space UI is clipped outside the D3D depth range. Keep this overlay
+	// just in front of the regular HUD instead of using a negative depth.
+	const float depth = 0.0002f;
+	if (WhiteDamageFlashAlpha > 0.0f) {
+		vec4 full = vec4(-screenWidth * 0.5f, -screenHeight * 0.5f, screenWidth * 0.5f, screenHeight * 0.5f);
+		UIDraw_SolidRect(full, vec4(1.0f, 0.94f, 0.88f, min(0.45f, WhiteDamageFlashAlpha)), 0.0001f);
+	}
+	if (alpha <= 0.001f) return;
+
+	const float scale = max(0.75f, screenHeight / 960.0f);
+	const float edge = min(screenHeight * 0.16f, 112.0f * scale);
+	const float halfW = screenWidth * 0.5f;
+	const float halfH = screenHeight * 0.5f;
+
+	// Build a soft vignette from narrow layers. The outer edge stays vivid while
+	// the inner layers rapidly fade, matching a damage-border image without an
+	// extra texture asset.
+	constexpr int LayerCount = 9;
+	for (int layer = 0; layer < LayerCount; ++layer) {
+		const float outerRate = (float)layer / (float)LayerCount;
+		const float innerRate = (float)(layer + 1) / (float)LayerCount;
+		const float outer = edge * outerRate;
+		const float inner = edge * innerRate;
+		const float fade = 1.0f - outerRate;
+		const float layerAlpha = alpha * (0.075f + 0.19f * fade * fade);
+		const vec4 red = vec4(1.0f, 0.015f, 0.025f, layerAlpha);
+		const vec4 sideRed = vec4(1.0f, 0.015f, 0.025f, layerAlpha * 0.82f);
+
+		UIDraw_SolidRect(vec4(-halfW + outer, halfH - inner, halfW - outer, halfH - outer), red, depth);
+		UIDraw_SolidRect(vec4(-halfW + outer, -halfH + outer, halfW - outer, -halfH + inner), red, depth);
+		UIDraw_SolidRect(vec4(-halfW + outer, -halfH + inner, -halfW + inner, halfH - inner), sideRed, depth);
+		UIDraw_SolidRect(vec4(halfW - inner, -halfH + inner, halfW - outer, halfH - inner), sideRed, depth);
+	}
+}
+
+void Game::RenderBossPrototypeHUD()
+{
+	if (!BossPrototypeEnabled || player == nullptr || UITextureTable.empty()) return;
+	if (BossPrototypeIndex < 0 || BossPrototypeIndex >= (int)DynmaicGameObjects.size()) return;
+
+	Monster* boss = dynamic_cast<Monster*>(DynmaicGameObjects[BossPrototypeIndex]);
+	if (boss == nullptr || boss->isDead || boss->tag[GameObjectTag::Tag_Enable] == false) return;
+	if (boss->MaxHP <= 0.0f || boss->HP <= 0.0f) return;
+
+	constexpr int FillTexture = 0; // temp: DefaultTex
+	constexpr float VisibleDistance = 72.0f;
+
+	vec4 delta = player->worldMat.pos - boss->worldMat.pos;
+	float distanceSq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+	if (distanceSq > VisibleDistance * VisibleDistance) return;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.75f, screenHeight / 960.0f);
+	const float depth = 0.018f;
+	const float barWidth = min(screenWidth * 0.62f, 760.0f * scale);
+	const float barHeight = 20.0f * scale;
+	const float top = screenHeight * 0.5f - 58.0f * scale;
+	const float left = -barWidth * 0.5f;
+	const float right = barWidth * 0.5f;
+	const float bottom = top - barHeight;
+
+	float hpRate = min(1.0f, max(0.0f, boss->HP / max(1.0f, boss->MaxHP)));
+	vec4 barBack = vec4(left, bottom, right, top);
+	vec4 barFill = barBack;
+	barFill.z = barFill.x + (barBack.z - barBack.x) * hpRate;
+	vec4 frame = barBack + vec4(-5.0f, -5.0f, 5.0f, 5.0f) * scale;
+	vec4 shadow = frame + vec4(4.0f, -4.0f, 4.0f, -4.0f) * scale;
+
+	UIDraw_TextureRect(shadow, vec4(0.0f, 0.0f, 0.0f, 0.36f), depth + ui_depth_epsilon, FillTexture);
+	UIDraw_TextureRect(frame, vec4(0.015f, 0.010f, 0.010f, 0.78f), depth, FillTexture);
+	UIDraw_TextureRect(barBack, vec4(0.12f, 0.015f, 0.018f, 0.94f), depth - ui_depth_epsilon, FillTexture);
+	UIDraw_TextureRect(barFill, vec4(0.88f, 0.04f, 0.08f, 1.0f), depth - ui_depth_epsilon * 2, FillTexture);
+	UIDraw_TextureRect(vec4(barBack.x, barBack.w - 4.0f * scale, barFill.z, barBack.w),
+		vec4(1.0f, 0.25f, 0.30f, 0.72f), depth - ui_depth_epsilon * 3, FillTexture);
+
+	if (BossPrototypeShieldActive) {
+		vec4 shieldLine = vec4(barBack.x, barBack.y - 5.0f * scale, barBack.z, barBack.y - 2.0f * scale);
+		UIDraw_TextureRect(shieldLine, vec4(0.12f, 0.48f, 1.0f, 0.76f), depth - ui_depth_epsilon * 4, FillTexture);
+	}
+
+	vec4 titleRt = vec4(-220.0f * scale, top + 8.0f * scale, 220.0f * scale, top + 42.0f * scale);
+	RenderSDFText(L"Turret Boss", 11, titleRt + vec4(1.5f, -1.5f, 1.5f, -1.5f) * scale,
+		28.0f * scale, vec4(0.0f, 0.0f, 0.0f, 0.68f), nullptr, nullptr, depth - ui_depth_epsilon * 5);
+	RenderSDFText(L"Turret Boss", 11, titleRt,
+		28.0f * scale, vec4(1.0f, 0.86f, 0.82f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 6);
+}
+
+void Game::RenderBossPrototypeCoreHealthPlates()
+{
+	if (!BossPrototypeEnabled || player == nullptr || UITextureTable.empty() || BossPrototypeCores.empty()) return;
+
+	constexpr int FillTexture = 0; // temp: DefaultTex
+	constexpr float VisibleDistance = 92.0f;
+	constexpr float AnchorOffsetY = 2.18f;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float baseScale = max(0.82f, screenHeight / 960.0f);
+	const float depth = 0.0185f;
+	matrix cameraWorld = gd.viewportArr[0].ViewMatrix.RTInverse;
+	vec4 cameraPos = cameraWorld.pos;
+
+	for (const BossPrototypeCore& core : BossPrototypeCores) {
+		if (!core.Active || core.MaxHP <= 0.0f || core.HP <= 0.0f) continue;
+
+		vec4 anchor = core.Position + vec4(0.0f, AnchorOffsetY, 0.0f, 0.0f);
+		float dx = anchor.x - cameraPos.x;
+		float dy = anchor.y - cameraPos.y;
+		float dz = anchor.z - cameraPos.z;
+		float distance = sqrtf(dx * dx + dy * dy + dz * dz);
+		if (distance > VisibleDistance) continue;
+
+		XMFLOAT3 screenPos = {};
+		XMStoreFloat3(&screenPos, gd.viewportArr[0].project(anchor));
+		if (screenPos.z < 0.0f || screenPos.z > 1.0f) continue;
+		if (screenPos.x < -90.0f || screenPos.x > screenWidth + 90.0f ||
+			screenPos.y < -70.0f || screenPos.y > screenHeight + 70.0f) continue;
+
+		float distanceRate = min(1.0f, max(0.0f, (distance - 18.0f) / max(1.0f, VisibleDistance - 18.0f)));
+		float plateScale = baseScale * (1.00f - distanceRate * 0.18f);
+		float alpha = min(0.98f, max(0.58f, 0.96f - distanceRate * 0.24f));
+		float hpRate = min(1.0f, max(0.0f, core.HP / core.MaxHP));
+		float uiX = screenPos.x - screenWidth * 0.5f;
+		float uiY = screenHeight * 0.5f - screenPos.y;
+
+		float barWidth = 148.0f * plateScale;
+		float barHeight = 13.0f * plateScale;
+		float pad = 4.0f * plateScale;
+		vec4 plate = vec4(uiX - barWidth * 0.5f - pad, uiY - barHeight * 0.5f - pad,
+			uiX + barWidth * 0.5f + pad, uiY + barHeight * 0.5f + pad);
+		vec4 barBack = vec4(uiX - barWidth * 0.5f, uiY - barHeight * 0.5f,
+			uiX + barWidth * 0.5f, uiY + barHeight * 0.5f);
+		vec4 barFill = barBack;
+		barFill.z = barFill.x + (barBack.z - barBack.x) * hpRate;
+
+		UIDraw_TextureRect(plate + vec4(1.5f, -1.5f, 1.5f, -1.5f) * plateScale, vec4(0.0f, 0.0f, 0.0f, 0.26f * alpha), depth + ui_depth_epsilon, FillTexture);
+		UIDraw_TextureRect(plate, vec4(0.02f, 0.025f, 0.035f, 0.58f * alpha), depth, FillTexture);
+		UIDraw_TextureRect(barBack, vec4(0.07f, 0.025f, 0.035f, 0.80f * alpha), depth - ui_depth_epsilon, FillTexture);
+		UIDraw_TextureRect(barFill, vec4(1.0f, 0.10f, 0.16f, 0.96f * alpha), depth - ui_depth_epsilon * 2, FillTexture);
+		UIDraw_TextureRect(vec4(barBack.x, barBack.w - 2.0f * plateScale, barFill.z, barBack.w),
+			vec4(1.0f, 0.42f, 0.46f, 0.62f * alpha), depth - ui_depth_epsilon * 3, FillTexture);
+
+		vec4 labelRt = vec4(uiX - 40.0f * plateScale, uiY + 9.0f * plateScale,
+			uiX + 40.0f * plateScale, uiY + 31.0f * plateScale);
+		RenderSDFText(L"CORE", 4, labelRt + vec4(1.0f, -1.0f, 1.0f, -1.0f) * plateScale,
+			15.0f * plateScale, vec4(0.0f, 0.0f, 0.0f, 0.60f * alpha), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+		RenderSDFText(L"CORE", 4, labelRt,
+			15.0f * plateScale, vec4(0.90f, 0.96f, 1.0f, alpha), nullptr, nullptr, depth - ui_depth_epsilon * 5);
+	}
+}
+
 void Game::RenderMonsterHealthPlates()
 {
 	if (UITextureTable.empty()) return;
@@ -5011,6 +8155,7 @@ void Game::RenderMonsterHealthPlates()
 	vec4 cameraPos = cameraWorld.pos;
 
 	for (int i = 0; i < (int)DynmaicGameObjects.size(); ++i) {
+		if (i == BossPrototypeIndex) continue;
 		DynamicGameObject* dgo = DynmaicGameObjects[i];
 		if (dgo == nullptr || dgo->tag[GameObjectTag::Tag_Enable] == false) continue;
 
@@ -5906,7 +9051,7 @@ void UIInitDefaultWindow(DXUI* ui) {
 		pWindow->NormalizeCoordToWindowCoord_vec4(rateloc);
 		DXUI* SaveBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn = (DXBtnParam*)SaveBtn->pParamterData;
-		pbtn->Set(0, 1, 0, L"저장하기");
+		pbtn->Set(0, 1, 0, L"\xC800\xC7A5\xD558\xAE30");
 		SaveBtn->SetFunctions(UIRenderDefaultBtn, UIUpdateDefaultBtn, UIEventSaveBtn);
 		sample_page->uiArr.push_back(SaveBtn);
 	}
@@ -6762,7 +9907,7 @@ void UIInitBuySellWindow(DXUI* ui) {
 		rateloc.y = rateloc.w - 46;
 		DXUI* CancelBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_cancel = (DXBtnParam*)CancelBtn->pParamterData;
-		pbtn_cancel->Set(0, 1, 20, L"���");
+		pbtn_cancel->Set(0, 1, 20, L"Cancel");
 		pbtn_cancel->addtionalPtr[0] = pWindow->addtionalPtr[0];
 		CancelBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEvent_SellBuyCloseBtn);
 		sample_page->uiArr.push_back(CancelBtn);
@@ -7499,6 +10644,31 @@ void Game::UI_Init()
 		UITextureTable.push_back(temp);
 	}
 
+	GPUResource* ScopeOverlay = new GPUResource();
+	ScopeOverlay->CreateTexture_fromFile(L"Resources/UI/zoom_scope.png", game.basicTexFormat, 1, false);
+	ScopeOverlayTextureIndex = (int)UITextureTable.size();
+	UITextureTable.push_back(ScopeOverlay);
+
+	auto LoadAmmoHUDTexture = [&](const wchar_t* path) {
+		GPUResource* texture = new GPUResource();
+		texture->CreateTexture_fromFile(path, game.basicTexFormat, 1, false);
+		int index = (int)UITextureTable.size();
+		UITextureTable.push_back(texture);
+		return index;
+	};
+	AmmoHUDFrameTextureIndex = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Frame.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::MachineGun] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_MachineGun.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::Sniper] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Sniper.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::Shotgun] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Shotgun.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::Rifle] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Rifle.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::Pistol] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Pistol.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::DualPistol] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_DualPistol.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::DronePistol] = AmmoHUDWeaponTextureIndices[(int)WeaponType::Pistol];
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::SMG] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_SMG.png");
+	AmmoHUDWeaponTextureIndices[(int)WeaponType::GrenadeGun] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_GrenadeGun.png");
+	AmmoHUDBulletTextureIndex = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Bullet.png");
+	AmmoHUDReloadTextureIndex = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Reload.png");
+
 	mainPageStack.reserve(32);
 	UIPageTable.reserve(32);
 	DXPage* sample_page = new DXPage();
@@ -7824,3 +10994,12 @@ DXUI* DXPage::GetSlotUIFromPos(vec4 pos) {
 	return nullptr;
 }
 #pragma endregion
+
+
+void Game::UIDraw_SolidRect(vec4 loc, vec4 color, float depth)
+{
+	// A negative blue channel selects the texture-free branch in the screen
+	// shader. The shader restores the original positive blue value.
+	color.b = -max(color.b, 0.0001f);
+	UIDraw_TextureRect(loc, color, depth, 0);
+}
