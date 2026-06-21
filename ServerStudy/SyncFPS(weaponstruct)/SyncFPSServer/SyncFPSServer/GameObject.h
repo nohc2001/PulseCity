@@ -2347,6 +2347,7 @@ struct World {
 	void DungeonQueueAdd(int clientIndex);     // add once + broadcast; re-press starts, full auto-starts
 	void DungeonQueueRemove(int clientIndex);  // remove + broadcast (leave/disconnect)
 	void BroadcastDungeonQueue();              // send STC_DungeonQueueUpdate to current waiters
+	void BroadcastDungeonParty();              // [dungeon] on the dungeon server, share party info among players inside the dungeon
 	void DungeonTryStart(bool force);          // force=true: start now with current members (>=1)
 	void EnterDungeonStub();                   // send each member STC_DungeonEnter + clear the queue
 

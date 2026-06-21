@@ -791,6 +791,8 @@ namespace
 	GPUResource gParticleElectricTexture;
 	GPUResource gParticleIceTexture;
 	GPUResource gParticleBloodTexture;
+	GPUResource gLoadingTex;            // [loading] fullscreen loading image
+	GPUResource gStartScreenTex;       // [loading] fullscreen start screen image (shown until a key is pressed)
 	GPUResource gParticleExplosionTexture;
 	GPUResource gParticleEnergyTexture;
 	GPUResource gParticleAirStrikeTexture;
@@ -4433,6 +4435,8 @@ void Game::Init()
 		gParticleElectricTexture.CreateTexture_fromFile(L"Resources/elect.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleIceTexture.CreateTexture_fromFile(L"Resources/ice.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleBloodTexture.CreateTexture_fromFile(L"Resources/blood.png", game.basicTexFormat, game.basicTexMip, true);
+		gLoadingTex.CreateTexture_fromFile(L"Resources/Loading.png", game.basicTexFormat, game.basicTexMip);          // [loading] loading screen image
+		gStartScreenTex.CreateTexture_fromFile(L"Resources/StartScreen.png", game.basicTexFormat, game.basicTexMip);  // [loading] start screen image
 		gParticleExplosionTexture.CreateTexture_fromFile(L"Resources/explosion.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleEnergyTexture.CreateTexture_fromFile(L"Resources/energy.jpg", game.basicTexFormat, game.basicTexMip, true);
 		gParticleAirStrikeTexture.CreateTexture_fromFile(L"Resources/misaile.png", game.basicTexFormat, game.basicTexMip, true);
@@ -5031,6 +5035,9 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	playerGameObjectIndex = -1;
 	player = nullptr;
 
+	// [loading] open-world zone move = seamless (suppress loading screen); dungeon entry (dst>=100) = show loading.
+	{ extern bool g_suppressLoadingScreen; g_suppressLoadingScreen = (dstZoneId < 100); }
+
 	client.Disconnect();
 	bool connected = client.Init(ipLocal, port);
 	{
@@ -5270,6 +5277,51 @@ void Game::InitDirLightGPURes() {
 	cbvdesc.SizeInBytes = ncbElementBytes;
 	gd.pDevice->CreateConstantBufferView(&cbvdesc, DirLightResCBV.hCreation.hcpu);
 }
+
+// [loading] Standalone present that draws ONLY a fullscreen image (default Loading.png). Safe to call
+// before any zone/map is loaded (does not touch Current_Zone/player). Uses the PRESENT-base-state present
+// pattern so it works from a cold start and can be called every frame while the game is not yet prepared.
+void Game::DrawLoadingScreen(GPUResource* tex) {
+	GPUResource* img = tex ? tex : &gLoadingTex;
+	if (img == nullptr || img->resource == nullptr) return;
+
+	gd.gpucmd.Reset();
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
+	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
+	game.renderViewPort = &gd.viewportArr[0];
+
+	D3D12_CPU_DESCRIPTOR_HANDLE dsv = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE, &dsv);
+
+	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	gd.gpucmd->ClearRenderTargetView(gd.SubRenderTarget.rtvHandle.hcpu, clearColor, 0, NULL);
+	gd.gpucmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	// UI coords are center-origin pixels, range +-(W/2, H/2); the texture maps across the whole rect.
+	float _lw = (float)gd.ClientFrameWidth * 0.5f;
+	float _lh = (float)gd.ClientFrameHeight * 0.5f;
+	game.UIDraw_TextureRect(vec4(-_lw, -_lh, _lw, _lh), vec4(1, 1, 1, 1), 0.001f, img);
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+	gd.gpucmd.Close();
+	gd.gpucmd.Execute();
+	gd.gpucmd.WaitGPUComplete();
+	gd.pSwapChain->Present(1, 0);
+	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
+}
+
+void Game::DrawStartScreen() { DrawLoadingScreen(gStartScreenTex.resource ? &gStartScreenTex : &gLoadingTex); }   // [loading] start screen image
 
 void Game::Render() {
 	PerfGPUWaitMs = 0.0;
@@ -5598,30 +5650,42 @@ void Game::Render() {
 			if (Portals[i] == nullptr) continue;
 			SpawnPortalParticles(Portals[i]->worldMat.pos);
 		}
-		// [party/dungeon] guaranteed-visible portal ring at the local player's spawn + the zone's portal offset.
-		// Re-anchors whenever the zone changes; offset matches the server portal (open-world entry +5X, dungeon 1F floor +2X).
-		// Drawn only where a portal exists: open world (any <100) and dungeon 1F (100). 2F(101, last floor) has no portal.
+		// [party/dungeon] guaranteed-visible portal ring.
+		//  - Open world: anchored ONCE at the very first spawn and stays fixed there (does NOT follow zone moves).
+		//  - Dungeon 1F (zone 100): anchored when entering the dungeon (floor portal +72X/+3Z). 2F(101) has no portal.
 		{
-			static bool _portalAnchorSet = false;
-			static int  _portalAnchorWait = 0;
-			static int  _portalAnchorZone = -999;
-			static vec4 _portalAnchor = vec4(0);
-			if (currentZoneId != _portalAnchorZone) {   // zone changed -> re-capture anchor
-				_portalAnchorZone = currentZoneId;
-				_portalAnchorSet = false;
-				_portalAnchorWait = 0;
-			}
-			bool zoneHasPortal = (currentZoneId < 100) || (currentZoneId == 100);   // skip 2F (101) which has no portal
-			if (zoneHasPortal
-				&& playerGameObjectIndex >= 0 && playerGameObjectIndex < (int)DynmaicGameObjects.size()
-				&& DynmaicGameObjects[playerGameObjectIndex] != nullptr) {
-				float fwd  = (currentZoneId >= 100) ? 72.0f : 5.0f;   // dungeon floor portal +72X, open-world entry +5X
-				float fwdZ = (currentZoneId >= 100) ? 3.0f  : 0.0f;   // dungeon floor portal +3Z
-				if (!_portalAnchorSet) {
-					_portalAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(fwd, 0.0f, fwdZ, 0.0f);
-					if (++_portalAnchorWait > 120) _portalAnchorSet = true;
+			bool havePlayer = (playerGameObjectIndex >= 0 && playerGameObjectIndex < (int)DynmaicGameObjects.size()
+				&& DynmaicGameObjects[playerGameObjectIndex] != nullptr);
+
+			// open-world entry portal: capture once, then never move
+			static bool _owSet = false;
+			static int  _owWait = 0;
+			static vec4 _owAnchor = vec4(0);
+			if (currentZoneId < 100 && havePlayer) {
+				if (!_owSet) {
+					_owAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(5.0f, 0.0f, 0.0f, 0.0f);
+					if (++_owWait > 120) _owSet = true;
 				}
-				SpawnPortalParticles(_portalAnchor);
+				if (_owWait > 0) SpawnPortalParticles(_owAnchor);
+			}
+
+			// dungeon 1F floor portal: re-anchor each time we (re-)enter the dungeon
+			static bool _dgSet = false;
+			static int  _dgWait = 0;
+			static int  _dgZone = -999;
+			static vec4 _dgAnchor = vec4(0);
+			if (currentZoneId == 100) {
+				if (_dgZone != currentZoneId) { _dgZone = currentZoneId; _dgSet = false; _dgWait = 0; }
+				if (havePlayer) {
+					if (!_dgSet) {
+						_dgAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(72.0f, 0.0f, 3.0f, 0.0f);
+						if (++_dgWait > 120) _dgSet = true;
+					}
+					if (_dgWait > 0) SpawnPortalParticles(_dgAnchor);
+				}
+			}
+			else {
+				_dgZone = currentZoneId;   // left the dungeon -> allow a fresh anchor next entry
 			}
 		}
 		// [PORTAL-DBG] throttled: confirms client has the portal + particles are being produced.

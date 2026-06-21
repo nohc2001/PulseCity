@@ -22,6 +22,7 @@ LPCTSTR lpszWindowName = L"Pulse City Client 001";
 int resolutionLevel = 3;
 bool g_playReloadSound = false;   // [sfx] set in GameObject.cpp when local player's reload starts; played in the main loop
 bool g_playGunSound = false;      // [sfx] set in Game.cpp on STC_PlayerFire for the local player (an actual shot); played in the main loop
+bool g_suppressLoadingScreen = false;   // [loading] set during seamless zone transfer so the loading screen is NOT shown
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
@@ -155,7 +156,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	gd.Init();
 	game.Init();
 	GetKeyboardState(game.pKeyBuffer);
-	
+
+	// [start screen] show StartScreen.png at launch; begin loading only after any key/click is pressed.
+	{
+		MSG dm;
+		while (::PeekMessage(&dm, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {}
+		while (::PeekMessage(&dm, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {}
+
+		ULONGLONG _startScreenT0 = GetTickCount64();
+		bool started = false;
+		while (!started) {
+			MSG sm;
+			while (::PeekMessage(&sm, NULL, 0, 0, PM_REMOVE)) {
+				if (sm.message == WM_QUIT) { WSACleanup(); return 0; }
+				if ((GetTickCount64() - _startScreenT0) > 500 && (sm.message == WM_KEYDOWN || sm.message == WM_LBUTTONDOWN)) started = true;
+				::TranslateMessage(&sm);
+				::DispatchMessage(&sm);
+			}
+			game.DrawStartScreen();
+		}
+	}
+
 	constexpr unsigned short InitServerPort = 9073;
 	bool Connected = client.Init("127.0.0.1", InitServerPort);
 	if (Connected == false) {
@@ -252,7 +273,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 					perfGPUFinalWaitMs += game.PerfGPUFinalWaitMs;
 					perfPresentMs += game.PerfPresentMs;
 					didRender = true;
+					g_suppressLoadingScreen = false;   // back to normal -> loading screen allowed again
 					//gd.AverageSecPer60End(0);
+				}
+				else {
+					// [loading] not ready yet. Show Loading.png for initial load / dungeon entry,
+					// but NOT during a seamless zone transfer (g_suppressLoadingScreen).
+					if (!g_suppressLoadingScreen) game.DrawLoadingScreen();
 				}
 				//gd.AverageSecPer60Start(1);
 				const ui64 perfUpdateStart = GetTicks();

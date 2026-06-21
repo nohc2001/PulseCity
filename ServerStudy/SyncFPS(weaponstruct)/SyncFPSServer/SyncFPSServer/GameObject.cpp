@@ -5596,6 +5596,7 @@ void World::Update() {
 	}
 	// [party/dungeon] keep waiting members' HP/job live each tick (queued into PersonalSDS, flushed below).
 	BroadcastDungeonQueue();
+	BroadcastDungeonParty();   // [dungeon] share party info among players inside the dungeon (dungeon server only)
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
 		gameworld.ZoneTable[i]->FlushSendToClients();
@@ -5638,6 +5639,25 @@ void World::BroadcastDungeonQueue() {
 		int ci = dungeonQueue[i];
 		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
 		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, dungeonQueue, dungeonQueueCount);
+	}
+}
+
+// [dungeon] Only the dungeon server. Treat every player currently in the dungeon as one party and send each
+// of them the party roster (objindex/HP/maxHP/job) every tick, so party info is shared INSIDE the dungeon.
+void World::BroadcastDungeonParty() {
+	if (ownedZoneId < DungeonZoneId || ownedZoneId >= DungeonZoneId + DungeonFloorCount) return;
+	int party[DungeonPartyMax];
+	int n = 0;
+	for (int ci = 0; ci < clients.size && n < DungeonPartyMax; ++ci) {
+		if (clients.isnull(ci)) continue;
+		if (clients[ci].isServerPeer) continue;       // skip server-to-server peer links
+		if (clients[ci].pObjData == nullptr) continue; // must have an actual player
+		party[n++] = ci;
+	}
+	if (n <= 0) return;
+	for (int i = 0; i < n; ++i) {
+		int ci = party[i];
+		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, party, n);
 	}
 }
 
