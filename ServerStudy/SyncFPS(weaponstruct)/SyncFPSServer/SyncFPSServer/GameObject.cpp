@@ -3215,6 +3215,12 @@ bool Player::TryUseSkill(SkillSlot slot)
 	else if (skill.effectType == SkillEffectType::DualPistol_BladeMode) {
 		m_dualBladeTimer = skill.duration;
 		m_dualBladeEffectFlow = 0.50f;
+		// Blade mode replaces the firearm completely. Cancel an in-progress reload
+		// and make the first melee input immediately eligible.
+		ReloadRemain = 0.0f;
+		currentWeapon.m_shootFlow = max(currentWeapon.m_shootFlow, 0.50f);
+		zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS,
+			gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ReloadRemain);
 	}
 	else if (skill.effectType == SkillEffectType::DualPistol_Awaken) {
 		m_dualAwakenTimer = skill.duration;
@@ -3351,7 +3357,23 @@ void Player::Update(float deltaTime)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
 	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
+	const bool wasReloading = ReloadRemain > 0.0f;
 	weapon[SelectedWeapon].Update(deltaTime);
+	if (wasReloading) {
+		Weapon& currentWeapon = weapon[SelectedWeapon];
+		ReloadRemain = max(0.0f, -currentWeapon.m_shootFlow);
+		if (ReloadRemain <= 0.0f) {
+			bullets = currentWeapon.m_info.maxBullets;
+			if ((WeaponType)m_currentWeaponType == WeaponType::Sniper) {
+				if (m_sniperDmrMode) m_sniperDmrBullets = bullets;
+				else m_sniperSrBullets = bullets;
+			}
+			zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+				gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
+			zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS,
+				gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ReloadRemain);
+		}
+	}
 
 	if (zone->lowHit()) {
 		// 퀘스트 진행상황 체크 및 업데이트
@@ -3567,9 +3589,11 @@ void Player::Update(float deltaTime)
 			effectiveDamage *= m_sniperNextShotDamageMultiplier;
 		}
 
-		if (isBladeAttack && currentWeapon.m_shootFlow >= 0.55f) {
+		const float meleeAttackDelay = (m_dualAwakenTimer > 0.0f) ? 0.25f : 0.50f;
+		if (isBladeAttack && currentWeapon.m_shootFlow >= meleeAttackDelay) {
 			currentWeapon.OnFire();
-			int hitCount = zones->ApplySkillDamage(this, SkillEffectType::DualPistol_BladeMode, worldMat.pos, clook, 2.4f, 1.5f, 35.0f);
+			int hitCount = zones->ApplySkillDamage(this, SkillEffectType::DualPistol_BladeMode,
+				worldMat.pos, clook, 4.0f, 2.6f, 50.0f);
 			if (hitCount > 0) {
 				HP += 50.0f * 0.7f * (float)hitCount;
 				if (HP > MaxHP) HP = MaxHP;
@@ -3580,7 +3604,8 @@ void Player::Update(float deltaTime)
 				SkillSlot::Skill2, SkillEffectType::DualPistol_BladeMode, worldMat.pos, clook, 1.5f, 50.0f, 0.25f);
 			zones->Sending_PlayerFire(zones->CommonSDS, gameworld.clients[clientIndex].objindex, 2);
 		}
-		else if (currentWeapon.m_shootFlow >= effectiveShootDelay && (bullets > 0 || isRailgunAttack) && isOverheated == false) {
+		else if (!isBladeAttack && currentWeapon.m_shootFlow >= effectiveShootDelay &&
+			(bullets > 0 || isRailgunAttack) && isOverheated == false) {
 			const bool isDualPistolShot = (WeaponType)m_currentWeaponType == WeaponType::DualPistol && !isRailgunAttack;
 			const int shotsToFire = isDualPistolShot ? min(bullets, 2) : 1;
 

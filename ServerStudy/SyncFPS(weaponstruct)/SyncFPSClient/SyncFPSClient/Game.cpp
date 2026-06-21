@@ -1781,9 +1781,12 @@ namespace
 	void PlayPlayerFireVisual(Player* player, bool leftHand)
 	{
 		if (player == nullptr) return;
+		if ((WeaponType)player->m_currentWeaponType == WeaponType::DualPistol &&
+			player->m_dualBladeVisualTimer > 0.0f) return;
 		if (player->SelectedWeapon >= 0 && player->SelectedWeapon < 3) {
 			player->weapon[player->SelectedWeapon].OnFire();
 		}
+		player->TriggerUpperShoot();
 		player->TriggerDualPistolRecoil(leftHand);
 		SpawnMuzzleFlash(player, leftHand);
 		if (player == game.player) {
@@ -4627,14 +4630,18 @@ void Game::Init()
 			PlayerWeaponObj[(int)WeaponType::Pistol] = new GameObject();
 			PlayerWeaponObj[(int)WeaponType::Pistol]->worldMat = 0;
 			PlayerWeaponObj[(int)WeaponType::Pistol]->SetShape(game.PistolModel);
-			/*game.Pistol_SlideIndices.clear();
+			game.PistolModel->BindPose.resize(game.PistolModel->nodeCount);
+			for (int i = 0; i < game.PistolModel->nodeCount; ++i) {
+				game.PistolModel->BindPose[i] = game.PistolModel->Nodes[i].transform;
+			}
+			game.Pistol_SlideIndices.clear();
 			{
 				int upperIdx = game.PistolModel->FindNodeIndexByName("Upper_Part");
 				if (upperIdx >= 0) {
 					game.Pistol_SlideIndices.push_back(upperIdx);
 					game.PistolModel->BindPose[upperIdx] = game.PistolModel->Nodes[upperIdx].transform;
 				}
-			}*/
+			}
 
 			Model* ShotGun_SlagShot = AddItemFunc(globalitem_index, ItemType::_Weapon, "ShotGun_SlagShot",
 				"Resources/Model/shootgun.model",
@@ -4645,14 +4652,18 @@ void Game::Init()
 			PlayerWeaponObj[(int)WeaponType::Shotgun] = new GameObject();
 			PlayerWeaponObj[(int)WeaponType::Shotgun]->worldMat = 0;
 			PlayerWeaponObj[(int)WeaponType::Shotgun]->SetShape(game.ShotGunModel);
-			/*game.SG_PumpIndices.clear();
+			game.ShotGunModel->BindPose.resize(game.ShotGunModel->nodeCount);
+			for (int i = 0; i < game.ShotGunModel->nodeCount; ++i) {
+				game.ShotGunModel->BindPose[i] = game.ShotGunModel->Nodes[i].transform;
+			}
+			game.SG_PumpIndices.clear();
 			{
 				int pumpIdx = game.ShotGunModel->FindNodeIndexByName("handguard_low");
 				if (pumpIdx >= 0) {
 					game.SG_PumpIndices.push_back(pumpIdx);
 					game.ShotGunModel->BindPose[pumpIdx] = game.ShotGunModel->Nodes[pumpIdx].transform;
 				}
-			}*/
+			}
 
 			Model* MachineGun_Ratler = AddItemFunc(globalitem_index, ItemType::_Weapon, "MachineGun_Ratler",
 				"Resources/Model/minigun.model",
@@ -4663,7 +4674,11 @@ void Game::Init()
 			PlayerWeaponObj[(int)WeaponType::MachineGun] = new GameObject();
 			PlayerWeaponObj[(int)WeaponType::MachineGun]->worldMat = 0;
 			PlayerWeaponObj[(int)WeaponType::MachineGun]->SetShape(game.MachineGunModel);
-			/*game.MG_BarrelIndices.clear();
+			game.MachineGunModel->BindPose.resize(game.MachineGunModel->nodeCount);
+			for (int i = 0; i < game.MachineGunModel->nodeCount; ++i) {
+				game.MachineGunModel->BindPose[i] = game.MachineGunModel->Nodes[i].transform;
+			}
+			game.MG_BarrelIndices.clear();
 			{
 				auto addBarrel = [&](const char* name) {
 					int idx = game.MachineGunModel->FindNodeIndexByName(name);
@@ -4674,7 +4689,7 @@ void Game::Init()
 				addBarrel("Cylinder.108");
 				addBarrel("Cylinder.109");
 				addBarrel("Cylinder.110");
-			}*/
+			}
 
 			auto LoadJobWeaponModel = [&](const char* shapeName, const char* modelPath) -> Model* {
 				Model* model = new Model();
@@ -5013,7 +5028,7 @@ void Game::BeginPortalEnter(const char* ip, unsigned short port, int dstZoneId)
 	client.send((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
 
 	MoveZone(dstZoneId);
-	isPrepared = true;
+	isPrepared = false;
 }
 
 void Game::ResendHeldMovementKeys()
@@ -7222,6 +7237,15 @@ READ_START:
 			Player* ownerPlayer = dynamic_cast<Player*>(game.DynmaicGameObjects[netOwnerIndex]);
 				if (ownerPlayer != nullptr && header.duration > 0.5f) {
 					ownerPlayer->m_dualBladeVisualTimer = max(ownerPlayer->m_dualBladeVisualTimer, header.duration);
+					for (size_t i = 0; i < gDelayedWeaponFireVisuals.size();) {
+						const DelayedWeaponFireVisual& event = gDelayedWeaponFireVisuals[i];
+						if (event.ZoneId == header.zoneId && event.ObjectIndex == header.ownerObjIndex) {
+							gDelayedWeaponFireVisuals.erase(gDelayedWeaponFireVisuals.begin() + i);
+						}
+						else {
+							++i;
+						}
+					}
 				}
 		}
 		SpawnSkillEffect(header.effectType, header.position, header.direction, (UINT)netOwnerIndex, header.radius, header.power, header.duration);

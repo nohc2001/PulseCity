@@ -3633,6 +3633,20 @@ void Player::Update(float deltaTime)
 
 void Player::ClientUpdate(float deltaTime)
 {
+	if (m_dualBladeVisualTimer > 0.0f) {
+		m_dualBladeVisualTimer = max(0.0f, m_dualBladeVisualTimer - deltaTime);
+	}
+	if (m_dualBladeAttackVisualTimer > 0.0f) {
+		m_dualBladeAttackVisualTimer = max(0.0f, m_dualBladeAttackVisualTimer - deltaTime);
+	}
+	m_dualLeftRecoilTimer = max(0.0f, m_dualLeftRecoilTimer - deltaTime);
+	m_dualRightRecoilTimer = max(0.0f, m_dualRightRecoilTimer - deltaTime);
+	m_droneAssaultVisualTimer = max(0.0f, m_droneAssaultVisualTimer - deltaTime);
+	m_droneFlightVisualTimer = max(0.0f, m_droneFlightVisualTimer - deltaTime);
+	if (ReloadRemain > 0.0f) {
+		ReloadRemain = max(0.0f, ReloadRemain - deltaTime);
+	}
+
 	Weapon& currentWeapon = weapon[SelectedWeapon];
 	if ((int)currentWeapon.m_info.type != m_currentWeaponType)
 	{
@@ -3897,10 +3911,24 @@ static int GetPlayerWeaponVisualKey(const Player* player)
 
 void Player::Render_ThirdPersonWeapon()
 {
+	if (m_weaponHolstered) {
+		if (gd.isRaytracingRender) {
+			for (int i = 0; i < Game::MaxWeapon; ++i) {
+				if (game.PlayerWeaponObj[i] == nullptr) continue;
+				game.PlayerWeaponObj[i]->worldMat = 0;
+				game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+			}
+		}
+		return;
+	}
 	if (game.bFirstPersonVision) return;
+	const int visualKey = GetPlayerWeaponVisualKey(this);
 	if (gd.isRaytracingRender) {
 		matrix gunmat;
-		if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
+		if (cachedThirdPersonWeaponMatrixValid && cachedThirdPersonWeaponType == visualKey) {
+			gunmat = cachedThirdPersonWeaponMatrix;
+		}
+		else if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
 			gunmat = gunMatrix_thirdPersonView;
 			gunmat *= XMMatrixRotationX(XM_PI);
 			gunmat.pos.y -= 0.40f;
@@ -3931,7 +3959,10 @@ void Player::Render_ThirdPersonWeapon()
 		}
 
 		matrix gunmat;
-		if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
+		if (cachedThirdPersonWeaponMatrixValid && cachedThirdPersonWeaponType == visualKey) {
+			gunmat = cachedThirdPersonWeaponMatrix;
+		}
+		else if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
 			gunmat = gunMatrix_thirdPersonView;
 			gunmat *= XMMatrixRotationX(XM_PI);
 			gunmat.pos.y -= 0.40f;
@@ -3941,11 +3972,32 @@ void Player::Render_ThirdPersonWeapon()
 		}
 
 		pTargetModel->Render(gd.gpucmd, gunmat, nullptr);
+		if ((WeaponType)m_currentWeaponType == WeaponType::DualPistol) {
+			matrix leftGunmat;
+			if (cachedThirdPersonLeftWeaponMatrixValid && cachedThirdPersonWeaponType == visualKey) {
+				leftGunmat = cachedThirdPersonLeftWeaponMatrix;
+				pTargetModel->Render(gd.gpucmd, leftGunmat, nullptr);
+			}
+			else if (TryBuildThirdPersonWeaponMatrix(this, true, leftGunmat)) {
+				pTargetModel->Render(gd.gpucmd, leftGunmat, nullptr);
+			}
+		}
 	}
 }
 
 void Player::Render_AfterDepthClear()
 {
+	if (m_weaponHolstered) {
+		if (gd.isRaytracingRender) {
+			for (int i = 0; i < Game::MaxWeapon; ++i) {
+				if (game.PlayerWeaponObj[i] == nullptr) continue;
+				game.PlayerWeaponObj[i]->worldMat = 0;
+				game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+			}
+		}
+		return;
+	}
+
 	matrix viewmat = gd.viewportArr[0].ViewMatrix.RTInverse;
 
 	struct Model* pTargetModel = nullptr;
