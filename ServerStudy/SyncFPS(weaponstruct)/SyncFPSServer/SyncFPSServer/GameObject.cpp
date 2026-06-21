@@ -4744,6 +4744,18 @@ void World::Init() {
 		}
 	}
 
+	// [party/dungeon] append the 3 isolated dungeon-floor zones as ZoneTable[100..102].
+	// Far, spaced-out coords keep them out of grid adjacency AND non-adjacent to each other
+	// (no peer/ghost links between floors); each gets a distinct descriptor offset.
+	{
+		// Floor coords chosen so the render offset (client: OffsetMulArr[y%3][x%3]) lands on FREE descriptor
+		// slots, not colliding with open-world zones 73/74/83/84 (offsets 2/0/7/4). 1F->1, 2F->3, Boss->8.
+		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 0, "OfficeDungeon_1floor", 1000, 1002)); // 1F (off 1)
+		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 1, "OfficeDungeon_2floor", 1001, 1000)); // 2F (off 3)
+		// TEMP: Boss disabled until its map is deployed to the server. Re-enable with DungeonFloorCount=3.
+		//gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 2, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
+	}
+
 	//Set Near Zones
 	for (int i = 0; i < gameworld.ZoneTable.size(); ++i) {
 		Zone* tempZone = gameworld.ZoneTable[i];
@@ -4783,17 +4795,88 @@ void World::Init() {
 		z->GridCollisionCheck();
 		z->SpawnObjects();
 		z->Spawnboundary();
+		z->SpawnPortal();   // [party/dungeon] dungeon-entry portal (open-world zones only; skips dungeon)
 	}
 }
 
-void World::Update() {	
+void World::Update() {
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
 		gameworld.ZoneTable[i]->Update(DeltaTime);
 	}
+	// [party/dungeon] keep waiting members' HP/job live each tick (queued into PersonalSDS, flushed below).
+	BroadcastDungeonQueue();
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
 		gameworld.ZoneTable[i]->FlushSendToClients();
+	}
+}
+
+// [party/dungeon] ---- portal waiting-queue / party formation ----
+bool World::DungeonQueueContains(int clientIndex) {
+	for (int i = 0; i < dungeonQueueCount; ++i)
+		if (dungeonQueue[i] == clientIndex) return true;
+	return false;
+}
+
+void World::DungeonQueueAdd(int clientIndex) {
+	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return;
+	if (DungeonQueueContains(clientIndex)) { DungeonTryStart(true); return; }   // re-press F = start now
+	if (dungeonQueueCount >= DungeonPartyMax) return;   // already full; wait for it to start
+	dungeonQueue[dungeonQueueCount++] = clientIndex;
+	cout << "[Dungeon] queue add client=" << clientIndex << " (" << dungeonQueueCount << "/" << DungeonPartyMax << ")" << endl;
+	BroadcastDungeonQueue();
+	if (dungeonQueueCount >= DungeonPartyMax) DungeonTryStart(false);   // auto-start when full
+}
+
+void World::DungeonQueueRemove(int clientIndex) {
+	int w = 0;
+	bool removed = false;
+	for (int i = 0; i < dungeonQueueCount; ++i) {
+		if (dungeonQueue[i] == clientIndex) { removed = true; continue; }
+		dungeonQueue[w++] = dungeonQueue[i];
+	}
+	if (!removed) return;
+	dungeonQueueCount = w;
+	for (int i = dungeonQueueCount; i < DungeonPartyMax; ++i) dungeonQueue[i] = -1;
+	cout << "[Dungeon] queue remove client=" << clientIndex << " (" << dungeonQueueCount << "/" << DungeonPartyMax << ")" << endl;
+	BroadcastDungeonQueue();
+}
+
+void World::BroadcastDungeonQueue() {
+	for (int i = 0; i < dungeonQueueCount; ++i) {
+		int ci = dungeonQueue[i];
+		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
+		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, dungeonQueue, dungeonQueueCount);
+	}
+}
+
+void World::DungeonTryStart(bool force) {
+	if (dungeonQueueCount <= 0) return;
+	if (!force && dungeonQueueCount < DungeonPartyMax) return;   // auto-start only when full
+	EnterDungeonStub();
+}
+
+// [party/dungeon][phase2] form the party and portal-teleport every member to the dungeon server.
+void World::EnterDungeonStub() {
+	int members[DungeonPartyMax];
+	int n = dungeonQueueCount;
+	for (int i = 0; i < n; ++i) members[i] = dungeonQueue[i];
+
+	cout << "[Dungeon] START with " << n << " player(s):";
+	for (int i = 0; i < n; ++i) cout << " client" << members[i];
+	cout << endl;
+
+	for (int i = 0; i < DungeonPartyMax; ++i) dungeonQueue[i] = -1;
+	dungeonQueueCount = 0;
+
+	// Clear each member's waiting panel, then send each into the dungeon server (fresh connect, state reset).
+	// This only works in the multi-process setup where a dedicated server owns DungeonZoneId (port 9000+id).
+	for (int i = 0; i < n; ++i) {
+		int ci = members[i];
+		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
+		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0);
+		Sending_DungeonEnter(clients[ci].PersonalSDS, GetZoneIP(DungeonZoneId), GetZonePort(DungeonZoneId), DungeonZoneId);
 	}
 }
 
@@ -5126,6 +5209,11 @@ void World::AcceptClientHello(int clientIndex) {
 	avgpos.w = 1;
 	p->worldMat.pos = avgpos;
 	p->worldMat.pos.f3.y = StartZone->map.AABB[1].y - 4;
+	// [party/dungeon] dungeon ceiling is too high -> player spawned at the ceiling. Spawn near the floor
+	// instead so they drop into the room. (Tune the +5 if needed.)
+	if (StartzoneId >= DungeonZoneId && StartzoneId < DungeonZoneId + DungeonFloorCount) {
+		p->worldMat.pos.f3.y = StartZone->map.AABB[0].y + 1.5;
+	}
 	p->SetShape(Shape::StrToShapeIndex["Player"]);
 	for (int i = 0; i < 36; ++i) {
 		p->Inventory[i].id = 0;

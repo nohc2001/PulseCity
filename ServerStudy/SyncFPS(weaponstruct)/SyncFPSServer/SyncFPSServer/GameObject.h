@@ -2021,6 +2021,11 @@ struct World {
 			b = b && (miny <= zptr->y && zptr->y <= maxy);
 			return b;
 		}
+		// [party/dungeon] the dungeon server owns ALL dungeon floor zones (100..102), not just one,
+		// so floor-to-floor transitions are same-server zone moves.
+		if (ownedZoneId >= DungeonZoneId && ownedZoneId < DungeonZoneId + DungeonFloorCount) {
+			return (zoneId >= DungeonZoneId && zoneId < DungeonZoneId + DungeonFloorCount);
+		}
 		return zoneId == ownedZoneId;
 	}
 
@@ -2104,6 +2109,48 @@ struct World {
 		sds.postpush_end();
 	}
 
+	// [party/dungeon] Write a party/queue roster snapshot (per-member objindex, HP, MaxHP, job) into a
+	// client's send buffer. Pass the member list to send: the waiting queue (count<=DungeonPartyMax).
+	__forceinline void Sending_DungeonQueueUpdate(SendDataSaver& sds, const int* members, int count) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_DungeonQueueUpdate_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_DungeonQueueUpdate_Header& header = *(STC_DungeonQueueUpdate_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::DungeonQueueUpdate;
+		header.count = count;
+		header.maxCount = DungeonPartyMax;
+		for (int i = 0; i < DungeonPartyMax; ++i) {
+			int ci = (members != nullptr && i < count) ? members[i] : -1;
+			if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false && clients[ci].pObjData != nullptr) {
+				header.objindex[i] = clients[ci].objindex;
+				header.hp[i] = clients[ci].pObjData->HP;
+				header.maxhp[i] = clients[ci].pObjData->MaxHP;
+				header.m_currentJob[i] = clients[ci].pObjData->m_currentJob;
+			} else {
+				header.objindex[i] = -1;
+				header.hp[i] = 0;
+				header.maxhp[i] = 0;
+				header.m_currentJob[i] = -1;
+			}
+		}
+		sds.postpush_end();
+	}
+
+	// [party/dungeon][phase2] Tell a client to portal-teleport (fresh connect) to the dungeon server at ip:port.
+	__forceinline void Sending_DungeonEnter(SendDataSaver& sds, const char* ip, unsigned short port, int dstZoneId) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_DungeonEnter_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_DungeonEnter_Header& header = *(STC_DungeonEnter_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::DungeonEnter;
+		header.port = port;
+		header.dstZoneId = dstZoneId;
+		strncpy_s(header.ip, ip, _TRUNCATE);
+		sds.postpush_end();
+	}
+
 
 	/*
 	* 설명 : 현재 게임 상태를 전송한다.
@@ -2127,6 +2174,23 @@ struct World {
 	* 설명 : 플레이어를 srcZone에서 dstZone으로 이동시킨다.
 	*/
 	void MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos);
+
+	// [party/dungeon] portal waiting-queue. Up to DungeonPartyMax players gather here.
+	static constexpr int DungeonPartyMax = 3;
+	// [party/dungeon][phase2] the dungeon is a special zone OUTSIDE the open-world grid (ids 0..99),
+	// served by its own process on port 9000+DungeonZoneId. Coords are far away so it is never adjacent.
+	static constexpr int DungeonZoneId = 100;
+	// [party/dungeon] dungeon floors: 100=1F, 101=2F, 102=Boss. One dungeon server owns them all.
+	// TEMP: 1F+2F enabled (Boss map not ready yet). Restore to 3 once the Boss map works.
+	static constexpr int DungeonFloorCount = 2;
+	int dungeonQueue[DungeonPartyMax] = { -1, -1, -1 };   // client indices, -1 = empty
+	int dungeonQueueCount = 0;
+	bool DungeonQueueContains(int clientIndex);
+	void DungeonQueueAdd(int clientIndex);     // add once + broadcast; re-press starts, full auto-starts
+	void DungeonQueueRemove(int clientIndex);  // remove + broadcast (leave/disconnect)
+	void BroadcastDungeonQueue();              // send STC_DungeonQueueUpdate to current waiters
+	void DungeonTryStart(bool force);          // force=true: start now with current members (>=1)
+	void EnterDungeonStub();                   // send each member STC_DungeonEnter + clear the queue
 
 	/*
 	* 설명 : 플레이어가 속한 Zone을 얻는다.

@@ -542,6 +542,11 @@ namespace
 	std::vector<Particle> gBulletTracerParticles;
 	std::vector<Particle> gIceProjectileParticles;
 
+	// [party/dungeon] dungeon-entry portal rendered as swirling blue particles (replaces the cube mesh).
+	ParticlePool gPortalPool;
+	GPUResource gPortalUpload;
+	std::vector<Particle> gPortalParticles;
+
 	ParticleSpriteSlot gFireSpriteSlot = ParticleSpriteSlot::FirePrimary;
 	ParticleSpriteSlot gFirePillarSpriteSlot = ParticleSpriteSlot::FirePrimary;
 	ParticleSpriteSlot gFireRingSpriteSlot = ParticleSpriteSlot::FirePrimary;
@@ -965,6 +970,45 @@ namespace
 		right = NormalizeOrFallback(player->worldMat.right, vec4(1, 0, 0, 0));
 		up = NormalizeOrFallback(player->worldMat.up, vec4(0, 1, 0, 0));
 		origin = player->worldMat.pos + right * 0.30f + up * 1.35f + forward * 0.48f;
+	}
+
+	// [party/dungeon] big swirling blue particle ring at a portal position (spawned every frame; transient).
+	// Ring lies in the YZ plane (faces the X axis) so a player approaching along X sees a full circle.
+	void SpawnPortalParticles(const vec4& center)
+	{
+		const int count = 24;   // denser
+		for (int i = 0; i < count; ++i) {
+			Particle* particle = AllocateTransientParticle(gPortalParticles);
+			if (particle == nullptr) break;
+			float angle = RandomRange(0.0f, XM_2PI);
+			float rad = RandomRange(1.6f, 2.2f);
+			float px = RandomRange(-0.3f, 0.3f);          // thin in X (disc faces X)
+			float py = sinf(angle) * rad + 2.2f;          // vertical, raised so the ring stands up
+			float pz = cosf(angle) * rad;                 // horizontal
+			vec4 pos = center + vec4(px, py, pz, 0.0f);
+			vec4 vel = vec4(0.0f, cosf(angle), -sinf(angle), 0.0f);   // swirl tangentially in YZ
+			float spd = RandomRange(0.8f, 1.6f);
+
+			particle->Position = XMFLOAT3(pos.x, pos.y, pos.z);
+			particle->Velocity = XMFLOAT3(vel.x * spd, vel.y * spd, vel.z * spd);
+			particle->Age = 0.0f;
+			particle->LifeTime = RandomRange(0.6f, 1.1f);
+			particle->StartColor = XMFLOAT4(0.50f, 1.40f, 3.00f, 1.00f);   // bright blue
+			particle->EndColor = XMFLOAT4(0.10f, 0.40f, 0.90f, 0.0f);
+			particle->StartSize = RandomRange(0.35f, 0.60f);              // bigger
+			particle->EndSize = 0.06f;
+			particle->Rotation = RandomRange(0.0f, XM_2PI);
+			particle->RotationSpeed = RandomRange(-4.0f, 4.0f);
+			particle->Drag = 0.4f;
+			particle->GravityScale = 0.0f;
+			particle->Stretch = 1.0f;
+			particle->CollisionRadius = 0.0f;
+			particle->Flags = 0u;
+			particle->RandomSeed = gTransientParticleSeed++;
+			particle->FrameIndex = 0;
+			particle->FrameCount = 29u;
+			particle->FrameCols = 5u;
+		}
 	}
 
 	void SpawnMuzzleFlash(Player* player)
@@ -1637,6 +1681,18 @@ void Game::Init()
 			}
 		}
 
+		// [party/dungeon] client must mirror the server's 3 dungeon-floor zones (same ids/coords) so
+		// MoveZone(100/101/102) is valid for entry + floor transitions.
+		{
+			// Floor coords chosen so Asset_OffsetMul (=OffsetMulArr[y%3][x%3]) lands on FREE descriptor slots,
+			// not colliding with open-world zones 73/74/83/84 (offsets 2/0/7/4). 1F->1, 2F->3, Boss->8.
+			// MUST match the server's dungeon floor coords exactly.
+			game.ZoneTable.push_back(new Zone(100, "OfficeDungeon_1floor", 1000, 1002)); // 1F (off 1)
+			game.ZoneTable.push_back(new Zone(101, "OfficeDungeon_2floor", 1001, 1000)); // 2F (off 3)
+			// TEMP: Boss disabled until its map works. Re-enable together with server DungeonFloorCount=3.
+			//game.ZoneTable.push_back(new Zone(102, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
+		}
+
 		//Set Near Zones
 		for (int i = 0; i < game.ZoneTable.size(); ++i) {
 			Zone* tempZone = game.ZoneTable[i];
@@ -1763,6 +1819,7 @@ void Game::Init()
 			InitTransientParticlePool(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles, MUZZLE_FLASH_COUNT);
 			InitTransientParticlePool(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles, BULLET_TRACER_COUNT);
 			InitTransientParticlePool(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles, ICE_PROJECTILE_COUNT);
+			InitTransientParticlePool(gPortalPool, gPortalUpload, gPortalParticles, 1024);   // [party/dungeon] portal particles
 		}
 
 		ParticleDraw = new ParticleShader();
@@ -2224,6 +2281,33 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	MoveZone(dstZoneId);
 	isPrepared = true;
 	return true;
+}
+
+// [party/dungeon][phase2] Portal-teleport: drop the current connection and reconnect FRESH to the
+// dungeon server. The dungeon server creates a brand-new player (state reset), like a first login.
+void Game::BeginPortalEnter(const char* ip, unsigned short port, int dstZoneId)
+{
+	char ipLocal[64] = {};
+	if (ip) strncpy_s(ipLocal, ip, _TRUNCATE);
+
+	isPrepared = false;
+	isPreparedClientIndex = false;
+	isMapInit = false;
+	clientIndexInServer = -1;
+	playerGameObjectIndex = -1;
+	player = nullptr;
+
+	client.Disconnect();
+	bool connected = client.Init(ipLocal, port);
+	if (connected == false) return;
+
+	CTS_ClientHello_Header hello;
+	hello.size = sizeof(CTS_ClientHello_Header);
+	hello.st = CTS_Protocol::ClientHello;
+	client.send((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
+
+	MoveZone(dstZoneId);
+	isPrepared = true;
 }
 
 void Game::ResendHeldMovementKeys()
@@ -2703,12 +2787,57 @@ void Game::Render() {
 			ParticleDraw->Render(gd.gpucmd, &effect.Pool->Buffer, effect.Pool->Count);
 		}
 
+		// [party/dungeon] feed swirling particles at every portal each frame.
+		for (int i = 0; i < Portals.size(); ++i) {
+			if (Portals[i] == nullptr) continue;
+			SpawnPortalParticles(Portals[i]->worldMat.pos);
+		}
+		// [party/dungeon] guaranteed-visible portal ring at the local player's spawn + the zone's portal offset.
+		// Re-anchors whenever the zone changes; offset matches the server portal (open-world entry +5X, dungeon 1F floor +2X).
+		// Drawn only where a portal exists: open world (any <100) and dungeon 1F (100). 2F(101, last floor) has no portal.
+		{
+			static bool _portalAnchorSet = false;
+			static int  _portalAnchorWait = 0;
+			static int  _portalAnchorZone = -999;
+			static vec4 _portalAnchor = vec4(0);
+			if (currentZoneId != _portalAnchorZone) {   // zone changed -> re-capture anchor
+				_portalAnchorZone = currentZoneId;
+				_portalAnchorSet = false;
+				_portalAnchorWait = 0;
+			}
+			bool zoneHasPortal = (currentZoneId < 100) || (currentZoneId == 100);   // skip 2F (101) which has no portal
+			if (zoneHasPortal
+				&& playerGameObjectIndex >= 0 && playerGameObjectIndex < (int)DynmaicGameObjects.size()
+				&& DynmaicGameObjects[playerGameObjectIndex] != nullptr) {
+				float fwd  = (currentZoneId >= 100) ? 72.0f : 5.0f;   // dungeon floor portal +72X, open-world entry +5X
+				float fwdZ = (currentZoneId >= 100) ? 3.0f  : 0.0f;   // dungeon floor portal +3Z
+				if (!_portalAnchorSet) {
+					_portalAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(fwd, 0.0f, fwdZ, 0.0f);
+					if (++_portalAnchorWait > 120) _portalAnchorSet = true;
+				}
+				SpawnPortalParticles(_portalAnchor);
+			}
+		}
+		// [PORTAL-DBG] throttled: confirms client has the portal + particles are being produced.
+		{
+			static int _pdbg = 0;
+			if (++_pdbg % 120 == 0) {
+				char _d[256] = {};
+				vec4 pp = (Portals.size() > 0 && Portals[0]) ? Portals[0]->worldMat.pos : vec4(0);
+				sprintf_s(_d, "[PORTAL-DBG] Portals=%d portalParticles=%d pool=%d pos0=(%.1f,%.1f,%.1f)\n",
+					(int)Portals.size(), (int)gPortalParticles.size(), (int)gPortalPool.Count, pp.x, pp.y, pp.z);
+				OutputDebugStringA(_d); printf("%s", _d);
+			}
+		}
+
 		TickTransientParticles(gMuzzleFlashParticles, DeltaTime);
 		TickTransientParticles(gBulletTracerParticles, DeltaTime);
 		TickTransientParticles(gIceProjectileParticles, DeltaTime);
+		TickTransientParticles(gPortalParticles, DeltaTime);
 		UploadTransientParticles(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles);
 		UploadTransientParticles(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles);
 		UploadTransientParticles(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles);
+		UploadTransientParticles(gPortalPool, gPortalUpload, gPortalParticles);
 
 		ParticleDraw->FireTexture = GetParticleSpriteResource(gMuzzleFlashSpriteSlot);
 		ParticleDraw->Render(gd.gpucmd, &gMuzzleFlashPool.Buffer, gMuzzleFlashPool.Count);
@@ -2718,6 +2847,9 @@ void Game::Render() {
 
 		ParticleDraw->FireTexture = &gParticleIceTexture;
 		ParticleDraw->Render(gd.gpucmd, &gIceProjectilePool.Buffer, gIceProjectilePool.Count);
+
+		ParticleDraw->FireTexture = &gParticleIceTexture;   // [party/dungeon] blue portal particles
+		ParticleDraw->Render(gd.gpucmd, &gPortalPool.Buffer, gPortalPool.Count);
 	}
 
 	{
@@ -2743,7 +2875,8 @@ void Game::Render() {
 			matrix world = Portals[i]->worldMat;
 			world.transpose();
 			gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &world, 0);
-			mesh->Render(gd.gpucmd, 1);
+			// [party/dungeon] portal is drawn as particles now (see SpawnPortalParticles); skip the cube mesh.
+			//mesh->Render(gd.gpucmd, 1);
 		}
 	}
 
@@ -4281,6 +4414,44 @@ READ_START:
 		SpawnStatusEffect(header.statusType, netTargetIndex, netSourceIndex, header.active, header.position, header.extents, header.duration, header.remainTime, header.power);
 		currentPivot += header.size;
 		offset += header.size;
+	}
+	break;
+	case STC_Protocol::DungeonQueueUpdate:
+	{
+		// [party/dungeon] store the latest waiting-queue snapshot so the (teammate's) party UI can read it.
+		STC_DungeonQueueUpdate_Header& header = *(STC_DungeonQueueUpdate_Header*)currentPivot;
+		// [party/dungeon] confirm queue membership on the client (log only when the count changes).
+		{
+			static int _lastQueueCount = -1;
+			if (header.count != _lastQueueCount) {
+				_lastQueueCount = header.count;
+				char _d[160] = {};
+				if (header.count > 0)
+					sprintf_s(_d, "[Dungeon] IN QUEUE (%d/%d). Press F to start the dungeon.\n", header.count, header.maxCount);
+				else
+					sprintf_s(_d, "[Dungeon] queue cleared.\n");
+				OutputDebugStringA(_d); printf("%s", _d);
+			}
+		}
+		game.m_dungeonQueue.count = header.count;
+		game.m_dungeonQueue.maxCount = header.maxCount;
+		game.m_dungeonQueue.active = (header.count > 0);
+		for (int i = 0; i < 3; ++i) {
+			game.m_dungeonQueue.objindex[i] = header.objindex[i];
+			game.m_dungeonQueue.hp[i] = header.hp[i];
+			game.m_dungeonQueue.maxhp[i] = header.maxhp[i];
+			game.m_dungeonQueue.m_currentJob[i] = header.m_currentJob[i];
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::DungeonEnter:
+	{
+		// [party/dungeon][phase2] portal teleport: disconnect and reconnect FRESH to the dungeon server.
+		STC_DungeonEnter_Header& header = *(STC_DungeonEnter_Header*)currentPivot;
+		game.BeginPortalEnter(header.ip, header.port, header.dstZoneId);
+		return totallen;   // connection changed; stop processing this (now-stale) buffer
 	}
 	break;
 	case STC_Protocol::SyncGameState:

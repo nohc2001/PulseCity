@@ -319,6 +319,18 @@ READ_START:
 		offset += header.size;
 	}
 	break;
+	case CTS_Protocol::DungeonStart:
+	{
+		// [party/dungeon] F-key = START the dungeon, but ONLY if already in the queue (joined via the portal).
+		// Pressing F when not queued does nothing -> entry is gated behind walking into the portal.
+		CTS_DungeonStart_Header& header = *(CTS_DungeonStart_Header*)currentPivot;
+		if (gameworld.DungeonQueueContains(clientIndex)) {
+			gameworld.DungeonTryStart(true);
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
 	case CTS_Protocol::ChangeJob:
 	{
 		CTS_ChangeJob_Header& header = *(CTS_ChangeJob_Header*)currentPivot;

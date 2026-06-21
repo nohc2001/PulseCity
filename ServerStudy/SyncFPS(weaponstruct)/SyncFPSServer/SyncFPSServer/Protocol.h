@@ -69,6 +69,11 @@ union STC_Protocol {
 		DeleteQuest = 17,
 
 		SyncQuestPrograss = 18,
+
+		// [party/dungeon] reassigned to 19/20 to avoid collision with NPC/Quest ids above.
+		DungeonQueueUpdate = 19,
+
+		DungeonEnter = 20,
 	};
 
 	short n;
@@ -214,6 +219,29 @@ struct STC_ServerTransfer_Header {
 	int dstZoneId;
 	unsigned short port;
 	int transferToken;
+	char ip[32] = {};
+};
+
+// [party/dungeon] Dungeon waiting-queue snapshot sent to the players currently waiting at the portal.
+// count = how many are waiting (0..maxCount). Per-slot objindex/hp/maxhp let the client show members.
+struct STC_DungeonQueueUpdate_Header {
+	unsigned int size = sizeof(STC_DungeonQueueUpdate_Header);
+	STC_Protocol st = STC_Protocol::DungeonQueueUpdate;
+	int count = 0;
+	int maxCount = 3;
+	int objindex[3] = {};
+	float hp[3] = {};
+	float maxhp[3] = {};
+	int m_currentJob[3] = {};   // [party] each member's job (PlayerJob int), -1 if empty slot
+};
+
+// [party/dungeon] Portal-teleport command: the client should disconnect from its current server and
+// connect FRESH (ClientHello) to the dungeon server at ip:port, loading dstZoneId. Player state resets.
+struct STC_DungeonEnter_Header {
+	unsigned int size = sizeof(STC_DungeonEnter_Header);
+	STC_Protocol st = STC_Protocol::DungeonEnter;
+	unsigned short port = 0;
+	int dstZoneId = 0;
 	char ip[32] = {};
 };
 
@@ -365,12 +393,20 @@ union CTS_Protocol {
 		MonsterHandoff = 11,
 		CTS_ChangeEquipSlotWithInventorySlot = 12,
 		Client_NPCTalkSelection = 13,
+		// [party/dungeon] reassigned to 14 to avoid collision with ChangeEquipSlot(12)/NPCTalk(13).
+		DungeonStart = 14,
 	};
 	short n;
 	char two_byte[2];
 
 	CTS_Protocol(short id) { n = id; }
 	operator short() { return n; }
+};
+
+// [party/dungeon] sent when a waiting player presses the start key (F) to begin with current members.
+struct CTS_DungeonStart_Header {
+	unsigned int size = sizeof(CTS_DungeonStart_Header);
+	CTS_Protocol st = CTS_Protocol::DungeonStart;
 };
 
 struct CTS_KeyInput_Header {

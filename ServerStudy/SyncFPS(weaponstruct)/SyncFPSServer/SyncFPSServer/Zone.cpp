@@ -365,6 +365,7 @@ void Zone::Update(float deltaTime) {
         if (gameworld.clients[i].zoneId != this->zoneId) continue;
         Player* p = (Player*)gameworld.clients[i].pObjData;
         if (p) CheckBoundaryCrossing(p, deltaTime);
+        if (p) CheckPortalCollision(p);   // [party/dungeon] walk into the dungeon portal -> join queue
     }
 
     // [4단계-STEP5] 핸드오프는 '플레이어가 옆 서버로 넘어가 고스트로 보일 때'만 수행한다.
@@ -559,48 +560,66 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
 
 //��Ż ����
 void Zone::SpawnPortal() {
-    Portal* portal = new Portal();
+    // Decide what this zone's portal does:
+    //  - Boss floor (last)      : no onward portal (exit added later).
+    //  - dungeon floor (1F/2F)  : floor portal -> next floor (same-server zone move).
+    //  - open-world zone        : entry portal -> dungeon queue (dstzoneId == DungeonZoneId marker).
+    int dstZone;
+    bool isEntry;
+    if (zoneId == World::DungeonZoneId + World::DungeonFloorCount - 1) {
+        return; // Boss floor: no next-floor portal
+    }
+    else if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) {
+        dstZone = zoneId + 1;   // dungeon floor -> next floor
+        isEntry = false;
+    }
+    else {
+        dstZone = World::DungeonZoneId;   // open world -> dungeon entry (queue join)
+        isEntry = true;
+    }
 
-    // "Portal" Shape�� ������ shapeindex�� -1�� ��
+    Portal* portal = new Portal();
     auto it = Shape::StrToShapeIndex.find("Portal");
     if (it != Shape::StrToShapeIndex.end()) {
         portal->SetShape(it->second);
     }
-
     portal->zoneId = this->zoneId;
 
-    if (zoneId == 0) {
-        // Debug boundary visual : mid-zone gate for Zone 0 -> Zone 1.
-        portal->worldMat =
-            XMMatrixScaling(8.0f, 4.0f, 1.0f) *
-            XMMatrixTranslation(0.0f, 2.0f, 24.0f);
-        portal->dstzoneId = 1;
-        portal->spawnX = 0.0f;
-        portal->spawnY = 2.0f;
-        portal->spawnZ = -4.0f;
-        portal->radius = 4.0f;
-    }
-    else if (zoneId == 1) {
-        // Debug boundary visual : mid-zone gate for Zone 1 -> Zone 0.
-        portal->worldMat =
-            XMMatrixScaling(8.0f, 4.0f, 1.0f) *
-            XMMatrixTranslation(0.0f, 2.0f, -24.0f);
-        portal->dstzoneId = 0;
-        portal->spawnX = 0.0f;
-        portal->spawnY = 2.0f;
-        portal->spawnZ = 4.0f;
-        portal->radius = 4.0f;
+    // Portal placed along +X from this zone's spawn (zone center): entry +5, dungeon floor +1.
+    float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
+    float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
+    float gy = map.AABB[0].y + 2.0f;
+    float forwardX = isEntry ? 5.0f : 72.0f;   // dungeon floor portal shifted +X (2 -> 12 -> 52 -> 72)
+    float forwardZ = isEntry ? 0.0f : 3.0f;    // dungeon floor portal shifted +3 Z
+    portal->worldMat =
+        XMMatrixScaling(2.0f, 3.0f, 2.0f) *
+        XMMatrixTranslation(cx + forwardX, gy, cz + forwardZ);
+    portal->dstzoneId = dstZone;
+    portal->radius = 2.0f;
+
+    if (!isEntry) {
+        // floor portal: where to drop the player in the next floor (its center, high up -> falls to floor).
+        Zone* nz = (dstZone >= 0 && dstZone < (int)gameworld.ZoneTable.size()) ? gameworld.ZoneTable[dstZone] : nullptr;
+        if (nz != nullptr) {
+            portal->spawnX = 0.5f * (nz->BasicAABB_onlyXZ.x + nz->BasicAABB_onlyXZ.z);
+            portal->spawnZ = 0.5f * (nz->BasicAABB_onlyXZ.y + nz->BasicAABB_onlyXZ.w);
+            portal->spawnY = nz->map.AABB[0].y + 1.5f;
+        }
     }
 
     portal->tag[Tag_Enable] = true;
     portals.push_back(portal);
-    cout << "[Zone " << zoneId << "] SpawnPortal dstzoneId=" << portal->dstzoneId
-        << " pos=(" << portal->worldMat.pos.f3.x << ", " << portal->worldMat.pos.f3.y << ", " << portal->worldMat.pos.f3.z << ")" << endl;
+    //cout << "[Zone " << zoneId << "] Portal -> zone " << dstZone << (isEntry ? " (entry/queue)" : " (floor)")
+        //<< " at (" << cx << ", " << gy << ", " << (cz + forward) << ")" << endl;
 }
 
 void Zone::Spawnboundary()
 {
     boundaries.clear();
+
+    // [party/dungeon] dungeon floors are isolated (no adjacent zones -> nearZones[1..4] null) and need no
+    // zone-crossing boundaries. Skip ALL floors to avoid dereferencing null neighbors (startup crash).
+    if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) return;
 
     for (int ix = 0; ix < 2; ++ix) {
         Zoneboundary boundary{};
@@ -719,19 +738,31 @@ void Zone::CheckPortalCollision(Player* p) {
         Portal* portal = portals[i];
         vec4 portalPos = portal->worldMat.pos;
 
+        int ci = p->clientIndex;
+        float r = portal->radius;
+
+        // [party/dungeon] dungeon-entry portal: standing in it adds you to the party queue (XZ distance,
+        // ignore height). Idempotent: only add when not already queued so it never auto-starts on repeat.
+        if (portal->dstzoneId == World::DungeonZoneId) {
+            float dx = playerPos.f3.x - portalPos.f3.x;
+            float dz = playerPos.f3.z - portalPos.f3.z;
+            if (dx * dx + dz * dz <= r * r) {
+                if (gameworld.DungeonQueueContains(ci) == false) {
+                    gameworld.DungeonQueueAdd(ci);
+                }
+            }
+            continue;
+        }
+
+        // (other portals: original zone-move behavior)
         float dx = playerPos.f3.x - portalPos.f3.x;
         float dy = playerPos.f3.y - portalPos.f3.y;
         float dz = playerPos.f3.z - portalPos.f3.z;
         float dist2 = dx * dx + dy * dy + dz * dz;
-        float r = portal->radius;
 
         if (dist2 <= r * r) {
             vec4 spawnPos(portal->spawnX, portal->spawnY, portal->spawnZ, 1.0f);
-            int ci = p->clientIndex;
-
-            // World���� �� �̵��� ��û
             gameworld.MovePlayerToZone(ci, portal->dstzoneId, spawnPos);
-
             return;
         }
     }
@@ -983,6 +1014,8 @@ void Zone::SpawnObjects() {
 
     // zoneId == 1 => no spawn monster
     if (zoneId == 1) return;
+    // [party/dungeon] don't fill any dungeon floor with random open-world monsters/NPC (boss content separate).
+    if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) return;
 
     static constexpr int range = 100;
     for (int i = 0; i < 20; ++i) {

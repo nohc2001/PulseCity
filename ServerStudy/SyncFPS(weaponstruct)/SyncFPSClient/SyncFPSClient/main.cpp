@@ -460,6 +460,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 			break;
+			case 'F':
+			{
+				// [party/dungeon] join the party queue (server adds caller + broadcasts members' HP/job).
+				if ((game.pKeyBuffer['F'] & 0xF0) == false) {
+					CTS_DungeonStart_Header header;
+					header.size = sizeof(CTS_DungeonStart_Header);
+					header.st = CTS_Protocol::DungeonStart;
+					client.send((char*)&header, sizeof(CTS_DungeonStart_Header), 0);
+				}
+			}
+			break;
 			case VK_SPACE:
 			{
 				if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
