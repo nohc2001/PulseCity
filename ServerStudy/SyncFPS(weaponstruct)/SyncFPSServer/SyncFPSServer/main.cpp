@@ -222,7 +222,6 @@ READ_START:
 	{
 		CTS_KeyInput_Header& header = *(CTS_KeyInput_Header*)currentPivot;
 		p->InputBuffer[header.Key] = header.isdown;
-		cout << "client" << clientIndex << " : " << header.Key << " isdown : " << header.isdown << endl;
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -315,6 +314,18 @@ READ_START:
 	{
 		CTS_UseSkill_Header& header = *(CTS_UseSkill_Header*)currentPivot;
 		p->TryUseSkill(header.slot);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::DungeonStart:
+	{
+		// [party/dungeon] F-key = START the dungeon, but ONLY if already in the queue (joined via the portal).
+		// Pressing F when not queued does nothing -> entry is gated behind walking into the portal.
+		CTS_DungeonStart_Header& header = *(CTS_DungeonStart_Header*)currentPivot;
+		if (gameworld.DungeonQueueContains(clientIndex)) {
+			gameworld.DungeonTryStart(true);
+		}
 		currentPivot += header.size;
 		offset += header.size;
 	}

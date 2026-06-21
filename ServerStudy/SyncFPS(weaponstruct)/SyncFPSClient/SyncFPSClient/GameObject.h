@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "stdafx.h"
 #include "Render.h"
 #include "Game.h"
@@ -546,6 +546,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 
 // 이름에서 ShapeIndex를 얻는 map
 		float frameRate;
+		float upperBodyYawCorrection;
+		float upperBodyPitchCorrection;
 	};
 
 // 이름에서 ShapeIndex를 얻는 map
@@ -951,9 +953,6 @@ struct SphereLODObject : public DynamicGameObject {
 
 /*
 * 설명 : 무기 타입 구조체
-=======
-* ���� : ���� ���� Ŭ����
->>>>>>> Stashed changes
 */
 class Monster : public SkinMeshGameObject {
 #define STC_CurrentStruct Monster
@@ -1172,14 +1171,39 @@ public:
 
 	void ChangeState(State newState);
 
+	enum class JumpPhase {
+		NONE,
+		TAKEOFF,
+		AIRBORNE,
+		LANDING,
+	};
+
+	JumpPhase m_jumpPhase = JumpPhase::NONE;
+	float m_jumpElapsed = 0.0f;
+	float m_jumpGroundStableTime = 0.0f;
+	float m_jumpReentryCooldown = 0.0f;
+	bool m_jumpSawDescending = false;
+
 	enum class UpperState {
 		NONE,
 		AIM,
 		SHOOT,
+		RELOAD,
 	};
 
-	UpperState m_currentUpperState = UpperState::NONE;
-	void ChangeUpperState(UpperState newState);
+	UpperState m_currentUpperState = UpperState::AIM;
+	float m_upperShootHoldTimer = 0.0f;
+	float m_upperAimPoseTime = 0.0f;
+	float m_dualBladeVisualTimer = 0.0f;
+	float m_dualBladeAttackVisualTimer = 0.0f;
+	bool m_dualBladeAttackAlternate = false;
+	float m_dualLeftRecoilTimer = 0.0f;
+	float m_dualRightRecoilTimer = 0.0f;
+	float m_droneAssaultVisualTimer = 0.0f;
+	float m_droneFlightVisualTimer = 0.0f;
+	void ChangeUpperState(UpperState newState, bool restart = false);
+	void TriggerUpperShoot();
+	void TriggerDualPistolRecoil(bool leftHand);
 
 #define STC_CurrentStruct Player
 	STC_STATICINIT_innerStruct
@@ -1212,6 +1236,11 @@ public:
 	STCDefArr(float, SkillCooldownFlow, (int)SkillSlot::Max);
 		// 이름에서 ShapeIndex를 얻는 map
 	STCDef(int, m_currentWeaponType);// = 0;
+	STCDef(bool, m_weaponHolstered);
+	STCDef(float, ReloadRemain);
+	STCDef(bool, m_sniperDmrMode);
+	STCDef(bool, m_bomberHealAmmoMode);
+	STCDef(bool, isGround);
 		// 이름에서 ShapeIndex를 얻는 map
 	//static constexpr int maxItem = 36;
 	//STCDefArr(ItemStack, Inventory, maxItem);
@@ -1239,6 +1268,19 @@ public:
 	Mesh* ShootPointMesh;
 		// 이름에서 ShapeIndex를 얻는 map
 	matrix gunMatrix_thirdPersonView;
+	matrix cachedThirdPersonRightHandMatrix;
+	bool cachedThirdPersonRightHandMatrixValid = false;
+	matrix cachedThirdPersonLeftHandMatrix;
+	bool cachedThirdPersonLeftHandMatrixValid = false;
+	int cachedRightHandForwardAxisIndex = -1;
+	int cachedRightHandRightAxisIndex = -1;
+	float cachedRightHandForwardAxisSign = 1.0f;
+	float cachedRightHandRightAxisSign = 1.0f;
+	matrix cachedThirdPersonWeaponMatrix;
+	bool cachedThirdPersonWeaponMatrixValid = false;
+	matrix cachedThirdPersonLeftWeaponMatrix;
+	bool cachedThirdPersonLeftWeaponMatrixValid = false;
+	int cachedThirdPersonWeaponType = -1;
 		// 이름에서 ShapeIndex를 얻는 map
 	matrix gunMatrix_firstPersonView;
 		// 이름에서 ShapeIndex를 얻는 map
@@ -1280,6 +1322,7 @@ public:
 	*/
 	void Render_AfterDepthClear();
 	void Render_ThirdPersonWeapon();
+	void UpdateThirdPersonWeaponAttachmentCache();
 
 	virtual void Release();
 
@@ -1326,6 +1369,11 @@ public:
 		//STC skill cooldown remaining by slot
 		float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 		int m_currentWeaponType = 0;
+		bool m_weaponHolstered = false;
+		float ReloadRemain = 0.0f;
+		bool m_sniperDmrMode = false;
+		bool m_bomberHealAmmoMode = false;
+		bool isGround = false;
 		float m_yaw = 0.0f;
 		float m_pitch = 0.0f;
 		Weapon weapon[3];

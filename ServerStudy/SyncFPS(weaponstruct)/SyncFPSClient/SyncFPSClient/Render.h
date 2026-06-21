@@ -9,8 +9,8 @@
 using namespace TTFFontParser;
 
 /*
-* ¼³¸í :
-* GPU¿¡ ¿Ã·È°Å³ª ¿Ã¸± ¸®¼Ò½ºÀÇ µð½ºÅ©¸³ÅÍ ÇÚµéÀ» ÀúÀåÇÑ´Ù.
+* ï¿½ï¿½ï¿½ï¿½ :
+* GPUï¿½ï¿½ ï¿½Ã·È°Å³ï¿½ ï¿½Ã¸ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ ï¿½ï¿½Å©ï¿½ï¿½ï¿½ï¿½ ï¿½Úµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 * Sentinel Value
 * NULL = (hcpu == 0 && hgpu == 0)
 */
@@ -66,18 +66,18 @@ struct DescIndex {
 };
 
 /*
-* ¼³¸í : °°Àº Á¾·ùÀÇ ¼ÎÀÌ´õ¿¡¼­ ´Ù¸£°Ô ·»´õ¸µÀ» ÇÏ·ÁÇÏ±â ¶§¹®¿¡,
-* ¾î¶² ·»´õ¸µÀ» »ç¿ëÇÒ °ÍÀÎÁö ¼±ÅÃÇÒ ¼ö ÀÖ°Ô ÇÏ´Â enum.
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï·ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½,
+* ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö°ï¿½ ï¿½Ï´ï¿½ enum.
 */
 union ShaderType {
 	enum RegisterEnum_memberenum {
-		RenderNormal = 0, // ÀÏ¹Ý ·»´õ¸µ
-		RenderWithShadow = 1, // ±×¸²ÀÚ¿Í ÇÔ²² ·»´õ¸µ
-		RenderShadowMap = 2, // ½¦µµ¿ì ¸ÊÀ» ·»´õ¸µ
-		RenderStencil = 3, // ½ºÅÙ½ÇÀ» ·»´õ¸µ
-		RenderInnerMirror = 4, // ½ºÅÙ½ÇÀÌ È°¼ºÈ­µÈ ºÎºÐÀ» ·»´õ¸µ (°Å¿ï ¼Ó ·»´õ¸µ)
-		RenderTerrain = 5, // ÅÍ·¹ÀÎÀ» ·»´õ¸µ
-		StreamOut = 6, // ½ºÆ®¸²¾Æ¿ô
+		RenderNormal = 0, // ï¿½Ï¹ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		RenderWithShadow = 1, // ï¿½×¸ï¿½ï¿½Ú¿ï¿½ ï¿½Ô²ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		RenderShadowMap = 2, // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		RenderStencil = 3, // ï¿½ï¿½ï¿½Ù½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		RenderInnerMirror = 4, // ï¿½ï¿½ï¿½Ù½ï¿½ï¿½ï¿½ È°ï¿½ï¿½È­ï¿½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½Å¿ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
+		RenderTerrain = 5, // ï¿½Í·ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		StreamOut = 6, // ï¿½ï¿½Æ®ï¿½ï¿½ï¿½Æ¿ï¿½
 		SDF = 7, // SDF Text
 		TessTerrain = 8, // Tess Terrain
 		SkinMeshRender = 9,
@@ -93,87 +93,87 @@ union ShaderType {
 };
 
 /*
-* ¼³¸í : ºäÆ÷Æ® Á¤º¸
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
 */
 struct ViewportData {
 	// AABB
 	D3D12_VIEWPORT Viewport;
-	// ½ÃÀú·ºÆ®
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®
 	D3D12_RECT ScissorRect;
 
-	// improve : <¿ø·¡´Â ÀÌ º¯¼ö´Â ¸¸µé¶§ ¾î¶² LayerÀÇ °ÔÀÓ¿ÀºêÁ§Æ®¸¸ Ãâ·ÂÇÏ±â À§ÇØ ¸¸µé¾î³õÀº °ÍÀÌ¾úÀ½.>
-	// <´ë´Ù¼öÀÇ °ÔÀÓ¿£Áø¿¡ ÀÌ·± °Ô³äÀÌ ÀÖÀ½. Æ¯È÷ UI°¡ 3D°Å³ª ±×·¯¸é Æ¯È÷³ª.>
-	// <ÀÌ¸¦ ¾î¶»°Ô ÇÒÁö¸¦ Á¤ÇØ¾ß ÇÒµí.>
+	// improve : <ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½é¶§ ï¿½î¶² Layerï¿½ï¿½ ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï±ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì¾ï¿½ï¿½ï¿½.>
+	// <ï¿½ï¿½Ù¼ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì·ï¿½ ï¿½Ô³ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. Æ¯ï¿½ï¿½ UIï¿½ï¿½ 3Dï¿½Å³ï¿½ ï¿½×·ï¿½ï¿½ï¿½ Æ¯ï¿½ï¿½ï¿½ï¿½.>
+	// <ï¿½Ì¸ï¿½ ï¿½î¶»ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½Òµï¿½.>
 	ui64 LayerFlag = 0;
 
-	// ºä Çà·Ä
+	// ï¿½ï¿½ ï¿½ï¿½ï¿?
 	matrix ViewMatrix;
-	// Åõ¿µ Çà·Ä
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	matrix ProjectMatrix;
-	// Ä«¸Þ¶óÀÇ À§Ä¡
+	// Ä«ï¿½Þ¶ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡
 	vec4 Camera_Pos;
 
-	// ¿ø±Ù ÇÁ·¯½ºÅÒ ÄÃ¸µÀ» À§ÇÑ BoundingFrustum
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ã¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ BoundingFrustum
 	BoundingFrustum	m_xmFrustumWorld = BoundingFrustum();
-	// Á÷±³ ÇÁ·¯½ºÅÒ ÄÃ¸µÀ» À§ÇÑ BoundingOrientedBox
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ã¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ BoundingOrientedBox
 	BoundingOrientedBox OrthoFrustum;
 
 	/*
-	* //sus : <Á¦´ë·Î ½ÇÇàµÉÁö ÀÇ½ÉÀÌ µÇ´Â °Í. À¯´ÖÅ×½ºÆ®°¡ ÇÊ¿äÇÔ.>
-	* ¼³¸í : vec_in_gamespace Á¡À» È­¸é»óÀÇ °ø°£À¸·Î Åõ¿µÇÏ¿© ³»º¸³½´Ù.
-	* ÇÇÅ·¿¡ ¾²·Á°í ¹Ì¸® ¸¸µé¾î³ù´Ù.
-	* ¸Å°³º¯¼ö :
-	* const vec4& vec_in_gamespace : ¿ùµå °ø°£»óÀÇ Á¡
-	* ¹ÝÈ¯ :
-	* vec_in_gamespaceÀ» È­¸é °ø°£»óÀ¸·Î Åõ¿µÇÑ ÁöÁ¡
+	* //sus : <ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ç½ï¿½ï¿½ï¿½ ï¿½Ç´ï¿½ ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½×½ï¿½Æ®ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.>
+	* ï¿½ï¿½ï¿½ï¿½ : vec_in_gamespace ï¿½ï¿½ï¿½ï¿½ È­ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½ï¿½Å·ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* const vec4& vec_in_gamespace : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+	* ï¿½ï¿½È¯ :
+	* vec_in_gamespaceï¿½ï¿½ È­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	*/
 	__forceinline XMVECTOR project(const vec4& vec_in_gamespace) {
 		return XMVector3Project(vec_in_gamespace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
 
 	/*
-	* //sus : <Á¦´ë·Î ½ÇÇàµÉÁö ÀÇ½ÉÀÌ µÇ´Â °Í. À¯´ÖÅ×½ºÆ®°¡ ÇÊ¿äÇÔ.>
-	* ¼³¸í : vec_in_screenspace Á¡À» È­¸é»óÀÇ °ø°£¿¡¼­ ¿ùµå °ø°£À¸·Î º¯È¯ÇØ ³»º¸³½´Ù.
-	* ÇÇÅ·¿¡ ¾²·Á°í ¹Ì¸® ¸¸µé¾î³ù´Ù.
-	* ¸Å°³º¯¼ö :
-	* const vec4& vec_in_screenspace : È­¸é °ø°£»óÀÇ Á¡
-	* ¹ÝÈ¯ :
-	* vec_in_screenspaceÀ» ¿ùµå°ø°£»óÀ¸·Î Åõ¿µÇÑ ÁöÁ¡
+	* //sus : <ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ç½ï¿½ï¿½ï¿½ ï¿½Ç´ï¿½ ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½×½ï¿½Æ®ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.>
+	* ï¿½ï¿½ï¿½ï¿½ : vec_in_screenspace ï¿½ï¿½ï¿½ï¿½ È­ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½ï¿½Å·ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* const vec4& vec_in_screenspace : È­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+	* ï¿½ï¿½È¯ :
+	* vec_in_screenspaceï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	*/
 	__forceinline XMVECTOR unproject(const vec4& vec_in_screenspace) {
 		return XMVector3Unproject(vec_in_screenspace, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
 
 	/*
-	* //sus : <Á¦´ë·Î ½ÇÇàµÉÁö ÀÇ½ÉÀÌ µÇ´Â °Í. À¯´ÖÅ×½ºÆ®°¡ ÇÊ¿äÇÔ.>
-	* ¼³¸í : invecArr_in_gamespace Á¡ ¹è¿­µéÀ» È­¸é»óÀÇ °ø°£À¸·Î Åõ¿µÇÏ¿©
-	* outvecArr_in_screenspace ¹è¿­À¸·Î ³»º¸³½´Ù.
-	* ÇÇÅ·¿¡ ¾²·Á°í ¹Ì¸® ¸¸µé¾î³ù´Ù.
-	* ¸Å°³º¯¼ö :
-	* vec4* invecArr_in_gamespace : ÀÔ·ÂÀÌ µÇ´Â ¿ùµå°ø°£ÀÇ Á¡ ¹è¿­
-	* vec4* outvecArr_in_screenspace : Ãâ·ÂÀÌ µÇ´Â È­¸é°ø°£»óÀÇ Á¡ ¹è¿­
-	* int count : ¹è¿­ÀÇ Å©±â
+	* //sus : <ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ç½ï¿½ï¿½ï¿½ ï¿½Ç´ï¿½ ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½×½ï¿½Æ®ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.>
+	* ï¿½ï¿½ï¿½ï¿½ : invecArr_in_gamespace ï¿½ï¿½ ï¿½è¿­ï¿½ï¿½ï¿½ï¿½ È­ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½
+	* outvecArr_in_screenspace ï¿½è¿­ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½ï¿½Å·ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* vec4* invecArr_in_gamespace : ï¿½Ô·ï¿½ï¿½ï¿½ ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ ï¿½è¿­
+	* vec4* outvecArr_in_screenspace : ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ç´ï¿½ È­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ ï¿½è¿­
+	* int count : ï¿½è¿­ï¿½ï¿½ Å©ï¿½ï¿½
 	*/
 	__forceinline void project_vecArr(vec4* invecArr_in_gamespace, vec4* outvecArr_in_screenspace, int count) {
 		XMVector3ProjectStream((XMFLOAT3*)invecArr_in_gamespace, 16, (XMFLOAT3*)outvecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
 
 	/*
-	* //sus : <Á¦´ë·Î ½ÇÇàµÉÁö ÀÇ½ÉÀÌ µÇ´Â °Í. À¯´ÖÅ×½ºÆ®°¡ ÇÊ¿äÇÔ.>
-	* ¼³¸í : invecArr_in_screenspace È­¸é»óÀÇ Á¡ ¹è¿­µéÀ» ¿ùµå °ø°£À¸·Î º¯È¯ÇÏ¿©
-	* outvecArr_in_gamespace ¹è¿­À¸·Î ³»º¸³½´Ù.
-	* ÇÇÅ·¿¡ ¾²·Á°í ¹Ì¸® ¸¸µé¾î³ù´Ù.
-	* ¸Å°³º¯¼ö :
-	* vec4* invecArr_in_screenspace : ÀÔ·ÂÀÌ µÇ´Â È­¸é°ø°£»óÀÇ Á¡ ¹è¿­
-	* vec4* outvecArr_in_gamespace : Ãâ·ÂÀÌ µÇ´Â ¿ùµå°ø°£»óÀÇ Á¡ ¹è¿­
-	* int count : ¹è¿­ÀÇ Å©±â
+	* //sus : <ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ç½ï¿½ï¿½ï¿½ ï¿½Ç´ï¿½ ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½×½ï¿½Æ®ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.>
+	* ï¿½ï¿½ï¿½ï¿½ : invecArr_in_screenspace È­ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ ï¿½è¿­ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ï¿ï¿½
+	* outvecArr_in_gamespace ï¿½è¿­ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½ï¿½Å·ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* vec4* invecArr_in_screenspace : ï¿½Ô·ï¿½ï¿½ï¿½ ï¿½Ç´ï¿½ È­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ ï¿½è¿­
+	* vec4* outvecArr_in_gamespace : ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ ï¿½è¿­
+	* int count : ï¿½è¿­ï¿½ï¿½ Å©ï¿½ï¿½
 	*/
 	__forceinline void unproject_vecArr(vec4* invecArr_in_screenspace, vec4* outvecArr_in_gamespace, int count) {
 		XMVector3UnprojectStream((XMFLOAT3*)outvecArr_in_gamespace, 16, (XMFLOAT3*)invecArr_in_screenspace, 16, count, Viewport.TopLeftX, Viewport.TopLeftY, Viewport.Width, Viewport.Height, Viewport.MinDepth, Viewport.MaxDepth, ProjectMatrix, ViewMatrix, XMMatrixIdentity());
 	}
 
 	/*
-	* ¼³¸í : ÇöÀç ViewPort µ¥ÀÌÅÍ¿¡ ¸Â°Ô ¿ø±Ù ºä ÇÁ·¯½ºÅÒ m_xmFrustumWorldÀ» ¾÷µ¥ÀÌÆ®ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ViewPort ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½Â°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ m_xmFrustumWorldï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½Ñ´ï¿½.
 	*/
 	void UpdateFrustum() {
 		/*m_xmFrustumWorld.Origin = { 0, 0, 0 };
@@ -191,7 +191,7 @@ struct ViewportData {
 	}
 
 	/*
-	* ¼³¸í : ÇöÀç ViewPort µ¥ÀÌÅÍ¿¡ ¸Â°Ô Á÷±³ ºä ÇÁ·¯½ºÅÒ OrthoFrustumÀ» ¾÷µ¥ÀÌÆ®ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ViewPort ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½Â°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ OrthoFrustumï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½Ñ´ï¿½.
 	*/
 	void UpdateOrthoFrustum(float nearF, float farF) {
 		matrix v = ViewMatrix;
@@ -207,12 +207,12 @@ struct ViewportData {
 
 	inline static vec4 PresentFrustumCorner[8] = {};
 	/*
-	* ¼³¸í : frustumViewProj Çà·Ä·Î »ý±â´Â ÇÁ·¯½ºÅÒÀ» ¸ðµÎ Æ÷ÇÔÇÏ¸é¼­ targetOrientationÀÇ ¹æÇâÀ» °¡Áö´Â
-	*	OBB¸¦ ¹ÝÈ¯
-	* ¹ÝÈ¯ : ¹ÝÈ¯µÇ´Â obb´Â Extent.zÀÇ ¹æÇâÀÌ targetOrientation ¹æÇâÀÌ µÊ.
+	* ï¿½ï¿½ï¿½ï¿½ : frustumViewProj ï¿½ï¿½Ä·ï¿?ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸é¼­ targetOrientationï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	*	OBBï¿½ï¿½ ï¿½ï¿½È¯
+	* ï¿½ï¿½È¯ : ï¿½ï¿½È¯ï¿½Ç´ï¿½ obbï¿½ï¿½ Extent.zï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ targetOrientation ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½.
 	*/
 	BoundingOrientedBox GetOBB_IncludeFrustum(matrix frustumViewProj, vec4 targetOrientation) {
-		//ÃÊ±âÈ­ 
+		//ï¿½Ê±ï¿½È­ 
 		matrix invProj = XMMatrixInverse(nullptr, frustumViewProj);
 		vec4 corners[8];
 		vec4 ndcCorners[8] = {
@@ -221,7 +221,7 @@ struct ViewportData {
 		};
 		matrix invRotation = XMMatrixRotationQuaternion(XMQuaternionInverse(targetOrientation));
 
-		// ÇÁ·¯½ºÅÒ Á¡ ¾ò±â / ¸ðµç Á¡¿¡ ´ëÇØ ¿ªÈ¸ÀüÇà·Ä°ø°£À¸·Î º¯È¯
+		// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿?/ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¸ï¿½ï¿½ï¿½ï¿½Ä°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½È¯
 		vec4 Average = 0;
 		for (int i = 0; i < 8; ++i) {
 			corners[i] = XMVector3TransformCoord(ndcCorners[i], invProj);
@@ -233,16 +233,16 @@ struct ViewportData {
 		Average /= 8;
 		Average.w = 1;
 
-		// ¿ªÈ¸Àü°ø°£¿¡¼­ ÇØ´ç Á¡µéÀ» ¸ðµÎ Æ÷ÇÔÇÏ´Â AABB¸¦ ±¸ÇÔ.
+		// ï¿½ï¿½È¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 		BoundingBox AABB;
 		BoundingBox::CreateFromPoints(AABB, 8, (XMFLOAT3*)corners, sizeof(XMVECTOR));
 
-		// ¿ªÈ¸Àü°ø°£ÀÇ Áß½ÉÀ» ´Ù½Ã ¿ùµå °ø°£À¸·Î ¹Ù²Ù¾î ³õ±â À§ÇØ È¸ÀüÀû¿ë.
+		// ï¿½ï¿½È¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ß½ï¿½ï¿½ï¿½ ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ù²Ù¾ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ È¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 		vec4 Center = AABB.Center;
 		Center.w = 1;
 		Center.trQ(targetOrientation);
 
-		// º¯È¯µÈ 8°³ Á¡À» ¸ðµÎ Æ÷ÇÔÇÏ´Â OBB »ý¼º
+		// ï¿½ï¿½È¯ï¿½ï¿½ 8ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ OBB ï¿½ï¿½ï¿½ï¿½
 		BoundingOrientedBox obb;
 		obb = BoundingOrientedBox(Average.f3, AABB.Extents, targetOrientation);
 
@@ -251,7 +251,7 @@ struct ViewportData {
 };
 
 /*
-* ¼³¸í : ÇØ»óµµ¸¦ ³ªÅ¸³»´Â ±¸Á¶Ã¼
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½Ø»óµµ¸ï¿½ ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼
 */
 struct ResolutionStruct {
 	ui32 width;
@@ -259,7 +259,7 @@ struct ResolutionStruct {
 };
 
 /*
-* ¼³¸í : ·»´õ¸µÀ» ¾î¶² ¹æ½ÄÀ¸·Î ÁøÇàÇÒ °ÇÁö ¼±ÅÃ°¡´ÉÇÑ enum
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã°ï¿½ï¿½ï¿½ï¿½ï¿½ enum
 */
 enum RenderingMod {
 	ForwardRendering = 0,
@@ -268,9 +268,9 @@ enum RenderingMod {
 };
 
 /*
-* ¼³¸í : ¹Ý¿µ±¸ÀûÀ¸·Î º¸Á¸µÇ¾î Æ¯Á¤ »óÈ²¸¶´Ù »õ·Î ¸¸µé ¼ö ÀÖ°í, ¶Ç ¾ðÁ¦µç »èÁ¦µÉ ¼ö ÀÖ´Â ¸®¼Ò½º¿¡ ´ëÇÑ
-* Descriptor HeapÀ» °¡¸®Å°´Â ±¸Á¶Ã¼.
-* Æ¯Á¤ À§Ä¡¿¡ ¸®¼Ò½ºÀÇ desc¸¦ ÇÒ´ç/»èÁ¦ÇÒ ¼ö ÀÖ´Ù.
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½Ý¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç¾ï¿½ Æ¯ï¿½ï¿½ ï¿½ï¿½È²ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö°ï¿½, ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+* Descriptor Heapï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Å°ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼.
+* Æ¯ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ descï¿½ï¿½ ï¿½Ò´ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½.
 */
 struct DescriptorAllotter {
 	BitAllotter AllocFlagContainer;
@@ -279,38 +279,38 @@ struct DescriptorAllotter {
 	ui32 extraData;
 
 	/*
-	* ¼³¸í : DescriptorAllotter ¸¦ ÃÊ±âÈ­ÇÑ´Ù.
-	* ¸Å°³º¯¼ö :
-	* D3D12_DESCRIPTOR_HEAP_TYPE heapType : ¸®¼Ò½º µð½ºÅ©¸³ÅÍ°¡ °¡Áö´Â Èü Å¸ÀÔ
-	* D3D12_DESCRIPTOR_HEAP_FLAGS Flags : µð½ºÅ©¸³ÅÍÀÇ Èü ÇÃ·¡±× (º¸Åë Non-Shader-Visible)
-	* int Capacity : Desc¸¦ ÀúÀåÇÒ ¼ö ÀÖ´Â ÃÖ´ë °³¼ö.
+	* ï¿½ï¿½ï¿½ï¿½ : DescriptorAllotter ï¿½ï¿½ ï¿½Ê±ï¿½È­ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* D3D12_DESCRIPTOR_HEAP_TYPE heapType : ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½Å©ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Å¸ï¿½ï¿½
+	* D3D12_DESCRIPTOR_HEAP_FLAGS Flags : ï¿½ï¿½Å©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ Non-Shader-Visible)
+	* int Capacity : Descï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	*/
 	void Init(D3D12_DESCRIPTOR_HEAP_TYPE heapType, D3D12_DESCRIPTOR_HEAP_FLAGS Flags, int Capacity);
 
 	/*
-	* ¼³¸í : µð½ºÅ©¸³ÅÍ°¡ µé¾î°¥ ÀÚ¸® ÇÏ³ª¸¦ ÇÒ´ç ¹Þ´Â´Ù.
-	* ¹ÝÈ¯ : ÇÒ´çµÈ µð½ºÅ©¸³ÅÍ ÀÚ¸®ÀÇ ¹è¿­ ÀÎµ¦½º¸¦ ¹ÝÈ¯ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½Å©ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½î°?ï¿½Ú¸ï¿½ ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½Ò´ï¿½ ï¿½Þ´Â´ï¿½.
+	* ï¿½ï¿½È¯ : ï¿½Ò´ï¿½ï¿?ï¿½ï¿½Å©ï¿½ï¿½ï¿½ï¿½ ï¿½Ú¸ï¿½ï¿½ï¿½ ï¿½è¿­ ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
 	*/
 	int Alloc();
 
 	/*
-	* ¼³¸í : µð½ºÅ©¸³ÅÍ ÀÚ¸® ÇÏ³ª¸¦ ÇØÁ¦ÇÑ´Ù.
-	* ¸Å°³º¯¼ö :
-	* int index : ÇØÁ¦ÇÒ µð½ºÅ©¸³ÅÍ ÀÚ¸®ÀÇ ÀÎµ¦½º
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½Å©ï¿½ï¿½ï¿½ï¿½ ï¿½Ú¸ï¿½ ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* int index : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å©ï¿½ï¿½ï¿½ï¿½ ï¿½Ú¸ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½
 	*/
 	void Free(int index);
 
 	/*
-	* ¼³¸í : ¾î¶² index¿¡ ÀÖ´Â GPU Desc HandleÀ» ¹ÝÈ¯ÇÑ´Ù.
-	* ¸Å°³º¯¼ö :
-	* int index : Desc ÀÚ¸® ÀÎµ¦½º
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½î¶² indexï¿½ï¿½ ï¿½Ö´ï¿½ GPU Desc Handleï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* int index : Desc ï¿½Ú¸ï¿½ ï¿½Îµï¿½ï¿½ï¿½
 	*/
 	__forceinline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(int index);
 
 	/*
-	* ¼³¸í : ¾î¶² index¿¡ ÀÖ´Â CPU Desc HandleÀ» ¹ÝÈ¯ÇÑ´Ù.
-	* ¸Å°³º¯¼ö :
-	* int index : Desc ÀÚ¸® ÀÎµ¦½º
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½î¶² indexï¿½ï¿½ ï¿½Ö´ï¿½ CPU Desc Handleï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* int index : Desc ï¿½Ú¸ï¿½ ï¿½Îµï¿½ï¿½ï¿½
 	*/
 	__forceinline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(int index) {
 		D3D12_CPU_DESCRIPTOR_HANDLE handle;
@@ -388,8 +388,8 @@ struct SVDescPool2
 };
 
 struct GPUResource {
-	// ¾÷·Îµå ¹öÆÛ´Â ÅØ½ºÃÄ¸¦ ¾÷·ÎµåÇÏ°í Ä¿¸Çµå°¡ ExecuteÇÒ¶§±îÁö ÇØÁ¦µÇÁö ¾Ê°í À¯ÁöµÇ¾î¾ß ÇÏ°í, 
-	// ÀÛ¾÷ÀÌ ³¡³ª¸é ÇØÁ¦µÇ¾î¾ß ÇÑ´Ù.
+	// ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½Û´ï¿½ ï¿½Ø½ï¿½ï¿½Ä¸ï¿½ ï¿½ï¿½ï¿½Îµï¿½ï¿½Ï°ï¿½ Ä¿ï¿½Çµå°¡ Executeï¿½Ò¶ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç¾ï¿½ï¿?ï¿½Ï°ï¿½, 
+	// ï¿½Û¾ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç¾ï¿½ï¿?ï¿½Ñ´ï¿½.
 	static vector<ID3D12Resource*> TextureLoadedUploadBuffers;
 
 	ID3D12Resource2* resource = nullptr;
@@ -447,7 +447,7 @@ struct GPUResource {
 
 		D3D12_RESOURCE_DESC d3dResourceDesc;
 		::ZeroMemory(&d3dResourceDesc, sizeof(D3D12_RESOURCE_DESC));
-		d3dResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; //Upload Heap¿¡´Â ÅØ½ºÃÄ¸¦ »ý¼ºÇÒ ¼ö ¾øÀ½
+		d3dResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; //Upload Heapï¿½ï¿½ï¿½ï¿½ ï¿½Ø½ï¿½ï¿½Ä¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		d3dResourceDesc.Alignment = 0;
 		d3dResourceDesc.Width = nBytes;
 		d3dResourceDesc.Height = 1;
@@ -555,11 +555,11 @@ struct PointLight {
 	inline static PointLightCBData* UploadCBMapped = nullptr;
 	UINT CBIndex = 0;
 
-	// ¿òÁ÷ÀÌÁö ¾Ê´Â Static ¿ÀºêÁ§Æ®µéÀ» ¹Ì¸® ±×·Á³õ´Â DSV CubeMap
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´ï¿½ Static ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½ ï¿½×·ï¿½ï¿½ï¿½ï¿½ï¿½ DSV CubeMap
 	GPUResource StaticShadowCubeMap;
 	DescHandle StaticCubeShadowMapHandleSRV;
 	D3D12_CPU_DESCRIPTOR_HANDLE StaticCubeShadowMapHandleDSV[6];
-	// ¿òÁ÷ÀÏ Dynamic ¿ÀºêÁ§Æ®µéÀ» ½Ç½Ã°£À¸·Î ±×¸®´Â DSV CubeMap.
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Dynamic ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½Ç½Ã°ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½×¸ï¿½ï¿½ï¿½ DSV CubeMap.
 	GPUResource DynamicShadowCubeMap;
 	DescHandle DynamicCubeShadowMapHandleSRV;
 	D3D12_CPU_DESCRIPTOR_HANDLE DynamicCubeShadowMapHandleDSV[6];
@@ -583,9 +583,9 @@ struct LightCB_DATA_withShadow {
 	XMMATRIX LightView[3];
 	vec4 LightPos[3];
 
-	// ½ºÅ×Æ½ ¶óÀÌÆÃÀ» À§ÇÑ Ãß°¡ ¿ä¼Ò.
-	vec4 ChunckStart; // °¡Àå ÀÎµ¦½º°¡ ÀÛÀº Ã»Å© ½ÃÀÛÁ¡.
-	int ChunckCount[4]; // XYZ´ç Ã»Å©ÀÇ °³¼ö
+	// ï¿½ï¿½ï¿½ï¿½Æ½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ß°ï¿½ ï¿½ï¿½ï¿?
+	vec4 ChunckStart; // ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Ã»Å© ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	int ChunckCount[4]; // XYZï¿½ï¿½ Ã»Å©ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 };
 
 struct SpotLight {
@@ -872,7 +872,7 @@ struct GPUCmd {
 			::WaitForSingleObject(hFenceEvent, INFINITE);
 		}
 
-		// Ä¿¸Çµå°¡ ½ÇÇàµÉ µ¿¾È ·ÎµåµÈ ÅØ½ºÃÄ°¡ ÀÖÀ¸¸é, ÇØ´ç ¾÷·Îµå ¹öÆÛ¸¦ ÇØÁ¦ÇÑ´Ù.
+		// Ä¿ï¿½Çµå°¡ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿?ï¿½Ø½ï¿½ï¿½Ä°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ï¿½Ø´ï¿½ ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½Û¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 		for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
 			if (GPUResource::TextureLoadedUploadBuffers[i] != nullptr) {
 				GPUResource::TextureLoadedUploadBuffers[i]->Release();
@@ -945,9 +945,9 @@ struct RayTracingDevice {
 		float DirLight_intencity;
 		XMFLOAT3 DirLight_color;
 		float padding;
-		// ½ºÅ×Æ½ ¶óÀÌÆÃÀ» À§ÇÑ Ãß°¡ ¿ä¼Ò.
-		vec4 ChunckStart; // °¡Àå ÀÎµ¦½º°¡ ÀÛÀº Ã»Å© ½ÃÀÛÁ¡.
-		unsigned int ChunckCount[4]; // Ã»Å©ÀÇ °³¼ö
+		// ï¿½ï¿½ï¿½ï¿½Æ½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ß°ï¿½ ï¿½ï¿½ï¿?
+		vec4 ChunckStart; // ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Ã»Å© ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+		unsigned int ChunckCount[4]; // Ã»Å©ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	};
 
 	GlobalDevice* origin;
@@ -962,7 +962,7 @@ struct RayTracingDevice {
 	//1MB Scratch GPU Mem
 	inline static UINT64 ASBuild_ScratchResource_Maxsiz = 10485760 * 2;
 	ID3D12Resource* ASBuild_ScratchResource = nullptr;
-	UINT64 UsingScratchSize = 0; // 256ÀÇ ¹è¼ö¿©¾ßÇÔ.
+	UINT64 UsingScratchSize = 0; // 256ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?
 
 	ID3D12Resource* RayTracingOutput = nullptr;
 	DescIndex RTO_UAV_index;
@@ -980,7 +980,7 @@ struct RayTracingDevice {
 
 	void Init(void* origin_gd);
 
-	//RaytracingÀÌ Áö¿øµÇ´Â ¹öÀü ºÎÅÍ´Â µð¹ÙÀÌ½º Á¦°Å¸¦ Ã³¸®ÇÏ´Â ¾ÖÇÃ¸®ÄÉÀÌ¼ÇÀÌ ½º½º·Î¸¦ ±×·¸°Ô ÇÒ ¼ö ÀÖ´Ù°í ¼±¾ðÀÌ ÇÊ¿äÇÑµ¥, ±× ÀÛ¾÷À» ÇÑ´Ù.
+	//Raytracingï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Í´ï¿½ ï¿½ï¿½ï¿½ï¿½Ì½ï¿?ï¿½ï¿½ï¿½Å¸ï¿½ Ã³ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½Ã¸ï¿½ï¿½ï¿½ï¿½Ì¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Î¸ï¿½ ï¿½×·ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´Ù°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½Ñµï¿½, ï¿½ï¿½ ï¿½Û¾ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
 	void CheckDeviceSelfRemovable();
 
 	//Code From DirectX Raytracing HelloWorld Sample
@@ -1022,23 +1022,23 @@ struct LocalRootSigData {
 	}
 };
 
-// [float3 position] [float3 normal] [float2 uv] [float3 tangent] (±âº»ÀûÀ¸·Î BumpMeshÀÓ)
+// [float3 position] [float3 normal] [float2 uv] [float3 tangent] (ï¿½âº»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ BumpMeshï¿½ï¿½)
 struct RayTracingMesh {
-	//--------------- ¸ðµç ¸Þ½¬µéÀÌ °øÀ¯ÇÏ´Â º¯¼ö----------------//
-	// ¸ðµç ¸Þ½¬µéÀÌ °°ÀÌ °øÀ¯ÇÏ´Â VB, IB (UploadBuffer)
-	// ¾÷·Îµå ¹öÆÛÀÌ¹Ç·Î GPU Á¢±ÙÀÌ »ó´ëÀûÀ¸·Î ´À¸®´Ù. ¼º´ÉÀÌ ÁÁÁö ¾Ê´Ù¸é, º¯ÇÏÁö ¾Ê´Â MeshµéÀ» µû·Î 
-	// DefaultHeapÀ¸·Î ±¸¼ºÇÒ ÇÊ¿ä°¡ ÀÖ´Ù.
+	//--------------- ï¿½ï¿½ï¿?ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½----------------//
+	// ï¿½ï¿½ï¿?ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ VB, IB (UploadBuffer)
+	// ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì¹Ç·ï¿½ GPU ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Ù¸ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´ï¿½ Meshï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 
+	// DefaultHeapï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ä°¡ ï¿½Ö´ï¿½.
 	/*
 	* commandList->CopyBufferRegion(
-	defaultBuffer.Get(),   // ´ë»ó(Default Heap)
-	destOffset,            // ´ë»ó ¿ÀÇÁ¼Â
-	uploadBuffer.Get(),    // ¿øº»(Upload Heap)
-	srcOffset,             // ¿øº» ¿ÀÇÁ¼Â
-	sizeInBytes            // º¹»çÇÒ Å©±â
+	defaultBuffer.Get(),   // ï¿½ï¿½ï¿?Default Heap)
+	destOffset,            // ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	uploadBuffer.Get(),    // ï¿½ï¿½ï¿½ï¿½(Upload Heap)
+	srcOffset,             // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	sizeInBytes            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Å©ï¿½ï¿½
 	);
 	*/
 
-	//¸ðµç ¸Þ½¬µéÀÌ °°ÀÌ °øÀ¯ÇÏ´Â VB, IB (UploadBuffer)
+	//ï¿½ï¿½ï¿?ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ VB, IB (UploadBuffer)
 	inline static ID3D12Resource* vertexBuffer = nullptr; // SRV
 	inline static ID3D12Resource* indexBuffer = nullptr; // SRV
 	inline static ID3D12Resource* UAV_vertexBuffer = nullptr; // UAV, SRV
@@ -1063,7 +1063,7 @@ struct RayTracingMesh {
 	* ½ºÅ²¸Þ½¬°¡ µé¾î°¡±â ¶§¹®¿¡, ¸ðµÎ ±Û·Î¹úÀÌ´Ù.
 	*/
 
-	// ¾÷·ÎµåÇÒ ¸Þ½¬ÀÇ VB, IB °¡ µé¾î°¥ µ¥ÀÌÅÍ
+	// ï¿½ï¿½ï¿½Îµï¿½ï¿½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ VB, IB ï¿½ï¿½ ï¿½ï¿½î°?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	inline static ID3D12Resource* Upload_vertexBuffer = nullptr;
 	inline static ID3D12Resource* Upload_indexBuffer = nullptr;
 	inline static ID3D12Resource* UAV_Upload_vertexBuffer = nullptr;
@@ -1073,7 +1073,7 @@ struct RayTracingMesh {
 	static constexpr int Upload_IndexBufferCapacity = 10 * MB768; // 10MB
 	static constexpr int UAV_Upload_VertexBufferCapacity = 20 * MB768; // 20MB
 
-	// ¾÷·Îµå VB, IB°¡ ¸ÅÇÎµÈ CPURAM µ¥ÀÌÅÍÀÇ ÁÖ¼Ò
+	// ï¿½ï¿½ï¿½Îµï¿½ VB, IBï¿½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ CPURAM ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¼ï¿½
 	inline static char* pVBMappedStart = nullptr;
 	inline static char* pIBMappedStart = nullptr;
 	inline static char* pUAV_VBMappedStart = nullptr;
@@ -1089,30 +1089,29 @@ struct RayTracingMesh {
 
 	// VB, IB¸¦ °¡¸®Å°´Â SRV Desc Handle
 	inline static DescIndex VBIB_DescIndex;
-	// UAV_VB, IB¸¦ °¡¸®Å°´Â SRV Desc Handle
 	inline static DescIndex UAV_VBIB_DescIndex;
 
-	//--------------- ¸Þ½¬µéÀÌ °¢°¢µû·Î ¼ÒÀ¯ÇÑ º¯¼ö---------------//
-	// ¸Þ½¬ÀÇ ¹öÅÃ½º µ¥ÀÌÅÍ, ¿£µ¦½º µ¥ÀÌÅÍ°¡ ¸ÅÇÎµÈ CPURAM µ¥ÀÌÅÍÀÇ ÁÖ¼Ò
+	//--------------- ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½---------------//
+	// ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½Îµï¿½ CPURAM ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¼ï¿½
 	char* pVBMapped = nullptr;
 	char* pIBMapped = nullptr;
 	char* pUAV_VBMapped = nullptr;
 
-	// Ray°¡ ¹ß»çµÇ°í BLAS¸¦ Åë°úÇØ ¹°Ã¼¿Í ¸¸³µÀ»¶§, MeshÀÇ VB, IB¸¦ Á¢±ÙÇÒ ¼ö ÀÖµµ·Ï
-	// LocalRootSignature¿¡ ÇØ´ç ¸Þ½¬ÀÇ VB, IB°¡ ½ÃÀÛµÇ´Â ¹ÙÀÌÆ®¿ÀÇÁ¼ÂÀ» ³Ö¾î ÁÖ¾î¾ß ÇÑ´Ù.
+	// Rayï¿½ï¿½ ï¿½ß»ï¿½Ç°ï¿?BLASï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, Meshï¿½ï¿½ VB, IBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Öµï¿½ï¿½ï¿½
+	// LocalRootSignatureï¿½ï¿½ ï¿½Ø´ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ VB, IBï¿½ï¿½ ï¿½ï¿½ï¿½ÛµÇ´ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¾ï¿½ ï¿½Ö¾ï¿½ï¿?ï¿½Ñ´ï¿½.
 	UINT64 VBStartOffset;
 	UINT64* IBStartOffset = nullptr;
 	UINT64 UAV_VBStartOffset;
 
 	int subMeshCount = 1;
 
-	// ¸Þ½¬ÀÇ BLAS
+	// ï¿½Þ½ï¿½ï¿½ï¿½ BLAS
 	ID3D12Resource* BLAS;
 	D3D12_RAYTRACING_GEOMETRY_DESC* GeometryDescs;
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS BLAS_Input;
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottomLevelPrebuildInfo = {};
 
-	// TLAS¿¡ ÀÎ½ºÅÏ½º¸¦ Ãß°¡ÇÒ¶§ ÀÌ °ªÀ» »ç¿ëÇØ¼­ ·»´õ¸µ ÀÎ½ºÅÏ½º¸¦ »ðÀÔ.
+	// TLASï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ ï¿½ß°ï¿½ï¿½Ò¶ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ø¼ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	D3D12_RAYTRACING_INSTANCE_DESC MeshDefaultInstanceData = {};
 
 	struct Vertex {
@@ -1121,7 +1120,7 @@ struct RayTracingMesh {
 		float v;
 		XMFLOAT3 normal;
 		XMFLOAT3 tangent;
-		int materialIndex; // 4¹ÙÀÌÆ® ÆÐµùÀ» ¸ÓÅÍ¸®¾óÀÇ ÀÎµ¦½º·Î È°¿ëÇÑ´Ù..
+		int materialIndex; // 4ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Ðµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ È°ï¿½ï¿½ï¿½Ñ´ï¿½..
 
 		operator RayTracingMesh::Vertex() {
 			return RayTracingMesh::Vertex(position, normal, XMFLOAT2(u, v), tangent);
@@ -1170,7 +1169,7 @@ struct RayTracingMesh {
 	static void StaticInit();
 	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr, int ZoneID = -1);
 
-	// »ý¼ºµÈ ÀÎµ¦½º¸¦ ÂüÁ¶ÇÏ¿© »ý¼ºµÈ´Ù.
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½È´ï¿½.
 	void AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
 	void AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr);
 
@@ -1187,7 +1186,7 @@ struct RayTracingRenderInstance {
 template<>
 class hash<ShaderRecord> {
 public:
-	// »óÈ²¿¡ ¸Â´Â Çì½¬¸¦ Á¤ÀÇÇÒ ÇÊ¿ä°¡ ÀÖ´Ù.
+	// ï¿½ï¿½È²ï¿½ï¿½ ï¿½Â´ï¿½ ï¿½ì½¬ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ä°¡ ï¿½Ö´ï¿½.
 	size_t operator()(const ShaderRecord& s) const {
 		size_t d0 = (reinterpret_cast<size_t>(s.shaderIdentifier.ptr) >> 8) << 8 + s.localRootArguments.size;
 		d0 = _pdep_u64(d0, 0x5555555555555555);
@@ -1234,17 +1233,17 @@ struct RayTracingShader {
 	ID3D12Resource* TLAS_InstanceDescs_Res; // UploadBuffer
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC TLASBuildDesc = {};
 
-	// Ãâ·ÂÇÒ Mesh ¹°Ã¼ÀÇ °³¼ö
+	// ï¿½ï¿½ï¿½ï¿½ï¿?Mesh ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	static constexpr int TLAS_InstanceDescs_Capacity = 1048576;
 	int TLAS_InstanceDescs_Size = 0;
 	int TLAS_InstanceDescs_ImmortalSize = 0;
 	D3D12_RAYTRACING_INSTANCE_DESC* TLAS_InstanceDescs_MappedData = nullptr;
 	BitAllotter TLASAlloter;
 
-	// immortal ÇÑ ÀÎ½ºÅÏ½º´Â clear°¡ µÈ ÈÄ¿¡ Ãß°¡°¡ °¡´ÉÇÔ. ¾È±×·³ ½ß¶×¸ÂÀº ÀÎ½ºÅÏ½º°¡ immortal ¿µ¿ªÀ¸·Î µé¾î°£´Ù.
-	// ¹ÝÈ¯°ªÀº ÇØ´ç ÀÎ½ºÅÏ½ºÀÇ ¿ùµåÇà·Ä(3x4)¸¦ °¡¸®Å°´Â Æ÷ÀÎÅÍ¸¦ ¹ÝÈ¯ÇÑ´Ù.
-	// LRSdata´Â LocalRootSignatureÀÇ ¹è¿­ÀÌ µé¾î°¡°í, ¹è¿­ÀÇ Å©±â´Â mesh.subMeshCountÀÌ´Ù.
-	//(¼­ºê¸Þ½¬¸¶´Ù LocalRoot º¯¼öµéÀÌ ¹ÙÀÎµù µÈ´Ù.)
+	// immortal ï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ clearï¿½ï¿½ ï¿½ï¿½ ï¿½Ä¿ï¿½ ï¿½ß°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½. ï¿½È±×·ï¿½ ï¿½ß¶×¸ï¿½ï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ immortal ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½î°£ï¿½ï¿?
+	// ï¿½ï¿½È¯ï¿½ï¿½ï¿½ï¿½ ï¿½Ø´ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?3x4)ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Å°ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
+	// LRSdataï¿½ï¿½ LocalRootSignatureï¿½ï¿½ ï¿½è¿­ï¿½ï¿½ ï¿½ï¿½î°¡ï¿½ï¿? ï¿½è¿­ï¿½ï¿½ Å©ï¿½ï¿½ï¿?mesh.subMeshCountï¿½Ì´ï¿½.
+	//(ï¿½ï¿½ï¿½ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿?LocalRoot ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ ï¿½È´ï¿½.)
 	float** push_rins_immortal(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex = 0);
 	void clear_rins();
 	float** push_rins(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex = 0);
@@ -1254,7 +1253,7 @@ struct RayTracingShader {
 	ComPtr<ID3D12Resource> MissShaderTable = nullptr;
 
 	void** hitGroupShaderIdentifier = nullptr;
-	//°°Àº Á¾·ùÀÇ ·»´õ¸Þ½¬ÀÇ °³¼ö
+	//ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	static constexpr int HitGroupShaderTableCapavity = 1048576;
 	int HitGroupShaderTableSize = 0;
 	int HitGroupShaderTableImmortalSize = 0;
@@ -1262,9 +1261,9 @@ struct RayTracingShader {
 	bool shaderTableInit = false;
 	ComPtr<ID3D12Resource> HitGroupShaderTable = nullptr;
 
-	// ¼ÎÀÌ´õ Å×ÀÌºíÀÇ Map.
-	// ¼ÎÀÌ´õ ·¹ÄÚµåÀÇ °ªÀ¸·Î ÇØ´ç ·¹ÄÚµå°¡ ¾î¶² À§Ä¡¿¡ ÀÖ´ÂÁö È®ÀÎ°¡´ÉÇÏ°í,
-	// ÇØ´ç ¼ÎÀÌ´õ ·¹ÄÚµå°¡ Å×ÀÌºí¿¡ Á¸ÀçÇÏ´ÂÁöµµ È®ÀÎ°¡´ÉÇÏ´Ù.
+	// ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½Ìºï¿½ï¿½ï¿½ Map.
+	// ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½Úµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø´ï¿½ ï¿½ï¿½ï¿½Úµå°¡ ï¿½î¶² ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Ö´ï¿½ï¿½ï¿½ È®ï¿½Î°ï¿½ï¿½ï¿½ï¿½Ï°ï¿½,
+	// ï¿½Ø´ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½Úµå°¡ ï¿½ï¿½ï¿½Ìºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ï¿½ï¿½ï¿½ï¿½ È®ï¿½Î°ï¿½ï¿½ï¿½ï¿½Ï´ï¿½.
 	unordered_map<ShaderRecord, int> HitGroupShaderTableToIndex;
 	void InsertShaderRecord(ShaderRecord sr, int index);
 
@@ -1299,7 +1298,7 @@ struct SDFTextPageTextureBuffer {
 	
 	inline static unordered_map<wchar_t, SDFTextSection*> SDFSectionMap;
 
-	ui8* data = nullptr; // PushSDFText ¿¡¼­ ¸¸µé¾îÁö°í BakeSDF ¿¡¼­ ÇØÁ¦µÊ.
+	ui8* data = nullptr; // PushSDFText ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?BakeSDF ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	int present_StartX = 0;
 	int present_StartY = 0;
 	int present_height = 0;
@@ -1308,8 +1307,8 @@ struct SDFTextPageTextureBuffer {
 	int sectionCount = 0;
 
 	/*
-	* false : ¹Ì¸® ±¸¿î ¿Ï¼ºµÈ ÅØ½ºÃÄ
-	* true : »õ·Î¿î ¹®ÀÚ¿­ÀÌ ³ª¿Ã¶§¸¶´Ù ¾÷µ¥ÀÌÆ® µÉ ¼ö ÀÖ´Â ÅØ½ºÃÄ
+	* false : ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ï¼ï¿½ï¿½ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½
+	* true : ï¿½ï¿½ï¿½Î¿ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã¶ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½
 	*/
 	bool isDynamicTexture = false;
 	int uploadedSectionCount = 0;
@@ -1333,7 +1332,7 @@ struct SDFTextPageTextureBuffer {
 };
 
 /*
-* ¼³¸í : DirectX 12 È°¿ëÀ» À§ÇÑ ·»´õ¸µ °ü·Ã Àü¿ªº¯¼öµéÀ» ¸ð¾Æ³õÀº ±¸Á¶Ã¼.
+* ï¿½ï¿½ï¿½ï¿½ : DirectX 12 È°ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Æ³ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½Ã¼.
 */
 struct GlobalDevice {
 	ui32 DSVSize;
@@ -1359,38 +1358,38 @@ struct GlobalDevice {
 
 	D3D_FEATURE_LEVEL minFeatureLevel;
 
-	//DXGI °´Ã¼¸¦ ¸¸µé±â À§ÇÑ ÆÑÅä¸®
+	//DXGI ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ä¸®
 	IDXGIFactory7* pFactory;// question 002 : why dxgi 6, but is type limit 7 ??
 
-	//È­¸éÀÇ ½º¿ÒÃ¼ÀÎ
+	//È­ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½
 	IDXGISwapChain4* pSwapChain = nullptr;
 	
 	//DirectX 12 Device
 	ID3D12Device* pDevice;
 
-	// ½º¿ÒÃ¼ÀÎÀÇ ¹öÆÛ °³¼ö
+	// ï¿½ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	static constexpr unsigned int SwapChainBufferCount = 2;
-	// ÇöÀç ¹é ¹öÆÛÀÇ ÀÎµ¦½º
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½
 	ui32 CurrentSwapChainBufferIndex;
 
-	// RTV DESCÀÇ Áõ°¡ »çÀÌÁî.
+	// RTV DESCï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	ui32 RtvDescriptorIncrementSize;
-	// ·»´õÅ¸°Ù ¸®¼Ò½º
+	// ï¿½ï¿½ï¿½ï¿½Å¸ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½
 	ID3D12Resource* ppRenderTargetBuffers[SwapChainBufferCount];
 	// RTV Desc Heap
 	ID3D12DescriptorHeap* pRtvDescriptorHeap;
 	// RenderTargets SRV GPU HANDLE
 	D3D12_GPU_DESCRIPTOR_HANDLE RenderTargetSRV_pGPU[SwapChainBufferCount];
-	// ÇöÀç ÇØ»óµµ width
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½Ø»ï¿½ width
 	ui32 ClientFrameWidth;
-	// ÇöÀç ÇØ»óµµ height
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½Ø»ï¿½ height
 	ui32 ClientFrameHeight;
 
-	// µª½º ½ºÅÙ½Ç ¹öÆÛ ¸®¼Ò½º
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½
 	ID3D12Resource* pDepthStencilBuffer;
 	// DSV DESC Heap
 	ID3D12DescriptorHeap* pDsvDescriptorHeap;
-	// DSV DESC Áõ°¡ »çÀÌÁî
+	// DSV DESC ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ui32 DsvDescriptorIncrementSize;
 	// DS SRV
 	DescIndex MainDS_SRV;
@@ -1402,16 +1401,16 @@ struct GlobalDevice {
 	ID3D12CommandAllocator* pComputeCommandAllocator;
 	ID3D12GraphicsCommandList* pComputeCommandList;
 
-	// Ææ½º
+	// ï¿½æ½º
 	ID3D12Fence* pFence;
-	// Ææ½º°ª
+	// ï¿½æ½ºï¿½ï¿½
 	ui64 FenceValue;
-	// Ææ½º ÀÌº¥Æ®
+	// ï¿½æ½º ï¿½Ìºï¿½Æ®
 	HANDLE hFenceEvent;
 
-	// ºäÆ÷Æ®ÀÇ °³¼ö
+	// ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	static constexpr int ViewportCount = 2;
-	// ºäÆ÷Æ®µéÀÇ µ¥ÀÌÅÍ
+	// ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ViewportData viewportArr[ViewportCount];
 
 	// anti aliasing multi sampling
@@ -1420,68 +1419,68 @@ struct GlobalDevice {
 	//active MSAA
 	bool m_bMsaa4xEnable = false; 
 
-	// Mouse ¿òÁ÷ÀÓÀ» °¨ÁöÇÏ±â À§ÇÑ ±¸Á¶Ã¼
+	// Mouse ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼
 	RAWINPUTDEVICE RawMouse;
-	// ÀÔ·Â µ¥ÀÌÅÍ ±â·ÏÀ» ´ãÀ» µ¥ÀÌÅÍ ¹è¿­
+	// ï¿½Ô·ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½è¿­
 	BYTE InputTempBuffer[4096] = { };
 
-	// ÆùÆ® °³¼ö
+	// ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
 	static constexpr int FontCount = 2;
-	// ÆùÆ®ÀÌ¸§ ¹è¿­
+	// ï¿½ï¿½Æ®ï¿½Ì¸ï¿½ ï¿½è¿­
 	string font_filename[FontCount];
-	// ÆùÆ® µ¥ÀÌÅÍ ¹è¿­
+	// ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½è¿­
 	TTFFontParser::FontData font_data[FontCount];
-	// ÆùÆ® ÅØ½ºÃÄµéÀ» Á¢±ÙÇÏ±â À§ÇÑ Map. wchar_t ÇÏ³ª¸¦ ¹Þ´Â´Ù.
+	// ï¿½ï¿½Æ® ï¿½Ø½ï¿½ï¿½Äµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ Map. wchar_t ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½Þ´Â´ï¿½.
 	unordered_map<wchar_t, GPUResource, hash<wchar_t>> font_sdftexture_map[FontCount];
-	// ÅØ½ºÃÄ¸¦ Ãß°¡ÇØ¾ßÇÒ ±ÛÀÚ¸¦ ÁöÁ¤.
+	// ï¿½Ø½ï¿½ï¿½Ä¸ï¿½ ï¿½ß°ï¿½ï¿½Ø¾ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¸ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	vector<wchar_t> addSDFTextureStack;
 
-	// <ÆùÆ®¸¦ ÀúÀåÇÏ´Â ¹æ½Ä¶ÇÇÑ ´Þ¶óÁö¸é ÁÁ´Ù.>
+	// <ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½Ä¶ï¿½ï¿½ï¿?ï¿½Þ¶ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.>
 
 	/*
-	* ¼³¸í : DXGI Factory, GPU Adaptor µîÀ» ÃÊ±âÈ­ÇÑ´Ù.
-	* EnableFullScreenMode_Resolusions ¿¡ OS ¿¡¼­ Á¦°øÇÏ´Â ÀüÃ¼È­¸é ÇØ»óµµµéÀ» ¾ò´Â ÀÛ¾÷ ¶ÇÇÑ ¼öÇàÇÑ´Ù.
-	* ¶§¹®¿¡ ÀÌ´Â À©µµ¿ì°¡ ¸¸µé¾îÁö±â Àü¿¡ ½ÇÇàµÇ¸ç, ¿©±â¿¡¼­ Å©±â¸¦ ¹Þ¾Æ À©µµ¿ì »çÀÌÁî¸¦ ÃÊ±â¿¡ °áÁ¤ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : DXGI Factory, GPU Adaptor ï¿½ï¿½ï¿½ï¿½ ï¿½Ê±ï¿½È­ï¿½Ñ´ï¿½.
+	* EnableFullScreenMode_Resolusions ï¿½ï¿½ OS ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½Ã¼È­ï¿½ï¿½ ï¿½Ø»óµµµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½Û¾ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ì°¡ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ç¸ï¿? ï¿½ï¿½ï¿½â¿¡ï¿½ï¿½ Å©ï¿½â¸¦ ï¿½Þ¾ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½î¸¦ ï¿½Ê±â¿¡ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	*/
 	void Factory_Adaptor_Output_Init();
 
 	/*
-	* ¼³¸í : Global Device¸¦ ÀüÃ¼ÀûÀ¸·Î ÃÊ±âÈ­ ÇÑ´Ù. ¼±ÇàÀûÀ¸·Î Factory_Adaptor_Output_Init ÇÔ¼ö°¡ È£ÃâµÇ°í, À©µµ¿ì°¡ »ý¼ºµÇ¾î¾ß ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : Global Deviceï¿½ï¿½ ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê±ï¿½È­ ï¿½Ñ´ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Factory_Adaptor_Output_Init ï¿½Ô¼ï¿½ï¿½ï¿½ È£ï¿½ï¿½Ç°ï¿? ï¿½ï¿½ï¿½ï¿½ï¿½ì°¡ ï¿½ï¿½ï¿½ï¿½ï¿½Ç¾ï¿½ï¿?ï¿½Ñ´ï¿½.
 	*/
 	void Init();
 
 	/*
-	* ¼³¸í : Global Device¸¦ ÇØÁ¦ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : Global Deviceï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	*/
 	void Release();
 
 	/*
-	* ¼³¸í : ±âÁ¸ ½º¿Ò Ã¼ÀÎÀ» ÇØÁ¦ÇÏ°í, »õ·Î¿î ½º¿ÒÃ¼ÀÎÀ» ÇöÀçÀÇ 
-	* ClientFrameWidth, ClientFrameHeight ¸¸Å­ Àâ¾Æ ¸¸µç´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Ã¼ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï°ï¿½, ï¿½ï¿½ï¿½Î¿ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 
+	* ClientFrameWidth, ClientFrameHeight ï¿½ï¿½Å­ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿?
 	*/
 	void NewSwapChain();
 
 	/*
-	* ¼³¸í : ÇöÀç ¾²ÀÌÁö ¾Ê´Â´Ù. GBuffer¸¦ ¾²±â À§ÇØ ¹º°¡ ¹Ì¸®¸¸µé¾î³õÀº ÇÔ¼ö.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½. GBufferï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½.
 	*/
 	void NewGbuffer();
 
 	/*
-	* ¼³¸í : GPU°¡ ÀÛ¾÷À» ´Ù ³¡³¾¶§±îÁö ±â´Ù¸°´Ù. Fence¸¦ »ç¿ëÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : GPUï¿½ï¿½ ï¿½Û¾ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ù¸ï¿½ï¿½ï¿? Fenceï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿?
 	*/
 	void WaitGPUComplete();
 
-	//·»´õ¸µ ¸ðµå
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	RenderingMod RenderMod = ForwardRendering;
 	
-	//·»´õÅ¸°ÙÀÇ ÇÈ¼¿Æ÷¸ä
+	//ï¿½ï¿½ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ ï¿½È¼ï¿½ï¿½ï¿½ï¿½ï¿½
 	DXGI_FORMAT MainRenderTarget_PixelFormat;
 	
-	//µðÆÛµå ·»´õ¸µÀÇ °æ¿ì, GBufferÀÇ °³¼ö
+	//ï¿½ï¿½ï¿½Ûµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿? GBufferï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	static constexpr int GbufferCount = 1;
-	// µð¹öµå ·»´õ¸µ GBufferµéÀÇ ÇÈ¼¿Æ÷¸Ë
+	// ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ GBufferï¿½ï¿½ï¿½ï¿½ ï¿½È¼ï¿½ï¿½ï¿½ï¿½ï¿½
 	DXGI_FORMAT GbufferPixelFormatArr[GbufferCount];
-	//Gbuffer¸¦ °¡¸®Å°´Â DESC HEAP
+	//Gbufferï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Å°ï¿½ï¿½ DESC HEAP
 	ID3D12DescriptorHeap* GbufferDescriptorHeap = nullptr;
 	//Gbuffers
 	ID3D12Resource* ppGBuffers[GbufferCount] = {};
@@ -1490,14 +1489,14 @@ struct GlobalDevice {
 	DescriptorAllotter DynamicDescriptorAllotter;
 	DescriptorAllotter DynamicDescriptorAllotterPerZone[9] = {};
 
-	// CBV, SRV, UAV DESCÀÇ Áõ°¡ »çÀÌÁîÀÌ´Ù.
+	// CBV, SRV, UAV DESCï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½.
 	unsigned long long CBV_SRV_UAV_Desc_IncrementSiz = 0;
 
-	// ·»´õ¸µ¿¡ °øÅëÀûÀ¸·Î ¾²ÀÌ´Â ShaderVisibleÇÑ DESC Heap.
-	// Immortal°ú Dynamic ¿µ¿ªÀ¸·Î ³ª´¶´Ù.
-	// ImmortalÀº °Ô¼Ó À¯ÁöµÇ´Â Res DESC, 
-	// DynamicÀº TextureDescriptorAllotterµîÀÇ ¶Ç ´Ù¸¥ Non-ShaderVisible Desc Heap¿¡ ÀÌ¹Ì Á¸ÀçÇÏ¸é¼­,
-	// À¯µ¿ÀûÀ¸·Î ÀÚ¸®¸¦ Â÷ÁöÇÒ ¼ö ÀÖ´Â °ø°£ÀÌ´Ù.
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ShaderVisibleï¿½ï¿½ DESC Heap.
+	// Immortalï¿½ï¿½ Dynamic ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
+	// Immortalï¿½ï¿½ ï¿½Ô¼ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç´ï¿½ Res DESC, 
+	// Dynamicï¿½ï¿½ TextureDescriptorAllotterï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ù¸ï¿½ Non-ShaderVisible Desc Heapï¿½ï¿½ ï¿½Ì¹ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸é¼­,
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ú¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ì´ï¿½.
 	SVDescPool2 ShaderVisibleDescPool;
 
 	//Create GPU Heaps that contain RTV, DSV Datas
@@ -1513,57 +1512,57 @@ struct GlobalDevice {
 	void CreateDepthStencilView();
 	// when using Gbuffer for Defered Rendering, it require many RenderTarget
 
-	// fix <ÇöÀç Ç® ½ºÅ©¸° ¸ðµå°¡ ¾ÈµÇ´Â °ÍÀ¸·Î ¾Ë°í ÀÖ´Ù. ÀÌ°ÍÀ» °íÃÄ¾ß ÇÑ´Ù.>
+	// fix <ï¿½ï¿½ï¿½ï¿½ Ç® ï¿½ï¿½Å©ï¿½ï¿½ ï¿½ï¿½å°?ï¿½ÈµÇ´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ë°ï¿½ ï¿½Ö´ï¿½. ï¿½Ì°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ä¾ï¿½ ï¿½Ñ´ï¿½.>
 	/*
-	* ¼³¸í : Ç® ½ºÅ©¸° ¸ðµå / Ã¢ ¸ðµå¸¦ ÀüÈ¯ÇÑ´Ù.
-	* ¸Å°³º¯¼ö : 
-	* bool isFullScreen : true - Ç® ½ºÅ©¸° ¸ðµå·Î ÀüÈ¯ / false - Ã¢ ¸ðµå·Î ÀüÈ¯
+	* ï¿½ï¿½ï¿½ï¿½ : Ç® ï¿½ï¿½Å©ï¿½ï¿½ ï¿½ï¿½ï¿?/ Ã¢ ï¿½ï¿½å¸?ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ : 
+	* bool isFullScreen : true - Ç® ï¿½ï¿½Å©ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ / false - Ã¢ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯
 	*/
 	void SetFullScreenMode(bool isFullScreen);
 
 	/*
-	* ¼³¸í : ÇöÀçÀÇ ÇØ»óµµ¸¦ ´Ù¸¥ ÇØ»óµµ·Î ¹Ù²Û´Ù.
-	* ¹Ù²î´Â ÇØ»óµµ´Â OS¿¡¼­ ÀüÃ¼È­¸éÀ¸·Î Áö¿øÇÏ´Â ÇØ»óµµ¸¸ ¹Ù²Ü ¼ö ÀÖ´Ù.
-	* ±×°ÍÀº resid ·Î °áÁ¤ÀÌ µÇ¸ç, Å¬ ¼ö·Ï ´õ Á¤¹ÐÇÑ ÇØ»óµµ¸¦ °áÁ¤ÇÑ´Ù.
-	* ¸Å°³º¯¼ö : 
-	* int resid : °¡´ÉÇÑ ÇØ»óµµ id
-	* bool ClientSizeUpdate : Window »çÀÌÁîµµ °°ÀÌ ¾÷µ¥ÀÌÆ®¸¦ ÇÏ´ÂÁö¿¡ ´ëÇÑ ¿©ºÎ
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø»óµµ¸ï¿½ ï¿½Ù¸ï¿½ ï¿½Ø»óµµ·ï¿½ ï¿½Ù²Û´ï¿½.
+	* ï¿½Ù²ï¿½ï¿?ï¿½Ø»óµµ´ï¿½ OSï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼È­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Ø»óµµ¸ï¿½ ï¿½Ù²ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½.
+	* ï¿½×°ï¿½ï¿½ï¿½ resid ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ç¸ï¿½, Å¬ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø»óµµ¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ : 
+	* int resid : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø»ï¿½ id
+	* bool ClientSizeUpdate : Window ï¿½ï¿½ï¿½ï¿½ï¿½îµµ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½Ï´ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	*/
 	void SetResolution(int resid, bool ClientSizeUpdate);
 
-	// OS¿¡¼­ ÀüÃ¼È­¸éÀ» Áö¿øÇÏ´Â ÇØ»óµµ ¸®½ºÆ®
+	// OSï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼È­ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Ø»ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
 	vector<ResolutionStruct> EnableFullScreenMode_Resolusions;
 
 	/*
 	* AI Code Start : Microsoft Copilot
-	* ¼³¸í,¹ÝÈ¯ : DXGI_FORMATÀ» ¹Þ¾Æ ÇÑ ÇÈ¼¿ÀÇ ¹ÙÀÌÆ® »çÀÌÁî¸¦ ¹ÝÈ¯ÇÑ´Ù.
-	* ¸Å°³º¯¼ö : 
-	* DXGI_FORMAT format : ÇÈ¼¿Æ÷¸Ë
+	* ï¿½ï¿½ï¿½ï¿½,ï¿½ï¿½È¯ : DXGI_FORMATï¿½ï¿½ ï¿½Þ¾ï¿½ ï¿½ï¿½ ï¿½È¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ï¿½î¸¦ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ : 
+	* DXGI_FORMAT format : ï¿½È¼ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	static int PixelFormatToPixelSize(DXGI_FORMAT format);
 	// AI Code End : Microsoft Copilot
 
 	/*
-	* ¼³¸í : GPU ¹öÆÛ ¸®¼Ò½º¸¦ ¸¸µç´Ù.
-	* ¸Å°³º¯¼ö : 
-	* D3D12_HEAP_TYPE heapType : GPU HeapÀÇ Å¸ÀÔ
-	*	DEFAULT : GPU¿¡¼­ ÀÐ°í ¾²´Â Á¢±ÙÀÌ ºü¸¥ ¸Þ¸ð¸®
-	*	UPLOAD : CPU RAM¿¡¼­ GPU MEMÀ¸·Î ¾÷·ÎµåÇÒ ¼ö ÀÖ´Â ¸Þ¸ð¸®
-	*	READBACK : GPU MEM ¿¡¼­ CPU RAMÀ¸·Î ÀÐÀ» ¼ö ÀÖ´Â ¸Þ¸ð¸®
-	* D3D12_RESOURCE_STATES d3dResourceStates : ÃÊ±â ¸®¼Ò½º »óÅÂ\
-	*	// improve <commonÀÌ ¾Æ´Ò¶§ ¿¡·¯°¡ ³ª´Â °æ¿ì°¡ ÀÖ´øµ¥ ¾î¶³¶§ ±×·±°¡ Á¤¸®°¡ ÇÊ¿äÇÔ.>
-	* D3D12_RESOURCE_DIMENSION dimension : ¸®¼Ò½º°¡ ¾î¶² Å¸ÀÔÀÇ ¸®¼Ò½ºÀÎÁö °áÁ¤.
-	*	UNKNOWN : ¾Ë ¼ö ¾øÀ½.
-	*	BUFFER : ¹öÆÛ
-	*	TEXTURE 1D : 1Â÷¿ø ÇÈ¼¿ Á¤º¸
-	*	TEXTURE 2D : 2Â÷¿ø ÇÈ¼¿ ÅØ½ºÃÄ Á¤º¸
-	*	TEXTURE 3D : 3Â÷¿ø ÇÈ¼¿ º¼·ý Á¤º¸
-	* int Width : ÅØ½ºÃÄÀÏ½Ã ÅØ½ºÃÄÀÇ °¡·Î±æÀÌ, ¹öÆÛÀÏ½Ã ¹ÙÀÌÆ® Å©±â
-	* int Height : ÅØ½ºÃÄÀÏ½Ã ÅØ½ºÃÄÀÇ ¼¼·Î±æÀÌ, ¹öÆÛÀÏ½Ã 1
-	* DXGI_FORMAT BufferFormat : ÇÑ ÇÈ¼¿ µ¥ÀÌÅÍ°¡ ¾î¶² Æ÷¸äÀ¸·Î ÀÌ·ç¾îÁ® ÀÖ´ÂÁö.
-	*	ÇÈ¼¿ÀÌ ¾ø´Ù¸é DXGI_FORMAT_UNKNOWN
+	* ï¿½ï¿½ï¿½ï¿½ : GPU ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ : 
+	* D3D12_HEAP_TYPE heapType : GPU Heapï¿½ï¿½ Å¸ï¿½ï¿½
+	*	DEFAULT : GPUï¿½ï¿½ï¿½ï¿½ ï¿½Ð°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Þ¸ï¿½
+	*	UPLOAD : CPU RAMï¿½ï¿½ï¿½ï¿½ GPU MEMï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½Þ¸ï¿½
+	*	READBACK : GPU MEM ï¿½ï¿½ï¿½ï¿½ CPU RAMï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½Þ¸ï¿½
+	* D3D12_RESOURCE_STATES d3dResourceStates : ï¿½Ê±ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½ï¿½ï¿½\
+	*	// improve <commonï¿½ï¿½ ï¿½Æ´Ò¶ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ì°?ï¿½Ö´ï¿½ï¿½ï¿½ ï¿½î¶³ï¿½ï¿½ ï¿½×·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.>
+	* D3D12_RESOURCE_DIMENSION dimension : ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ ï¿½î¶² Å¸ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+	*	UNKNOWN : ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+	*	BUFFER : ï¿½ï¿½ï¿½ï¿½
+	*	TEXTURE 1D : 1ï¿½ï¿½ï¿½ï¿½ ï¿½È¼ï¿½ ï¿½ï¿½ï¿½ï¿½
+	*	TEXTURE 2D : 2ï¿½ï¿½ï¿½ï¿½ ï¿½È¼ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	*	TEXTURE 3D : 3ï¿½ï¿½ï¿½ï¿½ ï¿½È¼ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* int Width : ï¿½Ø½ï¿½ï¿½ï¿½ï¿½Ï½ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î±ï¿½ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½Ï½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ® Å©ï¿½ï¿½
+	* int Height : ï¿½Ø½ï¿½ï¿½ï¿½ï¿½Ï½ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î±ï¿½ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½Ï½ï¿½ 1
+	* DXGI_FORMAT BufferFormat : ï¿½ï¿½ ï¿½È¼ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì·ï¿½ï¿½ï¿½ï¿?ï¿½Ö´ï¿½ï¿½ï¿½.
+	*	ï¿½È¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ù¸ï¿½ DXGI_FORMAT_UNKNOWN
 	* D3D12_RESOURCE_FLAGS flags : 
-	*	¸®¼Ò½ºÀÇ ÇÃ·¡±× ¼³Á¤. ´Ù¾çÇÑ enum ÇÃ·¡±×¸¦ or ¿¬»êÀ¸·Î °°ÀÌ Àû¿ë½ÃÅ³ ¼ö ÀÖ´Ù.
+	*	ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. ï¿½Ù¾ï¿½ï¿½ï¿½ enum ï¿½Ã·ï¿½ï¿½×¸ï¿½ or ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Å?ï¿½ï¿½ ï¿½Ö´ï¿½.
 	*	 D3D12_RESOURCE_FLAG_NONE	= 0,
         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET	= 0x1,
         D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL	= 0x2,
@@ -1575,7 +1574,7 @@ struct GlobalDevice {
         D3D12_RESOURCE_FLAG_VIDEO_ENCODE_REFERENCE_ONLY	= 0x80,
         D3D12_RESOURCE_FLAG_RAYTRACING_ACCELERATION_STRUCTURE	= 0x100
 	* 
-	* ¹ÝÈ¯ : ÇØ´ç GPU ¸®¼Ò½º °ø°£À» ¸¸µé¾î GPUResource¿¡°Ô Àü´Þ, ±×°ÍÀ» ¹ÝÈ¯ÇÑ´Ù.
+	* ï¿½ï¿½È¯ : ï¿½Ø´ï¿½ GPU ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?GPUResourceï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½, ï¿½×°ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
 	*/
 	GPUResource CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, 
 		D3D12_RESOURCE_STATES d3dResourceStates, 
@@ -1585,23 +1584,23 @@ struct GlobalDevice {
 		D3D12_RESOURCE_FLAGS AdditionalFlag = D3D12_RESOURCE_FLAG_NONE);
 
 	/*
-	* ¼³¸í : (DEFAULT)copydestBuffer¿¡ (UPLOAD)uploadBuffer¸¦ »ç¿ëÇØ ptr ºÎºÐÀÇ CPU RAM µ¥ÀÌÅÍ¸¦ 
-	*	º¹»çÇÑ´Ù. <ÇØ´ç °úÁ¤¿¡´Â Ä¿¸Çµå¸®½ºÆ®¿¡ Ä¿¸Çµå¸¦ Ãß°¡ÇÏ°í GPU¸¦ ½ÇÇà½ÃÅ°´Â °úÁ¤ÀÌ ÇÊ¿äÇÏ±â ¶§¹®¿¡,
-	*	Ä¿¸Çµå¸®½ºÆ®°¡ Reset µÇ¾î ÀÖÀ» °æ¿ì¿Í, Close µÇ¾îÀÖÀ» °æ¿ìÀÇ ½ÇÇàÀÌ ´Ù¸£±â ¶§¹®¿¡, ÀÌ¸¦ ¼öÁ¤ÇØ¾ß ÇÑ´Ù.
-		ÇöÀç´Â ÀÌ¹Ì Reset ÀÌ ¿Ï·áµÇ°í »ç¿ëµÇ°í ÀÖ´Â Ä¿¸Çµå¸®½ºÆ®°¡ ÀÖÀ» °æ¿ì¸¦ °¡Á¤ÇÏ°í ÄÚµå°¡ ÀÛ¼ºµÇ¾î ÀÖµð.>
+	* ï¿½ï¿½ï¿½ï¿½ : (DEFAULT)copydestBufferï¿½ï¿½ (UPLOAD)uploadBufferï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ptr ï¿½Îºï¿½ï¿½ï¿½ CPU RAM ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ 
+	*	ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½. <ï¿½Ø´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ä¿ï¿½Çµå¸®ï¿½ï¿½Æ®ï¿½ï¿½ Ä¿ï¿½Çµå¸¦ ï¿½ß°ï¿½ï¿½Ï°ï¿½ GPUï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Å°ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½,
+	*	Ä¿ï¿½Çµå¸®ï¿½ï¿½Æ®ï¿½ï¿½ Reset ï¿½Ç¾ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½, Close ï¿½Ç¾ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½Ñ´ï¿½.
+		ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ì¹ï¿½ Reset ï¿½ï¿½ ï¿½Ï·ï¿½Ç°ï¿?ï¿½ï¿½ï¿½Ç°ï¿½ ï¿½Ö´ï¿½ Ä¿ï¿½Çµå¸®ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ì¸?ï¿½ï¿½ï¿½ï¿½ï¿½Ï°ï¿½ ï¿½Úµå°¡ ï¿½Û¼ï¿½ï¿½Ç¾ï¿½ ï¿½Öµï¿½.>
 		// fix
 
-	* ID3D12GraphicsCommandList* commandList : ÇöÀç »ç¿ëÁßÀÎ Ä¿¸Çµå ¸®½ºÆ®
-	* void* ptr : º¹»çÇÒ RAM ¸Þ¸ð¸®ÀÇ ½ÃÀÛÁÖ¼Ò
-	* GPUResource* uploadBuffer : ¾÷·Îµå¿¡ ¾²ÀÏ ¾÷·Îµå ¹öÆÛ
-	* GPUResource* copydestBuffer : ¾÷·ÎµåÀÇ ¸ñÀûÁö°¡ µÉ DEFAULT HEAP
-	* bool StateReturning : uploadBuffer¿Í copydestBuffer°¡ º¹»ç¸¦ ¿Ï·áÇÏ°í ±âÁ¸ÀÇ STATE·Î µÇµ¹¾Æ°¥ °ÍÀÎÁö °áÁ¤.
+	* ID3D12GraphicsCommandList* commandList : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+	* void* ptr : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ RAM ï¿½Þ¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ö¼ï¿½
+	* GPUResource* uploadBuffer : ï¿½ï¿½ï¿½Îµå¿¡ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½ï¿½
+	* GPUResource* copydestBuffer : ï¿½ï¿½ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ DEFAULT HEAP
+	* bool StateReturning : uploadBufferï¿½ï¿½ copydestBufferï¿½ï¿½ ï¿½ï¿½ï¿½ç¸¦ ï¿½Ï·ï¿½ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ STATEï¿½ï¿½ ï¿½Çµï¿½ï¿½Æ°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	*/
 	void UploadToCommitedGPUBuffer(void* ptr, GPUResource* uploadBuffer, 
 		GPUResource* copydestBuffer = nullptr, bool StateReturning = true);
 	
 	/*
-	 ¼³¸í : ??
+	 ï¿½ï¿½ï¿½ï¿½ : ??
 	*/
 	UINT64 GetRequiredIntermediateSize(
 		_In_ ID3D12Resource* pDestinationResource,
@@ -1609,23 +1608,23 @@ struct GlobalDevice {
 		_In_range_(0, D3D12_REQ_SUBRESOURCES - FirstSubresource) UINT NumSubresources) noexcept;
 
 	/*
-	* ¼³¸í : bmp ÆÄÀÏÀ» dds·Î ¹Ù²Ù´Â ÇÔ¼ö
-	* ¸Å°³º¯¼ö : 
-	* int mipmap_level : ¹Ó¸Ê ·¹º§
-	* const char* Format : dds ºí·° ¾ÐÃà Æ÷¸Ë
-	* const char* filename : bmp ÆÄÀÏ °æ·Î
+	* ï¿½ï¿½ï¿½ï¿½ : bmp ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ddsï¿½ï¿½ ï¿½Ù²Ù´ï¿½ ï¿½Ô¼ï¿½
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ : 
+	* int mipmap_level : ï¿½Ó¸ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* const char* Format : dds ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* const char* filename : bmp ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	*/
 	static void bmpTodds(int mipmap_level, const char* Format, const char* filename);
 
 	/*
-	* ¼³¸í : OBB µ¥ÀÌÅÍ¸¦ ÅëÇØ AABB µ¥ÀÌÅÍ¸¦ ±¸¼ºÇÑ´Ù.
-	* OBB°¡ ÀÚÀ¯·Ó°Ô È¸ÀüÇÏ¿©µµ ±×°ÍÀ» ¸ðµÎ Æ÷ÇÔÇÏ´Â ÃÖ¼ÒÀÇ AABB¸¦ ¾ò°Ô ÇÑ´Ù.
-	* vec4* out : °è»êÁßÀÌ¾ú´ø AABB°¡ µé¾î¿À°í, AABB°¡ ³»º¸³»Áú °ø°£. vec4[2] ¸¸Å­ÀÇ °ø°£ÀÌ ÇÒ´çµÇ¾î ÀÖ¾î¾ßÇÑ´Ù.
-	* BoundingOrientedBox obb : AABB·Î º¯È¯µÉ OBB.
+	* ï¿½ï¿½ï¿½ï¿½ : OBB ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½ AABB ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	* OBBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ó°ï¿½ È¸ï¿½ï¿½ï¿½Ï¿ï¿½ï¿½ï¿½ ï¿½×°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Ö¼ï¿½ï¿½ï¿½ AABBï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½Ñ´ï¿½.
+	* vec4* out : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì¾ï¿½ï¿½ï¿?AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. vec4[2] ï¿½ï¿½Å­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ò´ï¿½Ç¾ï¿?ï¿½Ö¾ï¿½ï¿½ï¿½Ñ´ï¿?
+	* BoundingOrientedBox obb : AABBï¿½ï¿½ ï¿½ï¿½È¯ï¿½ï¿½ OBB.
 	* bool first :
-	*	trueÀÌ¸é, AABB¸¦ Ã³À½À¸·Î °è»êÇÏ´Â °ÍÀÌ´Ù. ±×·¡¼­ obb¸¦ AABB·Î ¹Ù²Ù´Â °úÁ¤À» ¼ø¼öÈ÷ ¼öÇàÇÑ´Ù.
-	*	falseÀÌ¸é, ±âÁ¸ out¿¡ µç AABB µ¥ÀÌÅÍ¿Í obb ¿µ¿ªÀÌ ¸ðµÎ Æ÷ÇÔµÇµµ·Ï ÇÏ´Â ÃÖ¼Ò AABB¸¦ ´Ù½Ã ¾´´Ù.
-	*	ÀÌ·± ±â´ÉÀº ¿©·¯ obb¸¦ Æ÷ÇÔ½ÃÅ°´Â ÇÏ³ªÀÇ ÃÖ¼Ò AABB¸¦ ±¸ÇÏ´Âµ¥ ¾²ÀÎ´Ù.
+	*	trueï¿½Ì¸ï¿½, AABBï¿½ï¿½ Ã³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï´ï¿?ï¿½ï¿½ï¿½Ì´ï¿½. ï¿½×·ï¿½ï¿½ï¿½ obbï¿½ï¿½ AABBï¿½ï¿½ ï¿½Ù²Ù´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
+	*	falseï¿½Ì¸ï¿½, ï¿½ï¿½ï¿½ï¿½ outï¿½ï¿½ ï¿½ï¿½ AABB ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ obb ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ÔµÇµï¿½ï¿½ï¿½ ï¿½Ï´ï¿½ ï¿½Ö¼ï¿½ AABBï¿½ï¿½ ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+	*	ï¿½Ì·ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ obbï¿½ï¿½ ï¿½ï¿½ï¿½Ô½ï¿½Å°ï¿½ï¿½ ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½Ö¼ï¿½ AABBï¿½ï¿½ ï¿½ï¿½ï¿½Ï´Âµï¿½ ï¿½ï¿½ï¿½Î´ï¿½.
 	*/
 	void GetAABBFromOBB(vec4* out, BoundingOrientedBox obb, bool first = false) {
 		XMFLOAT3 corners[BoundingOrientedBox::CORNER_COUNT];
@@ -1736,15 +1735,15 @@ struct GlobalDevice {
 		if (out[1].z < curr.z) out[1].z = curr.z;
 	}
 
-	//c++ ·»´ý¿£Áø
+	//c++ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	default_random_engine dre;
-	//·»´ýÀÌ ±ÕÀÏÇÏ°í ÀÏÁ¤ÇÑ float ºÐÆ÷¸¦ °¡Áöµµ·Ï ¼³Á¤.
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ float ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	uniform_real_distribution<float> urd{ 0.0f, 1000000.0f };
 	/*
-	* ¼³¸í,¹ÝÈ¯ : min~max±îÁöÀÇ float Áß ·»´ýÇÑ °ÍÀ» µ¶¸³ÀûÀ¸·Î ·»´ý ¼±ÅÃÈÄ ¹ÝÈ¯.
-	* ¸Å°³º¯¼ö : 
-	* float min : ÃÖ¼Ò°ª
-	* float max : ÃÖ´ë°ª
+	* ï¿½ï¿½ï¿½ï¿½,ï¿½ï¿½È¯ : min~maxï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ float ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ : 
+	* float min : ï¿½Ö¼Ò°ï¿½
+	* float max : ï¿½Ö´ë°ª
 	*/
 	float randomRangef(float min, float max) {
 		float r = urd(dre);
@@ -1753,7 +1752,7 @@ struct GlobalDevice {
 
 	void CreateDefaultHeap_VB(void* ptr, GPUResource& VertexBuffer, GPUResource& VertexUploadBuffer, D3D12_VERTEX_BUFFER_VIEW& view, UINT VertexCount, UINT sizeofVertex);
 
-	// IndexCount´Â TriangleIndexÀÇ size() * 3.
+	// IndexCountï¿½ï¿½ TriangleIndexï¿½ï¿½ size() * 3.
 	template <int indexByteSize>
 	void CreateDefaultHeap_IB(void* ptr, GPUResource& IndexBuffer, GPUResource& IndexUploadBuffer, D3D12_INDEX_BUFFER_VIEW& view, UINT IndexCount);
 
@@ -1761,21 +1760,21 @@ struct GlobalDevice {
 
 	//this function cannot be executing while command list update.
 	/*
-	* ¼³¸í : ÅØ½ºÆ®ÀÇ ÅØ½ºÃÄ¸¦ ¸¸µç´Ù.
-	* ¸Å°³º¯¼ö :
-	* wchar_t key : »õ·Î ÅØ½ºÃÄ¸¦ Ãß°¡ÇÒ ¹®ÀÚ.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½Ø½ï¿½Æ®ï¿½ï¿½ ï¿½Ø½ï¿½ï¿½Ä¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* wchar_t key : ï¿½ï¿½ï¿½ï¿½ ï¿½Ø½ï¿½ï¿½Ä¸ï¿½ ï¿½ß°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	*/
 	void AddTextSDFTexture(wchar_t key);
 	
 	/*
-	* ¼³¸í : RAM¿¡ ÀúÀåµÈ °¡·Î¿Í ¼¼·Î°¡ width, heightÀÎ ÅØ½ºÃÄ texture¿¡
-	*	startpos ~ endpos ·Î ¿¬°áµÇ´Â ÇÏ³ªÀÇ ¼±À» ±Ú´Â´Ù.
-	* ¸Å°³º¯¼ö :
-	* float_v2 startpos : ¼±ÀÇ ½ÃÀÛÁ¡
-	* float_v2 endpos : ¼±ÀÇ ³¡Á¡
-	* BYTE* texture : RAM ÅØ½ºÃÄ
-	* int width : °¡·ÎÇÈ¼¿±æÀÌ
-	* int height : ¼¼·ÎÇÈ¼¿±æÀÌ
+	* ï¿½ï¿½ï¿½ï¿½ : RAMï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½Î¿ï¿½ ï¿½ï¿½ï¿½Î°ï¿½ width, heightï¿½ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ textureï¿½ï¿½
+	*	startpos ~ endpos ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ç´ï¿?ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ú´Â´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* float_v2 startpos : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	* float_v2 endpos : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* BYTE* texture : RAM ï¿½Ø½ï¿½ï¿½ï¿½
+	* int width : ï¿½ï¿½ï¿½ï¿½ï¿½È¼ï¿½ï¿½ï¿½ï¿½ï¿½
+	* int height : ï¿½ï¿½ï¿½ï¿½ï¿½È¼ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	void AddLineInSDFTexture(float_v2 startpos, float_v2 endpos, char* texture, int width, int height);
 	__forceinline char SignedFloatNormalizeToByte(float f);
@@ -1804,7 +1803,7 @@ struct GlobalDevice {
 	static inline float clampf(float v, float lo, float hi) {
 		return max(lo, min(v, hi));
 	}
-	// °£´ÜÇÑ 2-pass distance transform (±Ù»ç)
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 2-pass distance transform (ï¿½Ù»ï¿½)
 	std::vector<float> edt(const std::vector<uint8_t>& mask, int width, int height) {
 		//init..
 		if (Spairs.size() == 0) {
@@ -1828,7 +1827,7 @@ struct GlobalDevice {
 		const float INF = 1e9f;
 		std::vector<float> d(width * height, INF);
 
-		// ÃÊ±âÈ­
+		// ï¿½Ê±ï¿½È­
 		for (int i = 0; i < width * height; ++i) {
 			if (mask[i]) d[i] = 0.0f;
 		}
@@ -1881,7 +1880,7 @@ struct GlobalDevice {
 			}
 		}
 
-		// sqrt·Î ±Ù»ç À¯Å¬¸®µå °Å¸®
+		// sqrtï¿½ï¿½ ï¿½Ù»ï¿½ ï¿½ï¿½Å¬ï¿½ï¿½ï¿½ï¿½ ï¿½Å¸ï¿½
 		for (float& v : d) v = std::sqrt(v);
 		return d;
 	}
@@ -1891,7 +1890,7 @@ struct GlobalDevice {
 		std::vector<uint8_t> mask(N);
 		vector<vec2f> outlines;
 
-		// mask »ý¼º (0 ¡æ ³»ºÎ, 127 ¡æ ¿ÜºÎ)
+		// mask ï¿½ï¿½ï¿½ï¿½ (0 ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½, 127 ï¿½ï¿½ ï¿½Üºï¿½)
 		for (int i = 0; i < N; ++i) {
 			mask[i] = (raw[i] == 0) ? 1 : 0;
 			if (raw[i] == 0) {
@@ -1899,7 +1898,7 @@ struct GlobalDevice {
 			}
 		}
 
-		// ³»ºÎ/¿ÜºÎ °Å¸® °è»ê
+		// ï¿½ï¿½ï¿½ï¿½/ï¿½Üºï¿½ ï¿½Å¸ï¿½ ï¿½ï¿½ï¿?
 		auto d_in = edt(mask, width, height);
 
 		std::vector<uint8_t> inv(N);
@@ -1910,10 +1909,10 @@ struct GlobalDevice {
 		std::vector<float> sdf(N);
 		for (int i = 0; i < N; ++i) sdf[i] = distanceMul * d_in[i] - distanceMul * d_out[i];
 
-		// ¹Ý°æ ¼³Á¤ (ÀÚµ¿)
+		// ï¿½Ý°ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Úµï¿½)
 		if (radius <= 0.0f) radius = max(1.0f, 0.05f * min(width, height));
 
-		// 0~255 ¸ÅÇÎ
+		// 0~255 ï¿½ï¿½ï¿½ï¿½
 		std::vector<uint8_t> out(N);
 		for (int i = 0; i < N; ++i) {
 			float n = clampf(sdf[i] / radius, -1.0f, 1.0f);
@@ -1931,12 +1930,12 @@ struct GlobalDevice {
 		DescIndex SRVIndex;
 	};
 
-	// width, height Å©±âÀÇ ÅØ½ºÃ³¿Í UAV¸¦ »ý¼ºÇÏ´Â ÇÔ¼ö
+	// width, height Å©ï¿½ï¿½ï¿½ï¿½ ï¿½Ø½ï¿½Ã³ï¿½ï¿½ UAVï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Ô¼ï¿½
 	TextureWithUAV CreateTextureWithUAV(ID3D12Device* device, UINT width, UINT height, DXGI_FORMAT format)
 	{
 		TextureWithUAV result{};
 
-		// 1. ÅØ½ºÃ³ ¸®¼Ò½º »ý¼º
+		// 1. ï¿½Ø½ï¿½Ã³ ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		D3D12_RESOURCE_DESC texDesc = {};
 		texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		texDesc.Alignment = 0;
@@ -1965,7 +1964,7 @@ struct GlobalDevice {
 			throw std::runtime_error("Failed to create texture resource");
 		}
 
-		// 2. UAV »ý¼º
+		// 2. UAV ï¿½ï¿½ï¿½ï¿½
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 		uavDesc.Format = format;
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
@@ -1994,12 +1993,12 @@ struct GlobalDevice {
 		UINT height,
 		DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM)
 	{
-		// °á°ú ¹ÝÈ¯
+		// ï¿½ï¿½ï¿?ï¿½ï¿½È¯
 		RenderTargetBundle bundle;
 
 		UINT rtvDescriptorSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-		// ¸®¼Ò½º ¼³¸í
+		// ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		D3D12_RESOURCE_DESC texDesc = {};
 		texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		texDesc.Alignment = 0;
@@ -2012,9 +2011,9 @@ struct GlobalDevice {
 		texDesc.SampleDesc.Quality = 0;
 		texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 		texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; // UAVµµ Çã¿ë
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; // UAVï¿½ï¿½ ï¿½ï¿½ï¿?
 
-		// RTV Å¬¸®¾î °ª
+		// RTV Å¬ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
 		D3D12_CLEAR_VALUE clearValue = {};
 		clearValue.Format = format;
 		clearValue.Color[0] = 0.0f;
@@ -2022,14 +2021,14 @@ struct GlobalDevice {
 		clearValue.Color[2] = 0.0f;
 		clearValue.Color[3] = 1.0f;
 
-		// ¸®¼Ò½º »ý¼º
+		// ï¿½ï¿½ï¿½Ò½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		ID3D12Resource* renderTarget;
 		CD3DX12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 		HRESULT hr = device->CreateCommittedResource(
 			&hp,
 			D3D12_HEAP_FLAG_NONE,
 			&texDesc,
-			D3D12_RESOURCE_STATE_RENDER_TARGET, // ÃÊ±â »óÅÂ RTV
+			D3D12_RESOURCE_STATE_RENDER_TARGET, // ï¿½Ê±ï¿½ ï¿½ï¿½ï¿½ï¿½ RTV
 			&clearValue,
 			IID_PPV_ARGS(&renderTarget)
 		);
@@ -2038,11 +2037,11 @@ struct GlobalDevice {
 			throw std::runtime_error("Failed to create render target texture.");
 		}
 
-		// RTV ÇÚµé ÇÒ´ç
+		// RTV ï¿½Úµï¿½ ï¿½Ò´ï¿½
 		DescHandle rtvHandle;
 		rtvHandle.hcpu.ptr = rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + rtvIndex * rtvDescriptorSize;
 
-		// RTV »ý¼º
+		// RTV ï¿½ï¿½ï¿½ï¿½
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = format;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
@@ -2184,7 +2183,7 @@ enum EMTime {
 };
 
 /*
-* ¼³¸í : ¸Þ½¬ µ¥ÀÌÅÍ
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½Þ½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 */
 struct RenderInstanceData {
 	matrix worldMat;
@@ -2203,25 +2202,25 @@ struct RenderInstanceData {
 
 class Mesh {
 protected:
-	// ¹öÅÃ½º ¹öÆÛ
+	// ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	GPUResource VertexBuffer;
-	// ¹öÅÃ½º ¾÷·Îµå ¹öÆÛ
+	// ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½ï¿½
 	GPUResource VertexUploadBuffer;
-	// ¹öÅÃ½º ¹öÆÛ ºä
+	// ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
 	D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
 
-	// ÀÎµ¦½º ¹öÆÛ
+	// ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	GPUResource IndexBuffer;
-	// ÀÎµ¦½º ¾÷·Îµå ¹öÆÛ
+	// ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½ï¿½
 	GPUResource IndexUploadBuffer;
-	// ÀÎµ¦½º ¹öÆÛ ºä
+	// ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
 	D3D12_INDEX_BUFFER_VIEW IndexBufferView;
 
-	// ÀÎµ¦½º °³¼ö
+	// ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	ui32 IndexNum = 0;
-	// ¹öÅÃ½º °³¼ö
+	// ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	ui32 VertexNum = 0;
-	// MeshÀÇ ÅäÆú·ÎÁö
+	// Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	D3D12_PRIMITIVE_TOPOLOGY topology;
 public:
 	struct Vertex {
@@ -2244,14 +2243,14 @@ public:
 	};
 	MeshType type;
 
-	// Mesh ÀÇ OBBÀÇ Extends
+	// Mesh ï¿½ï¿½ OBBï¿½ï¿½ Extends
 	XMFLOAT3 OBB_Ext;
-	// Mesh ÀÇ OBBÀÇ Center
+	// Mesh ï¿½ï¿½ OBBï¿½ï¿½ Center
 	XMFLOAT3 OBB_Tr;
 
 	int subMeshNum = 0;
-	int* SubMeshIndexStart = nullptr; // slotNum + 1 °³ÀÇ int.
-	// i ¹øÂ° Mesh : (slotIndexStart[i] ~ slotIndexStart[i+1]-1)
+	int* SubMeshIndexStart = nullptr; // slotNum + 1 ï¿½ï¿½ï¿½ï¿½ int.
+	// i ï¿½ï¿½Â° Mesh : (slotIndexStart[i] ~ slotIndexStart[i+1]-1)
 
 	struct InstancingStruct {
 		GPUResource StructuredBuffer;
@@ -2271,23 +2270,23 @@ public:
 		void Init(unsigned int capacity, Mesh* _mesh);
 		int PushInstance(RenderInstanceData instance);
 
-		//¸¸¾à Ç×¸ñÀÌ ¾÷µ¥ÀÌÆ®°¡ ÀæÁö ¾ÊÀº °íÁ¤ÀûÀÎ ¾÷µ¥ÀÌÆ®ÀÎ °æ¿ì Æ¯Á¤ ¿ÀºêÁ§Æ®¸¦ ·»´õ¿¡¼­ Á¦¿Ü½ÃÅ²´Ù.
+		//ï¿½ï¿½ï¿½ï¿½ ï¿½×¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿?Æ¯ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ü½ï¿½Å²ï¿½ï¿½.
 		void DestroyInstance(RenderInstanceData* instance);
 
-		//¸Å ÇÁ·¹ÀÓ¸¶´Ù ÀÎ½ºÅÏ½Ì Ç×¸ñÀ» ¾÷µ¥ÀÌÆ®ÇÒ °æ¿ì ÀÌ°ÍÀ» »ç¿ëÇÑ´Ù.
+		//ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ó¸ï¿½ï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ ï¿½×¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½Ì°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿?
 		void ClearInstancing();
 		
 		void Release();
 	};
 	static constexpr int MinInstancingStartSize = 0;
-	InstancingStruct* InstanceData = nullptr; // ¼­ºê¸Þ½¬ÀÇ °³¼ö¸¸Å­ Á¸Àç.
+	InstancingStruct* InstanceData = nullptr; // ï¿½ï¿½ï¿½ï¿½Þ½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å­ ï¿½ï¿½ï¿½ï¿½.
 	void InstancingInit();
 
 	/*
-	* ¼³¸í : AABB¸¦ »ç¿ëÇØ MeshÀÇ OBB µ¥ÀÌÅÍ¸¦ ±¸¼º.
-	* ¸Å°³º¯¼ö :
-	* XMFLOAT3 minpos : AABBÀÇ ÃÖ¼Ò À§Ä¡
-	* XMFLOAT3 maxpos : AABBÀÇ ÃÖ´ë À§Ä¡
+	* ï¿½ï¿½ï¿½ï¿½ : AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?Meshï¿½ï¿½ OBB ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* XMFLOAT3 minpos : AABBï¿½ï¿½ ï¿½Ö¼ï¿½ ï¿½ï¿½Ä¡
+	* XMFLOAT3 maxpos : AABBï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½Ä¡
 	*/
 	void SetOBBDataWithAABB(XMFLOAT3 minpos, XMFLOAT3 maxpos);
 
@@ -2297,40 +2296,41 @@ public:
 	virtual ~Mesh();
 
 	/*
-	* ¼³¸í : path °æ·Î¿¡ ÀÖ´Â obj ÆÄÀÏÀÇ Mesh¸¦ ºÒ·¯¿Â´Ù. color »ö ´ë·Î, centering ÀÌ trueÀÏ½Ã¿¡ OBB Center°¡ 0ÀÌ µÈ´Ù.
-	* const char* path : obj ÆÄÀÏ °æ·Î
-	* vec4 color : Mesh¿¡ ÀÔÈú »ö»ó
-	* bool centering : MeshÀÇ OBB Center°¡ ¿øÁ¡ÀÎÁö ¿©ºÎ (MeshÀÇ Á¤ Áß¾ÓÀÌ ¿øÁ¡ÀÌ µÊ.)
+	* ï¿½ï¿½ï¿½ï¿½ : path ï¿½ï¿½Î¿ï¿?ï¿½Ö´ï¿½ obj ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Meshï¿½ï¿½ ï¿½Ò·ï¿½ï¿½Â´ï¿½. color ï¿½ï¿½ ï¿½ï¿½ï¿? centering ï¿½ï¿½ trueï¿½Ï½Ã¿ï¿½ OBB Centerï¿½ï¿½ 0ï¿½ï¿½ ï¿½È´ï¿½.
+	* const char* path : obj ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
+	* vec4 color : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* bool centering : Meshï¿½ï¿½ OBB Centerï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (Meshï¿½ï¿½ ï¿½ï¿½ ï¿½ß¾ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½.)
 	*/
 	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
 
 	/*
-	* ¼³¸í : Mesh¸¦ ·»´õ¸µ ÇÑ´Ù.
-	* ¿©±â¿¡¼­ ÆÄÀÌÇÁ¶óÀÎÀÌ³ª ¼ÎÀÌ´õ¸¦ ¼³Á¤ÇÏÁö ¾Ê´Â´Ù.
-	* ¸Å°³º¯¼ö :
-	* ID3D12GraphicsCommandList* pCommandList : ÇöÀç ·»´õ¸µ¿¡ »ç¿ëµÇ´Â Ä¿¸Çµå ¸®½ºÆ®
-	* ui32 instanceNum : ·»´õ¸µ ÇÏ°íÀÚ ÇÏ´Â MeshÀÇ °³¼ö. (ÀÎ½ºÅÏ½ÌÀÇ °æ¿ì 1ÀÌ»óÀÇ °ªÀÌ ÇÊ¿äÇÔ.)
+	* ï¿½ï¿½ï¿½ï¿½ : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
+	* ï¿½ï¿½ï¿½â¿¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì³ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* ID3D12GraphicsCommandList* pCommandList : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+	* ui32 instanceNum : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï°ï¿½ï¿½ï¿½ ï¿½Ï´ï¿½ Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. (ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?1ï¿½Ì»ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.)
 	*/
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex = 0);
 
 	virtual void BatchRender(ID3D12GraphicsCommandList* pCommandList);
 
 	/*
-	* ¼³¸í/¹ÝÈ¯ : MeshÀÇ OBB¸¦ ¾ò´Â´Ù.
+	* ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½È¯ : Meshï¿½ï¿½ OBBï¿½ï¿½ ï¿½ï¿½Â´ï¿?
 	*/
 	BoundingOrientedBox GetOBB();
 
 	/*
-	* ¼³¸í : °¢ ¸ð¼­¸® ±æÀÌ°¡ width, height, depthÀÌ°í, color »öÀ» °¡Áø Á÷À°¸éÃ¼ Mesh¸¦ ¸¸µç´Ù.
-	* float width : ³Êºñ
-	* float height : ³ôÀÌ
-	* float depth : Æø
-	* vec4 color : »ö»ó
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ ï¿½ð¼­¸ï¿½ ï¿½ï¿½ï¿½Ì°ï¿½ width, height, depthï¿½Ì°ï¿½, color ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¼ Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
+	* float width : ï¿½Êºï¿½
+	* float height : ï¿½ï¿½ï¿½ï¿½
+	* float depth : ï¿½ï¿½
+	* vec4 color : ï¿½ï¿½ï¿½ï¿½
 	*/
 	void CreateWallMesh(float width, float height, float depth, vec4 color);
+	void CreateFlatDiskMesh(float outerRadius, float innerRadius, int segmentCount, vec4 color);
 
 	/*
-	* ¼³¸í : Mesh¸¦ ÇØÁ¦ÇÔ.
+	* ï¿½ï¿½ï¿½ï¿½ : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	*/
 	virtual void Release();
 
@@ -2338,12 +2338,12 @@ public:
 };
 
 /*
-* ¼³¸í : Texture MappingÀ» À§ÇÑ UV°¡ ÀÖ´Â Mesh.
+* ï¿½ï¿½ï¿½ï¿½ : Texture Mappingï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ UVï¿½ï¿½ ï¿½Ö´ï¿½ Mesh.
 */
 class UVMesh : public Mesh {
 public:
 	/*
-	* ¼³¸í : UVMeshÀÇ ¹öÅÃ½ºÇÏ³ªÀÇ µ¥ÀÌÅÍ
+	* ï¿½ï¿½ï¿½ï¿½ : UVMeshï¿½ï¿½ ï¿½ï¿½ï¿½Ã½ï¿½ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	struct Vertex {
 		XMFLOAT3 position;
@@ -2359,44 +2359,48 @@ public:
 	};
 
 	/*
-	* ¼³¸í : path °æ·Î¿¡ ÀÖ´Â obj ÆÄÀÏÀÇ Mesh¸¦ ºÒ·¯¿Â´Ù. color »ö ´ë·Î, centering ÀÌ trueÀÏ½Ã¿¡ OBB Center°¡ 0ÀÌ µÈ´Ù.
-	* const char* path : obj ÆÄÀÏ °æ·Î
-	* vec4 color : Mesh¿¡ ÀÔÈú »ö»ó
-	* bool centering : MeshÀÇ OBB Center°¡ ¿øÁ¡ÀÎÁö ¿©ºÎ (MeshÀÇ Á¤ Áß¾ÓÀÌ ¿øÁ¡ÀÌ µÊ.)
+	* ï¿½ï¿½ï¿½ï¿½ : path ï¿½ï¿½Î¿ï¿?ï¿½Ö´ï¿½ obj ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Meshï¿½ï¿½ ï¿½Ò·ï¿½ï¿½Â´ï¿½. color ï¿½ï¿½ ï¿½ï¿½ï¿? centering ï¿½ï¿½ trueï¿½Ï½Ã¿ï¿½ OBB Centerï¿½ï¿½ 0ï¿½ï¿½ ï¿½È´ï¿½.
+	* const char* path : obj ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
+	* vec4 color : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* bool centering : Meshï¿½ï¿½ OBB Centerï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (Meshï¿½ï¿½ ï¿½ï¿½ ï¿½ß¾ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½.)
 	*/
 	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true);
 
 	/*
-	* ¼³¸í : Mesh¸¦ ·»´õ¸µ ÇÑ´Ù.
-	* ¿©±â¿¡¼­ ÆÄÀÌÇÁ¶óÀÎÀÌ³ª ¼ÎÀÌ´õ¸¦ ¼³Á¤ÇÏÁö ¾Ê´Â´Ù.
-	* ¸Å°³º¯¼ö :
-	* ID3D12GraphicsCommandList* pCommandList : ÇöÀç ·»´õ¸µ¿¡ »ç¿ëµÇ´Â Ä¿¸Çµå ¸®½ºÆ®
-	* ui32 instanceNum : ·»´õ¸µ ÇÏ°íÀÚ ÇÏ´Â MeshÀÇ °³¼ö. (ÀÎ½ºÅÏ½ÌÀÇ °æ¿ì 1ÀÌ»óÀÇ °ªÀÌ ÇÊ¿äÇÔ.)
+	* ï¿½ï¿½ï¿½ï¿½ : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
+	* ï¿½ï¿½ï¿½â¿¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì³ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* ID3D12GraphicsCommandList* pCommandList : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+	* ui32 instanceNum : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï°ï¿½ï¿½ï¿½ ï¿½Ï´ï¿½ Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. (ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?1ï¿½Ì»ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.)
 	*/
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum);
 
 	/*
-	* ¼³¸í : °¢ ¸ð¼­¸® ±æÀÌ°¡ width, height, depthÀÌ°í, color »öÀ» °¡Áø Á÷À°¸éÃ¼ Mesh¸¦ ¸¸µç´Ù.
-	* float width : ³Êºñ
-	* float height : ³ôÀÌ
-	* float depth : Æø
-	* vec4 color : »ö»ó
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ ï¿½ð¼­¸ï¿½ ï¿½ï¿½ï¿½Ì°ï¿½ width, height, depthï¿½Ì°ï¿½, color ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¼ Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
+	* float width : ï¿½Êºï¿½
+	* float height : ï¿½ï¿½ï¿½ï¿½
+	* float depth : ï¿½ï¿½
+	* vec4 color : ï¿½ï¿½ï¿½ï¿½
 	*/
 	void CreateWallMesh(float width, float height, float depth, vec4 color);
+	void CreateSphereMesh(float radius, int sliceCount, int stackCount, vec4 color);
+	void CreateBeamMesh(vec4 color);
+	void CreateBeamMesh(vec4 color, float frameU, float frameV);
+	void CreateMissileSpriteMesh(vec4 color, float frameU, float frameV);
 
 	/*
-	* ¼³¸í : Mesh¸¦ ÇØÁ¦ÇÔ.
+	* ï¿½ï¿½ï¿½ï¿½ : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	*/
 	virtual void Release();
 
 	/*
-	* ¼³¸í : Text ·»´õ¸µÀ» À§ÇÑ PlaneÀ» ¸¸µå´Â ÇÔ¼ö.
+	* ï¿½ï¿½ï¿½ï¿½ : Text ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Planeï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ô¼ï¿½.
 	*/
 	void CreateTextRectMesh();
 };
 
 /*
-* UV°¡ ÀÖ¾î ÅØ½ºÃÄ ¸ÅÇÎÀ» ÇÒ ¼ö ÀÖÀ¸¸é¼­, NormalMappingÀÌ °¡´ÉÇÏµµ·Ï tangent Á¤º¸°¡ ÀÖ´Â Mesh.
+* UVï¿½ï¿½ ï¿½Ö¾ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½é¼­, NormalMappingï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½ï¿½ tangent ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´ï¿½ Mesh.
 */
 class BumpMesh : public Mesh {
 public:
@@ -2414,39 +2418,39 @@ public:
 	}
 	virtual ~BumpMesh();
 	/*
-	* ¼³¸í : °¢ ¸ð¼­¸® ±æÀÌ°¡ width, height, depthÀÌ°í, color »öÀ» °¡Áø Á÷À°¸éÃ¼ Mesh¸¦ ¸¸µç´Ù.
-	* float width : ³Êºñ
-	* float height : ³ôÀÌ
-	* float depth : Æø
-	* vec4 color : »ö»ó
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ ï¿½ð¼­¸ï¿½ ï¿½ï¿½ï¿½Ì°ï¿½ width, height, depthï¿½Ì°ï¿½, color ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¼ Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
+	* float width : ï¿½Êºï¿½
+	* float height : ï¿½ï¿½ï¿½ï¿½
+	* float depth : ï¿½ï¿½
+	* vec4 color : ï¿½ï¿½ï¿½ï¿½
 	*/
 	virtual void CreateWallMesh(float width, float height, float depth, vec4 color);
 
 	void CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<TriangleIndex>& inds, int SlotNum = 1, int* SlotArr = nullptr, bool include_DXR = true, int ZoneID = -1);
 
 	/*
-	* ¼³¸í : path °æ·Î¿¡ ÀÖ´Â obj ÆÄÀÏÀÇ Mesh¸¦ ºÒ·¯¿Â´Ù. color »ö ´ë·Î, centering ÀÌ trueÀÏ½Ã¿¡ OBB Center°¡ 0ÀÌ µÈ´Ù.
-	* const char* path : obj ÆÄÀÏ °æ·Î
-	* vec4 color : Mesh¿¡ ÀÔÈú »ö»ó
-	* bool centering : MeshÀÇ OBB Center°¡ ¿øÁ¡ÀÎÁö ¿©ºÎ (MeshÀÇ Á¤ Áß¾ÓÀÌ ¿øÁ¡ÀÌ µÊ.)
+	* ï¿½ï¿½ï¿½ï¿½ : path ï¿½ï¿½Î¿ï¿?ï¿½Ö´ï¿½ obj ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Meshï¿½ï¿½ ï¿½Ò·ï¿½ï¿½Â´ï¿½. color ï¿½ï¿½ ï¿½ï¿½ï¿? centering ï¿½ï¿½ trueï¿½Ï½Ã¿ï¿½ OBB Centerï¿½ï¿½ 0ï¿½ï¿½ ï¿½È´ï¿½.
+	* const char* path : obj ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
+	* vec4 color : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	* bool centering : Meshï¿½ï¿½ OBB Centerï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (Meshï¿½ï¿½ ï¿½ï¿½ ï¿½ß¾ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½.)
 	*/
 	virtual void ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering = true, bool include_DXR = true, int ZoneID = -1);
 	static BumpMesh* MakeTerrainMeshFromHeightMap(const char* HeightMapTexFilename, float bumpScale, float Unit, int& XN, int& ZN, byte8** Heightmap, bool include_DXR = true);
 	void MakeTessTerrainMeshFromHeightMap(float EdgeLen, int xdiv, int zdiv);
 
 	/*
-	* ¼³¸í : Mesh¸¦ ·»´õ¸µ ÇÑ´Ù.
-	* ¿©±â¿¡¼­ ÆÄÀÌÇÁ¶óÀÎÀÌ³ª ¼ÎÀÌ´õ¸¦ ¼³Á¤ÇÏÁö ¾Ê´Â´Ù.
-	* ¸Å°³º¯¼ö :
-	* ID3D12GraphicsCommandList* pCommandList : ÇöÀç ·»´õ¸µ¿¡ »ç¿ëµÇ´Â Ä¿¸Çµå ¸®½ºÆ®
-	* ui32 instanceNum : ·»´õ¸µ ÇÏ°íÀÚ ÇÏ´Â MeshÀÇ °³¼ö. (ÀÎ½ºÅÏ½ÌÀÇ °æ¿ì 1ÀÌ»óÀÇ °ªÀÌ ÇÊ¿äÇÔ.)
+	* ï¿½ï¿½ï¿½ï¿½ : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
+	* ï¿½ï¿½ï¿½â¿¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì³ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* ID3D12GraphicsCommandList* pCommandList : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+	* ui32 instanceNum : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï°ï¿½ï¿½ï¿½ ï¿½Ï´ï¿½ Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. (ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?1ï¿½Ì»ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ï¿½ï¿½ï¿½.)
 	*/
 	virtual void Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui32 slotIndex = 0);
 	void MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommandList
 		* pd3dCommandList, const wchar_t wchar, float fontsiz);
 
 	/*
-	* ¼³¸í : Mesh¸¦ ÇØÁ¦ÇÔ.
+	* ï¿½ï¿½ï¿½ï¿½ : Meshï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	*/
 	virtual void Release();
 
@@ -2465,12 +2469,12 @@ public:
 	GPUResource BoneWeightUploadBuffer;
 	D3D12_VERTEX_BUFFER_VIEW RenderVBufferView[2];
 
-	// ÀÌ µÑÀº ¿¬¼ÓµÇ¾î ÀÖÀ½. DescTable·Î µÑ´Ù µ¿½Ã ÂüÁ¶ °¡´É.
-	DescIndex VertexSRV; // non shader visible desc heap¿¡ À§Ä¡ÇÔ.
-	DescIndex BoneSRV; // non shader visible desc heap¿¡ À§Ä¡ÇÔ.
+	// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ÓµÇ¾ï¿½ ï¿½ï¿½ï¿½ï¿½. DescTableï¿½ï¿½ ï¿½Ñ´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+	DescIndex VertexSRV; // non shader visible desc heapï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½.
+	DescIndex BoneSRV; // non shader visible desc heapï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½.
 	RayTracingMesh rmesh;
 
-	// raytracingÇÒ¶§ ¼öÁ¤°¡´ÉÇÑ ¹öÅÃ½º ¹è¿­À» VB¿¡ ¿Ã¸®±â À§ÇØ »ç¿ëµÈ´Ù.
+	// raytracingï¿½Ò¶ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½è¿­ï¿½ï¿½ VBï¿½ï¿½ ï¿½Ã¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½È´ï¿½.
 
 	struct BoneWeight {
 		int boneID;
@@ -2593,28 +2597,28 @@ public:
 };
 
 /*
-* ¸ÓÅÍ¸®¾ó¿¡ Àû¿ëµÇ´Â ÅØ½ºÃÄ°¡ ¾î¶² À¯ÇüÀÎÁö ³ªÅ¸³»´Â enum
+* ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ç´ï¿?ï¿½Ø½ï¿½ï¿½Ä°ï¿½ ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ enum
 */
 enum eTextureSemantic {
 	NONE = 0,
-	DIFFUSE = 1, // »ö»ó
-	SPECULAR = 2, // Á¤¹Ý»ç±¤
-	AMBIENT = 3, // ¾Úºñ¾ðÆ®±¤
-	EMISSIVE = 4, // ¹ß±¤
-	HEIGHT = 5, // ³ôÀÌ¸Ê
-	NORMALS = 6, // ³ë¸Ö¸Ê
-	SHININESS = 7, // »þÀÎ´Ï½º
-	OPACITY = 8, // ºÒÅõ¸íµµ
-	DISPLACEMENT = 9, // µð½ºÇÃ·¹ÀÌ½º¸ÕÆ®
-	LIGHTMAP = 10, // ¶óÀÌÆ®¸Ê
-	REFLECTION = 11, // ¹Ý»ç ¸Ê / È¯°æ¸Ê
-	BASE_COLOR = 12, // »ö»ó
-	NORMAL_CAMERA = 13, // Ä«¸Þ¶ó³ë¸Ö
-	EMISSION_COLOR = 14, // »ö¹ß±¤
-	METALNESS = 15, // ¸ÞÅ»¸¯
-	DIFFUSE_ROUGHNESS = 16, // (rgb)»ö»ó+(a)·¯ÇÁ´Ï½º
+	DIFFUSE = 1, // ï¿½ï¿½ï¿½ï¿½
+	SPECULAR = 2, // ï¿½ï¿½ï¿½Ý»ç±¤
+	AMBIENT = 3, // ï¿½Úºï¿½ï¿½Æ?¿½ï¿?
+	EMISSIVE = 4, // ï¿½ß±ï¿½
+	HEIGHT = 5, // ï¿½ï¿½ï¿½Ì¸ï¿½
+	NORMALS = 6, // ï¿½ï¿½Ö¸ï¿?
+	SHININESS = 7, // ï¿½ï¿½ï¿½Î´Ï½ï¿½
+	OPACITY = 8, // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	DISPLACEMENT = 9, // ï¿½ï¿½ï¿½Ã·ï¿½ï¿½Ì½ï¿½ï¿½ï¿½Æ®
+	LIGHTMAP = 10, // ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½
+	REFLECTION = 11, // ï¿½Ý»ï¿½ ï¿½ï¿½ / È¯ï¿½ï¿½ï¿?
+	BASE_COLOR = 12, // ï¿½ï¿½ï¿½ï¿½
+	NORMAL_CAMERA = 13, // Ä«ï¿½Þ¶ï¿½ï¿½ï¿½
+	EMISSION_COLOR = 14, // ï¿½ï¿½ï¿½ß±ï¿½
+	METALNESS = 15, // ï¿½ï¿½Å»ï¿½ï¿½
+	DIFFUSE_ROUGHNESS = 16, // (rgb)ï¿½ï¿½ï¿½ï¿½+(a)ï¿½ï¿½ï¿½ï¿½ï¿½Ï½ï¿½
 	AMBIENT_OCCLUSION = 17, // AO
-	UNKNOWN = 18, // ¾Ë ¼ö ¾øÀ½
+	UNKNOWN = 18, // ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	SHEEN = 19,
 	CLEARCOAT = 20,
 	TRANSMISSION = 21,
@@ -2622,12 +2626,12 @@ enum eTextureSemantic {
 	MAYA_SPECULAR = 23,
 	MAYA_SPECULAR_COLOR = 24,
 	MAYA_SPECULAR_ROUGHNESS = 25,
-	ANISOTROPY = 26, // ANISOTROPY - ³ÐÀº °æ»ç¸é ¹Ó¸Ê Ç¥Çö
+	ANISOTROPY = 26, // ANISOTROPY - ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ó¸ï¿½ Ç¥ï¿½ï¿½
 	GLTF_METALLIC_ROUGHNESS = 27,
 };
 
 /*
-* ¼³¸í : ±âº» »ö»óÀ¸·Î »ç¿ëµÇ´Â ÅØ½ºÃÄÀÇ Á¾·ù
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½âº» ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 */
 enum eBaseTextureKind {
 	Diffuse = 0,
@@ -2635,7 +2639,7 @@ enum eBaseTextureKind {
 };
 
 /*
-* Á¤¹Ý»ç ±¤À¸·Î »ç¿ëµÇ´Â ÅØ½ºÃÄÀÇ Á¾·ù
+* ï¿½ï¿½ï¿½Ý»ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 */
 enum eSpecularTextureKind {
 	Specular = 0,
@@ -2646,7 +2650,7 @@ enum eSpecularTextureKind {
 };
 
 /*
-* ¾Úºñ¾ðÆ® ±âº»±¤À¸·Î »ç¿ëµÇ´Â ÅØ½ºÃÄÀÇ Á¾·ù
+* ï¿½Úºï¿½ï¿½Æ?ï¿½âº»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 */
 enum eAmbientTextureKind {
 	Ambient = 0,
@@ -2654,7 +2658,7 @@ enum eAmbientTextureKind {
 };
 
 /*
-* ¹ß±¤ ÅØ½ºÃÄ·Î »ç¿ëµÇ´Â ÅØ½ºÃÄÀÇ Á¾·ù
+* ï¿½ß±ï¿½ ï¿½Ø½ï¿½ï¿½Ä·ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 */
 enum eEmissiveTextureKind {
 	Emissive = 0,
@@ -2662,7 +2666,7 @@ enum eEmissiveTextureKind {
 };
 
 /*
-* ¹üÇÁ ¸ÅÇÎ¿¡ »ç¿ëµÇ´Â ÅØ½ºÃÄ
+* ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î¿ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½
 */
 enum eBumpTextureKind {
 	Normal = 0,
@@ -2672,7 +2676,7 @@ enum eBumpTextureKind {
 };
 
 /*
-* ¹Ý»ç¿¡ »ç¿ëµÇ´Â ÅØ½ºÃÄ
+* ï¿½Ý»ç¿¡ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½
 */
 enum eShinenessTextureKind {
 	Shineness = 0,
@@ -2681,7 +2685,7 @@ enum eShinenessTextureKind {
 };
 
 /*
-* Åõ¸í/ºÒÅõ¸í¿¡ »ç¿ëµÇ´Â ÅØ½ºÃÄ
+* ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½
 */
 enum eOpacityTextureKind {
 	Opacity = 0,
@@ -2689,32 +2693,32 @@ enum eOpacityTextureKind {
 };
 
 /*
-* ¼³¸í : ¸ÓÅÍ¸®¾óÀ» Ç¥ÇöÇÏ´Â ±¸Á¶Ã¼.
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ï¿½ï¿½ Ç¥ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼.
 */
 struct MaterialCB_Data {
-	//»ö»ó
+	//ï¿½ï¿½ï¿½ï¿½
 	vec4 baseColor;
-	//¾Úºñ¾ðÆ® ±âº»±¤
+	//ï¿½Úºï¿½ï¿½Æ?ï¿½âº»ï¿½ï¿½
 	vec4 ambientColor;
-	//¹ß±¤
+	//ï¿½ß±ï¿½
 	vec4 emissiveColor;
-	//¸ÞÅ»¸¯. ±Ý¼ÓÀÎ Á¤µµ
+	//ï¿½ï¿½Å»ï¿½ï¿½. ï¿½Ý¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	float metalicFactor;
-	//¹Ý»çÁ¤µµ
+	//ï¿½Ý»ï¿½ï¿½ï¿½ï¿½ï¿½
 	float smoothness;
-	//¹üÇÁ ½ºÄÉÀÏ¸µ
+	//ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½
 	float bumpScaling;
-	//ÆÐµù
+	//ï¿½Ðµï¿½
 	float extra;
 	//[64]
 
-	// Å¸ÀÏ¸µx
+	// Å¸ï¿½Ï¸ï¿½x
 	float TilingX;
-	// Å¸ÀÏ¸µy
+	// Å¸ï¿½Ï¸ï¿½y
 	float TilingY;
-	// Å¸ÀÏ¸µ ¿ÀÇÁ¼Â x
+	// Å¸ï¿½Ï¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ x
 	float TilingOffsetX;
-	// Å¸ÀÏ¸µ ¿ÀÇÁ¼Â y
+	// Å¸ï¿½Ï¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ y
 	float TilingOffsetY;
 	//[64+16 = 80]
 };
@@ -2741,7 +2745,7 @@ struct MaterialST_Data {
 };
 
 /*
-* ¼³¸í : ¸ÓÅÍ¸®¾ó Å×ÀÌÅÍ
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 */
 struct Material {
 	struct CLR {
@@ -3085,24 +3089,24 @@ struct HumanoidAnimation {
 };
 
 /*
-* ¼³¸í : ¸ðµ¨ÀÇ ³ëµå.
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 */
 struct ModelNode {
-	// ¸ðµ¨ ³ëµåÀÇ ÀÌ¸§
+	// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ì¸ï¿½
 	string name;
-	// ¸ðµ¨ ³ëµåÀÇ ¿øº» transform
+	// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ transform
 	XMMATRIX transform;
-	// ºÎ¸ð ³ëµå
+	// ï¿½Î¸ï¿½ ï¿½ï¿½ï¿?
 	ModelNode* parent = nullptr;
-	// ÀÚ½Ä³ëµå °³¼ö
+	// ï¿½Ú½Ä³ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½
 	unsigned int numChildren = 0;
-	// ÀÚ½Ä³ëµåµé
+	// ï¿½Ú½Ä³ï¿½ï¿½ï¿½
 	ModelNode** Childrens = nullptr;
-	// ¸Þ½¬ÀÇ °³¼ö
+	// ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	unsigned int numMesh = 0;
-	// ¸Þ½¬ÀÇ ÀÎµ¦½º ¹è¿­
+	// ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ ï¿½è¿­
 	unsigned int* Meshes; // array of int
-	// ÇØ´ç ¸Þ½¬°¡ ¸î¹øÂ° ½ºÅ²¸Þ½¬ÀÎÁö¿¡ ´ëÇÑ ¹è¿­ ModelÀÌ ½ºÅ²¸Þ½¬¸¦ °¡Áö°í, Nodeµµ ½ºÅ²¸Þ½¬¸¦ °¡Áö¸é ÇÒ´çµÊ.
+	// ï¿½Ø´ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Â?ï¿½ï¿½Å²ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½è¿­ Modelï¿½ï¿½ ï¿½ï¿½Å²ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, Nodeï¿½ï¿½ ï¿½ï¿½Å²ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ò´ï¿½ï¿?
 	int* Mesh_SkinMeshindex = nullptr;
 	vector<BoundingBox> aabbArr;
 	// ¸Þ½¬°¡ °¡Áø ¸ÓÅÍ¸®¾ó ¹øÈ£ ¹è¿­ (·»´õ ¸ÓÅÍ¸®¾ó Å×ÀÌºí ±âÁØ.)
@@ -3120,11 +3124,11 @@ struct ModelNode {
 	}
 
 	/*
-	* ¼³¸í : ¸ðµ¨À» ·»´õÇÒ¶§ ¾²ÀÌ´Â Á¦±ÍÈ£ÃâµÇ´Â ModelNode Render ÇÔ¼ö.
-	* ¸Å°³º¯¼ö :
-	* void* model : ¿øº»¸ðµ¨ Æ÷ÀÎÅÍ
-	* ID3D12GraphicsCommandList* cmdlist : Ä¿¸Çµå ¸®½ºÆ®
-	* const matrix& parentMat : ºÎ¸ð·ÎºÎÅÍ °è½Â¹ÞÀº ¿ùµå Çà·Ä
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ò¶ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½ï¿½È£ï¿½ï¿½Ç´ï¿?ModelNode Render ï¿½Ô¼ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* void* model : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	* ID3D12GraphicsCommandList* cmdlist : Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+	* const matrix& parentMat : ï¿½Î¸ï¿½Îºï¿½ï¿½ï¿?ï¿½ï¿½Â¹ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	*/
 	template <bool isSkinMesh = false>
 	void Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* pGameobject = nullptr);
@@ -3134,12 +3138,12 @@ struct ModelNode {
 	void PushRenderBatch(void* model, const matrix& parentMat, void* pGameobject = nullptr);
 
 	/*
-	* ¼³¸í : ¸ðµ¨ ³ëµå°¡ ±âº»»óÅÂÀÏ¶§,
-	* ÇØ´ç ¸ðµ¨ ³ëµåÀÇ ÀÚ½Å°ú ¸ðµç ÀÚ½ÄÀ» Æ÷ÇÔ½ÃÅ°´Â AABB¸¦ ±¸¼ºÇÏ¿©
-	* origin ¸ðµ¨ÀÇ AABB¸¦ È®Àå½ÃÅ²´Ù.
-	* ¸Å°³º¯¼ö :
-	* void* origin : ModelÀÇ ÀÎ½ºÅÏ½º·Î, ÇØ´ç ModelNode¸¦ ¼ÒÀ¯ÇÑ ¿øº» ModelÀÇ void*
-	* const matrix& parentMat : ºÎ¸ðÀÇ ±âº» trasformÀ¸·Î ºÎÅÍ º¯È¯µÈ Çà·Ä
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ ï¿½ï¿½å°?ï¿½âº»ï¿½ï¿½ï¿½ï¿½ï¿½Ï¶ï¿½,
+	* ï¿½Ø´ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ú½Å°ï¿½ ï¿½ï¿½ï¿?ï¿½Ú½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ô½ï¿½Å°ï¿½ï¿½ AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½
+	* origin ï¿½ï¿½ï¿½ï¿½ AABBï¿½ï¿½ È®ï¿½ï¿½ï¿½Å²ï¿½ï¿?
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* void* origin : Modelï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½, ï¿½Ø´ï¿½ ModelNodeï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Modelï¿½ï¿½ void*
+	* const matrix& parentMat : ï¿½Î¸ï¿½ï¿½ï¿½ ï¿½âº» trasformï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ï¿½ï¿½ ï¿½ï¿½ï¿?
 	*/
 	void BakeAABB(void* origin, const matrix& parentMat);
 
@@ -3151,29 +3155,29 @@ struct ModelNode {
 };
 
 /*
-* ¼³¸í : ¸ðµ¨
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½
 * Sentinal Value :
 * NULL = (nodeCount == 0 && RootNode == nullptr && Nodes == nullptr && mNumMeshes == 0 && mMeshes == nullptr)
 */
 struct Model {
-	// ¸ðµ¨ÀÇ ÀÌ¸§
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½
 	std::string mName;
-	// ¸ðµ¨ÀÌ Æ÷ÇÔÇÑ ¸ðµç ³ëµåµéÀÇ °³¼ö
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	int nodeCount = 0;
-	// ¸ðµ¨ÀÇ ÃÖ»óÀ§ ³ëµå
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½Ö»ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	ModelNode* RootNode;
 
-	// Nodes¸¦ ·ÎµåÇÒ ¶§¸¸ ¾²ÀÌ´Â º¯¼öµé (Å¬¶óÀÌ¾ðÆ®¿¡¼­ ¹ÛÀ¸·Î »©³¾ ÇÊ¿ä°¡ ÀÖÀ½.)
+	// Nodesï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ê¿ä°¡ ï¿½ï¿½ï¿½ï¿½.)
 	vector<ModelNode*> NodeArr;
 	unordered_map<void*, int> nodeindexmap;
 
-	// ¸ðµ¨ ³ëµåµéÀÇ ¹è¿­
+	// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½è¿­
 	ModelNode* Nodes;
 
-	// ¸ðµ¨ÀÌ °¡Áø ¸Þ½¬ÀÇ °³¼ö
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	unsigned int mNumMeshes;
 
-	// ¸ðµ¨ÀÌ °¡Áø ¸Þ½¬µéÀÇ Æ÷ÀÎÅÍ ¹è¿­
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½è¿­
 	Mesh** mMeshes;
 	unsigned int mNumSkinMesh;
 	BumpSkinMesh** mBumpSkinMeshs;
@@ -3193,7 +3197,7 @@ struct Model {
 	unsigned int mNumSkeletons;
 	_Skeleton** mSkeletons;*/
 
-	// ¸ðµ¨ÀÇ UnitScaleFactor
+	// ï¿½ï¿½ï¿½ï¿½ UnitScaleFactor
 	float UnitScaleFactor = 1.0f;
 
 	//void Rearrange1(ModelNode* node);
@@ -3203,50 +3207,50 @@ struct Model {
 	//Material* Assimp_ReadMaterial(aiMaterial* mat, const aiScene* scene);
 	//Animation* Assimp_ReadAnimation(aiAnimation* anim, const aiScene* scene);
 
-	// ¸ðµ¨ÀÇ ±âº»»óÅÂ¿¡¼­ ¸ðµ¨À» ¸ðµÎ Æ÷ÇÔÇÏ´Â °¡Àå ÀÛÀº AABB.
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½âº»ï¿½ï¿½ï¿½Â¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ AABB.
 	vec4 AABB[2];
-	// ¸ðµ¨ÀÇ OBB.Center
+	// ï¿½ï¿½ï¿½ï¿½ OBB.Center
 	vec4 OBB_Tr;
-	// ¸ðµ¨ÀÇ OBB.Extends
+	// ï¿½ï¿½ï¿½ï¿½ OBB.Extends
 	vec4 OBB_Ext;
 
 	//?
 	std::vector<matrix> BindPose;
 
-	// nodeCount ¸¸Å­ÀÇ int ¹è¿­. ³ëµåÀÇ ÀÎµ¦½º¸¦ ³ÖÀ¸¸é ÈÞ¸Ó³ëÀÌµåÃ¤³ÎÀÎµ¦½º°¡ ³ª¿È.
+	// nodeCount ï¿½ï¿½Å­ï¿½ï¿½ int ï¿½è¿­. ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Þ¸Ó³ï¿½ï¿½Ìµï¿½Ã¤ï¿½ï¿½ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	int* Humanoid_retargeting = nullptr;
 
 	/*
-	* ¼³¸í : Unity¿¡¼­ »Ì¾Æ¿Â ¸Ê¿¡ Á¸ÀçÇÏ´Â ¸ðµ¨ ¹ÙÀÌ³Ê¸® Á¤º¸¸¦ ·ÎµåÇÔ.
-	* ¼­¹ö¿¡¼­´Â Ãæµ¹Á¤º¸¸¸À» °¡Á®¿Â´Ù.
-	* ¸Å°³º¯¼ö:
-	* string filename : ¸ðµ¨ÀÇ °æ·Î
+	* ï¿½ï¿½ï¿½ï¿½ : Unityï¿½ï¿½ï¿½ï¿½ ï¿½Ì¾Æ¿ï¿½ ï¿½Ê¿ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½Ì³Ê¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½.
+	* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½æµ¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½:
+	* string filename : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	*/
 	void LoadModelFile2(string filename, int ZoneId = -1);
 
 	/*
-	* ¼³¸í : °èÃþ±¸Á¶¸¦ Ãâ·ÂÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿?
 	*/
 	void DebugPrintHierarchy(ModelNode* node, int depth = 0);
 
 	/*
-	* ¼³¸í : ModelÀÇ AABB¸¦ ±¸¼ºÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : Modelï¿½ï¿½ AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	*/
 	void BakeAABB();
 
 	/*
-	* ¼³¸í/¹ÝÈ¯ : ModelÀÇ ±âº» OBB¸¦ ¹ÝÈ¯ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½È¯ : Modelï¿½ï¿½ ï¿½âº» OBBï¿½ï¿½ ï¿½ï¿½È¯ï¿½Ñ´ï¿½.
 	*/
 	BoundingOrientedBox GetOBB();
 
 	void Retargeting_Humanoid();
 
 	/*
-	* ¼³¸í : ¸ðµ¨À» ·»´õ¸µÇÔ
-	* ¸Å°³º¯¼ö :
-	* ID3D12GraphicsCommandList* cmdlist : ÇöÀç ·»´õ¸µÀ» ¼öÇàÇÏ´Â Ä¿¸Çµå ¸®½ºÆ®
-	* matrix worldMatrix : ¸ðµ¨ÀÌ ·»´õ¸µµÉ ¿ùµå Çà·Ä
-	* ShaderType sre : ¾î¶² ¹æ½ÄÀ¸·Î ·»´õ¸µ ÇÒ °ÍÀÎÁö
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* ID3D12GraphicsCommandList* cmdlist : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+	* matrix worldMatrix : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
+	* ShaderType sre : ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	template <bool isSkinMesh = false>
 	void Render(GPUCmd& cmd, matrix worldMatrix, void* pGameobject = nullptr)
@@ -3257,10 +3261,10 @@ struct Model {
 	void PushRenderBatch(matrix worldMatrix, void* pGameobject = nullptr);
 
 	/*
-	* ¼³¸í : ³ëµåÀÇ ÀÌ¸§À¸·Î ³ëµå ÀÎµ¦½º¸¦ Ã£´Â ÇÔ¼ö
-	* ¸Å°³º¯¼ö :
-	* const std::string& name : ÀÌ¸§
-	* ¹ÝÈ¯ : ³ëµåÀÇ ÀÎµ¦½º (Ã£Áö ¸øÇÏ¸é -1.)
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ì¸ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ Ã£ï¿½ï¿½ ï¿½Ô¼ï¿½
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* const std::string& name : ï¿½Ì¸ï¿½
+	* ï¿½ï¿½È¯ : ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Îµï¿½ï¿½ï¿½ (Ã£ï¿½ï¿½ ï¿½ï¿½ï¿½Ï¸ï¿½ -1.)
 	*/
 	int FindNodeIndexByName(const std::string& name);
 
@@ -3268,7 +3272,7 @@ struct Model {
 };
 
 /*
-* ¼³¸í : ¼ÎÀÌ´õ¸¦ ³ªÅ¸³»´Â Å¬·¡½º.
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½.
 * Sentinal Value :
 * NULL = pPipelineState == nullptr && pRootSignature == nullptr
 */
@@ -3289,39 +3293,39 @@ public:
 	virtual ~Shader();
 
 	/*
-	* ¼³¸í : ¼ÎÀÌ´õ¸¦ ÃÊ±âÈ­ÇÑ´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½Ê±ï¿½È­ï¿½Ñ´ï¿½.
 	*/
 	virtual void InitShader();
 
 	/*
-	* ¼³¸í : RootSignature¸¦ ¸¸µç´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : RootSignatureï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
 	*/
 	virtual void CreateRootSignature();
 
 	/*
-	* ¼³¸í : ÆÄÀÌÇÁ¶óÀÎ ½ºÅ×ÀÌÆ®¸¦ ¸¸µç´Ù.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
 	*/
 	virtual void CreatePipelineState();
 
 	/*
-	* ¼³¸í : ¼ÎÀÌ´õ¸¦ ¼±ÅÃÇØ Ä¿¸Çµå¸®½ºÆ®¿¡ °ü·Ã Ä¿¸Çµå¸¦ µî·ÏÇÑ´Ù.
-	* ÀÌ ÇÔ¼ö´Â ¸É¹öÇÔ¼öÀÌ±â ¶§¹®¿¡, this°¡ ¼±ÅÃÇÏ´Â ¼ÎÀÌ´õ°¡ µÇ°í,
-	* reg¸¦ ÅëÇØ ¼ÎÀÌ´õÀÇ ·»´õ¸µ Á¾·ù¸¦ °áÁ¤ÇÒ ¼ö ÀÖ´Ù.
-	* ¸Å°³º¯¼ö :
-	* ID3D12GraphicsCommandList* commandList : ÇöÀç ·»´õ¸µ¿¡ ¾²ÀÌ´Â commandList
-	* ShaderType reg : ¾î¶² Á¾·ùÀÇ ·»´õ¸µÀ» ¼±ÅÃÇÒ °ÍÀÎÁö.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ä¿ï¿½Çµå¸®ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Ä¿ï¿½Çµå¸¦ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿?
+	* ï¿½ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ ï¿½É¹ï¿½ï¿½Ô¼ï¿½ï¿½Ì±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, thisï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½Ç°ï¿½,
+	* regï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* ID3D12GraphicsCommandList* commandList : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ commandList
+	* ShaderType reg : ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	*/
 	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
 
 	/*
-	* ¼³¸í : ¼ÎÀÌ´õÀÇ ¹ÙÀÌÆ®ÄÚµå¸¦ °¡Á®¿Â´Ù.
-	* <ÇöÀç´Â ÆÄÀÏ·ÎºÎÅÍ GPU ¹ÙÀÌÆ® ÄÚµå¸¦ °¡Á®¿À°í ÀÖ´Ù. ÇÏÁö¸¸ Á¤¼®ÀûÀÎ ¹æ¹ýÀº ¾ÖÃÊ¿¡ ¹ÙÀÌÆ®ÄÚµå¸¦>
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®ï¿½Úµå¸¦ ï¿½ï¿½ï¿½ï¿½ï¿½Â´ï¿½.
+	* <ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½Ï·Îºï¿½ï¿½ï¿½ GPU ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Úµå¸¦ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½Ê¿ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®ï¿½Úµå¸¦>
 	*/
 	static D3D12_SHADER_BYTECODE GetShaderByteCode(const WCHAR* pszFileName, LPCSTR pszShaderName, LPCSTR pszShaderProfile, ID3DBlob** ppd3dShaderBlob, vector<D3D_SHADER_MACRO>* macros = nullptr);
 };
 
 /*
-* ¼³¸í : ´ÜÀÏ »ö»óÀ» Ãâ·ÂÇÏ´Â ¼ÎÀÌ´õ
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï´ï¿?ï¿½ï¿½ï¿½Ì´ï¿½
 */
 class OnlyColorShader : public Shader {
 public:
@@ -3337,12 +3341,12 @@ public:
 	virtual void CreatePipelineState_OBBWireFrames();
 
 	/*
-	* ¼³¸í : ¼ÎÀÌ´õ¸¦ ¼±ÅÃÇØ Ä¿¸Çµå¸®½ºÆ®¿¡ °ü·Ã Ä¿¸Çµå¸¦ µî·ÏÇÑ´Ù.
-	* ÀÌ ÇÔ¼ö´Â ¸É¹öÇÔ¼öÀÌ±â ¶§¹®¿¡, this°¡ ¼±ÅÃÇÏ´Â ¼ÎÀÌ´õ°¡ µÇ°í,
-	* reg¸¦ ÅëÇØ ¼ÎÀÌ´õÀÇ ·»´õ¸µ Á¾·ù¸¦ °áÁ¤ÇÒ ¼ö ÀÖ´Ù.
-	* ¸Å°³º¯¼ö :
-	* ID3D12GraphicsCommandList* commandList : ÇöÀç ·»´õ¸µ¿¡ ¾²ÀÌ´Â commandList
-	* ShaderType reg : ¾î¶² Á¾·ùÀÇ ·»´õ¸µÀ» ¼±ÅÃÇÒ °ÍÀÎÁö.
+	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ä¿ï¿½Çµå¸®ï¿½ï¿½Æ®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Ä¿ï¿½Çµå¸¦ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿?
+	* ï¿½ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ ï¿½É¹ï¿½ï¿½Ô¼ï¿½ï¿½Ì±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, thisï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½Ç°ï¿½,
+	* regï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½.
+	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½ :
+	* ID3D12GraphicsCommandList* commandList : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ commandList
+	* ShaderType reg : ï¿½î¶² ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 	*/
 	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
 
@@ -3365,7 +3369,7 @@ struct SDFInstance
 };
 
 /*
-* ¼³¸í : È­¸é¿¡ ±ÛÀÚ¸¦ Ãâ·ÂÇÏ´Â ¼ÎÀÌ´õ / ¾î¶² È­¸é ¿µ¿ª¿¡ ÅØ½ºÃÄ¸¦ ·»´õ¸µ ÇÏ´Â ¼ÎÀÌ´õ
+* ï¿½ï¿½ï¿½ï¿½ : È­ï¿½é¿¡ ï¿½ï¿½ï¿½Ú¸ï¿½ ï¿½ï¿½ï¿½ï¿½Ï´ï¿?ï¿½ï¿½ï¿½Ì´ï¿½ / ï¿½î¶² È­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø½ï¿½ï¿½Ä¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½
 */
 class ScreenShader : public Shader {
 public:
@@ -3410,8 +3414,31 @@ public:
 	};
 };
 
+class WorldTextureShader : public Shader {
+public:
+	ID3D12PipelineState* pPipelineState = nullptr;
+	ID3D12RootSignature* pRootSignature = nullptr;
+
+	virtual void InitShader();
+	virtual void CreateRootSignature();
+	virtual void CreatePipelineState();
+	virtual void Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg = ShaderType::RenderNormal);
+	virtual void Release();
+
+	void SetTextureCommand(GPUResource* texture);
+
+	enum RootParamId {
+		Const_Camera = 0,
+		Const_Transform = 1,
+		Const_Tint = 2,
+		Const_UVAnim = 3,
+		SRVTable_Texture = 4,
+		RootParamCapacity = 5,
+	};
+};
+
 /*
-* ¼³¸í : PBRÀ» »ç¿ëÇØ ·»´õ¸µÇÏ´Â ¼ÎÀÌ´õ
+* ï¿½ï¿½ï¿½ï¿½ : PBRï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½
 */
 class PBRShader1 : public Shader {
 public:
@@ -3458,7 +3485,8 @@ public:
 		SRVTable_ShadowMap = 5,
 		SRVTable_EnvionmentMap = 6,
 		SRVTable_Chunck_StaticLightStructuredBuffer = 7,
-		withShaow_RootParamCapacity = 8,
+		Const_ModelHitFlash = 8,
+		withShaow_RootParamCapacity = 9,
 
 		CBVTable_SkinMeshOffsetMatrix = 1,
 		CBVTable_SkinMeshToWorldMatrix = 2,
@@ -3502,8 +3530,8 @@ public:
 };
 
 /*
-* ¼³¸í : ½ºÄ«ÀÌ¹Ú½º¸¦ ·»´õ¸µÇÏ´Â ¼ÎÀÌ´õ
-* // improve <½ºÄ«ÀÌ¹Ú½º¸¦ ¸¸µé°í Àû¿ë½ÃÅ³ ¼ö ÀÖ¾î¾ß ÇÔ. ±Ùµ¥ Áö±ÝÀº 3D°×ÇÃ »ùÇÃ µ¥ÀÌÅÍ¸¦ »ç¿ëÇÏ°í ÀÖ´Ù. °øºÎÇØ¾ß ÇÔ.>
+* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½Ä«ï¿½Ì¹Ú½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½
+* // improve <ï¿½ï¿½Ä«ï¿½Ì¹Ú½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½Å?ï¿½ï¿½ ï¿½Ö¾ï¿½ï¿?ï¿½ï¿½. ï¿½Ùµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 3Dï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½Ï°ï¿?ï¿½Ö´ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½ï¿½.>
 */
 class SkyBoxShader : public Shader {
 public:

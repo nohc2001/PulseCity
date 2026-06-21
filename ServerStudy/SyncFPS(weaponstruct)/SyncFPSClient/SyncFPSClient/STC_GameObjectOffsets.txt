@@ -43,7 +43,7 @@ LVelocity 224 16
 AnimationFlowTime 240 4
 PlayingAnimationIndex 244 4
 Player
-33
+38
 tag 20 4
 shapeindex 24 4
 parent 28 4
@@ -70,13 +70,18 @@ m_currentJob 300 4
 SkillCooldown 304 12
 SkillCooldownFlow 316 12
 m_currentWeaponType 328 4
-Inventory 332 392
-weapon 728 144
-SelectedWeapon 872 4
-ZoneMoveCooldown 876 4
-Gold 1104 4
-Exp 1108 4
-Level 1112 4
+m_weaponHolstered 332 1
+ReloadRemain 336 4
+m_sniperDmrMode 340 1
+m_bomberHealAmmoMode 341 1
+isGround 342 1
+Inventory 344 392
+weapon 736 144
+SelectedWeapon 880 4
+ZoneMoveCooldown 884 4
+Gold 1424 4
+Exp 1428 4
+Level 1432 4
 Monster
 15
 tag 20 4

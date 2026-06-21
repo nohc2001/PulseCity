@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "stdafx.h"
 struct Zone;
 
@@ -888,38 +888,48 @@ struct JobData {
 static JobData GJobTable[] = {
 	{ PlayerJob::Juggernaut, 150.0f, 10.0f, 15.0f, WeaponType::MachineGun, {
 		{ SkillEffectType::Juggernaut_FireProjectile, 5.0f, 35.0f, 35.0f, 1.2f, 40.0f, 1.0f },
-		{ SkillEffectType::Juggernaut_Taunt, 10.0f, 30.0f, 0.0f, 6.0f, 0.0f, 1.5f },
+		{ SkillEffectType::Juggernaut_Taunt, 10.0f, 30.0f, 0.0f, 6.0f, 100.0f, 10.0f },
 		{ SkillEffectType::Juggernaut_UltimateFire, 32.0f, 80.0f, 30.0f, 5.0f, 75.0f, 5.0f },
 	} },
 	{ PlayerJob::Frost, 120.0f, 15.0f, 10.0f, WeaponType::Shotgun, {
 		{ SkillEffectType::Frost_Cone, 7.0f, 0.0f, 12.0f, 5.0f, 20.0f, 1.0f },
-		{ SkillEffectType::Frost_IceBlock, 12.0f, 0.0f, 0.0f, 3.0f, 35.0f, 1.5f },
-		{ SkillEffectType::Frost_Blizzard, 34.0f, 0.0f, 0.0f, 8.0f, 45.0f, 4.0f },
+		{ SkillEffectType::Frost_IceBlock, 12.0f, 0.0f, 0.0f, 3.0f, 100.0f, 2.0f },
+		{ SkillEffectType::Frost_Blizzard, 34.0f, 0.0f, 0.0f, 22.0f, 45.0f, 4.0f },
 	} },
 	{ PlayerJob::Aegis, 100.0f, 20.0f, 9.0f, WeaponType::Pistol, {
-		{ SkillEffectType::Aegis_ShieldCharge, 7.0f, 0.0f, 8.0f, 2.0f, 25.0f, 0.8f },
-		{ SkillEffectType::Aegis_Barrier, 14.0f, 0.0f, 0.0f, 1.5f, 30.0f, 5.0f },
-		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 0.0f, 0.0f, 7.0f, 50.0f, 5.0f },
+		{ SkillEffectType::Aegis_ShieldCharge, 7.0f, 0.0f, 8.0f, 3.2f, 50.0f, 0.32f },
+		{ SkillEffectType::Aegis_Barrier, 10.0f, 0.0f, 0.0f, 1.5f, 100.0f, 5.0f },
+		{ SkillEffectType::Aegis_ShieldAura, 32.0f, 0.0f, 0.0f, 10.0f, 100.0f, 6.0f },
 	} },
 	{ PlayerJob::Mage, 105.0f, 18.0f, 8.0f, WeaponType::Rifle, {
-		{ SkillEffectType::Rifle_TacticalGrenade, 7.0f, 0.0f, 16.0f, 4.0f, 50.0f, 3.0f },
+		{ SkillEffectType::Rifle_TacticalGrenade, 7.0f, 0.0f, 16.0f, 8.0f, 50.0f, 3.0f },
 		{ SkillEffectType::Rifle_StimPack, 14.0f, 0.0f, 0.0f, 1.0f, 10.0f, 7.0f },
-		{ SkillEffectType::Rifle_MissileBarrage, 32.0f, 0.0f, 25.0f, 5.5f, 45.0f, 3.0f },
+		{ SkillEffectType::Rifle_MissileBarrage, 32.0f, 0.0f, 25.0f, 8.0f, 45.0f, 3.0f },
 	} },
 	{ PlayerJob::Healer, 90.0f, 24.0f, 5.0f, WeaponType::Sniper, {
 		{ SkillEffectType::Sniper_GrappleHook, 7.0f, 0.0f, 18.0f, 1.0f, 0.0f, 0.35f },
 		{ SkillEffectType::Sniper_ModeSwitch, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
-		{ SkillEffectType::Sniper_Railgun, 32.0f, 0.0f, 70.0f, 0.8f, 120.0f, 10.0f },
+		{ SkillEffectType::Sniper_Railgun, 32.0f, 0.0f, 70.0f, 0.8f, 120.0f, 14.0f },
 	} },
-	{ PlayerJob::Gunner, 100.0f, 20.0f, 7.0f, WeaponType::Pistol, {
+	{ PlayerJob::Gunner, 100.0f, 20.0f, 7.0f, WeaponType::DualPistol, {
 		{ SkillEffectType::DualPistol_DeathDash, 3.5f, 0.0f, 0.0f, 5.0f, 20.0f, 0.45f },
-		{ SkillEffectType::DualPistol_BladeMode, 20.0f, 0.0f, 2.4f, 1.5f, 35.0f, 10.0f },
+		{ SkillEffectType::DualPistol_BladeMode, 20.0f, 0.0f, 4.0f, 2.6f, 50.0f, 10.0f },
 		{ SkillEffectType::DualPistol_Awaken, 32.0f, 0.0f, 0.0f, 1.0f, 0.0f, 10.0f },
 	} },
-	{ PlayerJob::Tank, 100.0f, 20.0f, 9.0f, WeaponType::Shotgun, {
-		{ SkillEffectType::Tank_ShockWave, 7.0f, 0.0f, 0.0f, 5.0f, 20.0f, 1.0f },
-		{ SkillEffectType::Electric_Burst, 11.0f, 0.0f, 0.0f, 4.0f, 25.0f, 1.0f },
-		{ SkillEffectType::Tank_ShockWave, 32.0f, 0.0f, 0.0f, 8.0f, 70.0f, 2.0f },
+	{ PlayerJob::DroneOperator, 100.0f, 20.0f, 7.0f, WeaponType::DronePistol, {
+		{ SkillEffectType::Drone_Heal, 4.0f, 0.0f, 35.0f, 1.8f, 15.0f, 0.25f },
+		{ SkillEffectType::Drone_Assault, 15.0f, 0.0f, 0.0f, 1.0f, 0.0f, 10.0f },
+		{ SkillEffectType::Drone_Flight, 32.0f, 0.0f, 0.0f, 30.0f, 20.0f, 10.0f },
+	} },
+	{ PlayerJob::Hacker, 100.0f, 20.0f, 7.0f, WeaponType::SMG, {
+		{ SkillEffectType::Hacker_Hack, 7.0f, 0.0f, 20.0f, 1.0f, 0.0f, 0.0f },
+		{ SkillEffectType::Hacker_EMPField, 20.0f, 0.0f, 0.0f, 12.0f, 0.0f, 10.0f },
+		{ SkillEffectType::Hacker_EMPBurst, 32.0f, 0.0f, 0.0f, 16.0f, 30.0f, 1.0f },
+	} },
+	{ PlayerJob::Bomber, 110.0f, 18.0f, 8.0f, WeaponType::GrenadeGun, {
+		{ SkillEffectType::Bomber_SpeedBurst, 12.0f, 0.0f, 0.0f, 8.0f, 0.0f, 5.0f },
+		{ SkillEffectType::Bomber_AmmoSwitch, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+		{ SkillEffectType::Bomber_Meteor, 32.0f, 0.0f, 0.0f, 36.0f, 90.0f, 1.0f },
 	} },
 };
 
@@ -962,6 +972,11 @@ struct Player : public SkinMeshGameObject {
 	STCDefArr(float, SkillCooldownFlow, (int)SkillSlot::Max);
 	// OBB.Center
 	STCDef(int, m_currentWeaponType);// = 0;
+	STCDef(bool, m_weaponHolstered);
+	STCDef(float, ReloadRemain);
+	STCDef(bool, m_sniperDmrMode);
+	STCDef(bool, m_bomberHealAmmoMode);
+	STCDef(bool, isGround);
 	// OBB.Center
 	static constexpr int maxItem = 49;
 	STCDefArr(ItemStack, Inventory, maxItem);
@@ -975,12 +990,19 @@ struct Player : public SkinMeshGameObject {
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
 	float m_iceBlockTimer = 0.0f;
+	float m_iceBlockEffectFlow = 0.0f;
+	float m_frostBlizzardTimer = 0.0f;
+	float m_frostBlizzardEffectFlow = 0.0f;
+	float m_frostBlizzardRadius = 0.0f;
+	float m_frostBlizzardPower = 0.0f;
 	float m_juggernautFlameTimer = 0.0f;
 	float m_juggernautFlameTickFlow = 0.0f;
 	float m_juggernautFlameEffectFlow = 0.0f;
 	float m_juggernautFlameRange = 0.0f;
 	float m_juggernautFlameRadius = 0.0f;
 	float m_juggernautFlameDps = 0.0f;
+	float m_juggernautRegenTimer = 0.0f;
+	float m_juggernautRegenFlow = 0.0f;
 	float m_rifleGrenadeTimer = 0.0f;
 	float m_rifleGrenadeDuration = 0.0f;
 	float m_rifleGrenadeEffectFlow = 0.0f;
@@ -988,6 +1010,8 @@ struct Player : public SkinMeshGameObject {
 	float m_rifleGrenadeDamage = 0.0f;
 	vec4 m_rifleGrenadeOrigin = vec4(0, 0, 0, 1);
 	vec4 m_rifleGrenadePosition = vec4(0, 0, 0, 1);
+	vec4 m_rifleGrenadeVelocity = vec4(0, 0, 0, 0);
+	float m_rifleGrenadeArmTimer = 0.0f;
 	float m_rifleStimTimer = 0.0f;
 	float m_rifleStimRegenFlow = 0.0f;
 	float m_rifleStimEffectFlow = 0.0f;
@@ -998,12 +1022,51 @@ struct Player : public SkinMeshGameObject {
 	vec4 m_rifleMissileDirection = vec4(0, 0, 1, 0);
 	float m_rifleMissileRadius = 0.0f;
 	float m_rifleMissileDamage = 0.0f;
-	bool m_sniperDmrMode = false;
+	struct RifleMissileImpact {
+		vec4 Position = vec4(0, 0, 0, 1);
+		float Timer = 0.0f;
+		float Radius = 0.0f;
+		float Damage = 0.0f;
+	};
+	std::vector<RifleMissileImpact> m_rifleMissileImpacts;
+	int m_sniperSrBullets = 5;
+	int m_sniperDmrBullets = 15;
+	bool m_railgunSavedDmrMode = false;
+	float m_sniperNextShotDamageMultiplier = 1.0f;
 	float m_railgunTimer = 0.0f;
+	float m_railgunEffectFlow = 0.0f;
 	int m_railgunShots = 0;
 	float m_dualBladeTimer = 0.0f;
+	float m_dualBladeEffectFlow = 0.0f;
 	float m_dualAwakenTimer = 0.0f;
+	float m_hackerProjectileTimer = 0.0f;
+	float m_hackerProjectileEffectFlow = 0.0f;
+	vec4 m_hackerProjectilePosition = vec4(0, 0, 0, 1);
+	vec4 m_hackerProjectileVelocity = vec4(0, 0, 0, 0);
+	float m_hackerEmpFieldTimer = 0.0f;
+	float m_hackerEmpHealFlow = 0.0f;
+	float m_hackerEmpEffectFlow = 0.0f;
+	float m_droneAssaultTimer = 0.0f;
+	float m_droneFlightTimer = 0.0f;
+	float m_droneFlightHealFlow = 0.0f;
+	float m_droneFlightEffectFlow = 0.0f;
+	float m_bomberSpeedBuffTimer = 0.0f;
+	float m_bomberMeteorTimer = 0.0f;
+	float m_bomberMeteorEffectFlow = 0.0f;
+	vec4 m_bomberMeteorPosition = vec4(0, 0, 0, 1);
+	vec4 m_bomberMeteorTarget = vec4(0, 0, 0, 1);
+	struct BomberProjectile {
+		vec4 Position = vec4(0, 0, 0, 1);
+		vec4 Velocity = vec4(0, 0, 0, 0);
+		float Timer = 0.0f;
+		float ArmTimer = 0.0f;
+		float EffectFlow = 0.0f;
+		bool HealMode = false;
+	};
+	std::vector<BomberProjectile> m_bomberProjectiles;
 	bool m_aegisShieldActive = false;
+	bool m_weaponTogglePrevInput = false;
+	bool m_reloadPrevInput = false;
 	bool m_aegisShieldPrevInput = false;
 	float m_aegisShieldCooldownTimer = 0.0f;
 	float m_aegisShieldInactiveTimer = 0.0f;
@@ -1011,8 +1074,16 @@ struct Player : public SkinMeshGameObject {
 	float m_aegisRepairTimer = 0.0f;
 	float m_aegisInvincibleTimer = 0.0f;
 	float m_aegisAuraEffectFlow = 0.0f;
+	float m_aegisAuraDamageTimer = 0.0f;
+	float m_aegisAuraDamageFlow = 0.0f;
+	float m_aegisAuraElectricFlow = 0.0f;
+	float m_aegisAuraRadius = 0.0f;
 	float m_aegisChargeTimer = 0.0f;
+	float m_aegisChargeEffectFlow = 0.0f;
+	float m_sniperBackdashTimer = 0.0f;
 	float m_dualDashTimer = 0.0f;
+	float m_dualDashDamageFlow = 0.0f;
+	std::vector<GameObject*> m_dualDashHitTargets;
 	//STC �÷��̾��� ��
 	STCDef(int, Gold);
 
@@ -1048,7 +1119,6 @@ struct Player : public SkinMeshGameObject {
 	// OBB.Center
 	float JumpVelocity = 5;
 	// OBB.Center
-	bool isGround = false;
 	// OBB.Center
 	int collideCount = 0;
 	// OBB.Center
@@ -1072,6 +1142,7 @@ struct Player : public SkinMeshGameObject {
 	* float deltaTime : 이전 업데이트부터 현재까지의 시간 차이
 	*/
 	virtual void Update(float deltaTime) override;
+	void StartReload(Zone* zones);
 	void ApplyJob(PlayerJob job);
 	void SyncJobState(Zone* zones);
 	bool TryUseSkill(SkillSlot slot);
@@ -1161,6 +1232,11 @@ struct Player : public SkinMeshGameObject {
 		float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 		// OBB.Center
 		int m_currentWeaponType = 0;
+		bool m_weaponHolstered = false;
+		float ReloadRemain = 0.0f;
+		bool m_sniperDmrMode = false;
+		bool m_bomberHealAmmoMode = false;
+		bool isGround = false;
 		float m_yaw = 0.0f;
 		float m_pitch = 0.0f;
 
@@ -1521,6 +1597,10 @@ struct ClientData {
 	}
 
 	void SetNonBlocking() {
+		BOOL noDelay = TRUE;
+		setsockopt(socket, IPPROTO_TCP, TCP_NODELAY,
+			reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
+
 		u_long val = 1;
 		int ret = ioctlsocket(socket, FIONBIO, &val);
 		if (ret != 0)
@@ -1776,6 +1856,80 @@ struct Zone {
 	// OBB.Center
 	int currentIndex = 0;
 
+	enum class BossPrototypePhase {
+		FindBoss,
+		MachineGun,
+		MissileLock,
+		RailgunCharge,
+		Bombardment,
+		SummonTurret,
+		RotatingLaser,
+		Rest,
+	};
+
+	struct BossPrototypeCore {
+		vec4 Position = vec4(0, 0, 0, 1);
+		float HP = 1200.0f;
+		float MaxHP = 1200.0f;
+		bool Active = true;
+	};
+
+	struct BossPrototypeWarning {
+		int Shape = 0;
+		vec4 Position = vec4(0, 0, 0, 1);
+		vec4 Direction = vec4(0, 0, 1, 0);
+		float Radius = 2.0f;
+		float Width = 2.0f;
+		float Length = 6.0f;
+		float WarningTime = 1.0f;
+		float Age = 0.0f;
+		float Damage = 8.0f;
+		float InnerDamage = 0.0f;
+		float CoreDamage = 0.0f;
+		float ResidualDamagePerSecond = 0.0f;
+		float ResidualDuration = 0.0f;
+		float ResidualTickFlow = 0.0f;
+		float FollowTime = 0.0f;
+		float LockTime = 0.0f;
+		bool DamageApplied = false;
+		bool ResidualActive = false;
+		bool Active = true;
+		bool FollowPlayer = false;
+		bool DarkenOnLock = false;
+		bool VisualSpawned = false;
+	};
+
+	bool BossPrototypeEnabled = false;
+	bool BossPrototypeConfigured = false;
+	bool BossPrototypeCoresInitialized = false;
+	bool BossPrototypeShieldActive = true;
+	int BossPrototypeIndex = -1;
+	int BossPrototypePatternStep = 0;
+	int BossPrototypeMachineGunShots = 0;
+	int BossPrototypeSummonCount = 0;
+	BossPrototypePhase BossPrototypePhaseState = BossPrototypePhase::FindBoss;
+	float BossPrototypePhaseTime = 0.0f;
+	float BossPrototypePatternCooldown = 0.0f;
+	float BossPrototypeShieldDownTime = 0.0f;
+	float BossPrototypeGroggyTime = 0.0f;
+	float BossPrototypeMachineGunCooldown = 0.0f;
+	float BossPrototypeMissileCooldown = 0.0f;
+	float BossPrototypeRailgunCooldown = 0.0f;
+	float BossPrototypeBombardmentCooldown = 0.0f;
+	float BossPrototypeSummonCooldown = 0.0f;
+	float BossPrototypeRotatingLaserCooldown = 0.0f;
+	float BossPrototypeMachineGunShotFlow = 0.0f;
+	float BossPrototypeRotatingLaserHitFlow = 0.0f;
+	float BossPrototypeRotatingLaserBaseAngle = 0.0f;
+	int BossPrototypeRotatingLaserStep = 0;
+	int BossPrototypeRotatingLaserMode = 0;
+	float BossPrototypeRotatingLaserDirectionSign = 1.0f;
+	vec4 BossPrototypeCenter = vec4(0, 0, 0, 1);
+	vec4 BossPrototypeAimDirection = vec4(0, 0, 1, 0);
+	vec4 BossPrototypeRailgunDirection = vec4(0, 0, 1, 0);
+	vector<BossPrototypeCore> BossPrototypeCores;
+	vector<BossPrototypeWarning> BossPrototypeWarnings;
+
 	// �� ����
 	static constexpr float lowFrequencyDelay = 3.0f;
 	float lowFrequencyFlow = 0.0f;
@@ -1915,9 +2069,10 @@ struct Zone {
 	void Sending_ItemDrop(SendDataSaver& sds, int dropindex, ItemLoot lootdata);
 	void Sending_ItemRemove(SendDataSaver& sds, int dropindex);
 	void Sending_InventoryItemSync(SendDataSaver& sds, ItemStack lootdata, int inventoryIndex);
-	void Sending_PlayerFire(SendDataSaver& sds, int objIndex);
+	void Sending_PlayerFire(SendDataSaver& sds, int objIndex, unsigned char fireHand = 0);
 	void Sending_SkillCast(SendDataSaver& sds, int ownerObjIndex, PlayerJob job, SkillSlot slot, SkillEffectType effectType, vec4 position, vec4 direction, float radius, float power, float duration);
 	void Sending_StatusEffect(SendDataSaver& sds, int targetObjIndex, int sourceObjIndex, StatusEffectType statusType, bool active, float duration, float remainTime, float power, vec4 position, vec4 extents);
+	void Sending_BossState(SendDataSaver& sds);
 	void Sending_NPCStartTalk(SendDataSaver& sds, PeacefulNPCType npctype, int StartID);
 	void Sending_AddQuest(SendDataSaver& sds, int questID);
 	void Sending_DeleteQuest(SendDataSaver& sds, int questID);
@@ -1926,7 +2081,10 @@ struct Zone {
 	// OBB.Center
 
 	void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage);
-	int ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage);
+	void FirePiercingRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage);
+	int ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage, std::vector<GameObject*>* hitTargets = nullptr);
+	void UpdateBossPrototype(float deltaTime);
+	bool DamageBossCoreByRay(vec4 rayStart, vec4 rayDirection, float maxDistance, float damage, float& hitDistance);
 
 	void GridCollisionCheck();
 
@@ -2021,6 +2179,11 @@ struct World {
 			b = b && (miny <= zptr->y && zptr->y <= maxy);
 			return b;
 		}
+		// [party/dungeon] the dungeon server owns ALL dungeon floor zones (100..102), not just one,
+		// so floor-to-floor transitions are same-server zone moves.
+		if (ownedZoneId >= DungeonZoneId && ownedZoneId < DungeonZoneId + DungeonFloorCount) {
+			return (zoneId >= DungeonZoneId && zoneId < DungeonZoneId + DungeonFloorCount);
+		}
 		return zoneId == ownedZoneId;
 	}
 
@@ -2104,6 +2267,48 @@ struct World {
 		sds.postpush_end();
 	}
 
+	// [party/dungeon] Write a party/queue roster snapshot (per-member objindex, HP, MaxHP, job) into a
+	// client's send buffer. Pass the member list to send: the waiting queue (count<=DungeonPartyMax).
+	__forceinline void Sending_DungeonQueueUpdate(SendDataSaver& sds, const int* members, int count) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_DungeonQueueUpdate_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_DungeonQueueUpdate_Header& header = *(STC_DungeonQueueUpdate_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::DungeonQueueUpdate;
+		header.count = count;
+		header.maxCount = DungeonPartyMax;
+		for (int i = 0; i < DungeonPartyMax; ++i) {
+			int ci = (members != nullptr && i < count) ? members[i] : -1;
+			if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false && clients[ci].pObjData != nullptr) {
+				header.objindex[i] = clients[ci].objindex;
+				header.hp[i] = clients[ci].pObjData->HP;
+				header.maxhp[i] = clients[ci].pObjData->MaxHP;
+				header.m_currentJob[i] = clients[ci].pObjData->m_currentJob;
+			} else {
+				header.objindex[i] = -1;
+				header.hp[i] = 0;
+				header.maxhp[i] = 0;
+				header.m_currentJob[i] = -1;
+			}
+		}
+		sds.postpush_end();
+	}
+
+	// [party/dungeon][phase2] Tell a client to portal-teleport (fresh connect) to the dungeon server at ip:port.
+	__forceinline void Sending_DungeonEnter(SendDataSaver& sds, const char* ip, unsigned short port, int dstZoneId) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_DungeonEnter_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_DungeonEnter_Header& header = *(STC_DungeonEnter_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::DungeonEnter;
+		header.port = port;
+		header.dstZoneId = dstZoneId;
+		strncpy_s(header.ip, ip, _TRUNCATE);
+		sds.postpush_end();
+	}
+
 
 	/*
 	* 설명 : 현재 게임 상태를 전송한다.
@@ -2127,6 +2332,23 @@ struct World {
 	* 설명 : 플레이어를 srcZone에서 dstZone으로 이동시킨다.
 	*/
 	void MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos);
+
+	// [party/dungeon] portal waiting-queue. Up to DungeonPartyMax players gather here.
+	static constexpr int DungeonPartyMax = 3;
+	// [party/dungeon][phase2] the dungeon is a special zone OUTSIDE the open-world grid (ids 0..99),
+	// served by its own process on port 9000+DungeonZoneId. Coords are far away so it is never adjacent.
+	static constexpr int DungeonZoneId = 100;
+	// [party/dungeon] dungeon floors: 100=1F, 101=2F, 102=Boss. One dungeon server owns them all.
+	// TEMP: 1F+2F enabled (Boss map not ready yet). Restore to 3 once the Boss map works.
+	static constexpr int DungeonFloorCount = 2;
+	int dungeonQueue[DungeonPartyMax] = { -1, -1, -1 };   // client indices, -1 = empty
+	int dungeonQueueCount = 0;
+	bool DungeonQueueContains(int clientIndex);
+	void DungeonQueueAdd(int clientIndex);     // add once + broadcast; re-press starts, full auto-starts
+	void DungeonQueueRemove(int clientIndex);  // remove + broadcast (leave/disconnect)
+	void BroadcastDungeonQueue();              // send STC_DungeonQueueUpdate to current waiters
+	void DungeonTryStart(bool force);          // force=true: start now with current members (>=1)
+	void EnterDungeonStub();                   // send each member STC_DungeonEnter + clear the queue
 
 	/*
 	* 설명 : 플레이어가 속한 Zone을 얻는다.

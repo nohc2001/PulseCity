@@ -76,7 +76,9 @@ cbuffer CBStruct : register(b0)
     uint2 animMask3;
     
     // 애니메이션 프레임 레이트
-    float frameRate;
+	float frameRate;
+	float upperBodyYawCorrection;
+	float upperBodyPitchCorrection;
 };
 
 // TPOS 상태의 각 노드들의 WorldMat
@@ -160,9 +162,57 @@ void CSMain(int3 n3DispatchThreadID : SV_DispatchThreadID)
 
     int nodeindex0 = HumanoidToNodeindex[hboneIndex0];
     if (nodeindex0 >= 0)
-        OutNodeMatrixs[nodeindex0] = GetRTMatrix(destV0.pos.xyz, destV0.rot);
+    {
+		float4x4 localMatrix0 = GetRTMatrix(destV0.pos.xyz, destV0.rot);
+		if (hboneIndex0 == 7 && (upperBodyYawCorrection != 0.0f || upperBodyPitchCorrection != 0.0f))
+		{
+			float c = cos(upperBodyYawCorrection);
+            float s = sin(upperBodyYawCorrection);
+            float4x4 yawCorrection = float4x4(
+                c, 0, -s, 0,
+                0, 1, 0, 0,
+                s, 0, c, 0,
+                0, 0, 0, 1);
+			float cp = cos(upperBodyPitchCorrection);
+			float sp = sin(upperBodyPitchCorrection);
+			float4x4 pitchCorrection = float4x4(
+				1, 0, 0, 0,
+				0, cp, sp, 0,
+				0, -sp, cp, 0,
+				0, 0, 0, 1);
+			float3 spinePosition = localMatrix0[3].xyz;
+			localMatrix0 = mul(localMatrix0, yawCorrection);
+			localMatrix0 = mul(localMatrix0, pitchCorrection);
+            localMatrix0[3].xyz = spinePosition;
+        }
+        OutNodeMatrixs[nodeindex0] = localMatrix0;
+    }
     
     int nodeindex1 = HumanoidToNodeindex[hboneIndex1];
     if (nodeindex1 >= 0)
-        OutNodeMatrixs[nodeindex1] = GetRTMatrix(destV1.pos.xyz, destV1.rot);
+    {
+		float4x4 localMatrix1 = GetRTMatrix(destV1.pos.xyz, destV1.rot);
+		if (hboneIndex1 == 7 && (upperBodyYawCorrection != 0.0f || upperBodyPitchCorrection != 0.0f))
+		{
+			float c = cos(upperBodyYawCorrection);
+            float s = sin(upperBodyYawCorrection);
+            float4x4 yawCorrection = float4x4(
+                c, 0, -s, 0,
+                0, 1, 0, 0,
+                s, 0, c, 0,
+                0, 0, 0, 1);
+			float cp = cos(upperBodyPitchCorrection);
+			float sp = sin(upperBodyPitchCorrection);
+			float4x4 pitchCorrection = float4x4(
+				1, 0, 0, 0,
+				0, cp, sp, 0,
+				0, -sp, cp, 0,
+				0, 0, 0, 1);
+			float3 spinePosition = localMatrix1[3].xyz;
+			localMatrix1 = mul(localMatrix1, yawCorrection);
+			localMatrix1 = mul(localMatrix1, pitchCorrection);
+            localMatrix1[3].xyz = spinePosition;
+        }
+        OutNodeMatrixs[nodeindex1] = localMatrix1;
+    }
 }

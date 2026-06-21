@@ -108,7 +108,7 @@ bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, c
 			goto SDFPAGEDATA_RELEASE;
 		}
 
-		// µ¥ÀÌÅÍ°¡ ¾øÀ¸¸é ¸¸µé¾î¾ß ÇÑ´Ù.
+		// ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
 		if (data == nullptr) {
 			data = new ui8[MaxHeight * MaxWidth];
 		}
@@ -128,10 +128,10 @@ bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, c
 		SDFSectionMap.insert(pair<wchar_t, SDFTextSection*>(c, sdftextSec));
 		return true;
 	}
-	return true; // ÀÌ¹Ì ÅØ½ºÃÄ ¿µ¿ªÀÌ ÀÖÀ» °æ¿ì
+	return true; // ï¿½Ì¹ï¿½ ï¿½Ø½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 
 SDFPAGEDATA_RELEASE:
-	// ´õÀÌ»ó µ¥ÀÌÅÍ°¡ ½×ÀÏ ¼ö ¾ø´Â °æ¿ì. ÈüÇÒ´çÀ» ÇØÁ¦ÇÑ´Ù.
+	// ï¿½ï¿½ï¿½Ì»ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿? ï¿½ï¿½ï¿½Ò´ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	if (UploadTextureBuffer.resource != nullptr) {
 		UploadTextureBuffer.Release();
 		UploadTextureBuffer.resource = nullptr;
@@ -182,7 +182,7 @@ void SDFTextPageTextureBuffer::BakeSDF() {
 		BYTE* pDest = (BYTE*)mappedBuffer;
 		int mul = 1;
 
-		// fix : °¡´ÉÇÏ¸é ºÎºÐÀûÀ¸·Î¸¸ ¾÷µ¥ÀÌÆ® ÇÏµµ·Ïµµ ÇÏ°í ½Í´Ù. ÇöÀç ÀüÃ¼¸¦ ´Ù ¾÷µ¥ÀÌÆ® ÇÑ´Ù.
+		// fix : ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½ ï¿½Îºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Ïµï¿½ï¿½Ïµï¿½ ï¿½Ï°ï¿½ ï¿½Í´ï¿½. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Ñ´ï¿½.
 		for (UINT y = 0; y < MaxHeight; y++)
 		{
 			memcpy(pDest, pSrc, MaxWidth * mul);
@@ -623,7 +623,7 @@ void SVDescPool2::Release()
 BOOL SVDescPool2::Initialize(UINT MaxDescriptorCount)
 {
 	InitDescArrSiz = 0;
-	InitDescArrCap = TextureSRVStart = 64; // 64ºÎÅÍ Desc ¹è¿­°ü¸®°¡ ½ÃÀÛµÊ.
+	InitDescArrCap = TextureSRVStart = 64; // 64ï¿½ï¿½ï¿½ï¿½ Desc ï¿½è¿­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ûµï¿½.
 	TextureSRVSiz = 0;
 	TextureSRVCap = Zone::MAXZoneTextureCount * 10;
 	MaterialCBVSiz = 0;
@@ -844,7 +844,7 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	DestSizeArr[0] = ImmortalSize;
 	gd.pDevice->CopyDescriptors(1, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
 
-	// ÀÌ ÄÚµåÀÇ ÀÌÀ¯ = ºó °ø°£ÀÇ DescµéÀ» ´õ¹Ì·Î Ã¤¿ì±â
+	// ï¿½ï¿½ ï¿½Úµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ = ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Descï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì·ï¿½ Ã¤ï¿½ï¿½ï¿?
 	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + TextureSRVSiz);
 	if (game.RenderTextureTable.size() > 0 && game.RenderTextureTable[0] != nullptr) {
 		for (int i = 0; i < TextureSRVCap - TextureSRVSiz; ++i) {
@@ -869,12 +869,12 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 		}
 	}
 
-	// ¸ÓÅÍ¸®¾óÀÇ ¿ë·®ÀÌ ´Þ¶óÁö¸é ÀÎ½ºÅÏ½Ì°ú Raytracing¿¡ ¾²ÀÏ StructuredBufferÀÇ ¿ë·®À» ÀçÁ¶Á¤ÇÑ´Ù.
+	// ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ë·®ï¿½ï¿½ ï¿½Þ¶ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Î½ï¿½ï¿½Ï½Ì°ï¿½ Raytracingï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ StructuredBufferï¿½ï¿½ ï¿½ë·®ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	if (isMaterialUpdate) {
 		Material::InitMaterialStructuredBuffer(true);
 	}
 
-	// ÅØ½ºÃÄ ¿ë·®ÀÌ ´Þ¶óÁü¿¡ µû¶ó ¼ÎÀÌ´õ ÄÚµåÀÇ ¸ÅÅ©·Î°¡ ´Þ¶óÁú ¼ö ÀÖµµ·Ï ´Ù½Ã ºôµåÇÑ´Ù.
+	// ï¿½Ø½ï¿½ï¿½ï¿½ ï¿½ë·®ï¿½ï¿½ ï¿½Þ¶ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½Úµï¿½ï¿½ï¿½ ï¿½ï¿½Å©ï¿½Î°ï¿½ ï¿½Þ¶ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Öµï¿½ï¿½ï¿½ ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.
 	if (isTextureUpdate) {
 		game.MyPBRShader1->ReBuild_Shader(ShaderType::InstancingWithShadow);
 		game.MyRayTracingShader->ReInit();
@@ -972,7 +972,7 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	{
 		pd3dDebugController->EnableDebugLayer();
 
-		// GPU Validation ²ô±â - Device°¡ ¹®Á¦ »ý±â¸é ¹Ù·Î »èÁ¦ÇÏµµ·Ï ÇÑ´Ù?
+		// GPU Validation ï¿½ï¿½ï¿½ï¿½ - Deviceï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ù·ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½?
 		ComPtr<ID3D12Debug1> debug1;
 		if (SUCCEEDED(pd3dDebugController->QueryInterface<ID3D12Debug1>(&debug1)))
 		{
@@ -1008,7 +1008,7 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 		}
 	}
 	else {
-		// sus ¹öÀü¿¡ µû¶ó ¾ÈµÉ ¼ö ÀÖÀ¸´Ï ¿¹¿ÜÃ³¸® ÇÊ¿ä.
+		// sus ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Èµï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã³ï¿½ï¿½ ï¿½Ê¿ï¿½.
 		hr = ::CreateDXGIFactory2(nDXGIFactoryFlags, __uuidof(IDXGIFactory4), (void
 			**)&pFactory);
 	}
@@ -1072,8 +1072,8 @@ DXGI_FACTORY_INIT_END:
 
 DXGI_ADAPTER_VERSION_CHECK:
 
-	//½ÇÁ¦ µð¹ÙÀÌ½º »ý¼ºÀº ¾ÈÇÔ.
-	// ¾îµð±îÁö Áö¿øµÇ´ÂÁö Å×½ºÆ® & ¾î´ðÅÍ ¼±ÅÃ
+	//ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ì½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç´ï¿½ï¿½ï¿½ ï¿½×½ï¿½Æ® & ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½
 	for (int i = 0; i < 11; ++i) {
 		minFeatureLevel = FeatureLevelPriority[i];
 		bool keepLoop = true;
@@ -1134,7 +1134,7 @@ DXGI_ADAPTER_VERSION_CHECK:
 
 DXGI_FINISH_SELECT_ADAPTER:
 
-	// ÀüÃ¼È­¸é ¸ðµå·Î ÀüÈ¯ °¡´ÉÇÑ ÇØ»óµµ¸¦ ¾ò±â À§ÇÑ ÀÛ¾÷
+	// ï¿½ï¿½Ã¼È­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È¯ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø»óµµ¸ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½Û¾ï¿½
 
 	//AI Code Start <Microsoft Copilot>
 	if (output != nullptr) {
@@ -1170,11 +1170,11 @@ DXGI_FINISH_SELECT_ADAPTER:
 	Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue;
 	if (SUCCEEDED(pDevice->QueryInterface(IID_PPV_ARGS(&infoQueue))))
 	{
-		// ¿¡·¯ ¹ß»ý ½Ã ÀÚµ¿ ºê·¹ÀÌÅ©
+		// ï¿½ï¿½ï¿½ï¿½ ï¿½ß»ï¿½ ï¿½ï¿½ ï¿½Úµï¿½ ï¿½ê·¹ï¿½ï¿½Å©
 		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
 		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 
-		//// µð¹ÙÀÌ½º ¸®¹«ºê °ü·Ã ¸Þ½ÃÁö¿¡¸¸ ºê·¹ÀÌÅ©¸¦ °É°í ½Í´Ù¸é
+		//// ï¿½ï¿½ï¿½ï¿½Ì½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ê·¹ï¿½ï¿½Å©ï¿½ï¿½ ï¿½É°ï¿½ ï¿½Í´Ù¸ï¿½
 		infoQueue->SetBreakOnID(D3D12_MESSAGE_ID_DEVICE_REMOVAL_PROCESS_AT_FAULT, TRUE);
 	}
 
@@ -1666,7 +1666,7 @@ int GlobalDevice::PixelFormatToPixelSize(DXGI_FORMAT format)
 	case DXGI_FORMAT_R10G10B10A2_UNORM:  return 4;
 
 	case DXGI_FORMAT_UNKNOWN:			 return 1;
-		// ¾ÐÃà Æ÷¸ËÀº ÇÈ¼¿´ç Å©±â°¡ °íÁ¤µÇÁö ¾ÊÀ½
+		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½È¼ï¿½ï¿½ï¿½ Å©ï¿½â°¡ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	case DXGI_FORMAT_BC1_UNORM:
 	case DXGI_FORMAT_BC2_UNORM:
 	case DXGI_FORMAT_BC3_UNORM:
@@ -1674,7 +1674,7 @@ int GlobalDevice::PixelFormatToPixelSize(DXGI_FORMAT format)
 	case DXGI_FORMAT_BC5_UNORM:
 	case DXGI_FORMAT_BC6H_UF16:
 	case DXGI_FORMAT_BC7_UNORM:
-		return -1; // ºí·Ï ±â¹Ý Æ÷¸Ë: Á÷Á¢ °è»ê ÇÊ¿ä
+		return -1; // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½Ê¿ï¿½
 	}
 }
 
@@ -1813,11 +1813,11 @@ UINT64 GlobalDevice::GetRequiredIntermediateSize(ID3D12Resource* pDestinationRes
 
 void GlobalDevice::bmpTodds(int mipmap_level, const char* Format, const char* filename)
 {
-	string cmd = "D3DTexConv\\texconv.exe -m 0 -f "; // ÃÖ´ë ¹Ó¸Ê
+	string cmd = "D3DTexConv\\texconv.exe -m 0 -f "; // ï¿½Ö´ï¿½ ï¿½Ó¸ï¿½
 	cmd += Format;
 	cmd += " -alpha ";
 	cmd += filename;
-	cmd += " > output_log.txt 2>&1"; // ¿À·ùÄÚµå ¹ß»ý
+	cmd += " > output_log.txt 2>&1"; // ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ ï¿½ß»ï¿½
 	int result = system(cmd.c_str());
 	cout << result << endl;
 }
@@ -1876,7 +1876,7 @@ GPUResource GlobalDevice::CreateShadowMap(int width, int height, int DSVoffset, 
 	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
 	hcpu.ptr = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + DSVoffset * gd.DSVSize;
 	gd.pDevice->CreateDepthStencilView(shadowMap.resource, nullptr, hcpu);
-	shadowMap.descindex.Set(false, DSVoffset, 'd'); // DepthStencilView DescHeapÀÇ CPU HANDLE
+	shadowMap.descindex.Set(false, DSVoffset, 'd'); // DepthStencilView DescHeapï¿½ï¿½ CPU HANDLE
 
 	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuH;
 	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuH;
@@ -1892,7 +1892,7 @@ GPUResource GlobalDevice::CreateShadowMap(int width, int height, int DSVoffset, 
 	srv_desc.Texture2D.ResourceMinLODClamp = 0;
 	srv_desc.Texture2D.PlaneSlice = 0;
 	gd.pDevice->CreateShaderResourceView(shadowMap.resource, &srv_desc, spotLight.descindex.hCreation.hcpu);
-	//shadowMap.handle.hgpu = spotLight.descindex.hRender.hgpu; // CBV, SRV, UAV DescHeap ÀÇ GPU HANDLE
+	//shadowMap.handle.hgpu = spotLight.descindex.hRender.hgpu; // CBV, SRV, UAV DescHeap ï¿½ï¿½ GPU HANDLE
 	return shadowMap;
 }
 
@@ -2068,17 +2068,17 @@ void GlobalDevice::AddTextSDFTexture(wchar_t key)
 
 		vector<uint8_t> sdfbuffer = makeSDF((char*)mipTex, realW, realH, 0.25f, -1.0f * realH * 0.5f);
 
-		//ÅØ½ºÃÄ¿µ¿ªÀ» ¿©·¯ ±ÛÀÚ°¡ »ç¿ëÇÒ¶§
+		//ï¿½Ø½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú°ï¿½ ï¿½ï¿½ï¿½ï¿½Ò¶ï¿?
 		PushSDFText(key, realW, realH, (char*)sdfbuffer.data());
 
-		//ÅØ½ºÃÄ°¡ ¿ÂÀüÈ÷ ¸¸µé¾îÁö´ÂÁö¸¦ µð¹ö±ëÇÏ±â À§ÇÔ.
+		//ï¿½Ø½ï¿½ï¿½Ä°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿?ï¿½ï¿½ï¿½ï¿½.
 		//imgform::PixelImageObject pio;
 		//pio.width = realW;
 		//pio.height = realH;
 		//pio.data = (imgform::RGBA_pixel*)sdfbuffer.data();
 		////pio.rawDataToBMP("SDFTestImage.bmp", DXGI_FORMAT_R8_SNORM);
 
-		//´ÜÀÏ ¸®¼Ò½º·Î Á¦ÀÛ½Ã
+		//ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ò½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Û½ï¿½
 		//GPUResource texture;
 		//ZeroMemory(&texture, sizeof(GPUResource));
 		//texture.CreateTexture_fromImageBuffer(realW, realH, sdfbuffer.data(), DXGI_FORMAT_R8_SNORM);
@@ -2311,7 +2311,7 @@ void RayTracingDevice::SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGN
 	if (FAILED(hr)) {
 		if (error)
 		{
-			// ¿¡·¯ ¸Þ½ÃÁö Ãâ·Â
+			// ï¿½ï¿½ï¿½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 			OutputDebugStringA((char*)error->GetBufferPointer());
 			error->Release();
 		}
@@ -2431,7 +2431,7 @@ lb_exit:
 	return pNewShaderHandle;
 }
 
-// ¹Ýµå½Ã ÀÌÀü¿¡ gd.SubRenderTarget ÀÌ ÃÊ±âÈ­ µÇ¾î¾ß ÇÑ´Ù.
+// ï¿½Ýµï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ gd.SubRenderTarget ï¿½ï¿½ ï¿½Ê±ï¿½È­ ï¿½Ç¾ï¿½ï¿?ï¿½Ñ´ï¿½.
 void RayTracingDevice::CreateSubRenderTarget()
 {
 	ID3D12Device5* device = dxrDevice;
@@ -2664,7 +2664,7 @@ void RayTracingMesh::StaticInit()
 	gd.pDevice->CreateShaderResourceView(indexBuffer, &srvDesc_IB, dh.hcpu);
 
 	//////////////
-	//UAV ¹öÀü
+	//UAV ï¿½ï¿½ï¿½ï¿½
 	gd.ShaderVisibleDescPool.ImmortalAlloc(&UAV_VBIB_DescIndex, 2);
 	dh = UAV_VBIB_DescIndex.hCreation;
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc_UAV_VB = {};
@@ -2720,7 +2720,7 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 	MeshAddingMap();
 
 	constexpr UINT64 VBAlign = 768; //2816;
-	constexpr UINT64 IBAlign = 768; //768; // »ï°¢ÇüÀÇ Ã¹¹øÂ° ÀÎµ¦½º·Î ³ª¿­µÇ¾ßÇÔ.
+	constexpr UINT64 IBAlign = 768; //768; // ï¿½ï°¢ï¿½ï¿½ï¿½ï¿½ Ã¹ï¿½ï¿½Â° ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç¾ï¿½ï¿½ï¿½.
 
 	int addtionalVB_Bytesiz = vbarr.size() * sizeof(RayTracingMesh::Vertex);
 	int addtionalIB_Bytesiz = 0;
@@ -2800,10 +2800,10 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		gd.WaitGPUComplete();
 
 		////Geometry
-		////´À·Á¼­ Æó±âÇÑ ÄÚµå.
+		////ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Úµï¿½.
 		///*
-		//* ±×·³ ¿Ö ´À¸°°¡? ´Ù¾çÇÑ Geometry°¡ ÇÏ³ªÀÇ BLAS¿¡ À§Ä¡ÇÏ¸é, BLAS´Â Geometry¸¶´Ù °¢ÀÚ ´Ù¸¥ AABB¸¦ ÇÒ´çÇÑ´Ù.
-		//* ÇÏÁö¸¸ AABB°¡ ÈÄ¡°Ô µÇ¸é(´ëºÎºÐÀÇ ¼­ºê¸Þ½¬ÀÇ AABBÀÇ ¿µ¿ªÀº ÈÄ¥ ¼ö ¹Û¿¡ ¾øÀ½.), °á±¹ Ray°¡ ½î¾ÆÁ³À»¶§ µÎ AABBÁß °¡Àå °¡±î¿î »ï°¢ÇüÀÌ Ç×»ó °¡±î¿î AABB¿¡ ÀÖ´Ù°í º¸ÀåÀ» ÇÏÁö ¸øÇÏ±â ¶§¹®¿¡, °á±¹ µÎ Geometry¿¡ ´ëÇÑ AABB¸¦ °Ë»çÇÏ°Ô µÇ°í, ±×°ÍÀÌ ÇÁ·¹ÀÓÀ» ³·Ãá´Ù.
+		//* ï¿½×·ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½? ï¿½Ù¾ï¿½ï¿½ï¿½ Geometryï¿½ï¿½ ï¿½Ï³ï¿½ï¿½ï¿½ BLASï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½Ï¸ï¿½, BLASï¿½ï¿½ Geometryï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ AABBï¿½ï¿½ ï¿½Ò´ï¿½ï¿½Ñ´ï¿½.
+		//* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AABBï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Ç¸ï¿½(ï¿½ï¿½Îºï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½Þ½ï¿½ï¿½ï¿?AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¥ ï¿½ï¿½ ï¿½Û¿ï¿½ ï¿½ï¿½ï¿½ï¿½.), ï¿½á±¹ Rayï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï°¢ï¿½ï¿½ï¿½ï¿½ ï¿½×»ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?AABBï¿½ï¿½ ï¿½Ö´Ù°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ï¿½á±¹ ï¿½ï¿½ Geometryï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ AABBï¿½ï¿½ ï¿½Ë»ï¿½ï¿½Ï°ï¿½ ï¿½Ç°ï¿½, ï¿½×°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?
 		//*/
 		//GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[subMeshCount];
 		//for (int i = 0; i < subMeshCount; ++i) {
@@ -2925,7 +2925,7 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 
 void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inIBStartOffset, int SubMeshNum, int* SubMeshIndexes)
 {
-	//UAV´Â ¹«Á¶°Ç ±Û·Î¹úÀÌ±â ¶§¹®.
+	//UAVï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Û·Î¹ï¿½ï¿½Ì±ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	int off = 0;
 
 	static bool VBisFulling = false;
@@ -3054,9 +3054,9 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 		ID3D12CommandList* ppd3dCommandLists[] = { commandList };
 		commandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
 		gd.WaitGPUComplete();*/
-		// ÀÌ ÁÖ¼®Àº ¾ÖÃÊ¿¡ Reset »óÅÂ¿¡¼­ ÀÌ ÇÔ¼ö¸¦ È£ÃâÇÏ±â ¶§¹®¿¡ ÁÖ¼®À» Ã³¸®ÇÔ.
-		// ¸¸¾à ResetÀÌ ¾Æ´Ï¶ó¸é ÀÌ°É ÇØÁÖ´Â °ÍÀÌ ¸Â´Ù.
-		// fix : ÀÌ ÇÔ¼ö°¡ ¾î¶² Ä¿¸Çµå »óÅÂ·Îµµ ½ÇÇàµÉ ¼ö ÀÖµµ·Ï ¸¸µå´Â °Í.
+		// ï¿½ï¿½ ï¿½Ö¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ê¿ï¿½ Reset ï¿½ï¿½ï¿½Â¿ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ È£ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¼ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½ï¿½ï¿½.
+		// ï¿½ï¿½ï¿½ï¿½ Resetï¿½ï¿½ ï¿½Æ´Ï¶ï¿½ï¿?ï¿½Ì°ï¿½ ï¿½ï¿½ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Â´ï¿½.
+		// fix : ï¿½ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ ï¿½î¶² Ä¿ï¿½Çµï¿½ ï¿½ï¿½ï¿½Â·Îµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ ï¿½Öµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½.
 
 		MeshDefaultInstanceData.Transform[0][0] = MeshDefaultInstanceData.Transform[1][1] = MeshDefaultInstanceData.Transform[2][2] = 1;
 		MeshDefaultInstanceData.InstanceMask = 1;
@@ -3087,7 +3087,7 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 
 void RayTracingMesh::AllocateRaytracingUAVMesh_OnlyIndex(vector<TriangleIndex> ibarr, int SubMeshNum, int* SubMeshIndexes)
 {
-	//UAV´Â ¹«Á¶°Ç ±Û·Î¹úÀÌ±â ¶§¹®.
+	//UAVï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Û·Î¹ï¿½ï¿½Ì±ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	int off = 0;
 
 	subMeshCount = SubMeshNum;
@@ -3220,7 +3220,7 @@ void RayTracingMesh::UAV_BLAS_Refit()
 		throw "bottomLevelPrebuildInfo Create Failed.";
 	}
 	if (gd.raytracing.UsingScratchSize + bottomLevelPrebuildInfo.ScratchDataSizeInBytes > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
-		// ÀÌÀüÀÇ Scratched Buffer »ç¿ëÀ» ¸ðµÎ ³¡³½´Ù.
+		// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Scratched Buffer ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 		gd.gpucmd.Close(true);
 		gd.gpucmd.Execute(true);
 		gd.gpucmd.WaitGPUComplete();
@@ -3238,7 +3238,7 @@ void RayTracingMesh::UAV_BLAS_Refit()
 	bottomLevelBuildDesc.Inputs = BLAS_Input;
 	bottomLevelBuildDesc.ScratchAccelerationStructureData = UsingScratchBufferVA;
 
-	// ÀÌµÑÀ» °°°ÔÇÏ¸é RefitÇÔ. SourceAccelerationStructureData 0ÀÌ¸é build.
+	// ï¿½Ìµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½ Refitï¿½ï¿½. SourceAccelerationStructureData 0ï¿½Ì¸ï¿½ build.
 	bottomLevelBuildDesc.SourceAccelerationStructureData = BLAS->GetGPUVirtualAddress();
 	bottomLevelBuildDesc.DestAccelerationStructureData = BLAS->GetGPUVirtualAddress();
 
@@ -3309,7 +3309,7 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering) {
 		char rstr[128] = {};
 		in >> rstr;
 		if (strcmp(rstr, "v") == 0) {
-			//ÁÂÇ¥
+			//ï¿½ï¿½Ç¥
 			XMFLOAT3 pos;
 			in >> pos.x;
 			in >> pos.y;
@@ -3323,7 +3323,7 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering) {
 			temp_pos.push_back(pos);
 		}
 		else if (strcmp(rstr, "vt") == 0) {
-			// uv ÁÂÇ¥
+			// uv ï¿½ï¿½Ç¥
 			XMFLOAT3 uv;
 			in >> uv.x;
 			in >> uv.y;
@@ -3331,7 +3331,7 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering) {
 			temp_uv.push_back(XMFLOAT2(uv.x, uv.y));
 		}
 		else if (strcmp(rstr, "vn") == 0) {
-			// ³ë¸Ö
+			// ï¿½ï¿½ï¿?
 			XMFLOAT3 normal;
 			in >> normal.x;
 			in >> normal.y;
@@ -3452,7 +3452,14 @@ void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui3
 	if (IndexNum > 0)
 	{
 		pCommandList->IASetIndexBuffer(&IndexBufferView);
-		pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		if (SubMeshIndexStart != nullptr && slotIndex + 1 < (ui32)(subMeshNum + 1))
+		{
+			pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		}
+		else
+		{
+			pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
+		}
 	}
 	else
 	{
@@ -3461,7 +3468,7 @@ void Mesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instanceNum, ui3
 	}
 }
 
-// ½ÇÁ¦·Î ¾²ÀÌÁö´Â ¾Ê´Â ÀÓ½Ã ÇÔ¼ö.
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´ï¿½ ï¿½Ó½ï¿½ ï¿½Ô¼ï¿½.
 void Mesh::BatchRender(ID3D12GraphicsCommandList* pCommandList)
 {
 }
@@ -3563,6 +3570,87 @@ void Mesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
+void Mesh::CreateFlatDiskMesh(float outerRadius, float innerRadius, int segmentCount, vec4 color)
+{
+	if (outerRadius < 0.01f) outerRadius = 0.01f;
+	if (innerRadius < 0.0f) innerRadius = 0.0f;
+	if (innerRadius > outerRadius - 0.001f) innerRadius = outerRadius - 0.001f;
+	if (segmentCount < 8) segmentCount = 8;
+
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+	const float twoPi = XM_2PI;
+	const bool isRing = innerRadius > 0.0f;
+
+	if (!isRing) {
+		vertices.push_back(Vertex(XMFLOAT3(0.0f, 0.0f, 0.0f), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+		for (int i = 0; i < segmentCount; ++i) {
+			float theta = twoPi * (float)i / (float)segmentCount;
+			vertices.push_back(Vertex(XMFLOAT3(cosf(theta) * outerRadius, 0.0f, sinf(theta) * outerRadius), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+		}
+
+		for (int i = 0; i < segmentCount; ++i) {
+			UINT cur = (UINT)i + 1;
+			UINT next = (UINT)((i + 1) % segmentCount) + 1;
+			indices.push_back(0); indices.push_back(next); indices.push_back(cur);
+			indices.push_back(0); indices.push_back(cur); indices.push_back(next);
+		}
+	}
+	else {
+		for (int i = 0; i < segmentCount; ++i) {
+			float theta = twoPi * (float)i / (float)segmentCount;
+			vertices.push_back(Vertex(XMFLOAT3(cosf(theta) * outerRadius, 0.0f, sinf(theta) * outerRadius), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+			vertices.push_back(Vertex(XMFLOAT3(cosf(theta) * innerRadius, 0.0f, sinf(theta) * innerRadius), color, XMFLOAT3(0.0f, 1.0f, 0.0f)));
+		}
+
+		for (int i = 0; i < segmentCount; ++i) {
+			UINT outer0 = (UINT)(i * 2);
+			UINT inner0 = outer0 + 1;
+			UINT outer1 = (UINT)(((i + 1) % segmentCount) * 2);
+			UINT inner1 = outer1 + 1;
+			indices.push_back(outer0); indices.push_back(outer1); indices.push_back(inner0);
+			indices.push_back(outer1); indices.push_back(inner1); indices.push_back(inner0);
+			indices.push_back(outer0); indices.push_back(inner0); indices.push_back(outer1);
+			indices.push_back(outer1); indices.push_back(inner0); indices.push_back(inner1);
+		}
+	}
+
+	OBB_Tr = { 0, 0, 0 };
+	OBB_Ext = XMFLOAT3(outerRadius, 0.001f, outerRadius);
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (int)indices.size();
+	VertexNum = (int)vertices.size();
+
+	subMeshNum = 1;
+	SubMeshIndexStart = new int[2];
+	SubMeshIndexStart[0] = 0;
+	SubMeshIndexStart[1] = IndexNum;
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
 void Mesh::InstancingStruct::Init(unsigned int capacity, Mesh* _mesh)
 {
 	Capacity = capacity;
@@ -3642,7 +3730,7 @@ int Mesh::InstancingStruct::PushInstance(RenderInstanceData instance)
 
 		gd.ShaderVisibleDescPool.isImmortalChange = true;
 
-		// Áö±Ý ¸±¸®Áî¸¦ ÇÏ´Ï ¿À·ù°¡ »ý±è. ±×³É ¸±¸®Áî ÇÏÁö ¸»°í ¾îµð¿¡ µû·Î ÀçÈ°¿ëÇÏ°Ô ¸ð¾Æ³ö¾ß °Ú³×.
+		// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½î¸¦ ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. ï¿½×³ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½È°ï¿½ï¿½ï¿½Ï°ï¿½ ï¿½ï¿½Æ³ï¿½ï¿½ï¿?ï¿½Ú³ï¿½.
 		prevRes.resource->Unmap(0, NULL);
 		prevRes.Release();
 	}
@@ -3679,7 +3767,7 @@ void Mesh::InstancingStruct::Release() {
 		StructuredBuffer.Release();
 		InstanceDataArr = nullptr;
 	}
-	mesh = nullptr; // ÂüÁ¶¸¸ ÇÒ »ÓÀÌ´Ù.
+	mesh = nullptr; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½.
 	Capacity = 0;
 	InstanceSize = 0;
 	InstancingSRVIndex.Set(false, 0, 0);
@@ -3704,17 +3792,17 @@ void Mesh::Release()
 	}
 }
 
-// ±¸ ¸Þ½¬ »ý¼º
+// ï¿½ï¿½ ï¿½Þ½ï¿½ ï¿½ï¿½ï¿½ï¿½
 void Mesh::CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radius, int sliceCount, int stackCount, vec4 color)
 {
 	std::vector<Vertex> vertices;
 	std::vector<UINT> indices;
 
-	// ·ÎÄÃ OBB 
+	// ï¿½ï¿½ï¿½ï¿½ OBB 
 	OBB_Tr = { 0, 0, 0 };
 	OBB_Ext = { radius, radius, radius };
 
-	// Vertex »ý¼º
+	// Vertex ï¿½ï¿½ï¿½ï¿½
 	for (int i = 0; i <= stackCount; ++i)
 	{
 		float phi = XM_PI * (float)i / (float)stackCount;
@@ -3738,7 +3826,7 @@ void Mesh::CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radiu
 		}
 	}
 
-	// Index »ý¼º
+	// Index ï¿½ï¿½ï¿½ï¿½
 	UINT ring = (UINT)sliceCount + 1;
 
 	for (UINT i = 0; i < (UINT)stackCount; ++i)
@@ -3755,7 +3843,7 @@ void Mesh::CreateSphereMesh(ID3D12GraphicsCommandList* pCommandList, float radiu
 		}
 	}
 
-	// GPU ¹öÆÛ »ý¼º/¾÷·Îµå 
+	// GPU ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½Îµï¿½ 
 	int nVertices = (int)vertices.size();
 	int nStride = sizeof(Vertex);
 
@@ -4061,6 +4149,201 @@ void UVMesh::CreateWallMesh(float width, float height, float depth, vec4 color)
 	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
+void UVMesh::CreateSphereMesh(float radius, int sliceCount, int stackCount, vec4 color)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	OBB_Tr = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	OBB_Ext = XMFLOAT3(radius, radius, radius);
+
+	for (int i = 0; i <= stackCount; ++i) {
+		float phi = XM_PI * (float)i / (float)stackCount;
+		float v = (float)i / (float)stackCount;
+
+		for (int j = 0; j <= sliceCount; ++j) {
+			float theta = XM_2PI * (float)j / (float)sliceCount;
+			float u = (float)j / (float)sliceCount;
+
+			XMFLOAT3 pos(
+				radius * sinf(phi) * cosf(theta),
+				radius * cosf(phi),
+				radius * sinf(phi) * sinf(theta)
+			);
+
+			XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&pos));
+			XMFLOAT3 normal;
+			XMStoreFloat3(&normal, n);
+
+			vertices.push_back(Vertex(pos, color, normal, XMFLOAT2(u, v)));
+		}
+	}
+
+	UINT ring = (UINT)sliceCount + 1;
+	for (UINT i = 0; i < (UINT)stackCount; ++i) {
+		for (UINT j = 0; j < (UINT)sliceCount; ++j) {
+			indices.push_back(i * ring + j);
+			indices.push_back((i + 1) * ring + j + 1);
+			indices.push_back((i + 1) * ring + j);
+
+			indices.push_back(i * ring + j);
+			indices.push_back(i * ring + j + 1);
+			indices.push_back((i + 1) * ring + j + 1);
+		}
+	}
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void UVMesh::CreateBeamMesh(vec4 color)
+{
+	CreateBeamMesh(color, 1.0f, 1.0f);
+}
+
+void UVMesh::CreateBeamMesh(vec4 color, float frameU, float frameV)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	const float u0 = 0.0f;
+	const float u1 = frameU;
+	const float v0 = 0.0f;
+	const float v1 = frameV;
+
+	auto PushQuad = [&](XMFLOAT3 a, XMFLOAT3 b, XMFLOAT3 c, XMFLOAT3 d, XMFLOAT3 normal) {
+		UINT base = (UINT)vertices.size();
+		vertices.push_back(Vertex(a, color, normal, XMFLOAT2(u0, v1)));
+		vertices.push_back(Vertex(b, color, normal, XMFLOAT2(u0, v0)));
+		vertices.push_back(Vertex(c, color, normal, XMFLOAT2(u1, v0)));
+		vertices.push_back(Vertex(d, color, normal, XMFLOAT2(u1, v1)));
+		indices.push_back(base + 0); indices.push_back(base + 1); indices.push_back(base + 2);
+		indices.push_back(base + 2); indices.push_back(base + 3); indices.push_back(base + 0);
+	};
+
+	PushQuad(
+		XMFLOAT3(-1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, 1.0f),
+		XMFLOAT3(-1.0f, 0.0f, 1.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f));
+	indices.push_back(0); indices.push_back(2); indices.push_back(1);
+	indices.push_back(2); indices.push_back(0); indices.push_back(3);
+
+	OBB_Tr = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	OBB_Ext = XMFLOAT3(1.0f, 1.0f, 1.0f);
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
+void UVMesh::CreateMissileSpriteMesh(vec4 color, float frameU, float frameV)
+{
+	std::vector<Vertex> vertices;
+	std::vector<UINT> indices;
+
+	const float u0 = 0.0f;
+	const float u1 = frameU;
+	const float v0 = 0.0f;
+	const float v1 = frameV;
+
+	auto PushQuad = [&](XMFLOAT3 a, XMFLOAT3 b, XMFLOAT3 c, XMFLOAT3 d, XMFLOAT3 normal) {
+		UINT base = (UINT)vertices.size();
+		vertices.push_back(Vertex(a, color, normal, XMFLOAT2(u0, v1)));
+		vertices.push_back(Vertex(b, color, normal, XMFLOAT2(u0, v0)));
+		vertices.push_back(Vertex(c, color, normal, XMFLOAT2(u1, v0)));
+		vertices.push_back(Vertex(d, color, normal, XMFLOAT2(u1, v1)));
+		indices.push_back(base + 0); indices.push_back(base + 1); indices.push_back(base + 2);
+		indices.push_back(base + 2); indices.push_back(base + 3); indices.push_back(base + 0);
+	};
+
+	PushQuad(
+		XMFLOAT3(-1.0f, 0.0f, 1.0f),
+		XMFLOAT3(-1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, -1.0f),
+		XMFLOAT3(1.0f, 0.0f, 1.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f));
+
+	PushQuad(
+		XMFLOAT3(0.0f, -1.0f, 1.0f),
+		XMFLOAT3(0.0f, -1.0f, -1.0f),
+		XMFLOAT3(0.0f, 1.0f, -1.0f),
+		XMFLOAT3(0.0f, 1.0f, 1.0f),
+		XMFLOAT3(1.0f, 0.0f, 0.0f));
+
+	OBB_Tr = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	OBB_Ext = XMFLOAT3(1.0f, 1.0f, 1.0f);
+
+	int nVertices = (int)vertices.size();
+	int nStride = sizeof(Vertex);
+
+	VertexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	VertexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, nVertices * nStride, 1);
+	gd.UploadToCommitedGPUBuffer(&vertices[0], &VertexUploadBuffer, &VertexBuffer, true);
+	VertexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
+	VertexBufferView.StrideInBytes = nStride;
+	VertexBufferView.SizeInBytes = nStride * nVertices;
+
+	IndexBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	IndexUploadBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, indices.size() * sizeof(UINT), 1);
+	gd.UploadToCommitedGPUBuffer(&indices[0], &IndexUploadBuffer, &IndexBuffer, true);
+	IndexBuffer.AddResourceBarrierTransitoinToCommand(gd.gpucmd, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	IndexBufferView.BufferLocation = IndexBuffer.resource->GetGPUVirtualAddress();
+	IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	IndexBufferView.SizeInBytes = (UINT)(indices.size() * sizeof(UINT));
+
+	IndexNum = (ui32)indices.size();
+	VertexNum = (ui32)vertices.size();
+	topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+}
+
 void UVMesh::CreateTextRectMesh()
 {
 	std::vector<Vertex> vertices;
@@ -4239,7 +4522,7 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 		SubMeshIndexStart = SubMeshIndexArr;
 	}
 
-	if (gd.isSupportRaytracing) {
+	if (gd.isSupportRaytracing && ZoneID < 100) {   // [dungeon] skip DXR for dungeon zones (id>=100): map too big for RT pool
 		rmesh.AllocateRaytracingMesh(vert, inds, SubMeshNum, SubMeshIndexStart, ZoneID);
 
 		VertexBufferView.BufferLocation = RayTracingMesh::vertexBuffer->GetGPUVirtualAddress() + rmesh.VBStartOffset;
@@ -4291,7 +4574,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 		char rstr[128] = {};
 		in >> rstr;
 		if (strcmp(rstr, "v") == 0) {
-			//ÁÂÇ¥
+			//ï¿½ï¿½Ç¥
 			XMFLOAT3 pos;
 			in >> pos.x;
 			in >> pos.y;
@@ -4305,7 +4588,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 			temp_pos.push_back(pos);
 		}
 		else if (strcmp(rstr, "vt") == 0) {
-			// uv ÁÂÇ¥
+			// uv ï¿½ï¿½Ç¥
 			XMFLOAT3 uv;
 			in >> uv.x;
 			in >> uv.y;
@@ -4314,7 +4597,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 			temp_uv.push_back(XMFLOAT2(uv.x, uv.y));
 		}
 		else if (strcmp(rstr, "vn") == 0) {
-			// ³ë¸Ö
+			// ï¿½ï¿½ï¿?
 			XMFLOAT3 normal;
 			in >> normal.x;
 			in >> normal.y;
@@ -4476,8 +4759,8 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 					}
 				}
 
-				// ¸¸¾à ÇöÀç poly°¡ °ú°ÅÀÇ polyµéÀÇ ³»ºÎ¿¡ ÀÖÀ» °æ¿ì.
-				// Áö¿ì°³Ã³¸®.
+				// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ polyï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ polyï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î¿ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
+				// ï¿½ï¿½ï¿½ì°³Ã³ï¿½ï¿½.
 				bool isEraserGeometry = false;
 				for (int k = polys.size() - i; k < polys.size(); ++k) {
 					int n = 0;
@@ -4500,7 +4783,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 
 				polys.push_back(poly);
 
-				// ÀÎµ¦½º¸¦ ¿ª¼øÀ¸·Î »ðÀÔ
+				// ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 				std::list<unsigned int> flist;
 				int flistsize = 0;
 				for (int i = 0; i < poly.size(); ++i) {
@@ -4557,7 +4840,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 								//index_buf[nextchoice]->push_back(aindex(pi, pi1, pi2));
 								flist.erase(inslti1); flistsize -= 1;
 								//lti = inslti2;
-								//¿©±â¿¡ µµ´ÞÇÏ±â Àü¿¡ ltÀÇ firstÀÇ nest°¡ nullptr¿¡¼­ ¾²·¹±â °ªÀ¸·Î µ¤¾îÁø´Ù. ¿øÀÎÀ» Ã£ÀÚ
+								//ï¿½ï¿½ï¿½â¿¡ ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ ltï¿½ï¿½ firstï¿½ï¿½ nestï¿½ï¿½ nullptrï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã£ï¿½ï¿½
 							}
 						}
 
@@ -4600,7 +4883,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 		}
 	}
 
-	// ¹®ÀÚ¸Þ½¬´Â ¹«Á¶°Ç ±Û·Î¹úÀÓ.
+	// ï¿½ï¿½ï¿½Ú¸Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Û·Î¹ï¿½ï¿½ï¿½.
 	CreateMesh_FromVertexAndIndexData(temp_vertices, TrianglePool);
 }
 
@@ -4685,7 +4968,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 		vector<Vertex> dumy;
 		dumy.reserve(0);
 		dumy.resize(0);
-		// ¹öÅÃ½º ºÎºÐÀº ¿ÀºêÁ§Æ® SetShapeÇÒ¶§ ÇØ¾ß ÇÔ. (ÀÎ½ºÅÏ½º¸¶´Ù µû·Î ÀÖ¾î¾ß ÇÏ´Ï±î.)
+		// ï¿½ï¿½ï¿½Ã½ï¿½ ï¿½Îºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® SetShapeï¿½Ò¶ï¿½ ï¿½Ø¾ï¿½ ï¿½ï¿½. (ï¿½Î½ï¿½ï¿½Ï½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¾ï¿½ï¿?ï¿½Ï´Ï±ï¿½.)
 		rmesh.AllocateRaytracingUAVMesh_OnlyIndex(inds, SubMeshNum, SubMeshIndexStart);
 
 		// Origin SRV VertexBuffer (non transform)
@@ -4698,7 +4981,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 		VertexBufferView.BufferLocation = VertexBuffer.resource->GetGPUVirtualAddress();
 		VertexBufferView.StrideInBytes = m_nStride;
 		VertexBufferView.SizeInBytes = m_nStride * m_nVertices;
-		RenderVBufferView[0] = VertexBufferView; // ·¹½ºÅÍ¸¦ À§ÇÑ Á¶Ä¡
+		RenderVBufferView[0] = VertexBufferView; // ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡
 
 		// update raster submesh index range
 		//for (int i = 0; i < subMeshNum + 1; ++i) {
@@ -4781,7 +5064,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 	}
 
 	MatrixCount = matrixCount;
-	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256ÀÇ ¹è¼ö
+	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 	GPUResource ToOffsetMatrixsCB_Upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 	//ToOffsetMatrixsCB_Upload.resource->Map(0, NULL, (void**)&OffsetMatrixs);
 	////make DefaultToWorldArr, ToLocalArr
@@ -4817,7 +5100,14 @@ void BumpSkinMesh::Render(ID3D12GraphicsCommandList* pCommandList, ui32 instance
 	if (IndexNum > 0)
 	{
 		pCommandList->IASetIndexBuffer(&IndexBufferView);
-		pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		if (SubMeshIndexStart != nullptr && slotIndex + 1 < (ui32)(subMeshNum + 1))
+		{
+			pCommandList->DrawIndexedInstanced(SubMeshIndexStart[slotIndex + 1] - SubMeshIndexStart[slotIndex], instanceNum, SubMeshIndexStart[slotIndex], 0, 0);
+		}
+		else
+		{
+			pCommandList->DrawIndexedInstanced(IndexNum, instanceNum, 0, 0, 0);
+		}
 	}
 	else
 	{
@@ -4891,7 +5181,7 @@ void ModelNode::SkinMeshShadowRender(void* model, GPUCmd& cmd, const matrix& par
 					//copying
 					int skindex = Mesh_SkinMeshindex[i];
 					int boneNum = pModel->mBumpSkinMeshs[skindex]->MatrixCount;
-					UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ÀÇ ¹è¼ö
+					UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_COPY_DEST);
 					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_COPY_SOURCE);
 					gd.gpucmd->CopyBufferRegion(smgo->BoneToWorldMatrixCB_Default[skindex].resource, 0, smgo->BoneToWorldMatrixCB[skindex].resource, 0, ncbElementBytes);
@@ -5650,7 +5940,7 @@ void Model::LoadModelFile2(string filename, int ZoneId)
 			if (ZoneId >= 0) {
 				int renderIndex = (zone->Asset_OffsetMul + 1) * Zone::MAXZoneMaterialCount + game.RenderMaterialTableSizePerZone[1 + zone->Asset_OffsetMul];
 				if (game.RenderMaterialTable[renderIndex] != nullptr) {
-					dbglog1(L"Zone ¸ÓÅÍ¸®¾ó ÇØÁ¦°¡ ¾ÈµÊ. ZoneID : %d \n", ZoneId);
+					dbglog1(L"Zone ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Èµï¿½. ZoneID : %d \n", ZoneId);
 				}
 				game.RenderMaterialTable[renderIndex] = mat;
 				game.RenderMaterialTableSizePerZone[1 + zone->Asset_OffsetMul] += 1;
@@ -5658,7 +5948,7 @@ void Model::LoadModelFile2(string filename, int ZoneId)
 			else {
 				int renderIndex = game.RenderMaterialTableSizePerZone[0];
 				if (game.RenderMaterialTable[renderIndex] != nullptr) {
-					dbglog1(L"Zone ¸ÓÅÍ¸®¾ó ÇØÁ¦°¡ ¾ÈµÊ. ZoneID : %d \n", ZoneId);
+					dbglog1(L"Zone ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Èµï¿½. ZoneID : %d \n", ZoneId);
 				}
 				game.RenderMaterialTable[renderIndex] = mat;
 				game.RenderMaterialTableSizePerZone[0] += 1;
@@ -5669,19 +5959,13 @@ void Model::LoadModelFile2(string filename, int ZoneId)
 
 	RootNode = &Nodes[0];
 
-	// GPU animation resources read this for every model shape. Static models keep identity T-pose.
-
-	//calcul normal Node Local Tr Mats (WhenSkinMesh enabled)
-	if (mNumSkinMesh > 0) {
-		DefaultNodelocalTr = new matrix[nodeCount];
-		for (int i = 0; i < nodeCount; ++i) {
-			DefaultNodelocalTr[i].Id();
-		}
+	// GPU animation resources can be requested for any model shape. Keep an
+	// identity fallback for static models; skinned models overwrite the entries
+	// below with their calculated bind-pose local transforms.
+	DefaultNodelocalTr = new matrix[nodeCount];
+	for (int i = 0; i < nodeCount; ++i) {
+		DefaultNodelocalTr[i].Id();
 	}
-	//DefaultNodelocalTr = new matrix[nodeCount];
-	//for (int i = 0; i < nodeCount; ++i) {
-	//	DefaultNodelocalTr[i].Id();
-	//}
 
 	NodeOffsetMatrixArr = new matrix[nodeCount];
 	for (int i = 0; i < mNumSkinMesh; ++i) {
@@ -5696,7 +5980,7 @@ void Model::LoadModelFile2(string filename, int ZoneId)
 	for (int i = 0; i < nodeCount; ++i) {
 		if (NodeOffsetMatrixArr[i].pos == IdMat.pos && NodeOffsetMatrixArr[i].look == IdMat.look
 			&& NodeOffsetMatrixArr[i].right == IdMat.right && NodeOffsetMatrixArr[i].up == IdMat.up) {
-			// offset Çà·ÄÀÌ ´ÜÀ§Çà·ÄÀÏ¶§
+			// offset ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¶ï¿?
 			ModelNode* node = Nodes[i].parent;
 			if (node == nullptr) {
 				continue;
@@ -5941,7 +6225,7 @@ void Material::SetDescTable(int zoneid)
 	DescIndex hOriginDesc;
 	D3D12_CPU_DESCRIPTOR_HANDLE hcpu;
 
-	// ÅØ½ºÃÄ 5°³°¡ °°Àº ¸ÓÅÍ¸®¾óÀÌ ÀÖ´ÂÁö È®ÀÎÇÑ´Ù. (SRV Desc Heap ÀÚ¸® ÀçÈ°¿ëÀ» À§ÇØ..)
+	// ï¿½Ø½ï¿½ï¿½ï¿½ 5ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Í¸ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´ï¿½ï¿½ï¿½ È®ï¿½ï¿½ï¿½Ñ´ï¿½. (SRV Desc Heap ï¿½Ú¸ï¿½ ï¿½ï¿½È°ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½..)
 	int findSame = -1;
 	for (int i = 0; i < gd.ShaderVisibleDescPool.MaterialCBVSizePerZone[off]; ++i) {
 		Material& mat = *game.RenderMaterialTable[off * Zone::MAXZoneMaterialCount + i];
@@ -6003,7 +6287,7 @@ void Material::SetDescTable(int zoneid)
 		}
 	}
 
-	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256ÀÇ ¹è¼ö
+	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 	if (CBData == nullptr) {
 		CB_Resource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		CB_Resource.resource->Map(0, NULL, (void**)&CBData);
@@ -6018,7 +6302,7 @@ void Material::SetDescTable(int zoneid)
 		cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
 		cbv_desc.SizeInBytes = ncbElementBytes;
 		gd.pDevice->CreateConstantBufferView(&cbv_desc, CB_Resource.descindex.hCreation.hcpu);
-	}//else ´Â ½Å°æ ¾È½áµµ µÈ´Ù. - ´çÀå ShaderVisible¿¡ µé¾î°¥ ¼ö ¾ø±â ¶§¹®¿¡.
+	}//else ï¿½ï¿½ ï¿½Å°ï¿½ ï¿½È½áµµ ï¿½È´ï¿½. - ï¿½ï¿½ï¿½ï¿½ ShaderVisibleï¿½ï¿½ ï¿½ï¿½î°?ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 }
 
 MaterialCB_Data Material::GetMatCB()
@@ -6089,7 +6373,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		if (reset) {
 			MaterialStructuredBuffer.Release();
 			MaterialStructuredBuffer.resource = nullptr;
-			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256ÀÇ ¹è¼ö
+			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 			MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 			for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
@@ -6100,7 +6384,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
 			LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
 
-			//MaterialStructuredBufferSRV¸¦ ÀçÇÒ´çÇÏÁö ¾Ê´Â´Ù. (°°Àº ÀÚ¸®¸¦ Â÷ÁöÇÑ´Ù.)
+			//MaterialStructuredBufferSRVï¿½ï¿½ ï¿½ï¿½ï¿½Ò´ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½. (ï¿½ï¿½ï¿½ï¿½ ï¿½Ú¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.)
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -6121,7 +6405,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 			MaterialStructuredBuffer.resource->Unmap(0, NULL);
 			LastMaterialStructureBufferUp = game.RenderMaterialTable.size();
 
-			//MaterialStructuredBufferSRV¸¦ ÀçÇÒ´çÇÏÁö ¾Ê´Â´Ù. (°°Àº ÀÚ¸®¸¦ Â÷ÁöÇÑ´Ù.)
+			//MaterialStructuredBufferSRVï¿½ï¿½ ï¿½ï¿½ï¿½Ò´ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ê´Â´ï¿½. (ï¿½ï¿½ï¿½ï¿½ ï¿½Ú¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½.)
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -6134,7 +6418,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		}
 	}
 	else {
-		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256ÀÇ ¹è¼ö
+		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 		MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 		for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
@@ -6389,7 +6673,7 @@ D3D12_SHADER_BYTECODE Shader::GetShaderByteCode(const WCHAR* pszFileName, LPCSTR
 			D3D12_SHADER_INPUT_BIND_DESC bindDesc;
 			pReflection->GetResourceBindingDesc(i, &bindDesc);
 			dbglog2(L"Type:%d - register(%d)\n", bindDesc.Type, bindDesc.BindPoint);
-			// bindDesc.Name, bindDesc.Type, bindDesc.BindPoint µîÀ¸·Î RootParameter ±¸¼º °¡´É
+			// bindDesc.Name, bindDesc.Type, bindDesc.BindPoint ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ RootParameter ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		}
 	}
 
@@ -6525,8 +6809,8 @@ void OnlyColorShader::CreatePipelineState()
 	d3dBlendDesc.IndependentBlendEnable = FALSE;
 	d3dBlendDesc.RenderTarget[0].BlendEnable = TRUE;
 	d3dBlendDesc.RenderTarget[0].LogicOpEnable = FALSE;
-	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+	d3dBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	d3dBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
 	d3dBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
 	d3dBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
 	d3dBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
@@ -6542,7 +6826,7 @@ void OnlyColorShader::CreatePipelineState()
 	D3D12_DEPTH_STENCIL_DESC depthStencilDesc; // D3D12_DEPTH_STENCIL_DESC1 is using for Stream Pipeline state.. -> what is that?
 	//Output Merger - DepthStencil - depth
 	depthStencilDesc.DepthEnable = TRUE;
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
 	//depthStencilDesc.DepthBoundsTestEnable = FALSE; // question 004 : what is this??
 	//Output Merger - DepthStencil - stencil
@@ -6708,7 +6992,7 @@ void ScreenShader::InitShader()
 	CreateRootSignature_SDF();
 	CreatePipelineState_SDF();
 
-	UINT ncbElementBytes = (((sizeof(SDFInstance) * MaxInstance) + 255) & ~255); //256ÀÇ ¹è¼ö
+	UINT ncbElementBytes = (((sizeof(SDFInstance) * MaxInstance) + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 	SDFInstance_StructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1); // 1MB
 	
 	gd.ShaderVisibleDescPool.ImmortalAlloc(&SDFInstance_SRV, 1);
@@ -7161,6 +7445,129 @@ void ScreenShader::RenderAllSDFTexts() {
 
 #pragma endregion
 
+#pragma region WorldTextureShaderCode
+void WorldTextureShader::InitShader()
+{
+	CreateRootSignature();
+	CreatePipelineState();
+}
+
+void WorldTextureShader::CreateRootSignature()
+{
+	CD3DX12_ROOT_PARAMETER rootParams[RootParamCapacity];
+	rootParams[Const_Camera].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParams[Const_Transform].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParams[Const_Tint].InitAsConstants(4, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParams[Const_UVAnim].InitAsConstants(4, 2, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
+	CD3DX12_DESCRIPTOR_RANGE srvRange;
+	srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	rootParams[SRVTable_Texture].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	CD3DX12_STATIC_SAMPLER_DESC samplerDesc(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
+	rsDesc.Init(_countof(rootParams), rootParams, 1, &samplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ID3DBlob* sigBlob = nullptr;
+	ID3DBlob* errBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
+	if (FAILED(hr)) {
+		if (errBlob != nullptr) OutputDebugStringA((char*)errBlob->GetBufferPointer());
+		if (errBlob != nullptr) errBlob->Release();
+		return;
+	}
+
+	gd.pDevice->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&pRootSignature));
+	if (sigBlob != nullptr) sigBlob->Release();
+	if (errBlob != nullptr) errBlob->Release();
+}
+
+void WorldTextureShader::CreatePipelineState()
+{
+	ID3DBlob* vsBlob = nullptr;
+	ID3DBlob* psBlob = nullptr;
+
+	Shader::GetShaderByteCode(L"Resources/Shaders/WorldTextureShader.hlsl", "VSMain", "vs_5_1", &vsBlob);
+	Shader::GetShaderByteCode(L"Resources/Shaders/WorldTextureShader.hlsl", "PSMain", "ps_5_1", &psBlob);
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+	psoDesc.pRootSignature = pRootSignature;
+
+	D3D12_INPUT_ELEMENT_DESC inputElementDesc[4] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+	psoDesc.InputLayout = { inputElementDesc, _countof(inputElementDesc) };
+
+	psoDesc.VS = { vsBlob->GetBufferPointer(), vsBlob->GetBufferSize() };
+	psoDesc.PS = { psBlob->GetBufferPointer(), psBlob->GetBufferSize() };
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+	D3D12_BLEND_DESC blendDesc = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	psoDesc.BlendState = blendDesc;
+
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState.DepthEnable = TRUE;
+	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.RTVFormats[0] = gd.MainRenderTarget_PixelFormat;
+	psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	psoDesc.SampleDesc.Count = gd.m_bMsaa4xEnable ? 4 : 1;
+	psoDesc.SampleDesc.Quality = gd.m_bMsaa4xEnable ? (gd.m_nMsaa4xQualityLevels - 1) : 0;
+
+	HRESULT hr = gd.pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pPipelineState));
+	if (FAILED(hr)) OutputDebugStringA("[ERROR] WorldTextureShader PSO Create Failed\n");
+
+	if (vsBlob != nullptr) vsBlob->Release();
+	if (psBlob != nullptr) psBlob->Release();
+}
+
+void WorldTextureShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg)
+{
+	cmd->SetGraphicsRootSignature(pRootSignature);
+	cmd->SetPipelineState(pPipelineState);
+}
+
+void WorldTextureShader::SetTextureCommand(GPUResource* texture)
+{
+	if (texture == nullptr || texture->resource == nullptr) return;
+
+	DescHandle descH;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 1);
+	gd.pDevice->CopyDescriptorsSimple(1, descH.hcpu, texture->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_Texture, descH.hgpu);
+}
+
+void WorldTextureShader::Release()
+{
+	if (pPipelineState != nullptr) pPipelineState->Release();
+	if (pRootSignature != nullptr) pRootSignature->Release();
+	pPipelineState = nullptr;
+	pRootSignature = nullptr;
+}
+#pragma endregion
+
 #pragma region PBRShaderCode
 void PBRShader1::InitShader()
 {
@@ -7285,6 +7692,8 @@ void PBRShader1::CreateRootSignature_withShadow()
 	DescTable5.DescTable(D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParam[RootParamId::SRVTable_Chunck_StaticLightStructuredBuffer] = DescTable5;
 
+	rootParam[RootParamId::Const_ModelHitFlash] =
+		RootParam1::Const32s(GRegID('b', 5), 4, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	D3D12_ROOT_SIGNATURE_FLAGS d3dRootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT/* |
@@ -9163,7 +9572,7 @@ void ParticleShader::CreatePipelineState()
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 	psoDesc.pRootSignature = ParticleRootSig;
 
-	// Input ¾øÀ½ (SV_VertexID)
+	// Input ï¿½ï¿½ï¿½ï¿½ (SV_VertexID)
 	psoDesc.InputLayout = { nullptr, 0 };
 
 	psoDesc.VS = { vsBlob->GetBufferPointer(), vsBlob->GetBufferSize() };
@@ -9213,6 +9622,11 @@ void ParticleShader::CreatePipelineState()
 
 void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particleBuffer, UINT particleCount)
 {
+	if (cmd == nullptr || particleBuffer == nullptr || particleBuffer->resource == nullptr ||
+		FireTexture == nullptr || FireTexture->resource == nullptr || particleCount == 0) {
+		return;
+	}
+
 	cmd->SetPipelineState(ParticlePSO);
 	cmd->SetGraphicsRootSignature(ParticleRootSig);
 
@@ -9300,14 +9714,14 @@ float** RayTracingShader::push_rins_immortal(RayTracingMesh* mesh, matrix mat, L
 	//dbgbreak(dbgc[1] == 6167);
 	std::unordered_map<ShaderRecord, int>::iterator f;
 	
-	// ÇöÀç´Â LRS¸¦ 1·Î °íÁ¤ÇØ³ö¼­ °á±¹ ´ÜÀÏ ShaderRecord¸¦ ¸¸µå´Â ÀÛ¾÷À» ÇÒ °ÍÀÓ. ÇÏÁö¸¸ 
-	// ¾ðÁ¨°¡ ÇÏ³ªÀÇ ¸Þ½¬¸¦ ¿©·¯°³ÀÇ Record·Î ³ª´©¾î¾ß ÇÏ´Â ÀÏÀÌ »ý±ä´Ù¸é LRSCount¸¦ Á¶Á¤ÇÏ¸é µÇ°Ú´Ù.
+	// ï¿½ï¿½ï¿½ï¿½ï¿?LRSï¿½ï¿½ 1ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ø³ï¿½ï¿½ï¿½ ï¿½á±¹ ï¿½ï¿½ï¿½ï¿½ ShaderRecordï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Û¾ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï³ï¿½ï¿½ï¿½ ï¿½Þ½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Recordï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?ï¿½Ï´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ù¸ï¿?LRSCountï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½ ï¿½Ç°Ú´ï¿½.
 	int LRSCount = 1; // mesh->subMeshCount;
 	static float* RaytracingInputWorldMatptr[1024] = {};
 	int curindex[1024] = {};
 	void* HGSI = hitGroupShaderIdentifier[hitGroupShaderIdentifyerIndex];
 	if (HitGroupShaderTableToIndex.size() == 0) {
-		// ¼ÎÀÌ´õ Å×ÀÌºíÀÌ ¾øÀ»¶§
+		// ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½Ìºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		for (int i = 0; i < LRSCount; ++i) {
 			//LRSdata[i].IBOffset = mesh->IBStartOffset[i] / sizeof(UINT);
 			curindex[i] = hitGroupShaderTable.m_shaderRecords.size();
@@ -9382,7 +9796,7 @@ float** RayTracingShader::push_rins(RayTracingMesh* mesh, matrix mat, LocalRootS
 	int curindex[1024] = {};
 	void* HGSI = hitGroupShaderIdentifier[hitGroupShaderIdentifyerIndex];
 	if (HitGroupShaderTableToIndex.size() == 0) {
-		// ¼ÎÀÌ´õ Å×ÀÌºíÀÌ ¾øÀ»¶§
+		// ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½Ìºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		for (int i = 0; i < LRSCount; ++i) {
 			//LRSdata[i].IBOffset = mesh->IBStartOffset[i] / sizeof(UINT);
 			curindex[i] = hitGroupShaderTable.m_shaderRecords.size();
@@ -9465,7 +9879,7 @@ void RayTracingShader::ReInit() {
 
 void RayTracingShader::CreateGlobalRootSignature()
 {
-	//gd.ShaderVisibleDescPool.TextureSRVCap ¿¡ µû¶ó ´Ù¸¥ SRV Range¸¦ °¡Áöµµ·Ï ¸¸µé¾î¾ß ÇÔ.
+	//gd.ShaderVisibleDescPool.TextureSRVCap ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ SRV Rangeï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½.
 	if (pGlobalRootSignature) {
 		pGlobalRootSignature->Release();
 		pGlobalRootSignature = nullptr;
@@ -9831,8 +10245,8 @@ void RayTracingShader::InitShaderTable()
 	}
 
 	// Hit group shader table
-	// RayTracing Shader°¡ Reinit µÇ¸é ´Ù½Ã ¼ÎÀÌ´õ Å×ÀÌºí·Î µé¾î°£ °ÍµéÀ» ¸ðÁ¶¸® Shader Identifyer¸¦ º¯°æÇØ¾ß ÇÔ. 
-	// ¾Æ¿¹ ´Ù¸¥ ¼ÎÀÌ´õ°¡ µÇ¾úÀ¸´Ï±î.
+	// RayTracing Shaderï¿½ï¿½ Reinit ï¿½Ç¸ï¿½ ï¿½Ù½ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ ï¿½ï¿½ï¿½Ìºï¿½ï¿½ï¿½ ï¿½ï¿½î°?ï¿½Íµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Shader Identifyerï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½ï¿½. 
+	// ï¿½Æ¿ï¿½ ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½ ï¿½Ç¾ï¿½ï¿½ï¿½ï¿½Ï±ï¿½.
 	if(shaderTableInit == false)
 	{
 		LocalRootSigData lrsData{ 0, 0, 0 };
@@ -9877,13 +10291,13 @@ void RayTracingShader::InitShaderTable()
 			hitGroupShaderTable.push_back(srvec[i]);
 		}
 
-		//ÇØÁ¦
+		//ï¿½ï¿½ï¿½ï¿½
 		for (int i = 0;i < lrsvec.size();++i) {
 			delete[] lrsvec[i];
 		}
 		lrsvec.clear();
 
-		//ÀÌÀü¿¡ ½è´ø ShaderTableÀº COMÀ¸·Î ÀÌ·ç¾îÁ® ÀÖ¾î¼­ ¾Æ¸¶ ÀÚµ¿À¸·Î ÇØÁ¦µÉ °ÍÀÓ.
+		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?ShaderTableï¿½ï¿½ COMï¿½ï¿½ï¿½ï¿½ ï¿½Ì·ï¿½ï¿½ï¿½ï¿?ï¿½Ö¾î¼­ ï¿½Æ¸ï¿½ ï¿½Úµï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 	}
 }
 
@@ -9920,7 +10334,7 @@ void RayTracingShader::SkinMeshModify()
 	gd.CScmd.Execute();
 	gd.CScmd.WaitGPUComplete();
 
-	//BLAS ºôµå
+	//BLAS ï¿½ï¿½ï¿½ï¿½
 	if (gd.gpucmd.isClose) {
 		gd.gpucmd.Reset(true);
 	}
@@ -9933,8 +10347,8 @@ void RayTracingShader::SkinMeshModify()
 		for (int k = 0; k < model->mNumSkinMesh; ++k) {
 			smgo->modifyMeshes[k].UAV_BLAS_Refit();
 
-			// ½ºÅ² ¸Þ½¬µéÀº Áö È¥ÀÚ À§Ä¡¸¦ ¹Ù²Ù±â ¶§¹®¿¡
-			// TLAS InstanceÀÇ Matrix´Â IdentityÀÓ.
+			// ï¿½ï¿½Å² ï¿½Þ½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ È¥ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Ù²Ù±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+			// TLAS Instanceï¿½ï¿½ Matrixï¿½ï¿½ Identityï¿½ï¿½.
 			
 			if((cnt & 15) == 0) smgo->RaytracingUpdateTransform();
 		}
@@ -10377,7 +10791,7 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename)
 		int fr = frameRate * Duration;
 
 		UINT datasiz = fr * 64 * sizeof(AnimGPUKey);
-		UINT ncbElementBytes = ((datasiz + 255) & ~255); //256ÀÇ ¹è¼ö
+		UINT ncbElementBytes = ((datasiz + 255) & ~255); //256ï¿½ï¿½ ï¿½ï¿½ï¿?
 		AnimationRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 		GPUResource AnimationRes_Upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 		AnimGPUKey* animMapped = nullptr;
@@ -10552,7 +10966,7 @@ void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
 		dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
 		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
 		dsvDesc.Texture2DArray.MipSlice = 0;
-		dsvDesc.Texture2DArray.FirstArraySlice = i; // Å¥ºê¸ÊÀÇ Æ¯Á¤ ¸é
+		dsvDesc.Texture2DArray.FirstArraySlice = i; // Å¥ï¿½ï¿½ï¿½ï¿½ï¿?Æ¯ï¿½ï¿½ ï¿½ï¿½
 		dsvDesc.Texture2DArray.ArraySize = 1;
 
 		gd.pDevice->CreateDepthStencilView(StaticShadowCubeMap.resource, &dsvDesc, StaticCubeShadowMapHandleDSV[i]);
@@ -10584,7 +10998,7 @@ void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
 	//	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
 	//	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
 	//	dsvDesc.Texture2DArray.MipSlice = 0;
-	//	dsvDesc.Texture2DArray.FirstArraySlice = i; // Å¥ºê¸ÊÀÇ Æ¯Á¤ ¸é
+	//	dsvDesc.Texture2DArray.FirstArraySlice = i; // Å¥ï¿½ï¿½ï¿½ï¿½ï¿?Æ¯ï¿½ï¿½ ï¿½ï¿½
 	//	dsvDesc.Texture2DArray.ArraySize = 1;
 
 	//	gd.pDevice->CreateDepthStencilView(DynamicShadowCubeMap.resource, &dsvDesc, DynamicCubeShadowMapHandleDSV[i]);
@@ -10599,7 +11013,7 @@ void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
 	matrix outView[6] = {};
 	outView[0] = XMMatrixLookAtLH(eye, eye + XMVectorSet(1, 0, 0, 0), XMVectorSet(0, 1, 0, 0)); // +X
 	outView[1] = XMMatrixLookAtLH(eye, eye + XMVectorSet(-1, 0, 0, 0), XMVectorSet(0, 1, 0, 0)); // -X
-	outView[2] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0)); // +Y (Up º¤ÅÍ ÁÖÀÇ)
+	outView[2] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, -1, 0)); // +Y (Up ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
 	outView[3] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, -1, 0, 0), XMVectorSet(0, 0, 1, 0)); // -Y
 	outView[4] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 0, 1, 0), XMVectorSet(0, 1, 0, 0)); // +Z
 	outView[5] = XMMatrixLookAtLH(eye, eye + XMVectorSet(0, 0, -1, 0), XMVectorSet(0, 1, 0, 0)); // -Z

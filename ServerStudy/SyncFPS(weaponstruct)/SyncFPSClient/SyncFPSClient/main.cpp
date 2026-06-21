@@ -5,6 +5,7 @@ int dbgc[128] = {};
 #include "Render.h"
 #include "Game.h"
 #include "GameObject.h"
+#include "MeshSimplifier.h"
 #include "Utill_Wave.h"
 
 vector<ID3D12Resource*> GPUResource::TextureLoadedUploadBuffers;
@@ -173,6 +174,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	double FPSflow = 0;
 	double DeltaFlow = 0;
 	double perfFlow = 0.0;
+	double perfPacedFrameMs = 0.0;
 	double perfFrameMs = 0.0;
 	double perfRenderMs = 0.0;
 	double perfUpdateMs = 0.0;
@@ -185,6 +187,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	double perfPresentMs = 0.0;
 	double perfMaxFrameMs = 0.0;
 	int perfFrameCount = 0;
+	bool perfLODState = AutoLOD_IsModelLODRenderActive();
+	int shadowStabilityRecoverBuckets = 0;
+	auto ResetPerfAccum = [&]() {
+		perfFlow = 0.0;
+		perfPacedFrameMs = 0.0;
+		perfFrameMs = 0.0;
+		perfRenderMs = 0.0;
+		perfUpdateMs = 0.0;
+		perfGPUWaitMs = 0.0;
+		perfGPUPreWaitMs = 0.0;
+		perfGPUShadowWaitMs = 0.0;
+		perfGPUMainWaitMs = 0.0;
+		perfGPUComputeWaitMs = 0.0;
+		perfGPUFinalWaitMs = 0.0;
+		perfPresentMs = 0.0;
+		perfMaxFrameMs = 0.0;
+		perfFrameCount = 0;
+	};
+	auto SetShadowStabilityLevel = [&](int newLevel) {
+		newLevel = (std::max)(0, (std::min)(newLevel, 3));
+		if (game.AutoLODShadowStabilityLevel == newLevel) return;
+		game.AutoLODShadowStabilityLevel = newLevel;
+		shadowStabilityRecoverBuckets = 0;
+		char dbg[96];
+		sprintf_s(dbg, "[AutoLOD] shadow stability level=%d\n", game.AutoLODShadowStabilityLevel);
+		OutputDebugStringA(dbg);
+	};
 	ui64 ft = GetTicks();
 	while (1) {
 		game.isPrepared = game.isPreparedClientIndex && game.isMapInit && game.isGlobalAssetInit;
@@ -245,56 +274,81 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 				const double updateMs = 1000.0 * double(GetTicks() - perfUpdateStart) / double(QUERYPERFORMANCE_HZ);
 				//gd.AverageSecPer60End(1);
 				if (didRender) {
-					perfUpdateMs += updateMs;
-					const double frameMs = 1000.0 * double(GetTicks() - perfFrameStart) / double(QUERYPERFORMANCE_HZ);
-					perfFrameMs += frameMs;
-					perfMaxFrameMs = (std::max)(perfMaxFrameMs, frameMs);
-					perfFlow += game.DeltaTime;
-					++perfFrameCount;
-					if (perfFlow >= 2.0 && perfFrameCount > 0) {
-						const double invFrameCount = 1.0 / double(perfFrameCount);
-						const double avgFrameMs = perfFrameMs * invFrameCount;
-						const double avgRenderMs = perfRenderMs * invFrameCount;
-						const double avgUpdateMs = perfUpdateMs * invFrameCount;
-						const double avgGPUWaitMs = perfGPUWaitMs * invFrameCount;
-						const double avgGPUPreWaitMs = perfGPUPreWaitMs * invFrameCount;
-						const double avgGPUShadowWaitMs = perfGPUShadowWaitMs * invFrameCount;
-						const double avgGPUMainWaitMs = perfGPUMainWaitMs * invFrameCount;
-						const double avgGPUComputeWaitMs = perfGPUComputeWaitMs * invFrameCount;
-						const double avgGPUFinalWaitMs = perfGPUFinalWaitMs * invFrameCount;
-						const double avgPresentMs = perfPresentMs * invFrameCount;
-						const double avgCPURecordMs = (std::max)(0.0, avgRenderMs - avgGPUWaitMs - avgPresentMs);
-						char perfDbg[768];
-						sprintf_s(perfDbg,
-							"[Perf] fps=%.1f frame=%.2fms max=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms samples=%d\n",
-							avgFrameMs > 0.0 ? 1000.0 / avgFrameMs : 0.0,
-							avgFrameMs,
-							perfMaxFrameMs,
-							avgRenderMs,
-							avgUpdateMs,
-							avgGPUWaitMs,
-							avgGPUPreWaitMs,
-							avgGPUShadowWaitMs,
-							avgGPUMainWaitMs,
-							avgGPUComputeWaitMs,
-							avgGPUFinalWaitMs,
-							avgPresentMs,
-							avgCPURecordMs,
-							perfFrameCount);
-						OutputDebugStringA(perfDbg);
-						perfFlow = 0.0;
-						perfFrameMs = 0.0;
-						perfRenderMs = 0.0;
-						perfUpdateMs = 0.0;
-						perfGPUWaitMs = 0.0;
-						perfGPUPreWaitMs = 0.0;
-						perfGPUShadowWaitMs = 0.0;
-						perfGPUMainWaitMs = 0.0;
-						perfGPUComputeWaitMs = 0.0;
-						perfGPUFinalWaitMs = 0.0;
-						perfPresentMs = 0.0;
-						perfMaxFrameMs = 0.0;
-						perfFrameCount = 0;
+					const bool currentLODState = AutoLOD_IsModelLODRenderActive();
+					if (currentLODState != perfLODState) {
+						perfLODState = currentLODState;
+						if (!perfLODState) {
+							SetShadowStabilityLevel(0);
+						}
+						ResetPerfAccum();
+					}
+					else {
+						perfUpdateMs += updateMs;
+						const double frameMs = 1000.0 * double(GetTicks() - perfFrameStart) / double(QUERYPERFORMANCE_HZ);
+						perfPacedFrameMs += DeltaFlow * 1000.0;
+						perfFrameMs += frameMs;
+						perfMaxFrameMs = (std::max)(perfMaxFrameMs, frameMs);
+						perfFlow += game.DeltaTime;
+						++perfFrameCount;
+						if (perfFlow >= 2.0 && perfFrameCount > 0) {
+							const double invFrameCount = 1.0 / double(perfFrameCount);
+							const double avgPacedFrameMs = perfPacedFrameMs * invFrameCount;
+							const double avgFrameMs = perfFrameMs * invFrameCount;
+							const double avgRenderMs = perfRenderMs * invFrameCount;
+							const double avgUpdateMs = perfUpdateMs * invFrameCount;
+							const double avgGPUWaitMs = perfGPUWaitMs * invFrameCount;
+							const double avgGPUPreWaitMs = perfGPUPreWaitMs * invFrameCount;
+							const double avgGPUShadowWaitMs = perfGPUShadowWaitMs * invFrameCount;
+							const double avgGPUMainWaitMs = perfGPUMainWaitMs * invFrameCount;
+							const double avgGPUComputeWaitMs = perfGPUComputeWaitMs * invFrameCount;
+							const double avgGPUFinalWaitMs = perfGPUFinalWaitMs * invFrameCount;
+							const double avgPresentMs = perfPresentMs * invFrameCount;
+							const double avgCPURecordMs = (std::max)(0.0, avgRenderMs - avgGPUWaitMs - avgPresentMs);
+							if (perfLODState) {
+								const bool heavyFrame =
+									avgFrameMs > 20.0 ||
+									(avgFrameMs > 18.0 && avgGPUShadowWaitMs > 5.0) ||
+									(avgFrameMs > 16.8 && perfMaxFrameMs > 32.0 && avgGPUShadowWaitMs > 4.0);
+								if (heavyFrame) {
+									SetShadowStabilityLevel(game.AutoLODShadowStabilityLevel + 1);
+								}
+								else if (avgFrameMs < 14.5 && perfMaxFrameMs < 24.0) {
+									++shadowStabilityRecoverBuckets;
+									if (shadowStabilityRecoverBuckets >= 2) {
+										SetShadowStabilityLevel(game.AutoLODShadowStabilityLevel - 1);
+									}
+								}
+								else {
+									shadowStabilityRecoverBuckets = 0;
+								}
+							}
+							else {
+								SetShadowStabilityLevel(0);
+							}
+							char perfDbg[768];
+							sprintf_s(perfDbg,
+								"[Perf] lod=%s shadowQ=%d fps=%.1f frame=%.2fms workFps=%.1f work=%.2fms maxWork=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms samples=%d\n",
+								perfLODState ? "ON" : "OFF",
+								game.AutoLODShadowStabilityLevel,
+								avgPacedFrameMs > 0.0 ? 1000.0 / avgPacedFrameMs : 0.0,
+								avgPacedFrameMs,
+								avgFrameMs > 0.0 ? 1000.0 / avgFrameMs : 0.0,
+								avgFrameMs,
+								perfMaxFrameMs,
+								avgRenderMs,
+								avgUpdateMs,
+								avgGPUWaitMs,
+								avgGPUPreWaitMs,
+								avgGPUShadowWaitMs,
+								avgGPUMainWaitMs,
+								avgGPUComputeWaitMs,
+								avgGPUFinalWaitMs,
+								avgPresentMs,
+								avgCPURecordMs,
+								perfFrameCount);
+							OutputDebugStringA(perfDbg);
+							ResetPerfAccum();
+						}
 					}
 				}
 				
@@ -401,6 +455,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		}
 		case WM_KEYDOWN:
 			switch (wParam) {
+			case 'R':
+			{
+				if (!(lParam & (1 << 30))) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = InputID::KeyboardR;
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
+			case 'X':
+			{
+				if (!(lParam & (1 << 30))) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = InputID::KeyboardX;
+					header.isdown = true;
+					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
 			case 'W':
 			{
 				if ((game.pKeyBuffer['W'] & 0xF0) == false) {
@@ -460,6 +538,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 			break;
+			case 'F':
+			{
+				// [party/dungeon] join the party queue (server adds caller + broadcasts members' HP/job).
+				if ((game.pKeyBuffer['F'] & 0xF0) == false) {
+					CTS_DungeonStart_Header header;
+					header.size = sizeof(CTS_DungeonStart_Header);
+					header.st = CTS_Protocol::DungeonStart;
+					client.send((char*)&header, sizeof(CTS_DungeonStart_Header), 0);
+				}
+			}
+			break;
 			case VK_SPACE:
 			{
 				if ((game.pKeyBuffer[VK_SPACE] & 0xF0) == false) {
@@ -494,20 +583,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 			break;
-			case 'R':
-			{
-				// 퀘스트 
-				if ((game.pKeyBuffer['R'] & 0xF0) == false) {
-					CTS_KeyInput_Header header;
-					header.size = sizeof(CTS_KeyInput_Header);
-					header.st = CTS_Protocol::KeyInput;
-					header.Key = 'R';
-					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
-				}
-				//game.isInventoryOpen = !game.isInventoryOpen;
-			}
-			break;
 			case '1':
 			case '2':
 			case '3':
@@ -517,10 +592,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			case '7':
 			case '8':
 			case '9':
-			case '-':
 			{
 				if (!(lParam & (1 << 30))) {
-					int jobIndex = (int)(wParam - '3');
+					int jobIndex = (int)(wParam - '1');
 					if (jobIndex >= 0 && jobIndex < (int)PlayerJob::Max) {
 						CTS_ChangeJob_Header header;
 						header.size = sizeof(CTS_ChangeJob_Header);
@@ -528,29 +602,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 						header.job = (PlayerJob)jobIndex;
 						client.send((char*)&header, sizeof(CTS_ChangeJob_Header), 0);
 					}
-					if (game.player) {
-						switch (wParam) {
-						case '1': {
-							game.player->SelectedWeapon = 0;
-							game.player->m_currentWeaponType = (int)game.player->weapon[game.player->SelectedWeapon].m_info.type;
-							break;
-						}
-						case '2': {
-							game.player->SelectedWeapon = 1;
-							game.player->m_currentWeaponType = (int)game.player->weapon[game.player->SelectedWeapon].m_info.type;
-							break;
-						}
-						case '3': {
-							game.player->SelectedWeapon = 2;
-							game.player->m_currentWeaponType = (int)game.player->weapon[game.player->SelectedWeapon].m_info.type;
-							break;
-						}
-						}
-					}
 				}
 			}
-			break;
-			case VK_F9:
+			break;			case VK_F9:
 			{
 				BOOL bFullScreenState = FALSE;
 				gd.pSwapChain->GetFullscreenState(&bFullScreenState, NULL);
@@ -588,6 +642,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		case WM_KEYUP:
 			switch (wParam) {
+			case 'R':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = InputID::KeyboardR;
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
+			case 'X':
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = InputID::KeyboardX;
+				header.isdown = false;
+				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
 			case 'W':
 			{
 				CTS_KeyInput_Header header;
