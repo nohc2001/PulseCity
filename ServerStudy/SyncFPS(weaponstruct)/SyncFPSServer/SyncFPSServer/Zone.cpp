@@ -25,6 +25,12 @@ void Zone::Set_world_id_pos(World* w, int id, int _x, int _y)
         MinimumCenter + ZoneWidth * _y - ZoneHalfWidth,
         MinimumCenter + ZoneWidth * _x + ZoneHalfWidth,
         MinimumCenter + ZoneWidth * _y + ZoneHalfWidth);
+    // [dungeon] dungeon maps are authored at the world ORIGIN (only map object[0] gets moved to the zone
+    // center in LoadMap, the rest stay near origin). So place the dungeon zone at origin -> object[0],
+    // the room, and the player spawn all line up at (0,0).
+    if (id >= World::DungeonZoneId) {
+        BasicAABB_onlyXZ = vec4(-ZoneHalfWidth, -ZoneHalfWidth, ZoneHalfWidth, ZoneHalfWidth);
+    }
 }
 
 void Zone::Init() {
@@ -933,6 +939,23 @@ void Zone::FlushSendToClients() {
 
 void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects)
 {
+    // [fix] nearZones[0] is null and the loop below only covers NEIGHBOR zones, so THIS zone's own
+    // pre-existing dynamic objects (monsters / NPC) + items + portals were never sent to a new client.
+    // Send this zone's objects explicitly. (A duplicate player send is harmless: the client updates by netindex.)
+    if (includeDynamicObjects) {
+        for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+            if (Dynamic_gameObjects.isnull(i)) continue;
+            Sending_NewGameObject(sds, i, (GameObject*)Dynamic_gameObjects[i]);
+        }
+    }
+    for (int i = 0; i < DropedItems.size; ++i) {
+        if (DropedItems.isnull(i)) continue;
+        Sending_ItemDrop(sds, i, DropedItems[i]);
+    }
+    for (int i = 0; i < portals.size(); ++i) {
+        portals[i]->SendGameObject(i, sds);
+    }
+
     for (int zi = 0; zi < 9; ++zi) {
         /*if (gameworld.IsZoneOwned(zi) == false) continue;
         if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;*/
@@ -1060,6 +1083,26 @@ void Zone::SpawnObjects() {
             while (map.isStaticCollision(mon->GetOBB())) {
                 mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
             }
+        }
+    }
+
+    // [monsters] populate the player's spawn zone (73) with monsters at the ZONE CENTER (not origin),
+    // properly registered (NewObject + PushGameObject) so they sync to clients. Start here, expand later.
+    if (zoneId == 73) {
+        float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
+        float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
+        float py = map.AABB[1].y - 4.0f;   // drop from the ceiling like the player -> falls to the real walkable floor
+        cout << "[ZoneMonster] zone73 spawn center=(" << cx << "," << cz << ") py=" << py
+             << " AABB.min.y=" << map.AABB[0].y << " AABB.max.y=" << map.AABB[1].y << endl;
+        for (int i = 0; i < 10; ++i) {
+            Monster* mon = new Monster();
+            mon->zone = this;
+            mon->ApplyMonsterData(MonsterType::Walker);   // fixed type (Monster001) so shape is definitely present
+            float mx = cx + (float)(rand() % 20 - 10);
+            float mz = cz + (float)(rand() % 20 - 10);
+            mon->Init(XMMatrixTranslation(mx, py, mz));
+            NewObject(mon, GameObjectType::_Monster);
+            PushGameObject(mon);
         }
     }
 

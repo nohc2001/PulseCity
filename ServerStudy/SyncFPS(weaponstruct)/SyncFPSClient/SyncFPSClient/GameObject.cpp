@@ -997,7 +997,6 @@ void GameObject::SetShape(Shape _shape, int ZoneID)
 				RaytracingWorldMatInput_Model[i] = nullptr;
 				if (model->Nodes[i].numMesh > 0) {
 					BumpMesh* bmesh = (BumpMesh*)model->mMeshes[model->Nodes[i].Meshes[0]];
-					if (bmesh->rmesh.IBStartOffset == nullptr) continue;   // [dungeon] dungeon maps skip DXR -> no rmesh -> skip RT setup
 					int matindex = model->Nodes[i].materialIndex[0]; // game.GetRenderMaterialIndexFromGlobalMaterialIndex(model->Nodes[i].materialIndex[0]);
 					tempLRSSaver[0] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[0] / sizeof(unsigned int), matindex, ZoneID);
 
@@ -1020,7 +1019,7 @@ void GameObject::SetShape(Shape _shape, int ZoneID)
 			}
 		}
 
-		if (gd.isSupportRaytracing && ((BumpMesh*)mesh)->rmesh.IBStartOffset != nullptr) {   // [dungeon] dungeon maps skip DXR -> no rmesh -> skip RT setup
+		if (gd.isSupportRaytracing) {
 			BumpMesh* bmesh = (BumpMesh*)mesh;
 			/*for (int i = 0; i < bmesh->subMeshNum; ++i) {
 				tempLRSSaver[i] = LocalRootSigData(bmesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex), bmesh->rmesh.IBStartOffset[i] / sizeof(unsigned int));

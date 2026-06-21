@@ -4522,7 +4522,7 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 		SubMeshIndexStart = SubMeshIndexArr;
 	}
 
-	if (gd.isSupportRaytracing && ZoneID < 100) {   // [dungeon] skip DXR for dungeon zones (id>=100): map too big for RT pool
+	if (gd.isSupportRaytracing && include_DXR ) {   // DXR enabled when requested by mesh loader                              
 		rmesh.AllocateRaytracingMesh(vert, inds, SubMeshNum, SubMeshIndexStart, ZoneID);
 
 		VertexBufferView.BufferLocation = RayTracingMesh::vertexBuffer->GetGPUVirtualAddress() + rmesh.VBStartOffset;

@@ -97,10 +97,15 @@ struct Zone {
 		nearZones[0] = this;
 
 		BasicAABB_onlyXZ = vec4(
-			MinimumCenter + ZoneWidth * _x - ZoneHalfWidth, 
-			MinimumCenter + ZoneWidth * _y - ZoneHalfWidth, 
+			MinimumCenter + ZoneWidth * _x - ZoneHalfWidth,
+			MinimumCenter + ZoneWidth * _y - ZoneHalfWidth,
 			MinimumCenter + ZoneWidth * _x + ZoneHalfWidth,
 			MinimumCenter + ZoneWidth * _y + ZoneHalfWidth);
+		// [dungeon] dungeon maps are authored at the world ORIGIN -> place the dungeon zone at origin so the
+		// map (object[0] is moved to the zone center in LoadMap) and the player line up at (0,0).
+		if (zoneindex >= 100) {
+			BasicAABB_onlyXZ = vec4(-ZoneHalfWidth, -ZoneHalfWidth, ZoneHalfWidth, ZoneHalfWidth);
+		}
 	}
 
 	// �ֺ� �� ���� �����͸� ������.
