@@ -497,8 +497,30 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // AllocPlayerIndexes(dst 버킷)?� ?�덱??불일�?-> ??player ?�바?�딩 ?�패(조작/카메??멈춤).
     player->zoneId = this->zoneId;
 
+    // Do not stack multiple players at the exact same portal/spawn coordinate. Overlapping player
+    // OBBs make the two-player case jitter or launch one another before their first movement tick.
+    vec4 resolvedSpawn = spawnPos;
+    constexpr float PlayerSpawnSpacing = 1.75f;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        bool occupied = false;
+        for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+            if (Dynamic_gameObjects.isnull(i)) continue;
+            Player* existingPlayer = dynamic_cast<Player*>((GameObject*)Dynamic_gameObjects[i]);
+            if (existingPlayer == nullptr) continue;
+            const float dx = existingPlayer->worldMat.pos.x - resolvedSpawn.x;
+            const float dz = existingPlayer->worldMat.pos.z - resolvedSpawn.z;
+            if (dx * dx + dz * dz < PlayerSpawnSpacing * PlayerSpawnSpacing) {
+                occupied = true;
+                break;
+            }
+        }
+        if (!occupied) break;
+        resolvedSpawn.x += PlayerSpawnSpacing;
+    }
+
     // ��ġ ����
-    player->worldMat.pos = spawnPos;
+    player->worldMat.pos = resolvedSpawn;
+	player->RespawnPosition = resolvedSpawn;
     player->LVelocity = 0;
     player->tickLVelocity = 0;
     player->isGround = false;
@@ -518,8 +540,9 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
         << player->worldMat.pos.f3.z << ")" << endl;
 
 
-    // Notify other clients in this zone about the new player. (CommonSDS)
-    //player->SendGameObject(newIdx, CommonSDS);
+    // Existing clients must learn about every newly joined player. Monster/NPC snapshots may be
+    // omitted on transfers for performance, but player creation is required for multiplayer.
+    player->SendGameObject(newIdx, CommonSDS);
 
     // Send current zone data to the new client. (PersonalSDS)
     SendDataSaver& personalSDS = gameworld.clients[clientIndex].PersonalSDS;
@@ -549,7 +572,7 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // [PERF/FIX ?? ?�리???�동(fullWorldSnapshot=false)?�서???�적 객체(몬스????�??�전?�하지 ?�는??
     // ?�라???�접 �?객체�??��? 보유?�고 ?�고(지???�기??, 가?�성 기반 cleanup??그걸 ?��??��?�?
     // ?�전?��? 불필?�한 ?�킨메시 버스??=?��?)??뿐이?? ?�이???�탈?� 가벼워????�� ?�송?�다.
-    SendingAllObjectForNewClient(personalSDS, fullWorldSnapshot);
+    SendingAllObjectForNewClient(personalSDS, fullWorldSnapshot, newIdx);
 
     // Send player inventory data.
     // Load player data from database here when needed.
@@ -872,53 +895,57 @@ void Zone::CheckBoundaryCrossing(Player* p, float deltaTime)
 }
 
 void Zone::FlushSendToClients() {
-    bool keepCommonSDS = false;
     for (int i = 0; i < gameworld.clients.size; ++i) {
         if (gameworld.clients.isnull(i)) continue;
-        if (gameworld.clients[i].isServerPeer) continue;   // [4단계-STEP1] peer 링크엔 게임 데이터 안 보냄
-        bool isOwnerZoneFlush = (gameworld.clients[i].zoneId == this->zoneId);
-        if (gameworld.IsAdjacentZone(gameworld.clients[i].zoneId, this->zoneId) == false) continue;
-        bool isTransferring = (gameworld.clients[i].pObjData == nullptr);
-        if ((isOwnerZoneFlush == false || gameworld.clients[i].PersonalSDS.size <= 0) && (CommonSDS.size <= 0 || isTransferring)) continue;
+        ClientData& client = gameworld.clients[i];
+        if (client.isServerPeer) continue;   // peer links do not receive gameplay packets
+        const bool isOwnerZoneFlush = (client.zoneId == this->zoneId);
+        const bool isAdjacent = gameworld.IsAdjacentZone(client.zoneId, this->zoneId);
+        const bool isTransferring = (client.pObjData == nullptr);
+        const bool hasPersonal = isOwnerZoneFlush && client.PersonalSDS.size > 0;
+        const bool hasCommon = isAdjacent && !isTransferring && CommonSDS.size > 0;
 
-        //dbgbreak(gameworld.clients[i].zoneId == 74);
-
-        WSABUF sendbuf[2];
-        DWORD sendbufCount = 0;
-        if (isOwnerZoneFlush && gameworld.clients[i].PersonalSDS.size > 0) {
-            sendbuf[sendbufCount].buf = gameworld.clients[i].PersonalSDS.buffer;
-            sendbuf[sendbufCount].len = gameworld.clients[i].PersonalSDS.size;
-            sendbufCount += 1;
-        }
-        if (CommonSDS.size > 0 && isTransferring == false) {
-            sendbuf[sendbufCount].buf = CommonSDS.buffer;
-            sendbuf[sendbufCount].len = CommonSDS.size;
-            sendbufCount += 1;
-        }
-
-        if (sendbufCount != 0) {
-            DWORD retval = 0;
-            int err = WSASend(gameworld.clients[i].socket, sendbuf, sendbufCount, &retval, 0, NULL, NULL);
-            if (err == SOCKET_ERROR) {
-                int wsaErr = WSAGetLastError();
-                if (wsaErr == WSAEWOULDBLOCK) {
-                    keepCommonSDS = true;
-                    continue;
-                }
-                ClientData::DisconnectToServer(i);
-
-                continue;
+        // Compact the unsent tail before appending this tick's packets.
+        if ((hasPersonal || hasCommon) && client.pendingSendOffset > 0) {
+            const int remaining = client.PendingSDS.size - client.pendingSendOffset;
+            if (remaining > 0) {
+                memmove(client.PendingSDS.buffer,
+                    client.PendingSDS.buffer + client.pendingSendOffset, remaining);
             }
+            client.PendingSDS.size = max(remaining, 0);
+            client.pendingSendOffset = 0;
         }
-        
-        if (isOwnerZoneFlush) {
-            gameworld.clients[i].PersonalSDS.Clear();
+        if (hasPersonal) {
+            client.PendingSDS.push_senddata(client.PersonalSDS.buffer, client.PersonalSDS.size);
+            client.PersonalSDS.Clear();
+        }
+        if (hasCommon) {
+            client.PendingSDS.push_senddata(CommonSDS.buffer, CommonSDS.size);
+        }
+
+        // The owner-zone flush is responsible for retrying an older partial send even when no
+        // new packets were produced this tick.
+        if (!isOwnerZoneFlush || client.PendingSDS.size <= client.pendingSendOffset) continue;
+
+        WSABUF sendbuf = {};
+        sendbuf.buf = client.PendingSDS.buffer + client.pendingSendOffset;
+        sendbuf.len = client.PendingSDS.size - client.pendingSendOffset;
+        DWORD sent = 0;
+        const int err = WSASend(client.socket, &sendbuf, 1, &sent, 0, NULL, NULL);
+        if (err == SOCKET_ERROR) {
+            if (WSAGetLastError() == WSAEWOULDBLOCK) continue;
+            ClientData::DisconnectToServer(i);
+            continue;
+        }
+        client.pendingSendOffset += (int)sent;
+        if (client.pendingSendOffset >= client.PendingSDS.size) {
+            client.PendingSDS.Clear();
+            client.pendingSendOffset = 0;
         }
     }
 
-    if (keepCommonSDS == false) {
-        CommonSDS.Clear();
-    }
+    // Every eligible client now owns a copy in PendingSDS, so the shared buffer can always reset.
+    CommonSDS.Clear();
 }
 
 //void Zone::SendZoneDataToClient(SendDataSaver& sds) {
@@ -946,16 +973,18 @@ void Zone::FlushSendToClients() {
 
 //Sending 
 
-void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects)
+void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects, int excludeDynamicIndex)
 {
     // [fix] nearZones[0] is null and the loop below only covers NEIGHBOR zones, so THIS zone's own
     // pre-existing dynamic objects (monsters / NPC) + items + portals were never sent to a new client.
     // Send this zone's objects explicitly. (A duplicate player send is harmless: the client updates by netindex.)
-    if (includeDynamicObjects) {
-        for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-            if (Dynamic_gameObjects.isnull(i)) continue;
-            Sending_NewGameObject(sds, i, (GameObject*)Dynamic_gameObjects[i]);
-        }
+    for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+        if (i == excludeDynamicIndex || Dynamic_gameObjects.isnull(i)) continue;
+        GameObject* object = (GameObject*)Dynamic_gameObjects[i];
+        // Even on the lightweight transfer snapshot, existing players must be sent so the
+        // newcomer can bind party members, animation, damage and job updates to real objects.
+        if (!includeDynamicObjects && dynamic_cast<Player*>(object) == nullptr) continue;
+        Sending_NewGameObject(sds, i, object);
     }
     for (int i = 0; i < DropedItems.size; ++i) {
         if (DropedItems.isnull(i)) continue;
@@ -977,11 +1006,11 @@ void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicO
         if (syncZone == this) continue;
 
         // [PERF/FIX ?? ?�리???�동?�서???�적 객체(?�킨메시) ?�전?�을 ?�략 -> ?�환 ?��? ?�거.
-        if (includeDynamicObjects) {
-            for (int i = 0; i < syncZone->Dynamic_gameObjects.size; ++i) {
-                if (syncZone->Dynamic_gameObjects.isnull(i)) continue;
-                syncZone->Sending_NewGameObject(sds, i, (GameObject*)syncZone->Dynamic_gameObjects[i]);
-            }
+        for (int i = 0; i < syncZone->Dynamic_gameObjects.size; ++i) {
+            if (syncZone->Dynamic_gameObjects.isnull(i)) continue;
+            GameObject* object = (GameObject*)syncZone->Dynamic_gameObjects[i];
+            if (!includeDynamicObjects && dynamic_cast<Player*>(object) == nullptr) continue;
+            syncZone->Sending_NewGameObject(sds, i, object);
         }
 
         for (int i = 0; i < syncZone->DropedItems.size; ++i) {

@@ -986,6 +986,8 @@ struct Player : public SkinMeshGameObject {
 
 	//STC �÷��̾��� �� �� �̵� ��ٿ�
 	STCDef(float, ZoneMoveCooldown);
+	// Server-authoritative respawn point for the zone the player most recently entered.
+	vec4 RespawnPosition = vec4(0, 0, 0, 1);
 	bool m_frostPassiveUsed = false;
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
@@ -1359,7 +1361,10 @@ struct Monster : public SkinMeshGameObject {
 	// 여러 개의 OBB를 소유하고 있다.
 	int targetSeekIndex = 0;
 	// OBB.Center
-	Player** Target = nullptr;
+	// Keep the player object itself, never the address of a vecset slot. The slot array can
+	// reallocate when another client joins and would leave a Player** dangling.
+	Player* Target = nullptr;
+	int TargetClientIndex = -1;
 	Player* CurrentTarget = nullptr;
 	// OBB.Center
 	bool m_isMove = false;
@@ -1594,6 +1599,10 @@ struct ClientData {
 
 	// OBB.Center
 	SendDataSaver PersonalSDS;
+	// Per-client output queue. CommonSDS/PersonalSDS are copied here before non-blocking send,
+	// so a partial WSASend cannot truncate the packet stream for only one client.
+	SendDataSaver PendingSDS;
+	int pendingSendOffset = 0;
 
 	__forceinline int recv(char* data, int len, DWORD flag) {
 		WSABUF buf;
@@ -2048,7 +2057,7 @@ struct Zone {
 	*/
 	// includeDynamicObjects: false면 동적 객체(몬스터/플레이어 등) 재전송을 생략한다.
 	// (심리스 이동 시 클라가 이미 보유 → 끊김 유발하는 스킨메시 버스트를 막음. 아이템/포탈은 가벼우니 항상 전송)
-	void SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects = true);
+	void SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicObjects = true, int excludeDynamicIndex = -1);
 
 	// OBB.Center
 

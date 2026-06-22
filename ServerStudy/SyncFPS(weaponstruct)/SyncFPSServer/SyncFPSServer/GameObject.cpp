@@ -545,6 +545,7 @@ void DynamicGameObject::SetWorld(matrix local)
 			gc->Dynamic_gameobjects[allocN] = this;
 			this->chunkAllocIndexs[ci.extra] = allocN;
 		}
+		IncludeChunks = chunkIds;
 	}
 }
 
@@ -1209,6 +1210,7 @@ void SkinMeshGameObject::SetWorld(matrix local) {
 			gc->SkinMesh_gameobjects[allocN] = this;
 			this->chunkAllocIndexs[ci.extra] = allocN;
 		}
+		IncludeChunks = chunkIds;
 	}
 }
 
@@ -4095,6 +4097,10 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 
 void Player::Respawn() {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (zones == nullptr || clientIndex < 0 || clientIndex >= gameworld.clients.size ||
+		gameworld.clients.isnull(clientIndex)) {
+		return;
+	}
 	//MaxHP -= m_tempMaxHpBonus;
 	//if (MaxHP <= 0.0f) MaxHP = 100.0f;
 	//m_tempMaxHpBonus = 0.0f;
@@ -4119,8 +4125,22 @@ void Player::Respawn() {
 	////player position send
 	//bool isExist = true;
 	//zones->Sending_ChangeGameObjectMember<Tag>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &tag);
+	matrix respawnWorld = worldMat;
+	respawnWorld.pos = RespawnPosition;
+	respawnWorld.pos.w = 1.0f;
+	SetWorld(respawnWorld);
+
+	LVelocity = 0;
+	tickLVelocity = 0;
+	isGround = false;
+	collideCount = 0;
+	tag[GameObjectTag::Tag_Enable] = true;
 	HP = MaxHP;
-	zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
+
+	const int objindex = gameworld.clients[clientIndex].objindex;
+	zones->Sending_ChangeGameObjectMember<Tag>(zones->CommonSDS, objindex, this, GameObjectType::_Player, &tag);
+	zones->Sending_ChangeGameObjectMember<matrix>(zones->CommonSDS, objindex, this, GameObjectType::_Player, &worldMat);
+	zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS, objindex, this, GameObjectType::_Player, &HP);
 }
 
 Monster::Monster() {
@@ -4152,6 +4172,7 @@ Monster::Monster() {
 	collideCount = 0;
 	targetSeekIndex = 0;
 	Target = nullptr;
+	TargetClientIndex = -1;
 	m_isMove = false;
 	isGround = false;
 	respawntimer = 0;
@@ -4318,10 +4339,20 @@ void Monster::Update(float deltaTime)
 		//Astar Move
 		if(!MoveByTail)
 		{
-			if (Target == nullptr || (Target != nullptr && *Target == nullptr)) {
+			// Resolve ownership every tick without dereferencing a player that may have disconnected.
+			if (TargetClientIndex >= 0) {
+				if (TargetClientIndex >= gameworld.clients.size || gameworld.clients.isnull(TargetClientIndex) ||
+					gameworld.clients[TargetClientIndex].pObjData != Target ||
+					!gameworld.IsAdjacentZone(zoneId, gameworld.clients[TargetClientIndex].zoneId)) {
+					Target = nullptr;
+					TargetClientIndex = -1;
+				}
+			}
+			if (Target == nullptr) {
 				int limitseek = 4;
 				if (gameworld.clients.size == 0) {
 					Target = nullptr;
+					TargetClientIndex = -1;
 					TryChaseGhost(deltaTime, monsterPos);
 					return;
 				}
@@ -4342,16 +4373,17 @@ void Monster::Update(float deltaTime)
 					if (gameworld.clients[i].objindex < 0) continue;
 					if (gameworld.clients[i].objindex >= targetZone->Dynamic_gameObjects.size) continue;
 					if (targetZone->Dynamic_gameObjects.isnull(gameworld.clients[i].objindex)) continue;
-					Target = (Player**)&targetZone->Dynamic_gameObjects[gameworld.clients[i].objindex];
+					Target = gameworld.clients[i].pObjData;
+					TargetClientIndex = i;
 					break;
 				}
-				if (limitseek != 0 && (Target == nullptr || *Target == nullptr)) {
+				if (limitseek != 0 && Target == nullptr) {
 					targetSeekIndex = 0;
 					goto SEEK_TARGET_LOOP;
 				}
 			}
 
-			vec4 playerPos = (*Target)->worldMat.pos;
+			vec4 playerPos = Target->worldMat.pos;
 			playerPos.w = 0;
 
 			vec4 toPlayer = playerPos - monsterPos;
@@ -4768,7 +4800,8 @@ void Monster::ApplyStatusEffect(GameObject* source, StatusEffectType type, float
 				Zone* targetZone = gameworld.GetZone(targetZoneId);
 				int objIndex = gameworld.clients[clientIndex].objindex;
 				if (targetZone != nullptr && gameworld.IsAdjacentZone(zoneId, targetZoneId) && objIndex >= 0 && objIndex < targetZone->Dynamic_gameObjects.size && targetZone->Dynamic_gameObjects.isnull(objIndex) == false) {
-					Target = (Player**)&targetZone->Dynamic_gameObjects[objIndex];
+					Target = player;
+					TargetClientIndex = clientIndex;
 					m_fireTimer = m_fireDelay;
 					path.clear();
 					currentPathIndex = 0;
@@ -6539,6 +6572,8 @@ void ClientData::DisconnectToServer(int index) {
 	client.rbufoffset = 0;
 	memset(client.rbuf, 0, sizeof(client.rbuf));
 	client.PersonalSDS.Clear();
+	client.PendingSDS.Clear();
+	client.pendingSendOffset = 0;
 	gameworld.clients.Free(index);
 
 	cout << "client " << index << " Left the Game. \n";

@@ -79,6 +79,8 @@ int main() {
 		gameworld.singleProcessAllZones = false;
 	}
 
+	// Listen on every local interface. The advertised peer address is configured separately by
+	// GetZoneIP(); binding the listener to that remote/deployment address breaks on another host.
 	server.Init("127.0.0.1", listenPort);
 
 	cout << "Server Start"
@@ -172,6 +174,8 @@ int main() {
 						auto a = gameworld.clients[newindex].addr.ToString();
 						gameworld.clients[newindex].SetNonBlocking();
 						gameworld.clients[newindex].PersonalSDS.Init(4096);
+						gameworld.clients[newindex].PendingSDS.Init(4096);
+						gameworld.clients[newindex].pendingSendOffset = 0;
 						gameworld.clients[newindex].pObjData = nullptr;
 						gameworld.clients[newindex].objindex = -1;
 						gameworld.clients[newindex].zoneId = gameworld.ownedZoneId;

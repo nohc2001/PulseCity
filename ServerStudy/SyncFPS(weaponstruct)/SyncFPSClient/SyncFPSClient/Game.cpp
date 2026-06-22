@@ -7640,7 +7640,8 @@ READ_START:
 			}
 			// [seamless] Skip push for objects we just deferred (Enable turned off); rendering a
 			// skinmesh without bone buffers crashes. ProcessPendingSkinBoneInit pushes them once built.
-			if (renderZone && DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable]) {
+			if (renderZone && DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable] &&
+				DynmaicGameObjects[netObjIndex]->chunkAllocIndexs == nullptr) {
 				renderZone->PushGameObject(DynmaicGameObjects[netObjIndex]);
 			}
 			{
