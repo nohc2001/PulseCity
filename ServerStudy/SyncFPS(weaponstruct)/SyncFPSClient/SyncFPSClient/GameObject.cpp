@@ -1794,6 +1794,12 @@ void DynamicGameObject::Update(float delatTime)
 
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
+	if (this->chunkAllocIndexs == nullptr) {
+		Zone* zone = game.ZoneTable[zoneid];
+		zone->PushGameObject(this);
+		return;
+	}
+
 	if (deltaTime < 0.1f) {
 		GameObjectIncludeChunks goic_before = this->IncludeChunks;
 		float pow = deltaTime * 10;
@@ -3956,6 +3962,12 @@ void Player::PlayerWeaponObjectInit()
 	LeftHand = new GameObject();
 	LeftHand->worldMat = 0;
 	LeftHand->SetShape(game.DualRevolverModel);
+
+	for (int i = 0; i < 2; ++i) {
+		DronObj[i] = new GameObject();
+		DronObj[i]->worldMat = 0;
+		DronObj[i]->SetShape(game.SupportDroneModel);
+	}
 }
 
 static bool TryFindHumanoidNodeIndex(Model* model, HumanoidAnimation::HumanBodyBones bone, int& outNodeIndex);

@@ -1337,6 +1337,7 @@ public:
 	static constexpr int MaxWeapon = (int)WeaponType::Max;
 	GameObject* PlayerWeaponObj[MaxWeapon] = {};
 	GameObject* LeftHand = {};
+	GameObject* DronObj[2] = {};
 	void PlayerWeaponObjectInit();
 
 #pragma pack(push, 1)

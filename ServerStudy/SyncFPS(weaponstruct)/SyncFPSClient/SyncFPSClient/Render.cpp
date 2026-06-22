@@ -5466,7 +5466,7 @@ void ModelNode::Release() {
 	}
 }
 
-void Model::LoadModelFile2(string filename, int ZoneId)
+void Model::LoadModelFile2(string filename, int ZoneId, bool NoBone)
 {
 	Zone* zone = nullptr;
 	if (ZoneId >= 0) {
@@ -5524,88 +5524,171 @@ void Model::LoadModelFile2(string filename, int ZoneId)
 		if (hasBone) {
 			skinboneWeights_Arr.push_back(vector<BumpSkinMesh::BoneData>());
 			vector<BumpSkinMesh::BoneData>& skinboneWeights = skinboneWeights_Arr[skinboneWeights_Arr.size() - 1];
-			BSMCount += 1;
-			BumpSkinMesh* mesh = new BumpSkinMesh();
-			mesh->type = Mesh::MeshType::_SkinedBumpMesh;
-			mesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
+			
+			if (NoBone) {
+				BumpMesh* mesh = new BumpMesh();
+				mesh->type = Mesh::MeshType::_SkinedBumpMesh;
+				mesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
 
-			skinvertices.reserve(vertSiz); skinvertices.resize(vertSiz);
-			skinboneWeights.reserve(vertSiz); skinboneWeights.resize(vertSiz);
-			for (int k = 0; k < vertSiz; ++k) {
-				ifs.read((char*)&skinvertices[k].position, sizeof(XMFLOAT3));
-				if (k == 0) {
-					MAABB[0] = skinvertices[k].position;
-					MAABB[1] = skinvertices[k].position;
+				vertices.reserve(vertSiz); vertices.resize(vertSiz);
+				skinboneWeights.reserve(vertSiz); skinboneWeights.resize(vertSiz);
+				for (int k = 0; k < vertSiz; ++k) {
+					ifs.read((char*)&vertices[k].position, sizeof(XMFLOAT3));
+					if (k == 0) {
+						MAABB[0] = vertices[k].position;
+						MAABB[1] = vertices[k].position;
+					}
+
+					if (MAABB[0].x > vertices[k].position.x) MAABB[0].x = vertices[k].position.x;
+					if (MAABB[0].y > vertices[k].position.y) MAABB[0].y = vertices[k].position.y;
+					if (MAABB[0].z > vertices[k].position.z) MAABB[0].z = vertices[k].position.z;
+
+					if (MAABB[1].x < vertices[k].position.x) MAABB[1].x = vertices[k].position.x;
+					if (MAABB[1].y < vertices[k].position.y) MAABB[1].y = vertices[k].position.y;
+					if (MAABB[1].z < vertices[k].position.z) MAABB[1].z = vertices[k].position.z;
+
+					ifs.read((char*)&vertices[k].u, sizeof(float));
+					ifs.read((char*)&vertices[k].v, sizeof(float));
+					ifs.read((char*)&vertices[k].normal, sizeof(XMFLOAT3));
+					ifs.read((char*)&vertices[k].tangent, sizeof(XMFLOAT3));
+
+					// non use
+					XMFLOAT3 bitangent;
+					ifs.read((char*)&bitangent, sizeof(XMFLOAT3));
+
+					//bonedata
+					int boneindex = 0;
+					float boneweight = 0;
+					for (int u = 0; u < 4; ++u) {
+						ifs.read((char*)&skinboneWeights[k].boneWeight[u].boneID, sizeof(int));
+						ifs.read((char*)&skinboneWeights[k].boneWeight[u].weight, sizeof(float));
+					}
 				}
 
-				if (MAABB[0].x > skinvertices[k].position.x) MAABB[0].x = skinvertices[k].position.x;
-				if (MAABB[0].y > skinvertices[k].position.y) MAABB[0].y = skinvertices[k].position.y;
-				if (MAABB[0].z > skinvertices[k].position.z) MAABB[0].z = skinvertices[k].position.z;
-
-				if (MAABB[1].x < skinvertices[k].position.x) MAABB[1].x = skinvertices[k].position.x;
-				if (MAABB[1].y < skinvertices[k].position.y) MAABB[1].y = skinvertices[k].position.y;
-				if (MAABB[1].z < skinvertices[k].position.z) MAABB[1].z = skinvertices[k].position.z;
-
-				ifs.read((char*)&skinvertices[k].u, sizeof(float));
-				ifs.read((char*)&skinvertices[k].v, sizeof(float));
-				ifs.read((char*)&skinvertices[k].normal, sizeof(XMFLOAT3));
-				ifs.read((char*)&skinvertices[k].tangent, sizeof(XMFLOAT3));
-
-				// non use
-				XMFLOAT3 bitangent;
-				ifs.read((char*)&bitangent, sizeof(XMFLOAT3));
-
-				//bonedata
-				int boneindex = 0;
-				float boneweight = 0;
-				for (int u = 0; u < 4; ++u) {
-					ifs.read((char*)&skinboneWeights[k].boneWeight[u].boneID, sizeof(int));
-					ifs.read((char*)&skinboneWeights[k].boneWeight[u].weight, sizeof(float));
+				for (int k = 0; k < subMeshCount; ++k) {
+					int indCnt = 0;
+					ifs.read((char*)&indCnt, sizeof(int));
+					int tricnt = (indCnt / 3);
+					stackSiz += tricnt;
+					indexs.reserve(stackSiz);
+					indexs.resize(stackSiz);
+					for (int u = 0; u < tricnt; ++u) {
+						ifs.read((char*)&indexs[prevSiz + u].v[0], sizeof(UINT));
+						ifs.read((char*)&indexs[prevSiz + u].v[1], sizeof(UINT));
+						ifs.read((char*)&indexs[prevSiz + u].v[2], sizeof(UINT));
+						vertices[indexs[prevSiz + u].v[0]].materialIndex = k;
+						vertices[indexs[prevSiz + u].v[1]].materialIndex = k;
+						vertices[indexs[prevSiz + u].v[2]].materialIndex = k;
+					}
+					prevSiz = stackSiz;
+					SubMeshSlots[k + 1] = 3 * prevSiz;
 				}
-			}
 
-			for (int k = 0; k < subMeshCount; ++k) {
-				int indCnt = 0;
-				ifs.read((char*)&indCnt, sizeof(int));
-				int tricnt = (indCnt / 3);
-				stackSiz += tricnt;
-				indexs.reserve(stackSiz);
-				indexs.resize(stackSiz);
-				for (int u = 0; u < tricnt; ++u) {
-					ifs.read((char*)&indexs[prevSiz + u].v[0], sizeof(UINT));
-					ifs.read((char*)&indexs[prevSiz + u].v[1], sizeof(UINT));
-					ifs.read((char*)&indexs[prevSiz + u].v[2], sizeof(UINT));
-					skinvertices[indexs[prevSiz + u].v[0]].materialIndex = k;
-					skinvertices[indexs[prevSiz + u].v[1]].materialIndex = k;
-					skinvertices[indexs[prevSiz + u].v[2]].materialIndex = k;
+				int MatrixCount = 0;
+				ifs.read((char*)&MatrixCount, sizeof(int));
+				for (int k = 0; k < MatrixCount; ++k) {
+					matrix offset;
+					ifs.read((char*)&offset, sizeof(matrix));
 				}
-				prevSiz = stackSiz;
-				SubMeshSlots[k + 1] = 3 * prevSiz;
-			}
+				for (int k = 0; k < MatrixCount; ++k) {
+					int n;
+					ifs.read((char*)&n, sizeof(int));
+				}
 
-			ifs.read((char*)&mesh->MatrixCount, sizeof(int));
-			mesh->OffsetMatrixs = new matrix[mesh->MatrixCount];
-			mesh->toNodeIndex = new int[mesh->MatrixCount];
-			for (int k = 0; k < mesh->MatrixCount; ++k) {
-				matrix offset;
-				ifs.read((char*)&mesh->OffsetMatrixs[k], sizeof(matrix));
-				//OffsetMatrixs[k].pos /= 100;
-				//OffsetMatrixs[k].pos.w = 1;
-				mesh->OffsetMatrixs[k].transpose();
-			}
-			for (int k = 0; k < mesh->MatrixCount; ++k) {
-				ifs.read((char*)&mesh->toNodeIndex[k], sizeof(int));
-			}
+				float unitMulRate = 1 * AABB[0].x / MAABB[0].x;
+				for (int k = 0; k < vertSiz; ++k) {
+					vertices[k].position.x *= unitMulRate;
+					vertices[k].position.y *= unitMulRate;
+					vertices[k].position.z *= unitMulRate;
+				}
 
-			float unitMulRate = 1 * AABB[0].x / MAABB[0].x;
-			for (int k = 0; k < vertSiz; ++k) {
-				skinvertices[k].position.x *= unitMulRate;
-				skinvertices[k].position.y *= unitMulRate;
-				skinvertices[k].position.z *= unitMulRate;
+				mesh->CreateMesh_FromVertexAndIndexData(vertices, indexs, subMeshCount, SubMeshSlots, gd.isSupportRaytracing, ZoneId);
+				mMeshes[i] = mesh;
 			}
+			else {
+				BSMCount += 1;
+				BumpSkinMesh* mesh = new BumpSkinMesh();
+				mesh->type = Mesh::MeshType::_SkinedBumpMesh;
+				mesh->SetOBBDataWithAABB(AABB[0], AABB[1]);
 
-			mesh->CreateMesh_FromVertexAndIndexData(skinvertices, skinboneWeights, indexs, subMeshCount, SubMeshSlots, mesh->OffsetMatrixs, mesh->MatrixCount);
-			mMeshes[i] = mesh;
+				skinvertices.reserve(vertSiz); skinvertices.resize(vertSiz);
+				skinboneWeights.reserve(vertSiz); skinboneWeights.resize(vertSiz);
+				for (int k = 0; k < vertSiz; ++k) {
+					ifs.read((char*)&skinvertices[k].position, sizeof(XMFLOAT3));
+					if (k == 0) {
+						MAABB[0] = skinvertices[k].position;
+						MAABB[1] = skinvertices[k].position;
+					}
+
+					if (MAABB[0].x > skinvertices[k].position.x) MAABB[0].x = skinvertices[k].position.x;
+					if (MAABB[0].y > skinvertices[k].position.y) MAABB[0].y = skinvertices[k].position.y;
+					if (MAABB[0].z > skinvertices[k].position.z) MAABB[0].z = skinvertices[k].position.z;
+
+					if (MAABB[1].x < skinvertices[k].position.x) MAABB[1].x = skinvertices[k].position.x;
+					if (MAABB[1].y < skinvertices[k].position.y) MAABB[1].y = skinvertices[k].position.y;
+					if (MAABB[1].z < skinvertices[k].position.z) MAABB[1].z = skinvertices[k].position.z;
+
+					ifs.read((char*)&skinvertices[k].u, sizeof(float));
+					ifs.read((char*)&skinvertices[k].v, sizeof(float));
+					ifs.read((char*)&skinvertices[k].normal, sizeof(XMFLOAT3));
+					ifs.read((char*)&skinvertices[k].tangent, sizeof(XMFLOAT3));
+
+					// non use
+					XMFLOAT3 bitangent;
+					ifs.read((char*)&bitangent, sizeof(XMFLOAT3));
+
+					//bonedata
+					int boneindex = 0;
+					float boneweight = 0;
+					for (int u = 0; u < 4; ++u) {
+						ifs.read((char*)&skinboneWeights[k].boneWeight[u].boneID, sizeof(int));
+						ifs.read((char*)&skinboneWeights[k].boneWeight[u].weight, sizeof(float));
+					}
+				}
+
+				for (int k = 0; k < subMeshCount; ++k) {
+					int indCnt = 0;
+					ifs.read((char*)&indCnt, sizeof(int));
+					int tricnt = (indCnt / 3);
+					stackSiz += tricnt;
+					indexs.reserve(stackSiz);
+					indexs.resize(stackSiz);
+					for (int u = 0; u < tricnt; ++u) {
+						ifs.read((char*)&indexs[prevSiz + u].v[0], sizeof(UINT));
+						ifs.read((char*)&indexs[prevSiz + u].v[1], sizeof(UINT));
+						ifs.read((char*)&indexs[prevSiz + u].v[2], sizeof(UINT));
+						skinvertices[indexs[prevSiz + u].v[0]].materialIndex = k;
+						skinvertices[indexs[prevSiz + u].v[1]].materialIndex = k;
+						skinvertices[indexs[prevSiz + u].v[2]].materialIndex = k;
+					}
+					prevSiz = stackSiz;
+					SubMeshSlots[k + 1] = 3 * prevSiz;
+				}
+
+				ifs.read((char*)&mesh->MatrixCount, sizeof(int));
+				mesh->OffsetMatrixs = new matrix[mesh->MatrixCount];
+				mesh->toNodeIndex = new int[mesh->MatrixCount];
+				for (int k = 0; k < mesh->MatrixCount; ++k) {
+					matrix offset;
+					ifs.read((char*)&mesh->OffsetMatrixs[k], sizeof(matrix));
+					//OffsetMatrixs[k].pos /= 100;
+					//OffsetMatrixs[k].pos.w = 1;
+					mesh->OffsetMatrixs[k].transpose();
+				}
+				for (int k = 0; k < mesh->MatrixCount; ++k) {
+					ifs.read((char*)&mesh->toNodeIndex[k], sizeof(int));
+				}
+
+				float unitMulRate = 1 * AABB[0].x / MAABB[0].x;
+				for (int k = 0; k < vertSiz; ++k) {
+					skinvertices[k].position.x *= unitMulRate;
+					skinvertices[k].position.y *= unitMulRate;
+					skinvertices[k].position.z *= unitMulRate;
+				}
+
+				mesh->CreateMesh_FromVertexAndIndexData(skinvertices, skinboneWeights, indexs, subMeshCount, SubMeshSlots, mesh->OffsetMatrixs, mesh->MatrixCount);
+				mMeshes[i] = mesh;
+			}
 		}
 		else {
 			BumpMesh* mesh = new BumpMesh();

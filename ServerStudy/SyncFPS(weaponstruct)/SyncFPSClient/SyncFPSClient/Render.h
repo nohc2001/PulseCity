@@ -3230,7 +3230,7 @@ struct Model {
 	* ï¿½Å°ï¿½ï¿½ï¿½ï¿½ï¿½:
 	* string filename : ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿?
 	*/
-	void LoadModelFile2(string filename, int ZoneId = -1);
+	void LoadModelFile2(string filename, int ZoneId = -1, bool NoBone = false);
 
 	/*
 	* ï¿½ï¿½ï¿½ï¿½ : ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ñ´ï¿?

@@ -5538,6 +5538,11 @@ void World::Init() {
 		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
 		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
 
+		Model* SupportDroneModel = new Model();
+		SupportDroneModel->LoadModelFile2("Resources/Model/Drone.model");
+		int sdroneMesh_index = Shape::AddModel("SupportDrone", SupportDroneModel);
+		//game.SupportDroneModel = SupportDroneModel;
+
 		Model* TurretModel = new Model();
 		TurretModel->LoadModelFile2("Resources/Model/Exo.model");
 		int turretMesh_index = Shape::AddModel("MonsterTurret", TurretModel);
