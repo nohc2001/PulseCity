@@ -3048,6 +3048,8 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 	std::vector<BossPrototypeCore> previousCores = BossPrototypeCores;
 
 	BossPrototypeIndex = GetDynamicObjectNetIndex(header.zoneId, header.bossObjIndex);
+	BossPrototypeHP = header.bossHP;
+	BossPrototypeMaxHP = max(header.bossMaxHP, 1.0f);
 	BossPrototypeCenter = header.center;
 	BossPrototypeAimDirection = header.aimDirection;
 	BossPrototypeRailgunDirection = header.railgunDirection;
@@ -8892,16 +8894,24 @@ void Game::RenderDamageFeedbackHUD()
 void Game::RenderBossPrototypeHUD()
 {
 	if (!BossPrototypeEnabled || player == nullptr || UITextureTable.empty()) return;
-	if (BossPrototypeIndex < 0 || BossPrototypeIndex >= (int)DynmaicGameObjects.size()) return;
 
-	Monster* boss = dynamic_cast<Monster*>(DynmaicGameObjects[BossPrototypeIndex]);
-	if (boss == nullptr || boss->isDead || boss->tag[GameObjectTag::Tag_Enable] == false) return;
-	if (boss->MaxHP <= 0.0f || boss->HP <= 0.0f) return;
+	float bossHP = BossPrototypeHP;
+	float bossMaxHP = BossPrototypeMaxHP;
+	vec4 bossPosition = BossPrototypeCenter;
+	if (BossPrototypeIndex >= 0 && BossPrototypeIndex < (int)DynmaicGameObjects.size()) {
+		Monster* boss = dynamic_cast<Monster*>(DynmaicGameObjects[BossPrototypeIndex]);
+		if (boss != nullptr) {
+			bossHP = boss->HP;
+			bossMaxHP = boss->MaxHP;
+			bossPosition = boss->worldMat.pos;
+		}
+	}
+	if (bossMaxHP <= 0.0f || bossHP <= 0.0f) return;
 
 	constexpr int FillTexture = 0; // temp: DefaultTex
 	constexpr float VisibleDistance = 72.0f;
 
-	vec4 delta = player->worldMat.pos - boss->worldMat.pos;
+	vec4 delta = player->worldMat.pos - bossPosition;
 	float distanceSq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
 	if (distanceSq > VisibleDistance * VisibleDistance) return;
 
@@ -8916,7 +8926,7 @@ void Game::RenderBossPrototypeHUD()
 	const float right = barWidth * 0.5f;
 	const float bottom = top - barHeight;
 
-	float hpRate = min(1.0f, max(0.0f, boss->HP / max(1.0f, boss->MaxHP)));
+	float hpRate = min(1.0f, max(0.0f, bossHP / max(1.0f, bossMaxHP)));
 	vec4 barBack = vec4(left, bottom, right, top);
 	vec4 barFill = barBack;
 	barFill.z = barFill.x + (barBack.z - barBack.x) * hpRate;

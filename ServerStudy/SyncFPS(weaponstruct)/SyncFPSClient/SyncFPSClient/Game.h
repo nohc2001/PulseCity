@@ -476,6 +476,8 @@ public:
 	bool BossPrototypeCoresInitialized = false;
 	bool BossPrototypeShieldActive = true;
 	bool BossPrototypeServerSynced = false;
+	float BossPrototypeHP = 0.0f;
+	float BossPrototypeMaxHP = 7500.0f;
 	bool BossPrototypeVisualGroundInitialized = false;
 	bool ModelRenderTintOverrideActive = false;
 	vec4 ModelRenderTintOverride = vec4(0.0f, 1.0f, 1.0f, 1.0f);

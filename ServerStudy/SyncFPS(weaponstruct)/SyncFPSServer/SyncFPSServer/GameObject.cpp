@@ -4095,30 +4095,31 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 
 void Player::Respawn() {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
-	MaxHP -= m_tempMaxHpBonus;
-	if (MaxHP <= 0.0f) MaxHP = 100.0f;
-	m_tempMaxHpBonus = 0.0f;
-	m_tempMaxHpTimer = 0.0f;
-	m_iceBlockTimer = 0.0f;
-	m_iceBlockEffectFlow = 0.0f;
-	m_juggernautFlameTimer = 0.0f;
-	m_juggernautFlameTickFlow = 0.0f;
-	m_juggernautFlameEffectFlow = 0.0f;
-	m_juggernautFlameRange = 0.0f;
-	m_juggernautFlameRadius = 0.0f;
-	m_juggernautFlameDps = 0.0f;
-	m_frostPassiveUsed = false;
+	//MaxHP -= m_tempMaxHpBonus;
+	//if (MaxHP <= 0.0f) MaxHP = 100.0f;
+	//m_tempMaxHpBonus = 0.0f;
+	//m_tempMaxHpTimer = 0.0f;
+	//m_iceBlockTimer = 0.0f;
+	//m_iceBlockEffectFlow = 0.0f;
+	//m_juggernautFlameTimer = 0.0f;
+	//m_juggernautFlameTickFlow = 0.0f;
+	//m_juggernautFlameEffectFlow = 0.0f;
+	//m_juggernautFlameRange = 0.0f;
+	//m_juggernautFlameRadius = 0.0f;
+	//m_juggernautFlameDps = 0.0f;
+	//m_frostPassiveUsed = false;
+	//HP = MaxHP;
+	//tag[GameObjectTag::Tag_Enable] = true;
+
+	//matrix mat;
+	//mat.Id();
+	//mat.pos.y = 2;
+	//SetWorld(mat);
+
+	////player position send
+	//bool isExist = true;
+	//zones->Sending_ChangeGameObjectMember<Tag>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &tag);
 	HP = MaxHP;
-	tag[GameObjectTag::Tag_Enable] = true;
-
-	matrix mat;
-	mat.Id();
-	mat.pos.y = 2;
-	SetWorld(mat);
-
-	//player position send
-	bool isExist = true;
-	zones->Sending_ChangeGameObjectMember<Tag>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &tag);
 	zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
 }
 
