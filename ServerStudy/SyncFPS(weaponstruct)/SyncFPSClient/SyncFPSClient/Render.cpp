@@ -7520,46 +7520,23 @@ void ScreenShader::RenderAllSDFTexts() {
 		game.MyScreenShader->SDFMappedCnt -= 1;
 	}
 	
-
 	using SCSRP = ScreenShader::RootParamId;
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::SDF);
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	vec4 wh = vec4(gd.ClientFrameWidth, gd.ClientFrameHeight, 0, 0);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(SCSRP::Const_BasicInfo, 2, &wh, 0);
-
-	// Zone loads recycle descriptor ranges. Build this frame's SDF views from the live resources.
-	DescHandle instanceDesc;
-	if (!gd.ShaderVisibleDescPool.DynamicAlloc(&instanceDesc, 1)) return;
-	D3D12_SHADER_RESOURCE_VIEW_DESC instanceSrv = {};
-	instanceSrv.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	instanceSrv.Format = DXGI_FORMAT_UNKNOWN;
-	instanceSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	instanceSrv.Buffer.FirstElement = 0;
-	instanceSrv.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-	instanceSrv.Buffer.NumElements = MaxInstance;
-	instanceSrv.Buffer.StructureByteStride = sizeof(SDFInstance);
-	gd.pDevice->CreateShaderResourceView(SDFInstance_StructuredBuffer.resource, &instanceSrv, instanceDesc.hcpu);
-	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_SDFInstance, instanceDesc.hgpu);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_SDFInstance, SDFInstance_SRV.hRender.hgpu);
 
 	DescHandle descH;
-	if (!gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 16)) return;
-	const int pageCount = min(16, (int)gd.SDFTextureArr.size());
-	for (int i = 0; i < pageCount; ++i) {
-		SDFTextPageTextureBuffer* page = gd.SDFTextureArr[i];
-		D3D12_SHADER_RESOURCE_VIEW_DESC textureSrv = {};
-		textureSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		textureSrv.Format = (i < gd.SDFTextureArr_immortalSize) ? DXGI_FORMAT_BC4_UNORM : DXGI_FORMAT_R8_SNORM;
-		textureSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		textureSrv.Texture2D.MipLevels = page->DefaultTextureBuffer.resource->GetDesc().MipLevels;
-		textureSrv.Texture2D.MostDetailedMip = 0;
-		textureSrv.Texture2D.PlaneSlice = 0;
-		textureSrv.Texture2D.ResourceMinLODClamp = 0.0f;
-		gd.pDevice->CreateShaderResourceView(page->DefaultTextureBuffer.resource, &textureSrv, descH[i].hcpu);
+
+	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 16);
+	for (int i = 0; i < gd.SDFTextureArr.size(); ++i) {
+		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, gd.SDFTextureArr[i]->SDFTextureSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
-	if (pageCount <= 0) return;
-	for (int i = pageCount; i < 16; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, descH[0].hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	for (int i = gd.SDFTextureArr.size(); i < 16; ++i) {
+		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, gd.SDFTextureArr[0]->SDFTextureSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
+
 	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_Texture, descH.hgpu);
 
 	if (SDFInstanceCount > 0) {
