@@ -2150,7 +2150,7 @@ struct World {
 	int ownedZoneId = 0;
 
 	bool singleProcessAllZones = false;
-	bool NotMakePeer = true;
+	bool NotMakePeer = false;
     
 	unordered_map<int, PlayerTransferData> pendingTransfers;
     int nextTransferToken = 1;
