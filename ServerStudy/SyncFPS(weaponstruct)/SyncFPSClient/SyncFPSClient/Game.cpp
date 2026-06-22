@@ -4049,35 +4049,73 @@ void Game::RenderSupportDrones()
 	static float droneBobTime = 0.0f;
 	droneBobTime += max(0.0f, DeltaTime);
 
-	for (GameObject* object : DynmaicGameObjects) {
-		Player* droneOwner = dynamic_cast<Player*>(object);
-		if (droneOwner == nullptr || (PlayerJob)droneOwner->m_currentJob != PlayerJob::DroneOperator) continue;
-		if (!droneOwner->tag[GameObjectTag::Tag_Enable]) continue;
+	if (gd.isRaytracingRender) {
+		for (GameObject* object : DynmaicGameObjects) {
+			Player* droneOwner = dynamic_cast<Player*>(object);
+			if (droneOwner == nullptr || (PlayerJob)droneOwner->m_currentJob != PlayerJob::DroneOperator) continue;
+			if (!droneOwner->tag[GameObjectTag::Tag_Enable]) continue;
 
-		for (int droneIndex = 0; droneIndex < 2; ++droneIndex) {
-			const bool leftDrone = droneIndex == 0;
-			const float phase = droneBobTime * 2.6f + (leftDrone ? 0.0f : XM_PI);
-			const float bob = sinf(phase) * 0.09f;
-			vec4 dronePosition = GetSupportDronePosition(droneOwner, leftDrone, bob);
+			for (int droneIndex = 0; droneIndex < 2; ++droneIndex) {
+				const bool leftDrone = droneIndex == 0;
+				const float phase = droneBobTime * 2.6f + (leftDrone ? 0.0f : XM_PI);
+				const float bob = sinf(phase) * 0.09f;
+				vec4 dronePosition = GetSupportDronePosition(droneOwner, leftDrone, bob);
 
-			matrix droneWorld = XMMatrixRotationY(XMConvertToRadians(-90.0f)) *
-				(XMMATRIX)droneOwner->worldMat;
-			droneWorld.right *= 0.24f;
-			droneWorld.up *= 0.24f;
-			droneWorld.look *= 0.24f;
-			droneWorld.pos = dronePosition;
-			droneWorld.pos.w = 1.0f;
-			SupportDroneModel->Render<false>(gd.gpucmd, droneWorld, nullptr);
+				matrix droneWorld = XMMatrixRotationY(XMConvertToRadians(-90.0f)) *
+					(XMMATRIX)droneOwner->worldMat;
+				droneWorld.right *= 0.24f;
+				droneWorld.up *= 0.24f;
+				droneWorld.look *= 0.24f;
+				droneWorld.pos = dronePosition;
+				droneWorld.pos.w = 1.0f;
 
-			if (droneOwner->m_droneFlightVisualTimer > 0.0f) {
-				const float side = leftDrone ? -1.0f : 1.0f;
-				vec4 tetherTarget = droneOwner->worldMat.pos + droneOwner->worldMat.up * 1.05f +
-					droneOwner->worldMat.right * (0.28f * side);
-				tetherTarget.w = 1.0f;
-				QueueSupportBeam(dronePosition, tetherTarget, 0.035f, 0.14f,
-					vec4(0.32f, 1.48f, 0.82f, 0.34f));
-				QueueSupportBeam(dronePosition, tetherTarget, 0.072f, 0.14f,
-					vec4(0.72f, 1.72f, 1.35f, 0.25f), true);
+				droneOwner->DronObj[droneIndex]->worldMat = droneWorld;
+				droneOwner->DronObj[droneIndex]->RaytracingUpdateTransform();
+
+				if (droneOwner->m_droneFlightVisualTimer > 0.0f) {
+					const float side = leftDrone ? -1.0f : 1.0f;
+					vec4 tetherTarget = droneOwner->worldMat.pos + droneOwner->worldMat.up * 1.05f +
+						droneOwner->worldMat.right * (0.28f * side);
+					tetherTarget.w = 1.0f;
+					QueueSupportBeam(dronePosition, tetherTarget, 0.035f, 0.14f,
+						vec4(0.32f, 1.48f, 0.82f, 0.34f));
+					QueueSupportBeam(dronePosition, tetherTarget, 0.072f, 0.14f,
+						vec4(0.72f, 1.72f, 1.35f, 0.25f), true);
+				}
+			}
+		}
+	}
+	else {
+		for (GameObject* object : DynmaicGameObjects) {
+			Player* droneOwner = dynamic_cast<Player*>(object);
+			if (droneOwner == nullptr || (PlayerJob)droneOwner->m_currentJob != PlayerJob::DroneOperator) continue;
+			if (!droneOwner->tag[GameObjectTag::Tag_Enable]) continue;
+
+			for (int droneIndex = 0; droneIndex < 2; ++droneIndex) {
+				const bool leftDrone = droneIndex == 0;
+				const float phase = droneBobTime * 2.6f + (leftDrone ? 0.0f : XM_PI);
+				const float bob = sinf(phase) * 0.09f;
+				vec4 dronePosition = GetSupportDronePosition(droneOwner, leftDrone, bob);
+
+				matrix droneWorld = XMMatrixRotationY(XMConvertToRadians(-90.0f)) *
+					(XMMATRIX)droneOwner->worldMat;
+				droneWorld.right *= 0.24f;
+				droneWorld.up *= 0.24f;
+				droneWorld.look *= 0.24f;
+				droneWorld.pos = dronePosition;
+				droneWorld.pos.w = 1.0f;
+				SupportDroneModel->Render<false>(gd.gpucmd, droneWorld, nullptr);
+
+				if (droneOwner->m_droneFlightVisualTimer > 0.0f) {
+					const float side = leftDrone ? -1.0f : 1.0f;
+					vec4 tetherTarget = droneOwner->worldMat.pos + droneOwner->worldMat.up * 1.05f +
+						droneOwner->worldMat.right * (0.28f * side);
+					tetherTarget.w = 1.0f;
+					QueueSupportBeam(dronePosition, tetherTarget, 0.035f, 0.14f,
+						vec4(0.32f, 1.48f, 0.82f, 0.34f));
+					QueueSupportBeam(dronePosition, tetherTarget, 0.072f, 0.14f,
+						vec4(0.72f, 1.72f, 1.35f, 0.25f), true);
+				}
 			}
 		}
 	}
@@ -4677,9 +4715,13 @@ void Game::Init()
 		int monsterMesh_index = Shape::AddModel("Monster001", MonsterModel);
 
 		Model* DroneModel = new Model();
-		DroneModel->LoadModelFile2("Resources/Model/Drone.model");
+		DroneModel->LoadModelFile2("Resources/Model/Drone.model", -1, false);
 		int droneMesh_index = Shape::AddModel("MonsterDrone", DroneModel);
-		game.SupportDroneModel = DroneModel;
+
+		Model* SupportDroneModel = new Model();
+		SupportDroneModel->LoadModelFile2("Resources/Model/Drone.model", -1, true);
+		int sdroneMesh_index = Shape::AddModel("SupportDrone", SupportDroneModel);
+		game.SupportDroneModel = SupportDroneModel;
 
 		Model* TurretModel = new Model();
 		TurretModel->LoadModelFile2("Resources/Model/turret.model");
@@ -6214,6 +6256,7 @@ void Game::Render_RayTracing()
 	PerfGPUFinalWaitMs = 0.0;
 	PerfPresentMs = 0.0;
 
+	RenderSupportDrones();
 	game.player->Render_ThirdPersonWeapon();
 	game.player->Render_AfterDepthClear();
 
