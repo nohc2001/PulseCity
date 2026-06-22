@@ -229,7 +229,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	}
 
 	constexpr unsigned short InitServerPort = 9073;   // open world (zone 73 = the player's spawn zone). Use 9100 to test the dungeon directly.
-	bool Connected = client.Init("192.168.45.73", InitServerPort);
+	const char* IP0 = "192.168.45.73";
+	const char* localhost = "127.0.0.1";
+	bool Connected = client.Init(IP0, InitServerPort);
 	if (Connected == false) {
 		WSACleanup();
 		return 0;

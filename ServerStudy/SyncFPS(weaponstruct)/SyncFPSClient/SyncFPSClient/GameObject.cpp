@@ -3463,6 +3463,10 @@ void Player::STATICINIT(int typeindex) {
 
 void Player::Update(float deltaTime)
 {
+	if (game.player != this && gd.isRaytracingRender) {
+		Render_ThirdPersonWeapon();
+	}
+
 	vec4 previousPosition = worldMat.pos;
 	PositionInterpolation(deltaTime);
 	if (HitFlashTimer > 0.0f) {
@@ -3928,6 +3932,32 @@ void Player::ModifyLocalToWorld() {
 	}
 }
 
+void Player::PlayerWeaponObjectInit()
+{
+	auto RegisterPlayerWeaponObject = [&](WeaponType type, Model* model) {
+		const int weaponIndex = (int)type;
+		if (weaponIndex < 0 || weaponIndex >= Game::MaxWeapon || model == nullptr) return;
+		PlayerWeaponObj[weaponIndex] = new GameObject();
+		PlayerWeaponObj[weaponIndex]->worldMat = 0;
+		PlayerWeaponObj[weaponIndex]->SetShape(model);
+		};
+	RegisterPlayerWeaponObject(WeaponType::Sniper, game.SniperModel);
+	RegisterPlayerWeaponObject(WeaponType::Rifle, game.RifleModel);
+	RegisterPlayerWeaponObject(WeaponType::Pistol, game.PistolModel);
+	RegisterPlayerWeaponObject(WeaponType::Shotgun, game.ShotGunModel);
+	RegisterPlayerWeaponObject(WeaponType::MachineGun, game.MachineGunModel);
+	RegisterPlayerWeaponObject(WeaponType::DualPistol, game.DualRevolverModel);
+	RegisterPlayerWeaponObject(WeaponType::DronePistol, game.PistolModel);
+	RegisterPlayerWeaponObject(WeaponType::SMG, game.HackerSMGModel);
+	RegisterPlayerWeaponObject(WeaponType::GrenadeGun, game.BomberGrenadeGunModel);
+
+	const int weaponIndex = (int)WeaponType::DualPistol;
+	if (weaponIndex < 0 || weaponIndex >= Game::MaxWeapon || game.DualRevolverModel == nullptr) return;
+	LeftHand = new GameObject();
+	LeftHand->worldMat = 0;
+	LeftHand->SetShape(game.DualRevolverModel);
+}
+
 static bool TryFindHumanoidNodeIndex(Model* model, HumanoidAnimation::HumanBodyBones bone, int& outNodeIndex);
 static matrix GetAnimatedNodeLocalMatrix(SkinMeshGameObject* obj, Model* model, int nodeIndex);
 static bool TryGetHumanoidBoneWorldMatrix(Player* player, HumanoidAnimation::HumanBodyBones bone, matrix& outBoneWorld);
@@ -3945,9 +3975,9 @@ void Player::Render_ThirdPersonWeapon()
 	if (m_weaponHolstered) {
 		if (gd.isRaytracingRender) {
 			for (int i = 0; i < Game::MaxWeapon; ++i) {
-				if (game.PlayerWeaponObj[i] == nullptr) continue;
-				game.PlayerWeaponObj[i]->worldMat = 0;
-				game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+				if (PlayerWeaponObj[i] == nullptr) continue;
+				PlayerWeaponObj[i]->worldMat = 0;
+				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 			}
 		}
 		return;
@@ -3966,14 +3996,14 @@ void Player::Render_ThirdPersonWeapon()
 		}
 
 		for (int i = 0; i < Game::MaxWeapon; ++i) {
-			if (game.PlayerWeaponObj[i] == nullptr) continue;
+			if (PlayerWeaponObj[i] == nullptr) continue;
 			if (m_currentWeaponType != i) {
-				game.PlayerWeaponObj[i]->worldMat = 0;
+				PlayerWeaponObj[i]->worldMat = 0;
 			}
 			else {
-				game.PlayerWeaponObj[i]->worldMat = gunmat;
+				PlayerWeaponObj[i]->worldMat = gunmat;
 			}
-			game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+			PlayerWeaponObj[i]->RaytracingUpdateTransform();
 		}
 	}
 	else {
@@ -4019,8 +4049,8 @@ void Player::Render_AfterDepthClear()
 		if (gd.isRaytracingRender) {
 			for (int i = 0; i < Game::MaxWeapon; ++i) {
 				if (game.PlayerWeaponObj[i] == nullptr) continue;
-				game.PlayerWeaponObj[i]->worldMat = 0;
-				game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+				PlayerWeaponObj[i]->worldMat = 0;
+				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 			}
 		}
 		return;
@@ -4032,81 +4062,214 @@ void Player::Render_AfterDepthClear()
 
 	if (gd.isRaytracingRender) {
 		if (game.bFirstPersonVision) {
-
 			matrix gunmat = gunMatrix_firstPersonView;
+			matrix leftGunMat = gunMatrix_firstPersonView;
+			const WeaponType weaponType = (WeaponType)m_currentWeaponType;
+			const float firstPersonReloadProgress = ReloadRemain > 0.0f
+				? min(1.0f, max(0.0f, 1.0f - ReloadRemain / max(GetPlayerReloadTime(this), 0.01f)))
+				: 0.0f;
+			bool isdrawLeft = false;
+			const float firstPersonReloadArc = sinf(firstPersonReloadProgress * XM_PI);
 
-			switch ((WeaponType)m_currentWeaponType)
-			{
-			case WeaponType::MachineGun:
-			{
-				matrix modelFix = XMMatrixScaling(0.8f, 0.8f, 0.8f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(180.0f));
-				modelFix *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
-				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
-				gunmat.pos.y -= 0.60f;
-				gunmat.pos.x += 0.35f;
-				gunmat.pos.z += 0.90f;
-				break;
+			if (weaponType == WeaponType::DualPistol) {
+				isdrawLeft = true;
+				const bool bladeMode = m_dualBladeVisualTimer > 0.0f;
+
+				const float dualPistolScale = 3.50f;
+				const vec4 dualPistolLeftPosition = vec4(-0.82f, -0.78f, 1.45f, 1.0f);
+				const vec4 dualPistolRightPosition = vec4(0.82f, -0.78f, 1.45f, 1.0f);
+				const float dualBladeScale = 0.5f;
+				const vec4 dualBladeLeftPosition = vec4(-3.42f, -0.32f, 2.22f, 1.0f);
+				const vec4 dualBladeRightPosition = vec4(-1.82f, -0.32f, 2.22f, 1.0f);
+
+				const float bladeAttackProgress = bladeMode && m_dualBladeAttackVisualTimer > 0.0f
+					? 1.0f - min(1.0f, m_dualBladeAttackVisualTimer / 0.34f) : 0.0f;
+				const float bladeSwing = sinf(bladeAttackProgress * XM_PI);
+
+				auto RenderFirstPersonHandWeapon_ray = [&](bool leftHand) {
+					const bool activeBlade = leftHand == m_dualBladeAttackAlternate;
+					const float handBladeSwing = activeBlade ? bladeSwing : 0.0f;
+					const float modelScale = bladeMode ? dualBladeScale : dualPistolScale;
+					matrix handWeapon = XMMatrixScaling(modelScale, modelScale, modelScale);
+					float recoilT = 0.0f;
+
+					if (!bladeMode) {
+						const float recoilTimer = leftHand ? m_dualLeftRecoilTimer : m_dualRightRecoilTimer;
+						const float recoilProgress = 1.0f - min(1.0f, recoilTimer / 0.22f);
+						recoilT = recoilTimer > 0.0f ? sinf(recoilProgress * XM_PI) : 0.0f;
+						handWeapon *= XMMatrixRotationX(-XMConvertToRadians(10.0f * recoilT));
+						handWeapon *= XMMatrixRotationZ(XMConvertToRadians((leftHand ? -2.5f : 2.5f) * recoilT));
+					}
+
+					if (bladeMode && leftHand) {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(0.0f), XMConvertToRadians(90.0f), XMConvertToRadians(-40.0f));
+					}
+					else if (bladeMode) {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(0.0f), XMConvertToRadians(90.0f), XMConvertToRadians(-40.0f));
+					}
+					else if (leftHand) {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(-90.0f), XMConvertToRadians(-90.0f), XMConvertToRadians(0.0f));
+					}
+					else {
+						handWeapon *= XMMatrixRotationRollPitchYaw(
+							XMConvertToRadians(-90.0f), XMConvertToRadians(-90.0f), XMConvertToRadians(0.0f));
+					}
+					if (!bladeMode && firstPersonReloadArc > 0.0f) {
+						handWeapon *= XMMatrixRotationZ(XMConvertToRadians(
+							(leftHand ? -16.0f : 16.0f) * firstPersonReloadArc));
+					}
+
+					if (bladeMode) {
+						handWeapon.pos = leftHand ? dualBladeLeftPosition : dualBladeRightPosition;
+					}
+					else {
+						handWeapon.pos = leftHand ? dualPistolLeftPosition : dualPistolRightPosition;
+					}
+
+					if (bladeMode && activeBlade) {
+						handWeapon.pos.x += (leftHand ? 0.34f : -0.34f) * handBladeSwing;
+						handWeapon.pos.y -= 0.16f * handBladeSwing;
+					}
+					if (!bladeMode) {
+						handWeapon.pos.x += (leftHand ? -0.018f : 0.018f) * recoilT;
+						handWeapon.pos.y += 0.26f * recoilT;
+						handWeapon.pos.z -= 0.12f * recoilT;
+						handWeapon.pos.x += (leftHand ? -0.12f : 0.12f) * firstPersonReloadArc;
+						handWeapon.pos.y -= 0.68f * firstPersonReloadArc;
+						handWeapon.pos.z -= 0.10f * firstPersonReloadArc;
+					}
+
+					//handWeapon *= viewmat;
+					if (leftHand) {
+						leftGunMat = handWeapon;
+					}
+					else {
+						gunmat = handWeapon;
+					}
+					};
+				RenderFirstPersonHandWeapon_ray(false);
+				RenderFirstPersonHandWeapon_ray(true);
 			}
-			case WeaponType::Sniper:
-				if (m_isZooming && m_currentFov < 25.0f) {
-					pTargetModel = nullptr;
-					gunmat *= XMMatrixScaling(0.0f, 0.0f, 0.0f);
+			else if (weaponType == WeaponType::SMG) {
+				const float recoilT = powf(min(1.0f, weapon[SelectedWeapon].GetRecoilAlpha()), 0.62f);
+				gunmat = XMMatrixScaling(3.0f, 3.0f, 3.0f);
+				gunmat *= XMMatrixRotationRollPitchYaw(
+					XMConvertToRadians(0.0f), XMConvertToRadians(180.0f), XMConvertToRadians(0.0f));
+				gunmat *= XMMatrixRotationX(-XMConvertToRadians(4.5f * recoilT));
+				gunmat *= XMMatrixRotationZ(XMConvertToRadians(-14.0f * firstPersonReloadArc));
+				gunmat.pos = vec4(-4.38f, -0.72f, 2.35f, 1.0f);
+				gunmat.pos.x += 0.14f * firstPersonReloadArc;
+				gunmat.pos.y += 0.075f * recoilT - 0.18f * firstPersonReloadArc;
+				gunmat.pos.z -= 0.11f * recoilT + 0.08f * firstPersonReloadArc;
+			}
+			else if (weaponType == WeaponType::GrenadeGun) {
+				const float recoilT = powf(min(1.0f, weapon[SelectedWeapon].GetRecoilAlpha()), 0.72f);
+				gunmat = XMMatrixScaling(15.0f, 15.0f, 15.0f);
+				gunmat *= XMMatrixRotationRollPitchYaw(
+					XMConvertToRadians(0.0f), XMConvertToRadians(180.0f), XMConvertToRadians(0.0f));
+				gunmat *= XMMatrixRotationX(-XMConvertToRadians(13.0f * recoilT));
+				gunmat *= XMMatrixRotationZ(XMConvertToRadians(-20.0f * firstPersonReloadArc));
+				gunmat.pos = vec4(0.92f, -0.58f, 1.50f, 1.0f);
+				gunmat.pos.x += 0.18f * firstPersonReloadArc;
+				gunmat.pos.y += 0.16f * recoilT - 0.78f * firstPersonReloadArc;
+				gunmat.pos.z -= 0.32f * recoilT + 0.12f * firstPersonReloadArc;
+			}
+
+			if (weaponType != WeaponType::SMG && weaponType != WeaponType::GrenadeGun)
+				switch ((WeaponType)m_currentWeaponType)
+				{
+				case WeaponType::MachineGun:
+				{
+					matrix modelFix = XMMatrixScaling(0.8f, 0.8f, 0.8f);
+					modelFix *= XMMatrixRotationY(XMConvertToRadians(180.0f));
+					modelFix *= XMMatrixRotationZ(XMConvertToRadians(180.0f));
+					gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+					gunmat.pos.y -= 0.60f;
+					gunmat.pos.x += 0.35f;
+					gunmat.pos.z += 0.90f;
+					break;
 				}
-				else {
-					gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
-					gunmat.pos.y -= 0.40f;
-					gunmat.pos.x += 0.60f;
-					gunmat.pos.z += 1.90f;
+				case WeaponType::Sniper:
+					if (m_isZooming && m_currentFov < 25.0f) {
+						pTargetModel = nullptr;
+						gunmat *= XMMatrixScaling(0.0f, 0.0f, 0.0f);
+					}
+					else {
+						gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+						gunmat.pos.y -= 0.40f;
+						gunmat.pos.x += 0.60f;
+						gunmat.pos.z += 1.90f;
+					}
+					break;
+				case WeaponType::Pistol:
+				case WeaponType::DronePistol:
+					gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
+					gunmat.pos.y -= 1.20f;
+					gunmat.pos.x += 1.00f;
+					gunmat.pos.z += 1.40f;
+					break;
+				case WeaponType::Rifle:
+				{
+					matrix modelFix = XMMatrixScaling(1.5f, 1.5f, 1.5f);
+					modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
+					gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+
+					float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f);
+					if (zoomAlpha < 0) zoomAlpha = 0;
+					if (zoomAlpha > 1) zoomAlpha = 1;
+
+					float targetX = 0.0f;
+					float targetY = -0.35f;
+					float targetZ = 1.80f;
+
+					gunmat.pos.x += (0.90f * (1.0f - zoomAlpha)) + (targetX * zoomAlpha);
+					gunmat.pos.y -= (0.65f * (1.0f - zoomAlpha)) + (abs(targetY) * zoomAlpha);
+					gunmat.pos.z += (1.50f * (1.0f - zoomAlpha)) + (targetZ * zoomAlpha);
+					break;
 				}
-				break;
-			case WeaponType::Pistol:
-				gunmat *= XMMatrixScaling(2.0f, 2.0f, 2.0f);
-				gunmat.pos.y -= 1.20f;
-				gunmat.pos.x += 1.00f;
-				gunmat.pos.z += 1.40f;
-				break;
-			case WeaponType::Rifle:
-			{
-				matrix modelFix = XMMatrixScaling(1.5f, 1.5f, 1.5f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(-90.0f));
-				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+				case WeaponType::Shotgun:
+				{
+					matrix modelFix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
+					modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
+					gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
+					gunmat.pos.y -= 0.70f;
+					gunmat.pos.x += 0.75f;
+					gunmat.pos.z += 1.70f;
+					break;
+				}
+				//case WeaponType::DualPistol: {
+				//	gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+				//	gunmat.pos.y -= 1.20f;
+				//	gunmat.pos.x += 1.50f;
+				//	gunmat.pos.z += 2.0f;
 
-				float zoomAlpha = (60.0f - m_currentFov) / (60.0f - 40.0f);
-				if (zoomAlpha < 0) zoomAlpha = 0;
-				if (zoomAlpha > 1) zoomAlpha = 1;
-
-				float targetX = 0.0f;
-				float targetY = -0.35f;
-				float targetZ = 1.80f;
-
-				gunmat.pos.x += (0.90f * (1.0f - zoomAlpha)) + (targetX * zoomAlpha);
-				gunmat.pos.y -= (0.65f * (1.0f - zoomAlpha)) + (abs(targetY) * zoomAlpha);
-				gunmat.pos.z += (1.50f * (1.0f - zoomAlpha)) + (targetZ * zoomAlpha);
-				break;
-			}
-			case WeaponType::Shotgun:
-			{
-				matrix modelFix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
-				modelFix *= XMMatrixRotationY(XMConvertToRadians(90.0f));
-				gunmat = modelFix * (XMMATRIX)gunMatrix_firstPersonView;
-				gunmat.pos.y -= 0.70f;
-				gunmat.pos.x += 0.75f;
-				gunmat.pos.z += 1.70f;
-				break;
-			}
-			}
+				//	leftGunMat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);
+				//	leftGunMat.pos.y -= 1.20f;
+				//	leftGunMat.pos.x -= 1.50f;
+				//	leftGunMat.pos.z += 2.0f;
+				//	break;
+				//}
+				}
 
 			gunmat *= viewmat;
+			leftGunMat *= viewmat;
 			for (int i = 0; i < Game::MaxWeapon; ++i) {
-				if (game.PlayerWeaponObj[i] == nullptr) continue;
+				if (PlayerWeaponObj[i] == nullptr) continue;
 				if (m_currentWeaponType != i) {
-					game.PlayerWeaponObj[i]->worldMat = 0;
+					PlayerWeaponObj[i]->worldMat = 0;
 				}
 				else {
-					game.PlayerWeaponObj[i]->worldMat = gunmat;
+					PlayerWeaponObj[i]->worldMat = gunmat;
 				}
-				game.PlayerWeaponObj[i]->RaytracingUpdateTransform();
+				PlayerWeaponObj[i]->RaytracingUpdateTransform();
+			}
+
+			if (isdrawLeft) {
+				LeftHand->worldMat = leftGunMat;
+				LeftHand->RaytracingUpdateTransform();
 			}
 		}
 	}
@@ -4708,6 +4871,8 @@ void Player::RecvSTC_SyncObj(char* data) {
 	}
 
 	SetShape(shape);
+
+	PlayerWeaponObjectInit();
 }
 
 void Player::ChangeState(State newState)

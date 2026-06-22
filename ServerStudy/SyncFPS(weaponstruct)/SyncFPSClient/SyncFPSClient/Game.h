@@ -258,7 +258,7 @@ public:
 	//RenderOnly
 	static constexpr int MaxWeapon = (int)WeaponType::Max;
 	GameObject* PlayerWeaponObj[MaxWeapon] = {};
-
+	GameObject* LeftHand = {};
 	// 불릿Ray�?모아?��? vecset -> ?�짜???��??�고 ?�라지???�간?�?같으?? ?�형배열??????��.
 	// <?�형배열�?고칠 ?�요가 ?�다.>
 	vecset<BulletRay> bulletRays;

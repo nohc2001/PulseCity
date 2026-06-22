@@ -4720,7 +4720,6 @@ void Game::Init()
 				return ItemModel;
 				};
 
-
 			AddItemFunc(globalitem_index, ItemType::_Consumable, "BioFix",
 				"Resources/Model/ItemModel/BioFix.model",
 				L"Resources/UI/ItemIcons/ItemIcon_BioFix.png",

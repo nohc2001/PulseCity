@@ -1334,6 +1334,11 @@ public:
 
 	virtual void ModifyLocalToWorld();
 
+	static constexpr int MaxWeapon = (int)WeaponType::Max;
+	GameObject* PlayerWeaponObj[MaxWeapon] = {};
+	GameObject* LeftHand = {};
+	void PlayerWeaponObjectInit();
+
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
 		Tag tag;
