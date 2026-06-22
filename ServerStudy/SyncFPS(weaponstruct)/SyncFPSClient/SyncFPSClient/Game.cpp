@@ -5560,7 +5560,12 @@ void Game::Render() {
 	}
 
 	game.MyScreenShader->ClearSDFInstance();
-	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+	dbgc[10] += 1;
+	if (game.MyScreenShader->SDFMappedCnt == 0) {
+		game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+		game.MyScreenShader->SDFMappedCnt += 1;
+	}
+	
 	//2. 프러스텀 업데이트
 	gd.viewportArr[0].UpdateFrustum();
 	
@@ -6190,6 +6195,7 @@ void Game::Render() {
 	gd.DeviceRemoveResonDebug();
 }
 
+int Maped = 0;
 void Game::Render_RayTracing()
 {
 	//dbgbreak(game.currentZoneId == 74);
@@ -6205,7 +6211,11 @@ void Game::Render_RayTracing()
 	game.player->Render_AfterDepthClear();
 
 	game.MyScreenShader->ClearSDFInstance();
-	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+
+	if (game.MyScreenShader->SDFMappedCnt == 0) {
+		game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+		game.MyScreenShader->SDFMappedCnt += 1;
+	}
 
 	for (int i = 0; i < 9; ++i) {
 		gd.raytracing.MappedCB[i]->DirLight_invDirection = vec4(vec4(0) - LightDirection).f3;
@@ -6384,7 +6394,9 @@ void Game::Render_RayTracing()
 	//gd.gpucmd.WaitGPUComplete();
 
 	HRESULT hResult;
+
 	//Blur
+	if(false)
 	{
 		//Bluring (Compute Shader)
 		hResult = gd.CScmd.Reset();

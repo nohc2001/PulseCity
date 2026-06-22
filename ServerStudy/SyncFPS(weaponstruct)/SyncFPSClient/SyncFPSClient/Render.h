@@ -278,6 +278,8 @@ struct DescriptorAllotter {
 	ui32 DescriptorSize;
 	ui32 extraData;
 
+	//set<int> SDFRecord;
+
 	/*
 	* ���� : DescriptorAllotter �� �ʱ�ȭ�Ѵ�.
 	* �Ű����� :
@@ -1316,6 +1318,8 @@ struct SDFTextPageTextureBuffer {
 	GPUResource DefaultTextureBuffer;
 	char* mappedBuffer = nullptr;
 	DescIndex SDFTextureSRV;
+
+	
 
 	SDFTextPageTextureBuffer(int page) :
 		data{nullptr}, present_StartX {
@@ -3392,6 +3396,7 @@ public:
 
 	static constexpr int MaxInstance = 16384;
 	inline static GPUResource SDFInstance_StructuredBuffer;
+	inline static int SDFMappedCnt = 0;
 	SDFInstance* MappedSDFInstance;
 	static inline int SDFInstanceCount = 0;
 	static inline DescIndex SDFInstance_SRV;

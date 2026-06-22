@@ -140,12 +140,14 @@ SDFPAGEDATA_RELEASE:
 	return false;
 }
 
+
 void SDFTextPageTextureBuffer::BakeSDF() {
 	if (isDynamicTexture && uploadedSectionCount != sectionCount) {
 		if (DefaultTextureBuffer.resource == nullptr) {
 			DefaultTextureBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_DIMENSION_TEXTURE2D, MaxWidth, MaxHeight, DXGI_FORMAT_R8_UNORM);
 
 			int index = gd.DynamicDescriptorAllotter.Alloc();
+			
 			SDFTextureSRV.Set(false, index, 'n');
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -537,10 +539,10 @@ void GPUResource::Release()
 
 	if (descindex.type == 'n' && descindex.isShaderVisible == false) {
 		if (descindex.ZoneOffIndex >= 0) {
-			gd.DynamicDescriptorAllotter.Free(descindex.index);
+			gd.DynamicDescriptorAllotterPerZone[descindex.ZoneOffIndex].Free(descindex.index);
 		}
 		else {
-			gd.DynamicDescriptorAllotterPerZone[descindex.ZoneOffIndex].Free(descindex.index);
+			gd.DynamicDescriptorAllotter.Free(descindex.index);
 		}
 	}
 	descindex.Set(false, 0);
@@ -570,11 +572,13 @@ void DescriptorAllotter::Init(D3D12_DESCRIPTOR_HEAP_TYPE heapType, D3D12_DESCRIP
 int DescriptorAllotter::Alloc()
 {
 	int dwIndex = AllocFlagContainer.Alloc();
+	//dbgbreak(SDFRecord.contains(dwIndex));
 	return dwIndex;
 }
 
 void DescriptorAllotter::Free(int index)
 {
+	//dbgbreak(SDFRecord.contains(index));
 	AllocFlagContainer.Free(index);
 }
 
@@ -2226,6 +2230,7 @@ void GlobalDevice::GetBakedSDFs() {
 
 	for (int i = 0;i < SDFTextureArr.size(); ++i) {
 		int index = gd.DynamicDescriptorAllotter.Alloc();
+		//gd.DynamicDescriptorAllotter.SDFRecord.insert(index);
 		SDFTextureArr[i]->SDFTextureSRV.Set(false, index, 'n');
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -7427,7 +7432,11 @@ void ScreenShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
 }
 
 void ScreenShader::RenderAllSDFTexts() {
-	game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Unmap(0, nullptr);
+	if (SDFMappedCnt > 0) {
+		game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Unmap(0, nullptr);
+		game.MyScreenShader->SDFMappedCnt -= 1;
+	}
+	
 
 	using SCSRP = ScreenShader::RootParamId;
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::SDF);
