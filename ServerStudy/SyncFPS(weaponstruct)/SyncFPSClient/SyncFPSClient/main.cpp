@@ -23,6 +23,7 @@ int resolutionLevel = 3;
 bool g_playReloadSound = false;   // [sfx] set in GameObject.cpp when local player's reload starts; played in the main loop
 bool g_playGunSound = false;      // [sfx] set in Game.cpp on STC_PlayerFire for the local player (an actual shot); played in the main loop
 bool g_suppressLoadingScreen = false;   // [loading] set during seamless zone transfer so the loading screen is NOT shown
+bool g_inJobSelect = false;             // [jobselect] true while the job-selection screen is up; disables in-game input in WndProc
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdParam, int nCmdShow)
 {
@@ -177,6 +178,56 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		}
 	}
 
+	// [jobselect] Job-selection screen: shown after the start screen, before connecting. Hover a card in
+	// the 3x3 grid, left-click to select, then click CONFIRM to lock it in (CANCEL clears). The chosen job
+	// is sent to the server with CTS_ChangeJob once the connection is confirmed (in the main loop below).
+	int chosenJob = -1;   // PlayerJob enum index, or -1 if none chosen
+	{
+		g_inJobSelect = true;
+		ShowCursor(TRUE);   // [jobselect] reveal the OS cursor for clicking (it was hidden at launch)
+		MSG dm;
+		while (::PeekMessage(&dm, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {}
+		while (::PeekMessage(&dm, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {}
+
+		auto PtIn = [](const vec4& r, float x, float y) -> bool {
+			return x >= r.x && x <= r.z && y >= r.y && y <= r.w;
+		};
+
+		int  selected = -1;
+		bool prevLBtn = game.LBtnDown;
+		bool done = false;
+		while (!done) {
+			MSG sm;
+			while (::PeekMessage(&sm, NULL, 0, 0, PM_REMOVE)) {
+				if (sm.message == WM_QUIT) { WSACleanup(); return 0; }
+				::TranslateMessage(&sm);
+				::DispatchMessage(&sm);
+			}
+
+			vec4 cards[9], confirmR, cancelR;
+			game.ComputeJobSelectLayout(cards, confirmR, cancelR);
+			const float cx = game.CurrentCursorPos.x;
+			const float cy = game.CurrentCursorPos.y;
+
+			int hovered = -1;
+			for (int i = 0; i < 9; ++i) { if (PtIn(cards[i], cx, cy)) { hovered = i; break; } }
+			const bool overConfirm = PtIn(confirmR, cx, cy);
+			const bool overCancel  = PtIn(cancelR, cx, cy);
+
+			const bool click = game.LBtnDown && !prevLBtn;
+			prevLBtn = game.LBtnDown;
+			if (click) {
+				if (hovered >= 0)                       selected = hovered;
+				else if (overCancel)                    selected = -1;
+				else if (overConfirm && selected >= 0) { chosenJob = selected; done = true; }
+			}
+
+			game.DrawJobSelectScreen(hovered, selected, overConfirm, overCancel);
+		}
+		ShowCursor(FALSE);   // [jobselect] hide the cursor again for FPS gameplay
+		g_inJobSelect = false;
+	}
+
 	constexpr unsigned short InitServerPort = 9073;   // open world (zone 73 = the player's spawn zone). Use 9100 to test the dungeon directly.
 	bool Connected = client.Init("127.0.0.1", InitServerPort);
 	if (Connected == false) {
@@ -188,6 +239,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	hello.size = sizeof(CTS_ClientHello_Header);
 	hello.st = CTS_Protocol::ClientHello;
 	client.send((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
+
+	// [jobselect] Chosen job is sent from the main loop once the connection is confirmed (the server
+	// caches its Player* per recv buffer and only has it after ClientHello; sending now would be dropped).
+	bool jobSent = (chosenJob < 0);   // nothing to send if no job was chosen
 
 	wchar_t m_pszFrameRate[32] = L"Pulse City Client 001 ____FPS";
 	constexpr double MaxFPSFlow = 10000;
@@ -252,6 +307,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	ui64 ft = GetTicks();
 	while (1) {
 		game.isPrepared = game.isPreparedClientIndex && game.isMapInit && game.isGlobalAssetInit;
+
+		// [jobselect] Send the picked job once, after the connection is confirmed (same path the in-game
+		// 1-9 keys use). The server's Player* is valid in a later recv buffer, so this is applied.
+		if (!jobSent && game.isPreparedClientIndex) {
+			CTS_ChangeJob_Header jobHeader;
+			jobHeader.size = sizeof(CTS_ChangeJob_Header);
+			jobHeader.st = CTS_Protocol::ChangeJob;
+			jobHeader.job = (PlayerJob)chosenJob;
+			client.send((char*)&jobHeader, sizeof(CTS_ChangeJob_Header), 0);
+			jobSent = true;
+		}
 
 		ui64 et = GetTicks();
 		double f = (double)(et - ft) * InvHZ;
@@ -492,7 +558,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	}
 
 	//Game Mode input Event
-	if (game.mainPageStack.size() == 0) {
+	if (game.mainPageStack.size() == 0 && !g_inJobSelect) {   // [jobselect] don't route input to in-game path during job select
 		switch (uMsg) {
 			//(14 line) outer code start : microsoft copilot. - FPS Camera Movement
 		case WM_INPUT:

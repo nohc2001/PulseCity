@@ -853,6 +853,9 @@ namespace
 	GPUResource gParticleBloodTexture;
 	GPUResource gLoadingTex;            // [loading] fullscreen loading image
 	GPUResource gStartScreenTex;       // [loading] fullscreen start screen image (shown until a key is pressed)
+	GPUResource gSelectJobBgTex;       // [jobselect] background ("SELECT YOUR JOB")
+	GPUResource gConfirmTex;           // [jobselect] CONFIRM / CANCEL button bar (single image, two buttons)
+	GPUResource gJobCardTex[9];        // [jobselect] 9 job cards, indexed by PlayerJob enum order
 	GPUResource gParticleExplosionTexture;
 	GPUResource gParticleEnergyTexture;
 	GPUResource gParticleAirStrikeTexture;
@@ -4497,6 +4500,19 @@ void Game::Init()
 		gParticleBloodTexture.CreateTexture_fromFile(L"Resources/blood.png", game.basicTexFormat, game.basicTexMip, true);
 		gLoadingTex.CreateTexture_fromFile(L"Resources/Loading.png", game.basicTexFormat, game.basicTexMip);          // [loading] loading screen image
 		gStartScreenTex.CreateTexture_fromFile(L"Resources/StartScreen.png", game.basicTexFormat, game.basicTexMip);  // [loading] start screen image
+		// [jobselect] job-selection screen textures. Card index MUST match the PlayerJob enum order
+		// (Juggernaut, Frost, Aegis, Mage, Healer, Gunner, DroneOperator, Hacker, Bomber); mapped by weapon.
+		gSelectJobBgTex.CreateTexture_fromFile(L"Resources/selectJop.png", game.basicTexFormat, game.basicTexMip);
+		gConfirmTex.CreateTexture_fromFile(L"Resources/Confirm.png", game.basicTexFormat, game.basicTexMip);
+		gJobCardTex[0].CreateTexture_fromFile(L"Resources/jug.png", game.basicTexFormat, game.basicTexMip);  // 0 Juggernaut  (JUGGERNAUT)
+		gJobCardTex[1].CreateTexture_fromFile(L"Resources/Fro.png", game.basicTexFormat, game.basicTexMip);  // 1 Frost       (FROST)
+		gJobCardTex[2].CreateTexture_fromFile(L"Resources/Shi.png", game.basicTexFormat, game.basicTexMip);  // 2 Aegis       (SHIELDER)
+		gJobCardTex[3].CreateTexture_fromFile(L"Resources/Sol.png", game.basicTexFormat, game.basicTexMip);  // 3 Mage        (SOLDIER, rifle)
+		gJobCardTex[4].CreateTexture_fromFile(L"Resources/Sni.png", game.basicTexFormat, game.basicTexMip);  // 4 Healer      (SNIPER)
+		gJobCardTex[5].CreateTexture_fromFile(L"Resources/Gun.png", game.basicTexFormat, game.basicTexMip);  // 5 Gunner      (GUNNER)
+		gJobCardTex[6].CreateTexture_fromFile(L"Resources/Mec.png", game.basicTexFormat, game.basicTexMip);  // 6 DroneOperator (MECHANIC)
+		gJobCardTex[7].CreateTexture_fromFile(L"Resources/Hak.png", game.basicTexFormat, game.basicTexMip);  // 7 Hacker      (HACKER)
+		gJobCardTex[8].CreateTexture_fromFile(L"Resources/Lau.png", game.basicTexFormat, game.basicTexMip);  // 8 Bomber      (LAUNCHER)
 		gParticleExplosionTexture.CreateTexture_fromFile(L"Resources/explosion.png", game.basicTexFormat, game.basicTexMip, true);
 		gParticleEnergyTexture.CreateTexture_fromFile(L"Resources/energy.jpg", game.basicTexFormat, game.basicTexMip, true);
 		gParticleAirStrikeTexture.CreateTexture_fromFile(L"Resources/misaile.png", game.basicTexFormat, game.basicTexMip, true);
@@ -5382,6 +5398,113 @@ void Game::DrawLoadingScreen(GPUResource* tex) {
 }
 
 void Game::DrawStartScreen() { DrawLoadingScreen(gStartScreenTex.resource ? &gStartScreenTex : &gLoadingTex); }   // [loading] start screen image
+
+// [jobselect] Computes the 9 job-card rects (3x3 grid) and the two confirm/cancel button rects, in the
+// same center-origin, y-up pixel space that UIDraw_TextureRect and game.CurrentCursorPos use.
+void Game::ComputeJobSelectLayout(vec4 cardRects[9], vec4& confirmRect, vec4& cancelRect) {
+	const float W = (float)gd.ClientFrameWidth;
+	const float H = (float)gd.ClientFrameHeight;
+	const float aspect = 1672.0f / 941.0f;   // shared aspect of every card image and Confirm.png
+
+	const float gxHalf = 0.28f * W;
+	const float gyTop  =  0.37f * H;
+	const float gyBot  = -0.18f * H;
+	const float regionW = 2.0f * gxHalf;
+	const float regionH = gyTop - gyBot;
+	const float cellW = regionW / 3.0f;
+	const float cellH = regionH / 3.0f;
+
+	const float pad = 0.10f;
+	const float availW = cellW * (1.0f - pad);
+	const float availH = cellH * (1.0f - pad);
+	float cardW, cardH;
+	if (availW / availH > aspect) { cardH = availH; cardW = availH * aspect; }
+	else                          { cardW = availW; cardH = availW / aspect; }
+
+	for (int r = 0; r < 3; ++r) {
+		for (int c = 0; c < 3; ++c) {
+			const int idx = r * 3 + c;
+			const float cx = -gxHalf + cellW * ((float)c + 0.5f);
+			const float cy =  gyTop  - cellH * ((float)r + 0.5f);
+			cardRects[idx] = vec4(cx - cardW * 0.5f, cy - cardH * 0.5f,
+			                      cx + cardW * 0.5f, cy + cardH * 0.5f);
+		}
+	}
+
+	// CONFIRM(blue) x in [0.057,0.476], CANCEL(red) x in [0.524,0.942] of the Confirm.png image width.
+	const float barW = 0.26f * W;
+	const float barH = barW / aspect;
+	const float barCy = -0.36f * H;
+	const float barL = -barW * 0.5f;
+	const float barB = barCy - barH * 0.5f;
+	const float barT = barCy + barH * 0.5f;
+	confirmRect = vec4(barL + barW * 0.057f, barB, barL + barW * 0.476f, barT);
+	cancelRect  = vec4(barL + barW * 0.524f, barB, barL + barW * 0.942f, barT);
+}
+
+// [jobselect] Renders one frame of the job-selection screen (background + 9 cards + CONFIRM/CANCEL bar).
+void Game::DrawJobSelectScreen(int hovered, int selected, bool confirmHover, bool cancelHover) {
+	if (gSelectJobBgTex.resource == nullptr) { DrawStartScreen(); return; }
+
+	gd.gpucmd.Reset();
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
+	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
+	game.renderViewPort = &gd.viewportArr[0];
+
+	D3D12_CPU_DESCRIPTOR_HANDLE dsv = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE, &dsv);
+
+	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	gd.gpucmd->ClearRenderTargetView(gd.SubRenderTarget.rtvHandle.hcpu, clearColor, 0, NULL);
+	gd.gpucmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+
+	const float _lw = (float)gd.ClientFrameWidth * 0.5f;
+	const float _lh = (float)gd.ClientFrameHeight * 0.5f;
+	game.UIDraw_TextureRect(vec4(-_lw, -_lh, _lw, _lh), vec4(1, 1, 1, 1), 0.900f, &gSelectJobBgTex);
+
+	vec4 cards[9], confirmR, cancelR;
+	ComputeJobSelectLayout(cards, confirmR, cancelR);
+	for (int i = 0; i < 9; ++i) {
+		const bool isSel = (i == selected);
+		const bool isHov = (i == hovered);
+		vec4 tint;
+		if (isSel)      tint = vec4(1.00f, 1.00f, 1.00f, 1.0f);
+		else if (isHov) tint = vec4(0.92f, 0.92f, 0.98f, 1.0f);
+		else            tint = vec4(0.55f, 0.55f, 0.62f, 1.0f);
+		vec4 rc = cards[i];
+		if (isSel || isHov) {
+			const float gx = 0.06f * (rc.z - rc.x);
+			const float gy = 0.06f * (rc.w - rc.y);
+			rc = vec4(rc.x - gx, rc.y - gy, rc.z + gx, rc.w + gy);
+		}
+		game.UIDraw_TextureRect(rc, tint, isSel ? 0.30f : 0.50f, &gJobCardTex[i]);
+	}
+
+	const float barW = 0.26f * (float)gd.ClientFrameWidth;
+	const float barL = -barW * 0.5f;
+	const vec4 barRect = vec4(barL, confirmR.y, barL + barW, confirmR.w);
+	const vec4 barTint = (selected >= 0) ? vec4(1.0f, 1.0f, 1.0f, 1.0f) : vec4(0.62f, 0.62f, 0.68f, 1.0f);
+	game.UIDraw_TextureRect(barRect, barTint, 0.25f, &gConfirmTex);
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+	gd.gpucmd.Close();
+	gd.gpucmd.Execute();
+	gd.gpucmd.WaitGPUComplete();
+	gd.pSwapChain->Present(1, 0);
+	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
+}
 
 void Game::Render() {
 	PerfGPUWaitMs = 0.0;

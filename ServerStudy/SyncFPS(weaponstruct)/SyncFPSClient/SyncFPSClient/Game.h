@@ -638,6 +638,8 @@ public:
 
 	void DrawLoadingScreen(GPUResource* tex = nullptr);   // [loading] standalone present that draws a fullscreen image (default Loading.png)
 	void DrawStartScreen();                               // [loading] draws the StartScreen image at launch
+	void ComputeJobSelectLayout(vec4 cardRects[9], vec4& confirmRect, vec4& cancelRect);   // [jobselect] grid + button rects
+	void DrawJobSelectScreen(int hovered, int selected, bool confirmHover, bool cancelHover); // [jobselect] one frame of the job-select screen
 
 	void Render_RayTracing();
 
