@@ -961,6 +961,11 @@ void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicO
         if (gameworld.IsAdjacentZone(zoneId, zi) == false) continue;*/
         Zone* syncZone = nearZones[zi];
         if (syncZone == nullptr) continue;
+        // [portal-dup FIX] nearZones[0] is THIS zone (see World setup: nearZones[0]=self), and this
+        // zone's dynamic objects / items / portals were ALREADY sent by the dedicated loops above.
+        // Without this skip the current zone is sent twice; dynamic objects de-dupe by netindex so it
+        // is invisible, but each portal is recreated -> two portals appear (the duplicate looked "fake").
+        if (syncZone == this) continue;
 
         // [PERF/FIX ?? ?�리???�동?�서???�적 객체(?�킨메시) ?�전?�을 ?�략 -> ?�환 ?��? ?�거.
         if (includeDynamicObjects) {

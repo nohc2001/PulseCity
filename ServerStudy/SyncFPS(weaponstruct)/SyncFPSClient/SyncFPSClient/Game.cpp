@@ -7608,6 +7608,7 @@ READ_START:
 			portal->RecvSTC_SyncObj(datapivot);
 			game.ApplyZoneOffsetToPortal(portal);
 			game.Portals.push_back(portal);
+			{ char _p[200]; sprintf_s(_p, "[PORTAL] recv zone=%d pos=(%.1f,%.1f,%.1f) total=%d (currentZone=%d)\n", portal->zoneId, portal->worldMat.pos.f3.x, portal->worldMat.pos.f3.y, portal->worldMat.pos.f3.z, (int)game.Portals.size(), game.currentZoneId); OutputDebugStringA(_p); printf("%s", _p); fflush(stdout); }
 		}
 		break;
 		}

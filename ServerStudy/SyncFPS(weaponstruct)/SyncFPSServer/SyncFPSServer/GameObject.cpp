@@ -5706,6 +5706,14 @@ void World::Update() {
 	}
 	// [party/dungeon] keep waiting members' HP/job live each tick (queued into PersonalSDS, flushed below).
 	BroadcastDungeonQueue();
+	// [party/dungeon] in the dungeon the lobby queue is empty (cleared on entry), so share the in-dungeon
+	// party's HP/job on a ~0.2s throttle (few members -> light) using the same party UI.
+	static float s_dungeonPartyHpTimer = 0.0f;
+	s_dungeonPartyHpTimer += DeltaTime;
+	if (s_dungeonPartyHpTimer >= 0.2f) {
+		s_dungeonPartyHpTimer = 0.0f;
+		BroadcastDungeonParty();
+	}
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
 		gameworld.ZoneTable[i]->FlushSendToClients();
@@ -5748,6 +5756,28 @@ void World::BroadcastDungeonQueue() {
 		int ci = dungeonQueue[i];
 		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
 		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, dungeonQueue, dungeonQueueCount);
+	}
+}
+
+// [party/dungeon] Players currently inside the dungeon floors ARE the party for that instance (the lobby
+// queue was cleared on entry). Collect them and send each one the party HP/job list, reusing the same
+// STC_DungeonQueueUpdate the client already renders. On servers that don't own dungeon zones this finds
+// no in-dungeon players and is a no-op. (Assumes one party per dungeon instance; caps at DungeonPartyMax.)
+void World::BroadcastDungeonParty() {
+	int members[DungeonPartyMax];
+	int n = 0;
+	for (int ci = 0; ci < clients.size && n < DungeonPartyMax; ++ci) {
+		if (clients.isnull(ci)) continue;
+		if (clients[ci].isServerPeer) continue;
+		if (clients[ci].pObjData == nullptr) continue;
+		int zid = clients[ci].zoneId;
+		if (zid >= DungeonZoneId && zid < DungeonZoneId + DungeonFloorCount) {
+			members[n++] = ci;
+		}
+	}
+	if (n <= 0) return;
+	for (int i = 0; i < n; ++i) {
+		Sending_DungeonQueueUpdate(clients[members[i]].PersonalSDS, members, n);
 	}
 }
 

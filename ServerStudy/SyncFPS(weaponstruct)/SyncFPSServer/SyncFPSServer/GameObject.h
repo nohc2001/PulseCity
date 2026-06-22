@@ -2356,7 +2356,8 @@ struct World {
 	bool DungeonQueueContains(int clientIndex);
 	void DungeonQueueAdd(int clientIndex);     // add once + broadcast; re-press starts, full auto-starts
 	void DungeonQueueRemove(int clientIndex);  // remove + broadcast (leave/disconnect)
-	void BroadcastDungeonQueue();              // send STC_DungeonQueueUpdate to current waiters
+	void BroadcastDungeonQueue();              // send STC_DungeonQueueUpdate to current waiters (lobby)
+	void BroadcastDungeonParty();              // [party] in-dungeon: share in-dungeon players' HP/job with each other
 	void DungeonTryStart(bool force);          // force=true: start now with current members (>=1)
 	void EnterDungeonStub();                   // send each member STC_DungeonEnter + clear the queue
 
@@ -2375,7 +2376,7 @@ struct World {
 	}
 
 	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
-	const char* GetZoneIP(int zoneId) const { return "127.0.0.1"; }
+	const char* GetZoneIP(int zoneId) const { return "192.168.45.73"; }
 	int IssueTransferToken() { return nextTransferToken++; }
 	bool SendPlayerTransferToServer(const PlayerTransferData& data);
 	void AcceptClientHello(int clientIndex);
