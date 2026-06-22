@@ -4051,6 +4051,7 @@ void Player::Render_AfterDepthClear()
 			case WeaponType::Sniper:
 				if (m_isZooming && m_currentFov < 25.0f) {
 					pTargetModel = nullptr;
+					gunmat *= XMMatrixScaling(0.0f, 0.0f, 0.0f);
 				}
 				else {
 					gunmat *= XMMatrixScaling(1.0f, 1.0f, 1.0f);

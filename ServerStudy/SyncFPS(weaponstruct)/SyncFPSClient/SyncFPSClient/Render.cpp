@@ -2524,11 +2524,12 @@ void RayTracingDevice::CreateCameraCB()
 	}
 }
 
-void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up)
+void RayTracingDevice::SetRaytracingCamera(vec4 CameraPos, vec4 look, vec4 up, float fov)
 {
 	vec4 at = CameraPos + look;
 
 	float fovAngleY = 60.0f;
+	if (fov > 1) fovAngleY = fov;
 	XMMATRIX view = XMMatrixLookAtLH(CameraPos, at, up);
 	float m_aspectRatio = (float)gd.ClientFrameWidth / (float)gd.ClientFrameHeight;
 	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fovAngleY), m_aspectRatio, 1.0f, 1000.0f);

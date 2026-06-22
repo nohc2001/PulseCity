@@ -5799,22 +5799,21 @@ void Game::Render() {
 		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Heal);
 		ParticleDraw->Render(gd.gpucmd, &gStatusHealPool.Buffer, gStatusHealPool.Count);
 
+		RenderBossPrototypeObjects();
+		RenderBossPrototypeShield();
+		RenderAegisShieldVisuals();
+		RenderFrostBlizzardSnowWaves();
+		RenderStatusEffectOverlays();
+		RenderBossPrototypeMissiles();
+		RenderBossPrototypeBeam();
+		RenderRailgunOrbitVisuals();
+		RenderDualBladeFloorVisuals();
+		RenderHackerEmpVisuals();
+		RenderPlayerRailgunBeams();
+		RenderBossPrototypeAoEs();
+		ParticleDraw->FireTexture = GetParticleSpriteResource(gBossExplosionSpriteSlot);
+		ParticleDraw->Render(gd.gpucmd, &gBossExplosionPool.Buffer, gBossExplosionPool.Count);
 	}
-
-	RenderBossPrototypeObjects();
-	RenderBossPrototypeShield();
-	RenderAegisShieldVisuals();
-	RenderFrostBlizzardSnowWaves();
-	RenderStatusEffectOverlays();
-	RenderBossPrototypeMissiles();
-	RenderBossPrototypeBeam();
-	RenderRailgunOrbitVisuals();
-	RenderDualBladeFloorVisuals();
-	RenderHackerEmpVisuals();
-	RenderPlayerRailgunBeams();
-	RenderBossPrototypeAoEs();
-	ParticleDraw->FireTexture = GetParticleSpriteResource(gBossExplosionSpriteSlot);
-	ParticleDraw->Render(gd.gpucmd, &gBossExplosionPool.Buffer, gBossExplosionPool.Count);
 
 	{
 		gd.gpucmd.SetShader(MyOnlyColorShader);
@@ -6302,6 +6301,146 @@ void Game::Render_RayTracing()
 	//11. ���귻��Ÿ������ ����Ÿ���� ����
 	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE,
 		&d3dDsvCPUDescriptorHandle);
+
+	if (true)
+	{
+		auto& effects = GetParticleEffectRuntimes();
+		for (ParticleEffectRuntime& effect : effects) {
+			if (!effect.Active || *effect.Compute == nullptr) continue;
+
+			effect.Emitter.Age += DeltaTime;
+			if (effect.Emitter.Duration > 0.0f && effect.Emitter.Age > effect.Emitter.Duration) {
+				effect.Active = false;
+				continue;
+			}
+
+			ParticleEmitterCB emitter = effect.Emitter;
+			if (effect.PendingReset) emitter.Flags |= PARTICLE_EMITTER_FLAG_RESET;
+			(*effect.Compute)->Dispatch(gd.gpucmd, &effect.Pool->Buffer, effect.Pool->Count, DeltaTime, emitter);
+			effect.PendingReset = false;
+
+			ParticleDraw->FireTexture = GetParticleSpriteResource(*effect.SpriteSlot);
+			ParticleDraw->Render(gd.gpucmd, &effect.Pool->Buffer, effect.Pool->Count);
+		}
+
+		// [party/dungeon] feed swirling particles at every portal each frame.
+		for (int i = 0; i < Portals.size(); ++i) {
+			if (Portals[i] == nullptr) continue;
+			SpawnPortalParticles(Portals[i]->worldMat.pos);
+		}
+		// [party/dungeon] guaranteed-visible portal ring.
+		//  - Open world: anchored ONCE at the very first spawn and stays fixed there (does NOT follow zone moves).
+		//  - Dungeon 1F (zone 100): anchored when entering the dungeon (floor portal +72X/+3Z). 2F(101) has no portal.
+		{
+			bool havePlayer = (playerGameObjectIndex >= 0 && playerGameObjectIndex < (int)DynmaicGameObjects.size()
+				&& DynmaicGameObjects[playerGameObjectIndex] != nullptr);
+
+			// open-world entry portal: capture once, then never move
+			static bool _owSet = false;
+			static int  _owWait = 0;
+			static vec4 _owAnchor = vec4(0);
+			if (currentZoneId < 100 && havePlayer) {
+				if (!_owSet) {
+					_owAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(5.0f, 0.0f, 0.0f, 0.0f);
+					if (++_owWait > 120) _owSet = true;
+				}
+				if (_owWait > 0) SpawnPortalParticles(_owAnchor);
+			}
+
+			// dungeon 1F floor portal: re-anchor each time we (re-)enter the dungeon
+			static bool _dgSet = false;
+			static int  _dgWait = 0;
+			static int  _dgZone = -999;
+			static vec4 _dgAnchor = vec4(0);
+			if (currentZoneId == 100) {
+				if (_dgZone != currentZoneId) { _dgZone = currentZoneId; _dgSet = false; _dgWait = 0; }
+				if (havePlayer) {
+					if (!_dgSet) {
+						_dgAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(72.0f, 0.0f, 3.0f, 0.0f);
+						if (++_dgWait > 120) _dgSet = true;
+					}
+					if (_dgWait > 0) SpawnPortalParticles(_dgAnchor);
+				}
+			}
+			else {
+				_dgZone = currentZoneId;   // left the dungeon -> allow a fresh anchor next entry
+			}
+		}
+		// [PORTAL-DBG] throttled: confirms client has the portal + particles are being produced.
+		{
+			static int _pdbg = 0;
+			if (++_pdbg % 120 == 0) {
+				char _d[256] = {};
+				vec4 pp = (Portals.size() > 0 && Portals[0]) ? Portals[0]->worldMat.pos : vec4(0);
+				sprintf_s(_d, "[PORTAL-DBG] Portals=%d portalParticles=%d pool=%d pos0=(%.1f,%.1f,%.1f)\n",
+					(int)Portals.size(), (int)gPortalParticles.size(), (int)gPortalPool.Count, pp.x, pp.y, pp.z);
+				OutputDebugStringA(_d); printf("%s", _d);
+			}
+		}
+
+		TickTransientParticles(gMuzzleFlashParticles, DeltaTime);
+		TickTransientParticles(gBulletTracerParticles, DeltaTime);
+		TickTransientParticles(gIceProjectileParticles, DeltaTime);
+		TickTransientParticles(gPortalParticles, DeltaTime);
+		TickTransientParticles(gBossExplosionParticles, DeltaTime);
+		TickTransientParticles(gStatusIceParticles, DeltaTime);
+		TickTransientParticles(gStatusFireParticles, DeltaTime);
+		TickTransientParticles(gStatusYellowParticles, DeltaTime);
+		TickTransientParticles(gStatusHackParticles, DeltaTime);
+		TickTransientParticles(gStatusHealParticles, DeltaTime);
+		UploadTransientParticles(gMuzzleFlashPool, gMuzzleFlashUpload, gMuzzleFlashParticles);
+		UploadTransientParticles(gBulletTracerPool, gBulletTracerUpload, gBulletTracerParticles);
+		UploadTransientParticles(gIceProjectilePool, gIceProjectileUpload, gIceProjectileParticles);
+		UploadTransientParticles(gPortalPool, gPortalUpload, gPortalParticles);
+		UploadTransientParticles(gBossExplosionPool, gBossExplosionUpload, gBossExplosionParticles);
+		UploadTransientParticles(gStatusIcePool, gStatusIceUpload, gStatusIceParticles);
+		UploadTransientParticles(gStatusFirePool, gStatusFireUpload, gStatusFireParticles);
+		UploadTransientParticles(gStatusYellowPool, gStatusYellowUpload, gStatusYellowParticles);
+		UploadTransientParticles(gStatusHackPool, gStatusHackUpload, gStatusHackParticles);
+		UploadTransientParticles(gStatusHealPool, gStatusHealUpload, gStatusHealParticles);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(gMuzzleFlashSpriteSlot);
+		ParticleDraw->Render(gd.gpucmd, &gMuzzleFlashPool.Buffer, gMuzzleFlashPool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(gBulletTracerSpriteSlot);
+		ParticleDraw->Render(gd.gpucmd, &gBulletTracerPool.Buffer, gBulletTracerPool.Count);
+
+		ParticleDraw->FireTexture = &gParticleIceTexture;
+		ParticleDraw->Render(gd.gpucmd, &gIceProjectilePool.Buffer, gIceProjectilePool.Count);
+
+		ParticleDraw->FireTexture = &gParticleIceTexture;
+		ParticleDraw->Render(gd.gpucmd, &gPortalPool.Buffer, gPortalPool.Count);
+
+		ParticleDraw->FireTexture = &gParticleIceTexture;
+		ParticleDraw->Render(gd.gpucmd, &gStatusIcePool.Buffer, gStatusIcePool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::FireSecondary);
+		ParticleDraw->Render(gd.gpucmd, &gStatusFirePool.Buffer, gStatusFirePool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Yellow);
+		ParticleDraw->Render(gd.gpucmd, &gStatusYellowPool.Buffer, gStatusYellowPool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Hack);
+		ParticleDraw->Render(gd.gpucmd, &gStatusHackPool.Buffer, gStatusHackPool.Count);
+
+		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Heal);
+		ParticleDraw->Render(gd.gpucmd, &gStatusHealPool.Buffer, gStatusHealPool.Count);
+
+		RenderBossPrototypeObjects();
+		RenderBossPrototypeShield();
+		RenderAegisShieldVisuals();
+		RenderFrostBlizzardSnowWaves();
+		RenderStatusEffectOverlays();
+		RenderBossPrototypeMissiles();
+		RenderBossPrototypeBeam();
+		RenderRailgunOrbitVisuals();
+		RenderDualBladeFloorVisuals();
+		RenderHackerEmpVisuals();
+		RenderPlayerRailgunBeams();
+		RenderBossPrototypeAoEs();
+		ParticleDraw->FireTexture = GetParticleSpriteResource(gBossExplosionSpriteSlot);
+		ParticleDraw->Render(gd.gpucmd, &gBossExplosionPool.Buffer, gBossExplosionPool.Count);
+	}
 
 	// 24. UI ????? ???? DepthStencil?? Clear???. (??? UI?? ?????? ???? ??? ?? ???? ??????? ??? ????)
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
@@ -7119,7 +7258,7 @@ void Game::Update()
 			gd.viewportArr[0].ViewMatrix = XMMatrixLookAtLH(peye, pat, XMLoadFloat3(&Up));
 			gd.viewportArr[0].Camera_Pos = peye;
 			if (gd.isRaytracingRender) {
-				gd.raytracing.SetRaytracingCamera(peye, pat - peye);
+				gd.raytracing.SetRaytracingCamera(peye, pat - peye, vec4(0, 1, 0, 0), player->m_currentFov);
 			}
 
 			for (int i = 0; i < bulletRays.size; ++i) {
