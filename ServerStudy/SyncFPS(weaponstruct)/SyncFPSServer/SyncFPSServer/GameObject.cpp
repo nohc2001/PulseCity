@@ -670,6 +670,11 @@ BoundingOrientedBox DynamicGameObject::GetOBB() {
 	return obb_world;
 }
 
+void DynamicGameObject::LookAt(vec4 look, vec4 up)
+{
+	worldMat.SetLook(look, up);
+}
+
 void DynamicGameObject::CollisionMove(DynamicGameObject* gbj1, DynamicGameObject* gbj2)
 {
 	constexpr float epsillon = 0.01f;
@@ -3420,6 +3425,15 @@ void Player::Update(float deltaTime)
 		}
 	}
 
+	// 플레이어 경로 기록.
+	int prevTail = tailOffset - 1;
+	prevTail &= 31;
+	if (vec4(PosTail[prevTail] - worldMat.pos).len3 > 0.3f) {
+		PosTail[tailOffset] = worldMat.pos;
+		tailOffset += 1;
+		tailOffset &= 31;
+	}
+
 	vec4 currentPos = worldMat.pos;
 	XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(0, m_yaw, 0);
 	worldMat.mat = rotMat;
@@ -4113,6 +4127,10 @@ void Player::Respawn() {
 }
 
 Monster::Monster() {
+	static int up = 0;
+	tempId = up;
+	up += 1;
+
 	tag = 0;
 	tag[GameObjectTag::Tag_Enable] = false;
 	tag[GameObjectTag::Tag_Dynamic] = true;
@@ -4185,6 +4203,7 @@ void Monster::ApplyMonsterData(MonsterType type)
 
 void Monster::Update(float deltaTime)
 {
+	constexpr bool MoveByTail = true;
 	Zone* zone = gameworld.GetZone(zoneId);
 	if (zone != nullptr && zone->BossPrototypeEnabled && zone->BossPrototypeIndex == zone->currentIndex) {
 		tickLVelocity = 0;
@@ -4207,7 +4226,13 @@ void Monster::Update(float deltaTime)
 		collideCount = 0;
 
 		if (m_monsterType == MonsterType::Dron) {
-			LVelocity = 0;
+			LVelocity.y += dronYMover;
+			if (worldMat.pos.y < 3) dronYMover += deltaTime;
+			else {
+				if (worldMat.pos.y > 10) LVelocity.y = 0;
+				LVelocity.x = (float)(rand() % 3 - 1);
+				LVelocity.z = (float)(rand() % 3 - 1);
+			}
 			isGround = true;
 		}
 		else {
@@ -4215,21 +4240,69 @@ void Monster::Update(float deltaTime)
 				LVelocity.y -= 9.81f * deltaTime;
 			}
 		}
+	
+		if (MoveByTail) {
+			bool b = CurrentTarget != nullptr;
+			if (b) {
+				if (vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 40) 
+					CurrentTarget = nullptr;
 
-		//dron is zerogravity 
-		if (m_monsterType != MonsterType::Dron) {
-			if (isGround == false) {
-				LVelocity.y -= 9.81f * deltaTime;
+				if (CurrentTarget != nullptr && vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 3) {
+					// Tail Move
+					vec4 minDir = 0;
+					float minDist = 999999999;
+					int off = CurrentTarget->tailOffset;
+					for (int i = 0; i < 32; ++i) {
+						off = off - 1;
+						off &= 32;
+						vec4 dir = (CurrentTarget->PosTail[off] - worldMat.pos);
+						vec4 diff = CurrentTarget->worldMat.pos - CurrentTarget->PosTail[off];
+						GameChunk* gc = zone->GetChunkFromPos(worldMat.pos);
+						if (gc != nullptr) {
+							bool RayCanMove = true;
+							float dist = dir.len3;
+							dir.len3 = 1;
+							for (int k = 0; k < gc->Static_gameobjects.size; ++k) {
+								for (int oi = 0; oi < gc->Static_gameobjects[k]->obbArr.size(); ++oi) {
+									BoundingOrientedBox obb = gc->Static_gameobjects[k]->obbArr[oi];
+									float outdist = 0;
+									if (obb.Intersects(worldMat.pos, dir, outdist)) {
+										if (outdist > dist) continue;
+										RayCanMove = false;
+										break;
+									}
+								}
+								if (RayCanMove) break;
+							}
+							if (RayCanMove) {
+								minDir = dir;
+								break;
+							}
+						}
+					}
+
+					if (minDir.x != 0 || minDir.z != 0) {
+						LVelocity.x = minDir.x * 5;
+						LVelocity.z = minDir.z * 5;
+						LookAt(vec4(minDir.x, 0, minDir.z, 0));
+						if (m_monsterType == MonsterType::Dron) {
+							LVelocity.y = minDir.y * 2;
+						}
+						else {
+							if (isGround && zone->midHit() && minDir.y > 0) {
+								LVelocity.y += 3;
+							}
+						}
+					}
+				}
 			}
 		}
-		else {
-			LVelocity.y = 0.0f;
-		}
-	
+
 		if (worldMat.pos.y < -50.0f) {
 			worldMat.pos.y = 100.0f;
 			LVelocity.y = 0;
 		}
+
 		tickLVelocity = LVelocity * deltaTime;
 		bool hardControlled = HasStatusEffect(StatusEffectType::Freeze) ||
 			HasStatusEffect(StatusEffectType::Stun) ||
@@ -4245,210 +4318,246 @@ void Monster::Update(float deltaTime)
 		vec4 monsterPos = worldMat.pos;
 		monsterPos.w = 0;
 
-		if (Target == nullptr || (Target != nullptr && *Target == nullptr)) {
-			int limitseek = 4;
-			if (gameworld.clients.size == 0) {
-				Target = nullptr;
-				TryChaseGhost(deltaTime, monsterPos);
-				return;
-			}
-
-		SEEK_TARGET_LOOP:
-			for (int i = targetSeekIndex; i < gameworld.clients.size; ++i) {
-				limitseek -= 1;
-				if (limitseek == 0) {
+		//Astar Move
+		if(!MoveByTail)
+		{
+			if (Target == nullptr || (Target != nullptr && *Target == nullptr)) {
+				int limitseek = 4;
+				if (gameworld.clients.size == 0) {
+					Target = nullptr;
 					TryChaseGhost(deltaTime, monsterPos);
 					return;
 				}
-				if (gameworld.clients.isnull(i)) continue;
-				int targetZoneId = gameworld.clients[i].zoneId;
-				if (gameworld.IsAdjacentZone(zoneId, targetZoneId) == false) continue;
-				Zone* targetZone = gameworld.GetZone(targetZoneId);
-				if (targetZone == nullptr) continue;
-				if (gameworld.clients[i].pObjData == nullptr) continue;
-				if (gameworld.clients[i].objindex < 0) continue;
-				if (gameworld.clients[i].objindex >= targetZone->Dynamic_gameObjects.size) continue;
-				if (targetZone->Dynamic_gameObjects.isnull(gameworld.clients[i].objindex)) continue;
-				Target = (Player**)&targetZone->Dynamic_gameObjects[gameworld.clients[i].objindex];
-				break;
-			}
-			if (limitseek != 0 && (Target == nullptr || *Target == nullptr)) {
-				targetSeekIndex = 0;
-				goto SEEK_TARGET_LOOP;
-			}
-		}
 
-		vec4 playerPos = (*Target)->worldMat.pos;
-		playerPos.w = 0;
-
-		vec4 toPlayer = playerPos - monsterPos;
-		toPlayer.y = 0.0f;
-		float distanceToPlayer = toPlayer.len3;
-		float effectiveSpeed = m_speed;
-		if (HasStatusEffect(StatusEffectType::Slow)) effectiveSpeed *= 0.45f;
-
-		// Chase target.
-		if (distanceToPlayer <= m_chaseRange) {
-			m_targetPos = playerPos;
-			m_isMove = effectiveSpeed > 0.0f;
-
-			if (distanceToPlayer > 0.0001f) {
-				vec4 lookToPlayer = toPlayer;
-				lookToPlayer.len3 = 1.0f;
-				worldMat.SetLook(lookToPlayer);
-			}
-
-			if (effectiveSpeed > 0.0f && (path.empty() || currentPathIndex >= path.size())) {
-				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
-				AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, zone->allnodes);
-
-				if (start && goal) {
-					path = AstarSearch(start, goal, zone->allnodes);
-					currentPathIndex = 0;
+			SEEK_TARGET_LOOP:
+				for (int i = targetSeekIndex; i < gameworld.clients.size; ++i) {
+					limitseek -= 1;
+					if (limitseek == 0) {
+						TryChaseGhost(deltaTime, monsterPos);
+						return;
+					}
+					if (gameworld.clients.isnull(i)) continue;
+					int targetZoneId = gameworld.clients[i].zoneId;
+					if (gameworld.IsAdjacentZone(zoneId, targetZoneId) == false) continue;
+					Zone* targetZone = gameworld.GetZone(targetZoneId);
+					if (targetZone == nullptr) continue;
+					if (gameworld.clients[i].pObjData == nullptr) continue;
+					if (gameworld.clients[i].objindex < 0) continue;
+					if (gameworld.clients[i].objindex >= targetZone->Dynamic_gameObjects.size) continue;
+					if (targetZone->Dynamic_gameObjects.isnull(gameworld.clients[i].objindex)) continue;
+					Target = (Player**)&targetZone->Dynamic_gameObjects[gameworld.clients[i].objindex];
+					break;
+				}
+				if (limitseek != 0 && (Target == nullptr || *Target == nullptr)) {
+					targetSeekIndex = 0;
+					goto SEEK_TARGET_LOOP;
 				}
 			}
 
-			if (effectiveSpeed > 0.0f && !path.empty() && currentPathIndex < path.size()) {
-				float speedScale = (m_speed > 0.0f) ? (effectiveSpeed / m_speed) : 0.0f;
-				MoveByAstar(deltaTime * speedScale);
-			}
-			else if (effectiveSpeed > 0.0f) {
+			vec4 playerPos = (*Target)->worldMat.pos;
+			playerPos.w = 0;
+
+			vec4 toPlayer = playerPos - monsterPos;
+			toPlayer.y = 0.0f;
+			float distanceToPlayer = toPlayer.len3;
+			float effectiveSpeed = m_speed;
+			if (HasStatusEffect(StatusEffectType::Slow)) effectiveSpeed *= 0.45f;
+
+			// Chase target.
+			if (distanceToPlayer <= m_chaseRange) {
+				m_targetPos = playerPos;
+				m_isMove = effectiveSpeed > 0.0f;
+
 				if (distanceToPlayer > 0.0001f) {
-					toPlayer.len3 = 1.0f;
-					tickLVelocity += toPlayer * effectiveSpeed * deltaTime;
+					vec4 lookToPlayer = toPlayer;
+					lookToPlayer.len3 = 1.0f;
+					worldMat.SetLook(lookToPlayer);
 				}
-			}
 
+				if (effectiveSpeed > 0.0f && (path.empty() || currentPathIndex >= path.size())) {
+					AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
+					AstarNode* goal = FindClosestNode(playerPos.x, playerPos.z, zone->allnodes);
 
-			if (distanceToPlayer < 2.0f) {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-			}
-			m_fireTimer += deltaTime;
-			if (m_fireTimer >= m_fireDelay) {
-				m_fireTimer = 0.0f;
-
-				vec4 rayStart = monsterPos + (worldMat.look * 0.5f);
-				rayStart.y += 0.7f;
-				vec4 rayDirection = playerPos - rayStart;
-
-				float InverseAccurcy = distanceToPlayer / 6;
-				rayDirection.x += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
-				rayDirection.y += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
-				rayDirection.z += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
-				rayDirection.len3 = 1.0f;
-
-				const float effectRadius = (m_monsterType == MonsterType::Tower) ? 0.42f : 0.35f;
-				const float effectPower = 18.0f;
-				const float effectDuration = 0.20f;
-				vec4 effectPosition = rayStart + rayDirection * 0.35f;
-
-				if (m_monsterType == MonsterType::Dron) {
-					vec4 right = worldMat.right;
-					right.y = 0.0f;
-					if (right.len3 < 0.0001f) {
-						right = vec4(-rayDirection.z, 0.0f, rayDirection.x, 0.0f);
+					if (start && goal) {
+						path = AstarSearch(start, goal, zone->allnodes);
+						currentPathIndex = 0;
 					}
-					right.len3 = 1.0f;
-
-					vec4 leftMuzzle = effectPosition - right * 0.8f;
-					vec4 rightMuzzle = effectPosition + right * 0.8f;
-					leftMuzzle.y -= 0.40f;
-					rightMuzzle.y -= 0.40f;
-
-					zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
-						SkillEffectType::Rifle_GrenadeTrail, leftMuzzle, rayDirection, effectRadius, effectPower, effectDuration);
-					zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
-						SkillEffectType::Rifle_GrenadeTrail, rightMuzzle, rayDirection, effectRadius, effectPower, effectDuration);
 				}
-				else {
-					effectPosition.y += 0.6f;
-					if (m_monsterType == MonsterType::Tower) {
-						effectPosition.y += 0.7f;
-						effectPosition += rayDirection * 0.8f;
+
+				if (effectiveSpeed > 0.0f && !path.empty() && currentPathIndex < path.size()) {
+					float speedScale = (m_speed > 0.0f) ? (effectiveSpeed / m_speed) : 0.0f;
+					MoveByAstar(deltaTime * speedScale);
+				}
+				else if (effectiveSpeed > 0.0f) {
+					if (distanceToPlayer > 0.0001f) {
+						toPlayer.len3 = 1.0f;
+						tickLVelocity += toPlayer * effectiveSpeed * deltaTime;
 					}
-					zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
-						SkillEffectType::Rifle_GrenadeTrail, effectPosition, rayDirection, effectRadius, effectPower, effectDuration);
 				}
-				zone->FireRaycast(this, rayStart, rayDirection, m_chaseRange, Attack);
-			}
-		}
-		else {
-			if (m_speed <= 0.0f || m_patrolRange <= 0.0f) {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-				m_isMove = false;
-				path.clear();
-				currentPathIndex = 0;
-			}
-			else
-			if (!m_isMove) {
-				float randomAngle = ((float)rand() / RAND_MAX) * 2.0f * XM_PI;
-				float randomRadius = ((float)rand() / RAND_MAX) * m_patrolRange;
 
-				m_targetPos.x = m_homePos.x + randomRadius * cos(randomAngle);
-				m_targetPos.z = m_homePos.z + randomRadius * sin(randomAngle);
-				m_targetPos.y = m_homePos.y;
 
-				m_isMove = true;
-				m_patrolTimer = 0.0f;
-
-				AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
-				AstarNode* goal = FindClosestNode(m_targetPos.x, m_targetPos.z, zone->allnodes);
-
-				if (start && goal) {
-					path = AstarSearch(start, goal, zone->allnodes);
-					currentPathIndex = 0;
-				}
-				else {
-					path.clear();
-					currentPathIndex = 0;
-				}
-			}
-
-			m_patrolTimer += deltaTime;
-
-			if (m_patrolTimer >= 5.0f) {
-				tickLVelocity.x = 0;
-				tickLVelocity.z = 0;
-				m_isMove = false;
-				path.clear();
-				currentPathIndex = 0;
-				return;
-			}
-
-			if (!path.empty() && currentPathIndex < path.size()) {
-				MoveByAstar(deltaTime);
-
-				if (currentPathIndex >= path.size()) {
+				if (distanceToPlayer < 2.0f) {
 					tickLVelocity.x = 0;
 					tickLVelocity.z = 0;
-					m_isMove = false;
-					path.clear();
-					currentPathIndex = 0;
+				}
+				m_fireTimer += deltaTime;
+				if (m_fireTimer >= m_fireDelay) {
+					m_fireTimer = 0.0f;
+
+					vec4 rayStart = monsterPos + (worldMat.look * 0.5f);
+					rayStart.y += 0.7f;
+					vec4 rayDirection = playerPos - rayStart;
+
+					float InverseAccurcy = distanceToPlayer / 6;
+					rayDirection.x += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+					rayDirection.y += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+					rayDirection.z += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+					rayDirection.len3 = 1.0f;
+
+					const float effectRadius = (m_monsterType == MonsterType::Tower) ? 0.42f : 0.35f;
+					const float effectPower = 18.0f;
+					const float effectDuration = 0.20f;
+					vec4 effectPosition = rayStart + rayDirection * 0.35f;
+
+					if (m_monsterType == MonsterType::Dron) {
+						vec4 right = worldMat.right;
+						right.y = 0.0f;
+						if (right.len3 < 0.0001f) {
+							right = vec4(-rayDirection.z, 0.0f, rayDirection.x, 0.0f);
+						}
+						right.len3 = 1.0f;
+
+						vec4 leftMuzzle = effectPosition - right * 0.8f;
+						vec4 rightMuzzle = effectPosition + right * 0.8f;
+						leftMuzzle.y -= 0.40f;
+						rightMuzzle.y -= 0.40f;
+
+						zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
+							SkillEffectType::Rifle_GrenadeTrail, leftMuzzle, rayDirection, effectRadius, effectPower, effectDuration);
+						zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
+							SkillEffectType::Rifle_GrenadeTrail, rightMuzzle, rayDirection, effectRadius, effectPower, effectDuration);
+					}
+					else {
+						effectPosition.y += 0.6f;
+						if (m_monsterType == MonsterType::Tower) {
+							effectPosition.y += 0.7f;
+							effectPosition += rayDirection * 0.8f;
+						}
+						zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
+							SkillEffectType::Rifle_GrenadeTrail, effectPosition, rayDirection, effectRadius, effectPower, effectDuration);
+					}
+					zone->FireRaycast(this, rayStart, rayDirection, m_chaseRange, Attack);
 				}
 			}
 			else {
-				vec4 currentPos = worldMat.pos;
-				currentPos.w = 0;
-				vec4 direction = m_targetPos - currentPos;
-				direction.y = 0.0f;
-				float distance = direction.len3;
-
-				if (distance > 1.0f) {
-					direction.len3 = 1.0f;
-					tickLVelocity += direction * m_speed * deltaTime;
-					worldMat.SetLook(direction);
-				}
-				else {
+				if (m_speed <= 0.0f || m_patrolRange <= 0.0f) {
 					tickLVelocity.x = 0;
 					tickLVelocity.z = 0;
 					m_isMove = false;
+					path.clear();
+					currentPathIndex = 0;
+				}
+				else
+					if (!m_isMove) {
+						float randomAngle = ((float)rand() / RAND_MAX) * 2.0f * XM_PI;
+						float randomRadius = ((float)rand() / RAND_MAX) * m_patrolRange;
+
+						m_targetPos.x = m_homePos.x + randomRadius * cos(randomAngle);
+						m_targetPos.z = m_homePos.z + randomRadius * sin(randomAngle);
+						m_targetPos.y = m_homePos.y;
+
+						m_isMove = true;
+						m_patrolTimer = 0.0f;
+
+						AstarNode* start = FindClosestNode(monsterPos.x, monsterPos.z, zone->allnodes);
+						AstarNode* goal = FindClosestNode(m_targetPos.x, m_targetPos.z, zone->allnodes);
+
+						if (start && goal) {
+							path = AstarSearch(start, goal, zone->allnodes);
+							currentPathIndex = 0;
+						}
+						else {
+							path.clear();
+							currentPathIndex = 0;
+						}
+					}
+
+				m_patrolTimer += deltaTime;
+
+				if (m_patrolTimer >= 5.0f) {
+					tickLVelocity.x = 0;
+					tickLVelocity.z = 0;
+					m_isMove = false;
+					path.clear();
+					currentPathIndex = 0;
+					return;
+				}
+
+				if (!path.empty() && currentPathIndex < path.size()) {
+					MoveByAstar(deltaTime);
+
+					if (currentPathIndex >= path.size()) {
+						tickLVelocity.x = 0;
+						tickLVelocity.z = 0;
+						m_isMove = false;
+						path.clear();
+						currentPathIndex = 0;
+					}
+				}
+				else {
+					vec4 currentPos = worldMat.pos;
+					currentPos.w = 0;
+					vec4 direction = m_targetPos - currentPos;
+					direction.y = 0.0f;
+					float distance = direction.len3;
+
+					if (distance > 1.0f) {
+						direction.len3 = 1.0f;
+						tickLVelocity += direction * m_speed * deltaTime;
+						worldMat.SetLook(direction);
+					}
+					else {
+						tickLVelocity.x = 0;
+						tickLVelocity.z = 0;
+						m_isMove = false;
+					}
 				}
 			}
 		}
 
 		if (zone->lowHit()) {
+			if (CurrentTarget == nullptr) {
+				GameObjectIncludeChunks goic = this->IncludeChunks;
+				goic.xmin -= 1;
+				goic.ymin -= 1;
+				goic.zmin -= 1;
+				goic.xlen += 2;
+				goic.ylen += 2;
+				goic.zlen += 2;
+				int chunckSize = goic.GetChunckSize();
+				ChunkIndex ci = ChunkIndex(goic.xmin, goic.ymin, goic.zmin);
+				float CurrentDist = 999999;
+				for (; ci.extra < chunckSize; goic.Inc(ci)) {
+					auto f = zone->chunck.find(ci);
+					if (f != zone->chunck.end()) {
+						GameChunk* gc = f->second;
+						for (int k = 0; k < gc->SkinMesh_gameobjects.size; ++k) {
+							if (gc->SkinMesh_gameobjects.isnull(k)) continue;
+							if (gc->SkinMesh_gameobjects[k]->tag[GameObjectTag::Tag_Player]) {
+								Player* p = (Player*)gc->SkinMesh_gameobjects[k];
+								float dist = vec4(p->worldMat.pos - worldMat.pos).fast_square_of_len3;
+								if (dist < CurrentDist) {
+									// 만약 이 플레이어를 따라갈 수 있다면 채택함.
+									CurrentDist = dist;
+									CurrentTarget = p;
+								}
+							}
+						}
+					}
+				}
+			}
+			
+
 			zone->Sending_ChangeGameObjectMember<matrix>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &(worldMat));
 		}
 	}
@@ -4728,7 +4837,7 @@ void Monster::Respawn()
 {
 	Zone* zone = gameworld.GetZone(zoneId);
 	Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
-	while (gameworld.commonMap.isStaticCollision(GetOBB())) {
+	while (zone->map.isStaticCollision(GetOBB())) {
 		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
 	}
 	m_isMove = false;
@@ -5549,6 +5658,7 @@ void World::Init() {
 	//Set Near Zones
 	for (int i = 0; i < gameworld.ZoneTable.size(); ++i) {
 		Zone* tempZone = gameworld.ZoneTable[i];
+		tempZone->nearZones[0] = tempZone;
 		int nearSiz = 1;
 		int nearSiz_5 = 5;
 		for (int k = 0; k < gameworld.ZoneTable.size(); ++k) {
@@ -5738,6 +5848,7 @@ bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 // 연결에 성공하면 그 소켓을 clients[] 에 isServerPeer 슬롯으로 넣어, 기존 poll/Receiving 경로로
 // 메시지를 주고받게 한다(별도 폴링 인프라 불필요). 이웃이 아직 안 떠 있으면 조용히 다음 기회에 재시도.
 void World::TryConnectPeers() {
+	if (NotMakePeer) return;
 	if (singleProcessAllZones) return; // 단일 프로세스는 이웃이 같은 메모리에 있어 링크가 필요 없다.
 
 	//AverageSecPer60Start(0);

@@ -14,7 +14,6 @@ class Player;
 struct Zone {
 	static constexpr int MaxStaticObjectCount = 16384; // 8byte ptr array = 131KB.
 	
-
 	static constexpr int OffsetMulArr[3][3] = {
 		{ 5, 1, 6 },
 		{ 2, 0, 3 },
@@ -64,6 +63,7 @@ struct Zone {
 	bool isMapLoaded = false;
 	bool bReqireBakeLight_Raster = true;
 	bool bReqireBakeLight_Raytracing = true;
+	void LightBake();
 
 	// �?��??붙�? ?�이?�들???�?�하�??�한 ?�로??버퍼
 	GPUResource ZoneLightChuncks;

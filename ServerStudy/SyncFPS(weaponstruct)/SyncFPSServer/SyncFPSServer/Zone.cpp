@@ -1091,16 +1091,18 @@ void Zone::SpawnObjects() {
     if (zoneId == 73) {
         float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
         float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
+        float cy = map.AABB[0].y + 20;
+
         float py = map.AABB[1].y - 4.0f;   // drop from the ceiling like the player -> falls to the real walkable floor
         cout << "[ZoneMonster] zone73 spawn center=(" << cx << "," << cz << ") py=" << py
              << " AABB.min.y=" << map.AABB[0].y << " AABB.max.y=" << map.AABB[1].y << endl;
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 40; ++i) {
             Monster* mon = new Monster();
             mon->zone = this;
-            mon->ApplyMonsterData(MonsterType::Walker);   // fixed type (Monster001) so shape is definitely present
-            float mx = cx + (float)(rand() % 20 - 10);
-            float mz = cz + (float)(rand() % 20 - 10);
-            mon->Init(XMMatrixTranslation(mx, py, mz));
+            mon->ApplyMonsterData((MonsterType)(rand() % 2));   // fixed type (Monster001) so shape is definitely present
+            float mx = cx + (float)(rand() % 300 - 150);
+            float mz = cz + (float)(rand() % 300 - 150);
+            mon->Init(XMMatrixTranslation(mx, cy, mz));
             NewObject(mon, GameObjectType::_Monster);
             PushGameObject(mon);
         }
@@ -1278,7 +1280,6 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     header.rayDir = XMFLOAT3(rayDirection.f3.x, rayDirection.f3.y, rayDirection.f3.z);
     header.distance = closestDistance;
     CommonSDS.postpush_end();
-
 }
 
 void Zone::FirePiercingRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage) {
@@ -1824,8 +1825,6 @@ void Zone::PushGameObject(GameObject* go) {
 //    std::cout << std::flush;
 //}
 
-
-
 void Zone::Sending_BossState(SendDataSaver& sds)
 {
     sds.postpush_start();
@@ -1900,7 +1899,6 @@ void Zone::Sending_BossState(SendDataSaver& sds)
     }
     sds.postpush_end();
 }
-
 
 static vec4 NormalizeXZOrFallback(vec4 v, vec4 fallback)
 {

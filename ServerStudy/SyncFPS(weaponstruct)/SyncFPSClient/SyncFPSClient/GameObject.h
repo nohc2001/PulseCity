@@ -119,19 +119,22 @@ union Tag {
 		Tag* t;
 		int index;
 
-		operator bool() { return t->tag; }
+		operator bool() {
+			UINT tb = (t->tag & (1 << index));
+			return (tb != 0);
+		}
 
 		void operator=(bool b) {
 			if (b) {
-				t->tag |= index;
+				t->tag |= (1 << index);
 			}
 			else {
-				t->tag &= ~index;
+				t->tag &= ~(1 << index);
 			}
 		}
 	};
 
-	// 이름에서 ShapeIndex를 얻는 map
+	// OBB.Center
 	TagSetter operator[](UINT MaskIndex) {
 		TagSetter ts;
 		ts.t = this;
@@ -141,11 +144,12 @@ union Tag {
 };
 
 enum GameObjectTag {
-	Tag_Enable = 1, // 게임오브젝트 활성화 여부
-	Tag_Dynamic = 2, // 게임오브젝트가 움직일 수 있는지 여부
+	Tag_Enable = 0, // 게임오브젝트 활성화 여부
+	Tag_Dynamic = 1, // 게임오브젝트가 움직일 수 있는지 여부
 	// 이름에서 ShapeIndex를 얻는 map
-	Tag_SkinMeshObject = 3,
+	Tag_SkinMeshObject = 2,
 	// 이름에서 ShapeIndex를 얻는 map
+	Tag_Player = 3,
 };
 
 struct GameObject {
@@ -317,7 +321,6 @@ struct ChunkIndex {
 	BoundingBox GetAABB();
 };
 
-	// 이름에서 ShapeIndex를 얻는 map
 struct GameObjectIncludeChunks {
 	int xmin;
 	int ymin;

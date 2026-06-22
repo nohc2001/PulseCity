@@ -1,7 +1,5 @@
 Microsoft (R) DirectX Texture Converter [DirectXTex] Version 208 (library)
 Copyright (C) Microsoft Corp.
 
-reading Resources\StartScreen.png (1536x1024 R8G8B8A8_UNORM 2D ес:Opaque) as
-WARNING: Image is not using premultipled alpha
- (1536x1024,11 BC3_UNORM 2D ес:Opaque)
-writing StartScreen.dds
+reading Resources\Map\OfficeDungeon_2floor\Model\elevator3.bmp (2048x2048 B8G8R8X8_UNORM 2D) as (2048x2048,12 BC3_UNORM 2D ес:Opaque)
+writing elevator3.dds

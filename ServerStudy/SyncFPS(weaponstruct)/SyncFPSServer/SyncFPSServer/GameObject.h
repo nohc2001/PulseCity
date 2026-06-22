@@ -1084,6 +1084,11 @@ struct Player : public SkinMeshGameObject {
 	float m_dualDashTimer = 0.0f;
 	float m_dualDashDamageFlow = 0.0f;
 	std::vector<GameObject*> m_dualDashHitTargets;
+	
+	// 플레이어가 지나온 경로 표시. NPC는 이 것들중 가장 가깝고, 갈 수 있는 방향으로 전진하도록 만든다.
+	vec4 PosTail[32] = {};
+	int tailOffset = 0;
+
 	//STC �÷��̾��� ��
 	STCDef(int, Gold);
 
@@ -1355,6 +1360,7 @@ struct Monster : public SkinMeshGameObject {
 	int targetSeekIndex = 0;
 	// OBB.Center
 	Player** Target = nullptr;
+	Player* CurrentTarget = nullptr;
 	// OBB.Center
 	bool m_isMove = false;
 	// OBB.Center
@@ -1368,6 +1374,9 @@ struct Monster : public SkinMeshGameObject {
 	float StatusPower[(int)StatusEffectType::Max] = {};
 	float StatusTickFlow[(int)StatusEffectType::Max] = {};
 	GameObject* StatusSource[(int)StatusEffectType::Max] = {};
+
+	int tempId = 0;
+	float dronYMover = -1;
 
 	Monster();
 	virtual ~Monster() {}
@@ -2141,6 +2150,7 @@ struct World {
 	int ownedZoneId = 0;
 
 	bool singleProcessAllZones = false;
+	bool NotMakePeer = true;
     
 	unordered_map<int, PlayerTransferData> pendingTransfers;
     int nextTransferToken = 1;

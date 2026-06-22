@@ -1164,7 +1164,7 @@ struct RayTracingMesh {
 		}
 	};
 
-	static std::set<D3D12_GPU_VIRTUAL_ADDRESS> BLASVA_Set;
+	//static std::set<D3D12_GPU_VIRTUAL_ADDRESS> BLASVA_Set;
 
 	static void StaticInit();
 	void AllocateRaytracingMesh(vector<Vertex> vbarr, vector<TriangleIndex> ibarr, int SubMeshNum = 1, int* SubMeshIndexes = nullptr, int ZoneID = -1);

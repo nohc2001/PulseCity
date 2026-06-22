@@ -1788,8 +1788,7 @@ void DynamicGameObject::Update(float delatTime)
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
 	if (deltaTime < 0.1f) {
-		BoundingOrientedBox beforeobb = GetOBB();
-		GameObjectIncludeChunks goic_before = game.Current_Zone->GetChunks_Include_OBB(beforeobb);
+		GameObjectIncludeChunks goic_before = this->IncludeChunks;
 		float pow = deltaTime * 10;
 		vec4 flowScale, flowRot, flowPos;
 		XMMatrixDecompose((XMVECTOR*)&flowScale, (XMVECTOR*)&flowRot, (XMVECTOR*)&flowPos, worldMat);
@@ -1808,8 +1807,7 @@ void DynamicGameObject::PositionInterpolation(float deltaTime)
 		}
 	}
 	else {
-		BoundingOrientedBox beforeobb = GetOBB();
-		GameObjectIncludeChunks goic_before = game.Current_Zone->GetChunks_Include_OBB(beforeobb);
+		GameObjectIncludeChunks goic_before = this->IncludeChunks;
 		vec4 renderScale = DestScale;
 		vec4 renderRot = DestRot;
 		vec4 renderPos = DestPos;
@@ -3195,7 +3193,7 @@ void Monster::Render(matrix parent)
 		return;
 	}
 
-	//SkinMeshGameObject::Render(parent);
+	SkinMeshGameObject::Render(parent);
 }
 
 void Monster::Init(const XMMATRIX& initialWorldMatrix)
@@ -3951,10 +3949,7 @@ void Player::Render_ThirdPersonWeapon()
 	const int visualKey = GetPlayerWeaponVisualKey(this);
 	if (gd.isRaytracingRender) {
 		matrix gunmat;
-		if (cachedThirdPersonWeaponMatrixValid && cachedThirdPersonWeaponType == visualKey) {
-			gunmat = cachedThirdPersonWeaponMatrix;
-		}
-		else if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
+		if (!TryBuildThirdPersonWeaponMatrix(this, false, gunmat)) {
 			gunmat = gunMatrix_thirdPersonView;
 			gunmat *= XMMatrixRotationX(XM_PI);
 			gunmat.pos.y -= 0.40f;
@@ -5605,7 +5600,6 @@ NPCTalkData::NPCTalkData(const wchar_t* speaker, const wchar_t* txt, bool nxtEsc
 		sel[3] = sel4;
 	}
 }
-
 
 void Player::UpdateThirdPersonWeaponAttachmentCache()
 {

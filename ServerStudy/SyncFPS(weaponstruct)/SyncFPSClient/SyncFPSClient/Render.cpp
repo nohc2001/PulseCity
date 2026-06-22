@@ -8,7 +8,7 @@
 GlobalDevice gd;
 extern Game game;
 extern int dbgc[128];
-std::set<D3D12_GPU_VIRTUAL_ADDRESS> RayTracingMesh::BLASVA_Set;
+//std::set<D3D12_GPU_VIRTUAL_ADDRESS> RayTracingMesh::BLASVA_Set;
 
 unordered_map<string, int> Shape::StrToShapeIndex;
 vector<Shape> Shape::ShapeTable;
@@ -2878,7 +2878,7 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
 
-		BLASVA_Set.insert(MeshDefaultInstanceData.AccelerationStructure);
+		//BLASVA_Set.insert(MeshDefaultInstanceData.AccelerationStructure);
 
 		VertexBufferByteSize[off] += addtionalVB_Bytesiz;
 		VertexBufferByteSize[off] = VBAlign * (1 + ((VertexBufferByteSize[off] - 1) / VBAlign));
@@ -3063,7 +3063,7 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 		MeshDefaultInstanceData.AccelerationStructure = BLAS->GetGPUVirtualAddress();
 		MeshDefaultInstanceData.InstanceContributionToHitGroupIndex = 0;
 
-		BLASVA_Set.insert(MeshDefaultInstanceData.AccelerationStructure);
+		//BLASVA_Set.insert(MeshDefaultInstanceData.AccelerationStructure);
 
 		UAV_VertexBufferByteSize += addtionalVB_Bytesiz;
 		UAV_VertexBufferByteSize = VBAlign * (1 + ((UAV_VertexBufferByteSize - 1) / VBAlign));
@@ -6397,7 +6397,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		}
 		else {
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
-			for (int i = LastMaterialStructureBufferUp; i < game.RenderMaterialTable.size(); ++i) {
+			for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
 				if (game.RenderMaterialTable[i] != nullptr) {
 					MappedMaterialStructuredBuffer[i] = game.RenderMaterialTable[i]->GetMatST();
 				}

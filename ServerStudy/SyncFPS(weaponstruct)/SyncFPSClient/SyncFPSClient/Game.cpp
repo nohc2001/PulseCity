@@ -765,6 +765,53 @@ void Zone::ZoneAssetRelease()
 	//Immortal_ZoneLightBuffer_SRV 는 어짜피 참조만 해서 상관이 없음.
 }
 
+void Zone::LightBake() {
+	if (ZoneLightChuncks.resource) ZoneLightChuncks.Release();
+	if (ZoneLightChuncks_Mapped) ZoneLightChuncks_Mapped = nullptr;
+
+	vec4 Counts = (Map->AABB[1] - Map->AABB[0]) / Zone::chunck_divide_Width;
+	ChunckCountX = floor(Counts.x + 1);
+	ChunckCountY = floor(Counts.y + 1);
+	ChunckCountZ = floor(Counts.z + 1);
+
+	int ix = floor(Map->AABB[0].x / Zone::chunck_divide_Width);
+	int iy = floor(Map->AABB[0].y / Zone::chunck_divide_Width);
+	int iz = floor(Map->AABB[0].z / Zone::chunck_divide_Width);
+	ChunkIndex startci = ChunkIndex(ix, iy, iz);
+
+	UINT ncbElementBytes = ((sizeof(ChunckLightData) * (ChunckCountX * ChunckCountY * ChunckCountZ) + 255) & ~255); // 256의 배수
+	ZoneLightChuncks = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	ZoneLightChuncks.resource->Map(0, NULL, (void**)&ZoneLightChuncks_Mapped);
+	ZeroMemory(ZoneLightChuncks_Mapped, ncbElementBytes);
+	for (auto f : chunck) {
+		GameChunk* gc = f.second;
+		ChunkIndex ci = f.first;
+		ChunkIndex rci;
+		rci.x = ci.x - startci.x;
+		rci.y = ci.y - startci.y;
+		rci.z = ci.z - startci.z;
+		int index = rci.z + rci.y * ChunckCountZ + rci.x * ChunckCountZ * ChunckCountY;
+		if (index > ChunckCountX * ChunckCountY * ChunckCountZ) continue;
+		ChunckLightData& LightChunck = ZoneLightChuncks_Mapped[index];
+		int maxSiz = min(gc->Lights.size(), 32);
+		for (int i = 0; i < maxSiz; ++i) {
+			LightChunck.lights[i] = *gc->Lights[i];
+		}
+		LightChunck.lights[0].MaxLightCount = maxSiz;
+	}
+	ZoneLightChuncks.resource->Unmap(0, nullptr);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Buffer.FirstElement = 0;
+	srvDesc.Buffer.NumElements = ChunckCountX * ChunckCountY * ChunckCountZ;
+	srvDesc.Buffer.StructureByteStride = sizeof(ChunckLightData);
+	srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+	gd.pDevice->CreateShaderResourceView(ZoneLightChuncks.resource, &srvDesc, Immortal_ZoneLightBuffer_SRV.hCreation.hcpu);
+}
+
 namespace
 {
 	enum class ParticleSpriteSlot
@@ -4961,6 +5008,7 @@ void Game::RebuildStaticChunks()
 * spec :
 * 1. must load all nearzone.
 */
+#pragma optimize ("", off)
 void Game::LoadLinkedZoneMaps()
 {
 	bool loadingMap = false;
@@ -4970,7 +5018,6 @@ void Game::LoadLinkedZoneMaps()
 		if (nearzone->Map != nullptr) continue;
 
 		if (nearzone->isMapLoaded == false) {
-			int assetOff = nearzone->Asset_OffsetMul;
 
 			loadingMap = true;
 			nearzone->Map = new GameMap();
@@ -5015,7 +5062,7 @@ void Game::LoadLinkedZoneMaps()
 		PrebuildStaticObjectAutoLOD();
 	}
 }
-
+#pragma optimize ("", on)
 bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneId, int transferToken)
 {
 	char ipLocal[64] = {};
@@ -5234,7 +5281,6 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 	//	game.PushLight(game.LightTable[i]);
 	//}
 
-
 	for (int i = 0; i < GlobalMaterialCount; ++i) {
 		Material* mat = MaterialTable[i];
 		if (isAssetAddingInGlobal == false) {
@@ -5242,6 +5288,8 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 			RenderMaterialTable[i] = mat;
 		}
 	}
+
+	Material::InitMaterialStructuredBuffer(false);
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
@@ -5256,7 +5304,6 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 	//	//RefreshLoadedZoneMapTransforms();
 	//	//Map = LoadedZoneMaps[zoneid];
 	//	//SetCurrentZoneStaticObjects(zoneid);
-
 	//
 	//}
 	//RebuildStaticChunks();
@@ -5288,7 +5335,7 @@ void Game::DrawLoadingScreen(GPUResource* tex) {
 	gd.gpucmd.Reset();
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	/*gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);*/
 
 	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
 	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
@@ -5312,7 +5359,7 @@ void Game::DrawLoadingScreen(GPUResource* tex) {
 	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
-	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	/*gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);*/
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
@@ -5337,57 +5384,23 @@ void Game::Render() {
 	for (int i = 0; i < 9; ++i) {
 		Zone* nearzone = game.Current_Zone->nearZones[i];
 		if (nearzone == nullptr) continue;
+
+		if (nearzone->isMapLoaded && (nearzone->bReqireBakeLight_Raster && nearzone->bReqireBakeLight_Raytracing)) {
+			nearzone->LightBake();
+		}
+
 		if (nearzone->isMapLoaded && nearzone->bReqireBakeLight_Raster) {
-			if (nearzone->ZoneLightChuncks.resource) nearzone->ZoneLightChuncks.Release();
-			if (nearzone->ZoneLightChuncks_Mapped) nearzone->ZoneLightChuncks_Mapped = nullptr;
-
-			vec4 Counts = (nearzone->Map->AABB[1] - nearzone->Map->AABB[0]) / Zone::chunck_divide_Width;
-			nearzone->ChunckCountX = floor(Counts.x + 1);
-			nearzone->ChunckCountY = floor(Counts.y + 1);
-			nearzone->ChunckCountZ = floor(Counts.z + 1);
-
 			int ix = floor(nearzone->Map->AABB[0].x / Zone::chunck_divide_Width);
 			int iy = floor(nearzone->Map->AABB[0].y / Zone::chunck_divide_Width);
 			int iz = floor(nearzone->Map->AABB[0].z / Zone::chunck_divide_Width);
 			ChunkIndex startci = ChunkIndex(ix, iy, iz);
+
 			BoundingBox bb = startci.GetAABB();
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckStart = bb.Center;
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckStart -= vec4(bb.Extents);
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[0] = nearzone->ChunckCountX;
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[1] = nearzone->ChunckCountY;
 			LightCBData_withShadow[nearzone->Asset_OffsetMul]->ChunckCount[2] = nearzone->ChunckCountZ;
-
-			UINT ncbElementBytes = ((sizeof(ChunckLightData) * (nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ) + 255) & ~255); // 256의 배수
-			nearzone->ZoneLightChuncks = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
-			nearzone->ZoneLightChuncks.resource->Map(0, NULL, (void**)&nearzone->ZoneLightChuncks_Mapped);
-			ZeroMemory(nearzone->ZoneLightChuncks_Mapped, ncbElementBytes);
-			for (auto f : nearzone->chunck) {
-				GameChunk* gc = f.second;
-				ChunkIndex ci = f.first;
-				ChunkIndex rci;
-				rci.x = ci.x - startci.x;
-				rci.y = ci.y - startci.y;
-				rci.z = ci.z - startci.z;
-				int index = rci.z + rci.y * nearzone->ChunckCountZ + rci.x * nearzone->ChunckCountZ * nearzone->ChunckCountY;
-				if (index > nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ) continue;
-				ChunckLightData& LightChunck = nearzone->ZoneLightChuncks_Mapped[index];
-				int maxSiz = min(gc->Lights.size(), 32);
-				for (int i = 0; i < maxSiz; ++i) {
-					LightChunck.lights[i] = *gc->Lights[i];
-				}
-				LightChunck.lights[0].MaxLightCount = maxSiz;
-			}
-			nearzone->ZoneLightChuncks.resource->Unmap(0, nullptr);
-
-			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-			srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			srvDesc.Buffer.FirstElement = 0;
-			srvDesc.Buffer.NumElements = nearzone->ChunckCountX * nearzone->ChunckCountY * nearzone->ChunckCountZ;
-			srvDesc.Buffer.StructureByteStride = sizeof(ChunckLightData);
-			srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-			gd.pDevice->CreateShaderResourceView(nearzone->ZoneLightChuncks.resource, &srvDesc, nearzone->Immortal_ZoneLightBuffer_SRV.hCreation.hcpu);
 
 			nearzone->bReqireBakeLight_Raster = false;
 		}
@@ -6041,6 +6054,11 @@ void Game::Render_RayTracing()
 	for (int i = 0; i < 9; ++i) {
 		Zone* nearZone = game.Current_Zone->nearZones[i];
 		if (nearZone == nullptr) continue;
+
+		if (nearZone->isMapLoaded && (nearZone->bReqireBakeLight_Raster && nearZone->bReqireBakeLight_Raytracing)) {
+			nearZone->LightBake();
+		}
+
 		if (nearZone->isMapLoaded && nearZone->bReqireBakeLight_Raytracing) {
 			vec4 Counts = (nearZone->Map->AABB[1] - nearZone->Map->AABB[0]) / Zone::chunck_divide_Width;
 			nearZone->ChunckCountX = floor(Counts.x + 1);
@@ -6270,6 +6288,26 @@ void Game::Render_RayTracing()
 	vec4 rt = Rate * vec4(-1650, 850, -1000, 700);
 
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+	// Composite the full-screen damage feedback first. Screen UI currently uses
+	// a depth-writing pipeline, so clear only its depth afterward and draw every
+	// HUD element and SDF label cleanly on top of the retained color overlay.
+	RenderDamageFeedbackHUD();
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+	// The scope belongs above the world but below every gameplay HUD element.
+	// Clear only depth again so ammo/cooldown SDF text cannot be rejected by it.
+	RenderSniperScopeHUD();
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+	RenderGameplayStatusHUD();
+	RenderBossPrototypeHUD();
+	RenderBossPrototypeCoreHealthPlates();
+	RenderMonsterHealthPlates();
+	RenderFloatingDamageTexts();
+	RenderGameplaySkillHUD();
+	RenderAmmoHUD();
+
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
 	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
@@ -6903,7 +6941,6 @@ void Game::Update()
 	}
 }
 
-#pragma optimize( "", off )
 int Game::Receiving(char* ptr, int totallen)
 {
 	char* currentPivot = ptr;
@@ -7538,7 +7575,6 @@ READ_START:
 
 	return offset;
 }
-#pragma optimize( "", on )
 
 void Game::AddMouseInput(int deltaX, int deltaY)
 {
