@@ -88,6 +88,7 @@ int main() {
 		<< endl;
 
 	vector<WSAPOLLFD> readFds;
+	vector<int> readClientIndices;
 	//??
 	server.Listen();
 	double DeltaFlow = 0;
@@ -107,11 +108,15 @@ int main() {
 		ft = GetTicks();
 		DeltaFlow += (double)(ft - st) * InvHZ;
 		if (DeltaFlow >= 0.008) { // [지연 개선] 틱 주기 16ms -> 8ms (이동은 DeltaTime 기반이라 속도 불변, 플러시만 빨라짐)
-			DeltaTime = (float)DeltaFlow;
+			// A peer/transfer/network hitch must not become one huge physics step.
+			// Large steps can move a freshly transferred player completely through a thin floor OBB.
+			const float accumulatedDelta = (float)DeltaFlow;
+			DeltaTime = accumulatedDelta > 0.033f ? 0.033f : accumulatedDelta;
 			gameworld.Update();
 			DeltaFlow = 0;
 
 			// [4단계-STEP2] 매 틱 내 존 플레이어 상태를 이웃 서버로 복제.
+			gameworld.PumpPeerConnections();
 			gameworld.SendGhostToPeers();
 
 			// [4단계-STEP1] 약 1초마다 아직 연결 안 된 이웃에 재접속 시도.
@@ -124,32 +129,38 @@ int main() {
 
 		// fix : vector 의 공간 할당이 매 프레임마다 있다. 개느릴듯.
 		readFds.reserve(gameworld.clients.size + 1);
+		readClientIndices.reserve(gameworld.clients.size + 1);
 		readFds.clear();
+		readClientIndices.clear();
 
 		WSAPOLLFD item2;
 		item2.events = POLLRDNORM;
 		item2.fd = server.listen_sock;
 		item2.revents = 0;
 		readFds.push_back(item2); // 0번째에 리슨소켓
+		readClientIndices.push_back(-1);
 		for (int i = 0; i < gameworld.clients.size; ++i)
 		{
+			if (gameworld.clients.isnull(i)) continue;
+			if (gameworld.clients[i].socket == INVALID_SOCKET) continue;
 			WSAPOLLFD item;
 			item.events = POLLRDNORM;
 			item.fd = gameworld.clients[i].socket;
 			item.revents = 0;
 			readFds.push_back(item);
+			readClientIndices.push_back(i);
 		}
 
 		// I/O 가능 이벤트가 있을 때까지 기다립니다.
 		WSAPoll(readFds.data(), (int)readFds.size(), 4);
 
-		int num = 0;
-		constexpr int listenSockIndex = 0;
-		for (auto readFd : readFds)
+		for (size_t pollIndex = 0; pollIndex < readFds.size(); ++pollIndex)
 		{
+			const WSAPOLLFD& readFd = readFds[pollIndex];
 			if (readFd.revents != 0)
 			{
-				if (num == listenSockIndex) {
+				const int index = readClientIndices[pollIndex];
+				if (index < 0) {
 					// 4
 					//SOCKET tcpConnection = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 					string errorMessage;
@@ -165,6 +176,8 @@ int main() {
 						gameworld.clients[newindex].objindex = -1;
 						gameworld.clients[newindex].zoneId = gameworld.ownedZoneId;
 						gameworld.clients[newindex].pendingTransferToken = 0;
+						gameworld.clients[newindex].isServerPeer = false;
+						gameworld.clients[newindex].peerServerId = -1;
 
 						cout << "Socket from " << a << " is accepted.\n";
 						char newParticipantstr[128] = {};
@@ -176,15 +189,22 @@ int main() {
 					}
 				}
 				else {
-					int index = num - 1;
 					if (gameworld.clients.isnull(index)) continue;
 					ClientData& client = gameworld.clients[index];
 					while (1) {
+						if (client.rbufoffset >= client.rbufcap) {
+							ClientData::DisconnectToServer(index);
+							break;
+						}
 						int result = client.recv(client.rbuf + client.rbufoffset, client.rbufcap - client.rbufoffset, 0);
 						if (result > 0) {
 							char* cptr = client.rbuf;
 							result += client.rbufoffset;
 							int offset = gameworld.Receiving(index, cptr, result);
+							if (offset < 0) {
+								ClientData::DisconnectToServer(index);
+								break;
+							}
 							memmove(client.rbuf, client.rbuf + offset, result - offset);
 							client.rbufoffset = result - offset;
 						}
@@ -206,11 +226,10 @@ int main() {
 							ClientData::DisconnectToServer(index);
 							break;
 						}
-						else break; // ??
+						else continue; // drain this non-blocking socket until WSAEWOULDBLOCK
 					}
 				}
 			}
-			num += 1;
 		}
 
 		st = ft;
@@ -232,6 +251,11 @@ int World::Receiving(int clientIndex, char* rBuffer, int totallen) {
 READ_START:
 	if (offset + sizeof(int) > totallen) return offset; // 이거 살리는게 좋지 않나? 흠. // fix
 	size = *(int*)currentPivot;
+	// Every CTS packet contains a 4-byte size and a 2-byte protocol value. Reject
+	// impossible lengths before indexing a header or advancing the receive cursor.
+	if (size < (int)(sizeof(int) + sizeof(CTS_Protocol)) || size > ClientData::rbufcap) {
+		return -1;
+	}
 	if (offset + size > totallen) return offset;
 	type = *(CTS_Protocol*)(currentPivot + sizeof(int));
 

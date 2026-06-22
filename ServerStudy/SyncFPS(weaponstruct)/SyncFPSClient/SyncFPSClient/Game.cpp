@@ -562,6 +562,7 @@ GameChunk* Zone::GetChunkFromPos(vec4 pos) {
 
 void Zone::PushGameObject(GameObject* go)
 {
+	if (go == nullptr) return;
 	vec4 pos = go->worldMat.pos;
 	/*if (pos.y < -100.0f || pos.y > 500.0f ||
 		pos.x < -1000.0f || pos.x > 1000.0f ||
@@ -627,7 +628,7 @@ void Zone::PushGameObject(GameObject* go)
 		}
 	}
 	else {
-		if (go->tag[GameObjectTag::Tag_SkinMeshObject]) {
+		if (go->tag.Test(GameObjectTag::Tag_SkinMeshObject)) {
 			SkinMeshGameObject* smgo = (SkinMeshGameObject*)go;
 			smgo->zoneid = zoneid;
 			smgo->InitialChunkSetting();
@@ -3196,6 +3197,10 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 
 void Game::UpdateBossPrototype(float deltaTime)
 {
+	if (currentZoneId < 100) {
+		BossPrototypeEnabled = false;
+		return;
+	}
 	if (!BossPrototypeEnabled || player == nullptr) return;
 
 	const float dt = max(0.0f, deltaTime);
@@ -3345,8 +3350,6 @@ void Game::UpdateBossPrototype(float deltaTime)
 
 	if (!BossPrototypeConfigured) {
 		BossPrototypeCenter = boss->worldMat.pos;
-		BossPrototypeCenter.x = 0.0f;
-		BossPrototypeCenter.z = 0.0f;
 		BossPrototypeCenter.w = 1.0f;
 		boss->MaxHP = 7500.0f;
 		boss->HP = 7500.0f;
@@ -4441,8 +4444,7 @@ void Game::Init()
 			// MUST match the server's dungeon floor coords exactly.
 			game.ZoneTable.push_back(new Zone(100, "OfficeDungeon_1floor", 1000, 1002)); // 1F (off 1)
 			game.ZoneTable.push_back(new Zone(101, "OfficeDungeon_2floor", 1001, 1000)); // 2F (off 3)
-			// TEMP: Boss disabled until its map works. Re-enable together with server DungeonFloorCount=3.
-			//game.ZoneTable.push_back(new Zone(102, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
+			game.ZoneTable.push_back(new Zone(102, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
 		}
 
 		//Set Near Zones
@@ -7124,7 +7126,7 @@ void Game::ProcessPendingSkinBoneInit() {
 		if (obj->tag[GameObjectTag::Tag_SkinMeshObject] && ((SkinMeshGameObject*)obj)->BoneToWorldMatrixCB.empty()) continue;
 		int zid = obj->zoneId;
 		Zone* rz = (zid >= 0 && zid < (int)ZoneTable.size()) ? ZoneTable[zid] : Current_Zone;
-		if (rz) rz->PushGameObject(obj);
+		if (rz && obj->chunkAllocIndexs == nullptr) rz->PushGameObject(obj);
 	}
 	m_pendingSkinRenderEnable.clear();
 
@@ -7150,6 +7152,14 @@ void Game::ProcessPendingSkinBoneInit() {
 		if (obj == nullptr) continue;
 		if (obj->tag[GameObjectTag::Tag_SkinMeshObject]) {
 			((SkinMeshGameObject*)obj)->InitRootBoneMatrixs();
+		}
+		// Register the object in its real zone before enabling it. Otherwise this frame's
+		// Monster::Update sees chunkAllocIndexs==nullptr and used the old zoneid=-1.
+		int zid = obj->zoneId;
+		Zone* rz = (zid >= 0 && zid < (int)ZoneTable.size()) ? ZoneTable[zid] : Current_Zone;
+		if (rz != nullptr && obj->chunkAllocIndexs == nullptr) {
+			obj->zoneid = rz->zoneid;
+			rz->PushGameObject(obj);
 		}
 		// Stage 1: enable now so THIS frame's Update loop skins it; defer the render-list push to
 		// next frame (Stage 2 above) so the object is never drawn before it has been skinned once.
@@ -7570,7 +7580,7 @@ READ_START:
 						DynmaicGameObjects[netObjIndex] = new Monster();
 						break;
 					case GameObjectType::_PeacefulNPC:
-						DynmaicGameObjects[header.objindex] = new PeacefulNPC();
+						DynmaicGameObjects[netObjIndex] = new PeacefulNPC();
 						break;
 					} 
 				}
@@ -7590,12 +7600,13 @@ READ_START:
 					DynmaicGameObjects[netObjIndex] = new Monster();
 					break;
 				case GameObjectType::_PeacefulNPC:
-					DynmaicGameObjects[header.objindex] = new PeacefulNPC();
+					DynmaicGameObjects[netObjIndex] = new PeacefulNPC();
 					break;
 				}
 			}
 
 			DynmaicGameObjects[netObjIndex]->zoneId = header.zoneId;
+			DynmaicGameObjects[netObjIndex]->zoneid = header.zoneId;
 			DynmaicGameObjects[netObjIndex]->RecvSTC_SyncObj(datapivot);
 			game.ApplyZoneOffsetToDynamicObject(DynmaicGameObjects[netObjIndex]);
 			if (DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_SkinMeshObject]) {

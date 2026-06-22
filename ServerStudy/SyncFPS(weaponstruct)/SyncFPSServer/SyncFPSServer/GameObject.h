@@ -1569,8 +1569,8 @@ struct ClientData {
 	SOCKET socket;
 
 	// OBB.Center
-	static constexpr int rbufcap = 8192 - sizeof(int);
-	char rbuf[rbufcap + sizeof(int)] = {};
+	static constexpr int rbufcap = 8192;
+	char rbuf[rbufcap] = {};
 	int rbufoffset = 0;
 
 	// OBB.Center
@@ -2158,9 +2158,15 @@ struct World {
 	// [4단계-STEP1] 이웃 존 서버와의 상시 복제 링크 상태. 인덱스 = 이웃 zoneId(=serverId).
 	// true면 그 이웃과 링크가 연결돼 있다는 뜻. (멀티 프로세스에서만 사용)
 	bool peerLinkUp[256] = {};
+	SOCKET pendingPeerSocket[256] = {};
+	bool pendingPeerConnect[256] = {};
+	ULONGLONG pendingPeerStartMs[256] = {};
+	ULONGLONG peerRetryAfterMs[256] = {};
 
 	// 아직 연결 안 된 이웃에 주기적으로 재접속 시도. (이웃 서버가 늦게 떠도 따라잡음)
 	void TryConnectPeers();
+	void PumpPeerConnections();
+	bool CompleteOutboundPeerConnection(int zoneId, SOCKET socket);
 	// 이웃이 보낸 ServerLink 핸드셰이크를 받았을 때 그 소켓을 peer 링크로 확정.
 	void OnPeerLinkEstablished(int clientIndex, int fromServerId);
 
@@ -2349,8 +2355,8 @@ struct World {
 	// served by its own process on port 9000+DungeonZoneId. Coords are far away so it is never adjacent.
 	static constexpr int DungeonZoneId = 100;
 	// [party/dungeon] dungeon floors: 100=1F, 101=2F, 102=Boss. One dungeon server owns them all.
-	// TEMP: 1F+2F enabled (Boss map not ready yet). Restore to 3 once the Boss map works.
-	static constexpr int DungeonFloorCount = 2;
+	// 1F + 2F + boss room.
+	static constexpr int DungeonFloorCount = 3;
 	int dungeonQueue[DungeonPartyMax] = { -1, -1, -1 };   // client indices, -1 = empty
 	int dungeonQueueCount = 0;
 	bool DungeonQueueContains(int clientIndex);

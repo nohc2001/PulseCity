@@ -41,20 +41,21 @@ public:
 	__declspec(property(get = GetDynamicCapacityMode, put = SetDynamicCapacityMode)) bool isDynamicCapacityMode;
 
 	void Init(int capacity) {
-		int AllocSiz = capacity / 32;
-		ui32* newArr = new ui32[AllocSiz];
+		capacity = (capacity > 0) ? capacity : 32;
+		const int newWordCount = (capacity + 31) / 32;
+		ui32* newArr = new ui32[newWordCount];
+		ZeroMemory(newArr, sizeof(ui32) * newWordCount);
 		if (AllocFlag != nullptr && extraData) {
-			ZeroMemory(newArr, sizeof(ui32) * AllocSiz);
-
-			int len = Capacity * sizeof(ui32) / 32;
-			memcpy_s(newArr, len, AllocFlag, len);
+			const int oldWordCount = (Capacity + 31) / 32;
+			const int copyWordCount = (std::min)(oldWordCount, newWordCount);
+			memcpy_s(newArr, sizeof(ui32) * newWordCount,
+				AllocFlag, sizeof(ui32) * copyWordCount);
 			delete[] AllocFlag;
 		}
 		else {
 			size = 0;
 			endof_maxFlagarr = 0;
 			extraData = 0;
-			ZeroMemory(newArr, sizeof(ui32) * AllocSiz);
 		}
 		AllocFlag = newArr;
 		Capacity = capacity;
@@ -67,7 +68,7 @@ public:
 
 	int GetRecyleIndex() {
 		constexpr ui32 maxFlag = 0xFFFFFFFF;
-		int m = Capacity >> 5;
+		const int m = (Capacity + 31) >> 5;
 		ui32* flagArr = AllocFlag;
 		int r = maxFlag >> 1;
 		for (int i = endof_maxFlagarr; i < m; ++i) {
@@ -108,7 +109,7 @@ public:
 		int pi = index >> 5;
 		int ci = index & 31;
 		ui32& flag = AllocFlag[pi];
-		flag |= (1 << ci);
+		flag |= (ui32(1) << ci);
 		return index;
 	}
 
@@ -117,23 +118,25 @@ public:
 		int pi = index >> 5;
 		int ci = index & 31;
 		ui32& flag = AllocFlag[pi];
-		flag &= ~(1 << ci);
+		flag &= ~(ui32(1) << ci);
 		if (pi <= endof_maxFlagarr) endof_maxFlagarr = pi;
 		if (index == size - 1) size -= 1;
 	}
 
 	__forceinline bool isnull(int index) {
+		if (index < 0 || index >= Capacity) return true;
 		int pi = index >> 5; // SHR (R32, I8) lat 1	throuput 0.50 / 0.50 port 1*p06
 		int ci = index & 31;
 		ui32 flag = AllocFlag[pi];
-		return !(flag & (1 << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
+		return !(flag & (ui32(1) << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
 	}
 
 	__forceinline bool isAlloc(int index) {
+		if (index < 0 || index >= Capacity) return false;
 		int pi = index >> 5; // SHR (R32, I8) lat 1	throuput 0.50 / 0.50 port 1*p06
 		int ci = index & 31;
 		ui32 flag = AllocFlag[pi];
-		return (flag & (1 << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
+		return (flag & (ui32(1) << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
 	}
 
 	__forceinline int IncNum(int index) {
@@ -240,7 +243,7 @@ template <typename T> struct vecset {
 		int pi = index >> 5;
 		int ci = index & 31;
 		ui32& flag = Alloter.AllocFlag[pi];
-		flag |= (1 << ci);
+		flag |= (ui32(1) << ci);
 		return index;
 	}
 
@@ -257,16 +260,18 @@ template <typename T> struct vecset {
 	__forceinline T& operator[](int index) { return Arr[index]; }
 	__forceinline T& at(int index) { if (index < size) return Arr[index]; return nullptr; }
 	__forceinline bool isnull(int index) {
+		if (index < 0 || index >= Capacity) return true;
 		int pi = index >> 5; // SHR (R32, I8) lat 1	throuput 0.50 / 0.50 port 1*p06
 		int ci = index & 31;
 		ui32 flag = AllocFlag[pi];
-		return !(flag & (1 << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
+		return !(flag & (ui32(1) << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
 	}
 	__forceinline bool isAlloc(int index) {
+		if (index < 0 || index >= Capacity) return false;
 		int pi = index >> 5; // SHR (R32, I8) lat 1	throuput 0.50 / 0.50 port 1*p06
 		int ci = index & 31;
 		ui32 flag = AllocFlag[pi];
-		return (flag & (1 << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
+		return (flag & (ui32(1) << ci)); // SHL (R32, CL) lat[0;2] throuput 1.00 / 1.00 port 2*p06
 	}
 
 	__forceinline int IncNum(int index) {

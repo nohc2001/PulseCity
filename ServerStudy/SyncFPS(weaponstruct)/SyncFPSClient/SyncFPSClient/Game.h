@@ -464,7 +464,7 @@ public:
 		bool Active = true;
 	};
 
-	bool BossPrototypeEnabled = true;
+	bool BossPrototypeEnabled = false;
 	int BossPrototypeIndex = -1;
 	BossPrototypePhase BossPrototypePhaseState = BossPrototypePhase::FindBoss;
 	float BossPrototypePhaseTime = 0.0f;

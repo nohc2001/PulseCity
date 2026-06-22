@@ -422,8 +422,7 @@ void StaticGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 		submeshNum = mesh->subMeshNum;
 		offset += sizeof(int);
 
-		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 		offset += sizeof(int) * mesh->subMeshNum;
 	}
 	else {
@@ -971,8 +970,7 @@ void DynamicGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 		submeshNum = mesh->subMeshNum;
 		offset += sizeof(int);
 
-		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 		offset += sizeof(int) * mesh->subMeshNum;
 	}
 	else {
@@ -1160,8 +1158,7 @@ void SkinMeshGameObject::SendGameObject(int objindex, SendDataSaver& sds) {
 		submeshNum = mesh->subMeshNum;
 		offset += sizeof(int);
 
-		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 		offset += sizeof(int) * mesh->subMeshNum;
 	}
 	else {
@@ -4080,8 +4077,7 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 		submeshNum = mesh->subMeshNum;
 		offset += sizeof(int);
 
-		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 		offset += sizeof(int) * mesh->subMeshNum;
 	}
 	else {
@@ -5125,8 +5121,7 @@ void Monster::SendGameObject(int objindex, SendDataSaver& sds) {
 		submeshNum = mesh->subMeshNum;
 		offset += sizeof(int);
 
-		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 		offset += sizeof(int) * mesh->subMeshNum;
 	}
 	else {
@@ -5403,8 +5398,7 @@ void PeacefulNPC::SendGameObject(int objindex, SendDataSaver& sds) {
 		submeshNum = mesh->subMeshNum;
 		offset += sizeof(int);
 
-		int*& MaterialArr = *(int**)(sds.ofbuff + offset);
-		memcpy(MaterialArr, material, sizeof(int) * mesh->subMeshNum);
+		memcpy(sds.ofbuff + offset, material, sizeof(int) * mesh->subMeshNum);
 		offset += sizeof(int) * mesh->subMeshNum;
 	}
 	else {
@@ -5485,6 +5479,9 @@ void World::Init() {
 #endif
 
 	clients.Init(32);
+	for (int i = 0; i < 256; ++i) {
+		pendingPeerSocket[i] = INVALID_SOCKET;
+	}
 	GameObjectType::STATICINIT();
 
 	//Quest Table
@@ -5656,8 +5653,7 @@ void World::Init() {
 		// slots, not colliding with open-world zones 73/74/83/84 (offsets 2/0/7/4). 1F->1, 2F->3, Boss->8.
 		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 0, "OfficeDungeon_1floor", 1000, 1002)); // 1F (off 1)
 		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 1, "OfficeDungeon_2floor", 1001, 1000)); // 2F (off 3)
-		// TEMP: Boss disabled until its map is deployed to the server. Re-enable with DungeonFloorCount=3.
-		//gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 2, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
+		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 2, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
 	}
 
 	//Set Near Zones
@@ -5705,110 +5701,26 @@ void World::Init() {
 }
 
 void World::Update() {
-	using TickClock = std::chrono::steady_clock;
-	auto elapsedMs = [](TickClock::time_point begin, TickClock::time_point end) {
-		return std::chrono::duration<double, std::milli>(end - begin).count();
-	};
-
-	const TickClock::time_point tickBegin = TickClock::now();
-	const TickClock::time_point zoneUpdateBegin = tickBegin;
-	double slowestZoneMs = 0.0;
-	int slowestZoneId = -1;
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
-		const TickClock::time_point zoneBegin = TickClock::now();
 		gameworld.ZoneTable[i]->Update(DeltaTime);
-		const double currentZoneMs = elapsedMs(zoneBegin, TickClock::now());
-		if (currentZoneMs > slowestZoneMs) {
-			slowestZoneMs = currentZoneMs;
-			slowestZoneId = i;
-		}
 	}
-	const double zoneUpdateMs = elapsedMs(zoneUpdateBegin, TickClock::now());
 
 	// [party/dungeon] keep waiting members' HP/job live each tick (queued into PersonalSDS, flushed below).
-	const TickClock::time_point queueBegin = TickClock::now();
 	BroadcastDungeonQueue();
-	const double queueMs = elapsedMs(queueBegin, TickClock::now());
 
 	// [party/dungeon] in the dungeon the lobby queue is empty (cleared on entry), so share the in-dungeon
 	// party's HP/job on a ~0.2s throttle (few members -> light) using the same party UI.
-	double dungeonPartyMs = 0.0;
 	static float s_dungeonPartyHpTimer = 0.0f;
 	s_dungeonPartyHpTimer += DeltaTime;
 	if (s_dungeonPartyHpTimer >= 0.2f) {
 		s_dungeonPartyHpTimer = 0.0f;
-		const TickClock::time_point dungeonPartyBegin = TickClock::now();
 		BroadcastDungeonParty();
-		dungeonPartyMs = elapsedMs(dungeonPartyBegin, TickClock::now());
 	}
 
-	const TickClock::time_point flushBegin = TickClock::now();
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
 		gameworld.ZoneTable[i]->FlushSendToClients();
-	}
-	const TickClock::time_point tickEnd = TickClock::now();
-	const double flushMs = elapsedMs(flushBegin, tickEnd);
-	const double totalMs = elapsedMs(tickBegin, tickEnd);
-
-	// Aggregate for one real second so profiling output itself does not become a server hitch.
-	static TickClock::time_point reportBegin = tickBegin;
-	static double sumTotalMs = 0.0;
-	static double maxTotalMs = 0.0;
-	static double maxZoneUpdateMs = 0.0;
-	static double maxSingleZoneMs = 0.0;
-	static int maxSingleZoneId = -1;
-	static double maxQueueMs = 0.0;
-	static double maxDungeonPartyMs = 0.0;
-	static double maxFlushMs = 0.0;
-	static int sampleCount = 0;
-	static int over16Ms = 0;
-	static int over50Ms = 0;
-	static int over100Ms = 0;
-	static int over500Ms = 0;
-
-	sumTotalMs += totalMs;
-	maxTotalMs = (std::max)(maxTotalMs, totalMs);
-	maxZoneUpdateMs = (std::max)(maxZoneUpdateMs, zoneUpdateMs);
-	if (slowestZoneMs > maxSingleZoneMs) {
-		maxSingleZoneMs = slowestZoneMs;
-		maxSingleZoneId = slowestZoneId;
-	}
-	maxQueueMs = (std::max)(maxQueueMs, queueMs);
-	maxDungeonPartyMs = (std::max)(maxDungeonPartyMs, dungeonPartyMs);
-	maxFlushMs = (std::max)(maxFlushMs, flushMs);
-	++sampleCount;
-	if (totalMs >= 16.0) ++over16Ms;
-	if (totalMs >= 50.0) ++over50Ms;
-	if (totalMs >= 100.0) ++over100Ms;
-	if (totalMs >= 500.0) ++over500Ms;
-
-	if (elapsedMs(reportBegin, tickEnd) >= 1000.0) {
-		const double averageTotalMs = sampleCount > 0 ? sumTotalMs / sampleCount : 0.0;
-		printf(
-			"[TickProfile] samples=%d avg=%.2fms max=%.2fms "
-			"sections{zone=%.2fms singleZone=%d:%.2fms queue=%.2fms party=%.2fms flush=%.2fms} "
-			"over{16=%d 50=%d 100=%d 500=%d}\n",
-			sampleCount, averageTotalMs, maxTotalMs,
-			maxZoneUpdateMs, maxSingleZoneId, maxSingleZoneMs,
-			maxQueueMs, maxDungeonPartyMs, maxFlushMs,
-			over16Ms, over50Ms, over100Ms, over500Ms);
-
-		reportBegin = tickEnd;
-		sumTotalMs = 0.0;
-		maxTotalMs = 0.0;
-		maxZoneUpdateMs = 0.0;
-		maxSingleZoneMs = 0.0;
-		maxSingleZoneId = -1;
-		maxQueueMs = 0.0;
-		maxDungeonPartyMs = 0.0;
-		maxFlushMs = 0.0;
-		sampleCount = 0;
-		over16Ms = 0;
-		over50Ms = 0;
-		over100Ms = 0;
-		over500Ms = 0;
 	}
 }
 
@@ -5942,8 +5854,28 @@ bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 		header.size = sizeof(CTS_ServerPlayerTransfer_Header);
 		header.st = CTS_Protocol::ServerPlayerTransfer;
 		header.data = data;
-		int sent = send(clients[i].socket, (const char*)&header, sizeof(header), 0);
-		return sent == sizeof(header);
+		const char* sendCursor = reinterpret_cast<const char*>(&header);
+		int sendRemain = sizeof(header);
+		const ULONGLONG sendDeadlineMs = GetTickCount64() + 100;
+		while (sendRemain > 0) {
+			const int sent = send(clients[i].socket, sendCursor, sendRemain, 0);
+			if (sent > 0) {
+				sendCursor += sent;
+				sendRemain -= sent;
+				continue;
+			}
+			if (sent != SOCKET_ERROR || WSAGetLastError() != WSAEWOULDBLOCK ||
+				GetTickCount64() >= sendDeadlineMs) {
+				break;
+			}
+			fd_set writeSet;
+			FD_ZERO(&writeSet);
+			FD_SET(clients[i].socket, &writeSet);
+			timeval timeout = {};
+			timeout.tv_usec = 10000;
+			select(0, nullptr, &writeSet, nullptr, &timeout);
+		}
+		return sendRemain == 0;
 	}
 
 	// 폴백: peer 링크가 아직 없으면 기존 일회성 소켓 사용.
@@ -5951,14 +5883,48 @@ bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 	if (sock == INVALID_SOCKET) {
 		return false;
 	}
+	u_long nonBlocking = 1;
+	if (ioctlsocket(sock, FIONBIO, &nonBlocking) != 0) {
+		closesocket(sock);
+		return false;
+	}
+	BOOL noDelay = TRUE;
+	setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+		reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
 
 	sockaddr_in serveraddr = {};
 	serveraddr.sin_family = AF_INET;
 	inet_pton(AF_INET, GetZoneIP(data.dstZoneId), &serveraddr.sin_addr);
 	serveraddr.sin_port = htons(GetZonePort(data.dstZoneId));
 	if (connect(sock, (sockaddr*)&serveraddr, sizeof(serveraddr)) == SOCKET_ERROR) {
-		closesocket(sock);
-		return false;
+		const int connectError = WSAGetLastError();
+		if (connectError != WSAEWOULDBLOCK && connectError != WSAEINPROGRESS &&
+			connectError != WSAEALREADY && connectError != WSAEINVAL) {
+			closesocket(sock);
+			return false;
+		}
+
+		fd_set writeSet;
+		fd_set errorSet;
+		FD_ZERO(&writeSet);
+		FD_ZERO(&errorSet);
+		FD_SET(sock, &writeSet);
+		FD_SET(sock, &errorSet);
+		timeval timeout = {};
+		timeout.tv_usec = 100000;
+		if (select(0, nullptr, &writeSet, &errorSet, &timeout) <= 0) {
+			closesocket(sock);
+			return false;
+		}
+
+		int socketError = 0;
+		int socketErrorLength = sizeof(socketError);
+		getsockopt(sock, SOL_SOCKET, SO_ERROR,
+			reinterpret_cast<char*>(&socketError), &socketErrorLength);
+		if (socketError != 0 || !FD_ISSET(sock, &writeSet)) {
+			closesocket(sock);
+			return false;
+		}
 	}
 
 	CTS_ServerPlayerTransfer_Header header = {};
@@ -5966,9 +5932,30 @@ bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 	header.st = CTS_Protocol::ServerPlayerTransfer;
 	header.data = data;
 
-	int sendResult = send(sock, (const char*)&header, sizeof(header), 0);
+	const char* sendCursor = reinterpret_cast<const char*>(&header);
+	int sendRemain = sizeof(header);
+	const ULONGLONG sendDeadlineMs = GetTickCount64() + 100;
+	while (sendRemain > 0) {
+		const int sent = send(sock, sendCursor, sendRemain, 0);
+		if (sent > 0) {
+			sendCursor += sent;
+			sendRemain -= sent;
+			continue;
+		}
+		if (sent != SOCKET_ERROR || WSAGetLastError() != WSAEWOULDBLOCK ||
+			GetTickCount64() >= sendDeadlineMs) {
+			break;
+		}
+
+		fd_set writeSet;
+		FD_ZERO(&writeSet);
+		FD_SET(sock, &writeSet);
+		timeval timeout = {};
+		timeout.tv_usec = 10000;
+		select(0, nullptr, &writeSet, nullptr, &timeout);
+	}
 	closesocket(sock);
-	return sendResult == sizeof(header);
+	return sendRemain == 0;
 }
 
 // [4단계-STEP1] 아직 연결 안 된 인접 존 서버에 상시 복제 링크를 건다.
@@ -5979,12 +5966,25 @@ void World::TryConnectPeers() {
 	if (NotMakePeer) return;
 	if (singleProcessAllZones) return; // 단일 프로세스는 이웃이 같은 메모리에 있어 링크가 필요 없다.
 
-	//AverageSecPer60Start(0);
+	const ULONGLONG nowMs = GetTickCount64();
 	for (int zi = 0; zi < ZoneTable.size(); ++zi) {
 		if (zi == ownedZoneId) continue;
 		if (IsAdjacentZone(ownedZoneId, zi) == false) continue;
-		if (zi <= ownedZoneId) continue;   // 높은 쪽으로만 connect -> 쌍당 연결 1개
+		if (zi <= ownedZoneId) continue;   // Lower zoneId owns the single outbound link.
+		bool alreadyRegistered = false;
+		for (int ci = 0; ci < clients.size; ++ci) {
+			if (clients.isnull(ci)) continue;
+			if (!clients[ci].isServerPeer || clients[ci].peerServerId != zi) continue;
+			alreadyRegistered = true;
+			break;
+		}
+		if (alreadyRegistered) {
+			peerLinkUp[zi] = true;
+			continue;
+		}
 		if (peerLinkUp[zi]) continue;      // 이미 연결됨
+		if (pendingPeerConnect[zi]) continue;
+		if (nowMs < peerRetryAfterMs[zi]) continue;
 		
 		Zone* otherZone = ZoneTable[zi];
 		if (World::minx > otherZone->x || otherZone->x > World::maxx) continue;
@@ -5993,38 +5993,121 @@ void World::TryConnectPeers() {
 		SOCKET sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, 0);
 		if (sock == INVALID_SOCKET) continue;
 
+		u_long nonBlocking = 1;
+		if (ioctlsocket(sock, FIONBIO, &nonBlocking) != 0) {
+			closesocket(sock);
+			peerRetryAfterMs[zi] = nowMs + 5000;
+			continue;
+		}
+		BOOL noDelay = TRUE;
+		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+			reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
+
 		sockaddr_in addr = {};
 		addr.sin_family = AF_INET;
 		inet_pton(AF_INET, GetZoneIP(zi), &addr.sin_addr);
 		addr.sin_port = htons(GetZonePort(zi));
-		if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-			closesocket(sock); // 이웃 서버가 아직 리슨 안 함 -> 다음 주기에 재시도
+		const int connectResult = connect(sock, (sockaddr*)&addr, sizeof(addr));
+		if (connectResult == 0) {
+			if (!CompleteOutboundPeerConnection(zi, sock)) {
+				peerRetryAfterMs[zi] = nowMs + 5000;
+			}
 			continue;
 		}
 
-		// 핸드셰이크: 내가 누구인지(serverId) 먼저 알린다.
-		CTS_ServerLink_Header hello;
-		hello.fromServerId = serverId;
-		send(sock, (const char*)&hello, sizeof(hello), 0);
+		const int connectError = WSAGetLastError();
+		if (connectError == WSAEWOULDBLOCK || connectError == WSAEINPROGRESS ||
+			connectError == WSAEALREADY || connectError == WSAEINVAL) {
+			pendingPeerSocket[zi] = sock;
+			pendingPeerConnect[zi] = true;
+			pendingPeerStartMs[zi] = nowMs;
+			continue;
+		}
 
-		// 이 소켓을 clients[] 의 peer 슬롯으로 등록 -> 메인 루프 poll/Receiving 이 그대로 처리.
-		int idx = clients.Alloc();
-		if (idx < 0) { closesocket(sock); continue; }
-		clients[idx].socket = sock;
-		clients[idx].isServerPeer = true;
-		clients[idx].peerServerId = zi;       // 이웃 zoneId == 이웃 serverId
-		clients[idx].pObjData = nullptr;      // peer는 플레이어가 없음
-		clients[idx].objindex = -1;
-		clients[idx].zoneId = ownedZoneId;
-		clients[idx].rbufoffset = 0;
-		clients[idx].pendingTransferToken = 0;
-		clients[idx].SetNonBlocking();
-
-		peerLinkUp[zi] = true;
-		cout << "[Peer] outbound link established to zone " << zi
-			<< " (" << GetZoneIP(zi) << ":" << GetZonePort(zi) << ")" << endl;
+		closesocket(sock);
+		peerRetryAfterMs[zi] = nowMs + 5000;
 	}
-	//AverageSecPer60End(0);
+}
+
+bool World::CompleteOutboundPeerConnection(int zoneId, SOCKET socket) {
+	for (int i = 0; i < clients.size; ++i) {
+		if (clients.isnull(i)) continue;
+		if (!clients[i].isServerPeer || clients[i].peerServerId != zoneId) continue;
+		closesocket(socket);
+		peerLinkUp[zoneId] = true;
+		return true;
+	}
+
+	CTS_ServerLink_Header hello;
+	hello.fromServerId = serverId;
+	const int sent = send(socket, (const char*)&hello, sizeof(hello), 0);
+	if (sent != sizeof(hello)) {
+		closesocket(socket);
+		return false;
+	}
+
+	const int idx = clients.Alloc();
+	if (idx < 0) {
+		closesocket(socket);
+		return false;
+	}
+	clients[idx].socket = socket;
+	clients[idx].isServerPeer = true;
+	clients[idx].peerServerId = zoneId;
+	clients[idx].pObjData = nullptr;
+	clients[idx].objindex = -1;
+	clients[idx].zoneId = ownedZoneId;
+	clients[idx].rbufoffset = 0;
+	clients[idx].pendingTransferToken = 0;
+
+	peerLinkUp[zoneId] = true;
+	peerRetryAfterMs[zoneId] = 0;
+	cout << "[Peer] outbound link established to zone " << zoneId
+		<< " (" << GetZoneIP(zoneId) << ":" << GetZonePort(zoneId) << ")" << endl;
+	return true;
+}
+
+void World::PumpPeerConnections() {
+	if (singleProcessAllZones) return;
+
+	const ULONGLONG nowMs = GetTickCount64();
+	for (int zi = 0; zi < 256; ++zi) {
+		if (!pendingPeerConnect[zi]) continue;
+		SOCKET sock = pendingPeerSocket[zi];
+
+		if (NotMakePeer || sock == INVALID_SOCKET || nowMs - pendingPeerStartMs[zi] >= 3000) {
+			if (sock != INVALID_SOCKET) closesocket(sock);
+			pendingPeerSocket[zi] = INVALID_SOCKET;
+			pendingPeerConnect[zi] = false;
+			peerRetryAfterMs[zi] = nowMs + 5000;
+			continue;
+		}
+
+		fd_set writeSet;
+		fd_set errorSet;
+		FD_ZERO(&writeSet);
+		FD_ZERO(&errorSet);
+		FD_SET(sock, &writeSet);
+		FD_SET(sock, &errorSet);
+		timeval timeout = {};
+		const int ready = select(0, nullptr, &writeSet, &errorSet, &timeout);
+		if (ready <= 0) continue;
+
+		int socketError = 0;
+		int socketErrorLength = sizeof(socketError);
+		getsockopt(sock, SOL_SOCKET, SO_ERROR,
+			reinterpret_cast<char*>(&socketError), &socketErrorLength);
+
+		pendingPeerSocket[zi] = INVALID_SOCKET;
+		pendingPeerConnect[zi] = false;
+		if (socketError == 0 && FD_ISSET(sock, &writeSet)) {
+			if (CompleteOutboundPeerConnection(zi, sock)) continue;
+		}
+		else {
+			closesocket(sock);
+		}
+		peerRetryAfterMs[zi] = nowMs + 5000;
+	}
 }
 
 // [4단계-STEP1] 이웃이 connect 해와 보낸 ServerLink 핸드셰이크를 받았을 때 호출.
@@ -6044,9 +6127,23 @@ void World::OnPeerLinkEstablished(int clientIndex, int fromServerId) {
 
 // [4단계-STEP2] 내 존에 있는 플레이어들의 위치/시선을 peer 링크로 이웃 서버에 매 틱 전송.
 void World::SendGhostToPeers() {
-	if (singleProcessAllZones) return;
+	if (NotMakePeer || singleProcessAllZones) return;
 
-	//AverageSecPer60Start(1);
+	// Full snapshots do not need to follow the simulation tick. 20 Hz is enough for
+	// adjacent-zone presentation and prevents peer traffic from dominating input packets.
+	static float ghostSyncFlow = 0.0f;
+	ghostSyncFlow += (std::max)(0.0f, DeltaTime);
+	if (ghostSyncFlow < 0.05f) return;
+	ghostSyncFlow = 0.0f;
+
+	bool hasPeer = false;
+	for (int i = 0; i < clients.size; ++i) {
+		if (!clients.isnull(i) && clients[i].isServerPeer) {
+			hasPeer = true;
+			break;
+		}
+	}
+	if (!hasPeer) return;
 	
 	static char buf[8192];
 	CTS_GhostSync_Header* h = (CTS_GhostSync_Header*)buf;
@@ -6089,13 +6186,19 @@ void World::SendGhostToPeers() {
 	h->size = (unsigned int)(sizeof(CTS_GhostSync_Header) + (size_t)count * sizeof(GhostPlayerState));
 
 	// 모든 peer 링크로 전송(count==0 이어도 보냄 -> 이웃이 사라진 고스트를 지울 수 있게).
+	int failedPeerIndices[256] = {};
+	int failedPeerCount = 0;
 	for (int i = 0; i < clients.size; ++i) {
 		if (clients.isnull(i)) continue;
 		if (clients[i].isServerPeer == false) continue;
-		send(clients[i].socket, buf, (int)h->size, 0);
+		const int sent = send(clients[i].socket, buf, (int)h->size, 0);
+		if (sent == (int)h->size) continue;
+		if (sent == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) continue;
+		if (failedPeerCount < 256) failedPeerIndices[failedPeerCount++] = i;
 	}
-
-	//AverageSecPer60End(1);
+	for (int i = 0; i < failedPeerCount; ++i) {
+		ClientData::DisconnectToServer(failedPeerIndices[i]);
+	}
 }
 
 // [4단계-STEP2] 이웃이 보낸 플레이어 목록으로 고스트를 생성/갱신/제거하고,

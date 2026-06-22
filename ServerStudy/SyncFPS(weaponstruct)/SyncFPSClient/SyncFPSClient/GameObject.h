@@ -119,27 +119,29 @@ union Tag {
 		Tag* t;
 		int index;
 
-		operator bool() {
-			UINT tb = (t->tag & (1 << index));
-			return (tb != 0);
+		operator bool() const {
+			return t != nullptr && index >= 0 && index < 32 &&
+				(t->tag & (UINT(1) << index)) != 0;
 		}
 
 		void operator=(bool b) {
+			if (t == nullptr || index < 0 || index >= 32) return;
 			if (b) {
-				t->tag |= (1 << index);
+				t->tag |= (UINT(1) << index);
 			}
 			else {
-				t->tag &= ~(1 << index);
+				t->tag &= ~(UINT(1) << index);
 			}
 		}
 	};
 
+	bool Test(UINT MaskIndex) const {
+		return MaskIndex < 32 && (tag & (UINT(1) << MaskIndex)) != 0;
+	}
+
 	// OBB.Center
 	TagSetter operator[](UINT MaskIndex) {
-		TagSetter ts;
-		ts.t = this;
-		ts.index = MaskIndex;
-		return ts;
+		return TagSetter{ this, static_cast<int>(MaskIndex) };
 	}
 };
 

@@ -100,9 +100,7 @@ void Zone::Init() {
                      << (map.AABB[1].f3.z - map.AABB[0].f3.z) << ")"
         << " MapObjectCount=" << map.MapObjects.size() << endl;
 
-    SpawnObjects();
-
-    GridCollisionCheck();
+    // World::Init runs gameplay spawning and grid collision once after every owned map is loaded.
 
     cout << "Zone " << zoneId << " Init end" << endl;
 }
@@ -597,9 +595,12 @@ void Zone::SpawnPortal() {
     // Portal placed along +X from this zone's spawn (zone center): entry +5, dungeon floor +1.
     float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
     float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
-    float gy = map.AABB[0].y + 2.0f;
-    float forwardX = isEntry ? 5.0f : 72.0f;   // dungeon floor portal shifted +X (2 -> 12 -> 52 -> 72)
-    float forwardZ = isEntry ? 0.0f : 3.0f;    // dungeon floor portal shifted +3 Z
+	float gy = map.AABB[0].y + 2.0f;
+	float forwardX = isEntry ? 5.0f : 72.0f;   // dungeon floor portal shifted +X (2 -> 12 -> 52 -> 72)
+	float forwardZ = isEntry ? 0.0f : 3.0f;    // dungeon floor portal shifted +3 Z
+	if (!isEntry && zoneId == World::DungeonZoneId + 1) {
+		forwardX -= 35.0f;
+	}
     portal->worldMat =
         XMMatrixScaling(2.0f, 3.0f, 2.0f) *
         XMMatrixTranslation(cx + forwardX, gy, cz + forwardZ);
@@ -609,11 +610,19 @@ void Zone::SpawnPortal() {
     if (!isEntry) {
         // floor portal: where to drop the player in the next floor (its center, high up -> falls to floor).
         Zone* nz = (dstZone >= 0 && dstZone < (int)gameworld.ZoneTable.size()) ? gameworld.ZoneTable[dstZone] : nullptr;
-        if (nz != nullptr) {
-            portal->spawnX = 0.5f * (nz->BasicAABB_onlyXZ.x + nz->BasicAABB_onlyXZ.z);
-            portal->spawnZ = 0.5f * (nz->BasicAABB_onlyXZ.y + nz->BasicAABB_onlyXZ.w);
-            portal->spawnY = nz->map.AABB[0].y + 1.5f;
-        }
+		if (nz != nullptr) {
+			portal->spawnX = 0.5f * (nz->BasicAABB_onlyXZ.x + nz->BasicAABB_onlyXZ.z);
+			portal->spawnZ = 0.5f * (nz->BasicAABB_onlyXZ.y + nz->BasicAABB_onlyXZ.w);
+			portal->spawnY = nz->map.AABB[0].y + 1.5f;
+			if (zoneId == World::DungeonZoneId) {
+				portal->spawnX -= 5.0f;
+			}
+			else if (zoneId == World::DungeonZoneId + 1) {
+				portal->spawnX += 20.0f;
+				portal->spawnY += 3.0f;
+				portal->spawnZ -= 50.0f;
+			}
+		}
     }
 
     portal->tag[Tag_Enable] = true;
@@ -1045,15 +1054,13 @@ void Zone::SpawnObjects() {
 
     // zoneId == 1 => no spawn monster
     if (zoneId == 1) return;
-    // [party/dungeon] don't fill any dungeon floor with random open-world monsters/NPC (boss content separate).
-    if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) return;
 
-    // Player skill/weapon test mode: keep all monster/boss code intact, but do
-    // not instantiate combat actors. Flip this one flag back to true when the
-    // combat population is needed again.
-    constexpr bool SpawnCombatActors = false;
+    const int bossZoneId = World::DungeonZoneId + World::DungeonFloorCount - 1;
+    if (zoneId == bossZoneId) {
+        const float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
+        const float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
+        const vec4 bossSpawn(cx + 20.0f, map.AABB[0].y, cz - 80.0f, 1.0f);
 
-    if constexpr (SpawnCombatActors) {
         Monster* boss = new Monster();
         boss->zone = this;
         boss->ApplyMonsterData(MonsterType::Tower);
@@ -1061,35 +1068,19 @@ void Zone::SpawnObjects() {
         boss->MaxHP = 7500.0f;
         boss->Attack = 0.0f;
         boss->Defense = 0.0f;
-        boss->Init(XMMatrixTranslation(0.0f, 0.0f, 0.0f));
+        boss->Init(XMMatrixTranslation(bossSpawn.x, bossSpawn.y, bossSpawn.z));
         BossPrototypeIndex = NewObject(boss, GameObjectType::_Monster);
         BossPrototypeEnabled = true;
         BossPrototypeConfigured = true;
         BossPrototypeCoresInitialized = false;
         BossPrototypeShieldActive = true;
-        BossPrototypeCenter = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        BossPrototypeCenter = bossSpawn;
         PushGameObject(boss);
-
-        static constexpr int range = 100;
-        for (int i = 0; i < 0; ++i) {
-            Monster* mon = new Monster();
-            mon->zone = this;
-            MonsterType monsterType = (MonsterType)(rand() % (int)MonsterType::Max);
-            mon->ApplyMonsterData(monsterType);
-            //dron spawn higher
-
-            float spawnY = 2.0f;
-
-            if (monsterType == MonsterType::Dron) {
-                spawnY = 4.0f;
-            }
-
-            mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)(rand() % range - (range / 2))));
-            while (map.isStaticCollision(mon->GetOBB())) {
-                mon->Init(XMMatrixTranslation((float)(rand() % range - (range / 2)), spawnY, (float)((rand() % range - (range / 2)))));
-            }
-        }
+        return;
     }
+
+    // 1F/2F intentionally contain no random open-world monsters.
+    if (zoneId >= World::DungeonZoneId && zoneId < bossZoneId) return;
 
     // [monsters] populate the player's spawn zone (73) with monsters at the ZONE CENTER (not origin),
     // properly registered (NewObject + PushGameObject) so they sync to clients. Start here, expand later.
@@ -1107,7 +1098,7 @@ void Zone::SpawnObjects() {
             mon->ApplyMonsterData((MonsterType)(rand() % 2));   // fixed type (Monster001) so shape is definitely present
             float mx = cx + (float)(rand() % 300 - 150);
             float mz = cz + (float)(rand() % 300 - 150);
-            mon->Init(XMMatrixTranslation(mx, cy, mz));
+            mon->Init(XMMatrixTranslation(mx, py, mz));
             NewObject(mon, GameObjectType::_Monster);
             PushGameObject(mon);
         }

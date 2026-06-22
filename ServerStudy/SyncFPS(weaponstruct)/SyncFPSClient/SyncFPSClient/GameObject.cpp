@@ -1795,8 +1795,16 @@ void DynamicGameObject::Update(float delatTime)
 void DynamicGameObject::PositionInterpolation(float deltaTime)
 {
 	if (this->chunkAllocIndexs == nullptr) {
-		Zone* zone = game.ZoneTable[zoneid];
-		zone->PushGameObject(this);
+		int targetZoneId = zoneid;
+		if (targetZoneId < 0 || targetZoneId >= (int)game.ZoneTable.size()) {
+			targetZoneId = zoneId;
+		}
+		Zone* zone = (targetZoneId >= 0 && targetZoneId < (int)game.ZoneTable.size())
+			? game.ZoneTable[targetZoneId] : game.Current_Zone;
+		if (zone != nullptr) {
+			zoneid = zone->zoneid;
+			zone->PushGameObject(this);
+		}
 		return;
 	}
 

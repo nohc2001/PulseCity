@@ -486,10 +486,15 @@ struct SendDataSaver {
 	}
 
 	__forceinline void Init(int _capacity) {
-		capacity = _capacity;
+		if (buffer != nullptr) {
+			delete[] buffer;
+			buffer = nullptr;
+		}
+		capacity = (std::max)(_capacity, 1);
 		size = 0;
 		buffer = new char[capacity];
 		postsiz = 0;
+		ofbuff = buffer;
 	}
 
 	__forceinline void Clear() {
@@ -498,15 +503,23 @@ struct SendDataSaver {
 	}
 
 	__forceinline void push_senddata(char* data, int len) {
-	push_start:
-		// 대부분의 상황에서는 false일태니 branch prediction을 기대해본다.
-		if (size + len > capacity) {
-			char* newbuffer = new char[capacity * 2];
+		if (data == nullptr || len <= 0) return;
+		const int required = size + len;
+		if (required > capacity) {
+			int newCapacity = (std::max)(capacity, 1);
+			while (newCapacity < required) {
+				const int nextCapacity = newCapacity * 2;
+				if (nextCapacity <= newCapacity) {
+					newCapacity = required;
+					break;
+				}
+				newCapacity = nextCapacity;
+			}
+			char* newbuffer = new char[newCapacity];
 			memcpy(newbuffer, buffer, size);
 			delete[] buffer;
 			buffer = newbuffer;
-			capacity = capacity * 2;
-			goto push_start;
+			capacity = newCapacity;
 		}
 		memcpy(buffer + size, data, len);
 		size += len;
@@ -518,12 +531,23 @@ struct SendDataSaver {
 	}
 
 	__forceinline void postpush_reserve(int add_len) {
-		if (postsiz + add_len > capacity) {
-			char* newbuffer = new char[capacity * 2];
+		if (add_len <= 0) return;
+		const int required = postsiz + add_len;
+		if (required > capacity) {
+			int newCapacity = (std::max)(capacity, 1);
+			while (newCapacity < required) {
+				const int nextCapacity = newCapacity * 2;
+				if (nextCapacity <= newCapacity) {
+					newCapacity = required;
+					break;
+				}
+				newCapacity = nextCapacity;
+			}
+			char* newbuffer = new char[newCapacity];
 			memcpy(newbuffer, buffer, postsiz);
 			delete[] buffer;
 			buffer = newbuffer;
-			capacity = capacity * 2;
+			capacity = newCapacity;
 			ofbuff = buffer + postsiz;
 		}
 		postsiz += add_len;
