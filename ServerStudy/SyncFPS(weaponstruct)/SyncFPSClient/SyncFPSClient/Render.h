@@ -2280,7 +2280,7 @@ public:
 	};
 	static constexpr int MinInstancingStartSize = 0;
 	InstancingStruct* InstanceData = nullptr; // ï¿½ï¿½ï¿½ï¿½Þ½ï¿½ï¿½ï¿?ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å­ ï¿½ï¿½ï¿½ï¿½.
-	void InstancingInit();
+	void InstancingInit(unsigned int initialCapacity = 16);
 
 	/*
 	* ï¿½ï¿½ï¿½ï¿½ : AABBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿?Meshï¿½ï¿½ OBB ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½.

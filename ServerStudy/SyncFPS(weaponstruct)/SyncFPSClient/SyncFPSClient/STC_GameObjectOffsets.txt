@@ -79,9 +79,9 @@ Inventory 344 392
 weapon 736 144
 SelectedWeapon 880 4
 ZoneMoveCooldown 884 4
-Gold 1424 4
-Exp 1428 4
-Level 1432 4
+Gold 1392 4
+Exp 1396 4
+Level 1400 4
 Monster
 15
 tag 20 4

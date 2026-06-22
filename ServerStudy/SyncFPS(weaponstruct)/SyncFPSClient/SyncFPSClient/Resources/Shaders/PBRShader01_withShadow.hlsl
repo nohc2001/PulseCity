@@ -542,7 +542,9 @@ float4 PSMain(VS_OUTPUT input) : SV_TARGET
         }
     }
     
-    return float4(0, 0, 0, 1);
+    // A temporally updated cascade can briefly miss visible geometry. Falling
+    // back to fully lit PBR avoids turning that geometry solid black.
+    return PBRPS(input, 1.0f);
 }
 
 ////////////////////////////////////////////////

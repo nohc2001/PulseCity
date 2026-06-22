@@ -44,6 +44,8 @@ namespace {
 	constexpr float kAutoLODMaxProtectedVertexRatio = 0.995f;
 	constexpr size_t kAutoLODMaxSubMeshCount = 256;
 	constexpr size_t kAutoLODMaxRenderedSubMeshes = 12;
+	constexpr unsigned int kAutoLODInitialInstanceCapacity = 1024;
+	constexpr size_t kAutoLODInstancingOnlyMaxTriangles = 20000;
 
 	enum class RemapPairPolicy {
 		None,
@@ -920,6 +922,27 @@ namespace {
 		return true;
 	}
 
+	bool BuildInstancingOnlyMeshData(const BumpMesh* sourceMesh, AutoLODMeshData& outData)
+	{
+		if (sourceMesh == nullptr || sourceMesh->sourceVertexData.empty() ||
+			sourceMesh->sourceIndexData.empty() || sourceMesh->sourceSubMeshIndexStart.size() < 2) {
+			return false;
+		}
+		const size_t subMeshCount = sourceMesh->sourceSubMeshIndexStart.size() - 1;
+		if (subMeshCount > kAutoLODMaxRenderedSubMeshes ||
+			sourceMesh->sourceIndexData.size() > kAutoLODInstancingOnlyMaxTriangles) {
+			return false;
+		}
+
+		// Some shipped meshes are already low-poly, so simplification cannot save
+		// triangles. An exact copy still lets repeated objects share one instanced
+		// draw without changing geometry, UVs, normals, or material slots.
+		outData.vertices = sourceMesh->sourceVertexData;
+		outData.indices = sourceMesh->sourceIndexData;
+		outData.subMeshIndexStart = sourceMesh->sourceSubMeshIndexStart;
+		return true;
+	}
+
 	BumpMesh* CreateLODMeshFromData(const BumpMesh* sourceMesh, const AutoLODMeshData& data)
 	{
 		if (data.vertices.empty() || data.indices.empty() || data.subMeshIndexStart.size() < 2) return nullptr;
@@ -941,6 +964,12 @@ namespace {
 		lodMesh->sourceIndexData = indices;
 		lodMesh->sourceSubMeshIndexStart = data.subMeshIndexStart;
 		lodMesh->sourceAutoLODReady = true;
+		// AutoLOD meshes are the only meshes batched by the LOD path. Keeping the
+		// instancing allocation local to generated meshes avoids allocating one
+		// structured buffer per submesh for every source asset in the game.
+		if (lodMesh->InstanceData == nullptr) {
+			lodMesh->InstancingInit(kAutoLODInitialInstanceCapacity);
+		}
 		gAutoLODOwnedMeshes.push_back(lodMesh);
 		return lodMesh;
 	}
@@ -1226,7 +1255,13 @@ namespace {
 			const std::filesystem::path cachePath = GetCachePath(mesh, level);
 			const std::string cacheKey = cachePath.string();
 			AutoLODMeshData data;
+			bool instancingOnly = false;
 			if (!BuildSimplifiedMeshData(mesh, ratio, data)) {
+				instancingOnly = level == 0 && BuildInstancingOnlyMeshData(mesh, data);
+				if (instancingOnly) {
+					DebugBuildMessage("instance-only", cachePath, data.indices.size(), GetAutoLODSkipReason());
+				}
+				else {
 				if (level == 0) {
 					++gAutoLODSkips;
 					RecordAutoLODSkipReason(GetAutoLODSkipReason());
@@ -1235,6 +1270,7 @@ namespace {
 				}
 				DebugBuildMessage("skip", cachePath, mesh->sourceIndexData.size(), GetAutoLODSkipReason());
 				continue;
+				}
 			}
 
 			if (!SaveCacheFile(cachePath, mesh, data, ratio)) {
@@ -1244,7 +1280,7 @@ namespace {
 			if (lodMesh != nullptr) {
 				meshSet.levels[level] = lodMesh;
 				if (level == 0) builtRequired = true;
-				DebugBuildMessage("build", cachePath, data.indices.size());
+				DebugBuildMessage(instancingOnly ? "instance-build" : "build", cachePath, data.indices.size());
 			}
 		}
 
@@ -1457,13 +1493,52 @@ Mesh* AutoLOD_GetLODMesh(Mesh* sourceMesh)
 	return AutoLOD_GetLODMesh(sourceMesh, 0);
 }
 
+void AutoLOD_OnBumpMeshReleased(BumpMesh* mesh)
+{
+	if (mesh == nullptr) return;
+
+	if (mesh->IsAutoLODGenerated) {
+		gAutoLODOwnedMeshes.erase(
+			std::remove(gAutoLODOwnedMeshes.begin(), gAutoLODOwnedMeshes.end(), mesh),
+			gAutoLODOwnedMeshes.end());
+		for (auto& entry : gAutoLODMeshes) {
+			for (BumpMesh*& level : entry.second.levels) {
+				if (level == mesh) level = nullptr;
+			}
+		}
+		return;
+	}
+
+	gAutoLODMeshes.erase(mesh);
+	gRegisteredSourceMeshes.erase(mesh);
+	gQueuedPreloadMeshes.erase(mesh);
+	gPreloadQueue.erase(
+		std::remove_if(gPreloadQueue.begin(), gPreloadQueue.end(),
+			[mesh](const PreloadEntry& entry) { return entry.mesh == mesh; }),
+		gPreloadQueue.end());
+	gRuntimeQueue.erase(
+		std::remove_if(gRuntimeQueue.begin(), gRuntimeQueue.end(),
+			[mesh](const PreloadEntry& entry) { return entry.mesh == mesh; }),
+		gRuntimeQueue.end());
+}
+
+const std::vector<BumpMesh*>& AutoLOD_GetGeneratedMeshes()
+{
+	return gAutoLODOwnedMeshes;
+}
+
 Mesh* AutoLOD_GetLODMesh(Mesh* sourceMesh, int lodLevel)
 {
+	if (sourceMesh == nullptr || sourceMesh->type != Mesh::MeshType::_BumpMesh) return nullptr;
 	if (lodLevel < 0) lodLevel = 0;
 	if (lodLevel >= kAutoLODLevelCount) lodLevel = kAutoLODLevelCount - 1;
 	auto it = gAutoLODMeshes.find(sourceMesh);
 	if (it == gAutoLODMeshes.end()) return nullptr;
-	return it->second.levels[lodLevel];
+	BumpMesh* lodMesh = it->second.levels[lodLevel];
+	if (lodMesh == nullptr || lodMesh->type != Mesh::MeshType::_BumpMesh) return nullptr;
+	if (lodMesh->sourceVertexData.empty() || lodMesh->sourceIndexData.empty() || lodMesh->SubMeshIndexStart == nullptr) return nullptr;
+	if (lodMesh->subMeshNum <= 0 || lodMesh->subMeshNum > sourceMesh->subMeshNum) return nullptr;
+	return lodMesh;
 }
 
 void AutoLOD_SetModelLODRenderActive(bool active)

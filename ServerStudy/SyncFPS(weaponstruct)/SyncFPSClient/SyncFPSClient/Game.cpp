@@ -32,6 +32,11 @@ namespace {
 		{ 1, 4, 8 },
 		{ 2, 4, 12 },
 	};
+	constexpr float kAutoLODMidSubMeshDistance = 35.0f;
+	constexpr int kAutoLODMidSubMeshLimit = 6;
+	constexpr float kAutoLODFarSubMeshDistance = 80.0f;
+	constexpr int kAutoLODFarSubMeshLimit = 3;
+	constexpr float kAutoLODShadowCasterDistance = 80.0f;
 	constexpr float kBossPrototypeNormalScale = 4.20f;
 	constexpr float kBossPrototypeGroggyScale = 4.20f;
 	constexpr float kBossPrototypeHeightOffset = -1.50f;
@@ -483,6 +488,14 @@ int Game::GetRenderMaterialIndexFromGlobalMaterialIndex(int globalMatIndex)
 void Game::AddMesh(Mesh* mesh)
 {
 	MeshTable.push_back(mesh);
+}
+
+void Game::RemoveMesh(Mesh* mesh)
+{
+	if (mesh == nullptr) return;
+	for (Mesh*& registeredMesh : MeshTable) {
+		if (registeredMesh == mesh) registeredMesh = nullptr;
+	}
 }
 
 void Game::GameTableArrangeMent()
@@ -5378,6 +5391,13 @@ void Game::Render() {
 	PerfGPUComputeWaitMs = 0.0;
 	PerfGPUFinalWaitMs = 0.0;
 	PerfPresentMs = 0.0;
+	PerfAutoLODMainInstances = 0;
+	PerfAutoLODMainDraws = 0;
+	PerfAutoLODMainTrimmedSubMeshes = 0;
+	PerfAutoLODShadowSourceSubMeshes = 0;
+	PerfAutoLODShadowRenderedSubMeshes = 0;
+	PerfAutoLODShadowCulledObjects = 0;
+	PerfAutoLODShadowCulledSubMeshes = 0;
 	// 1. DRED 활성화
 	D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr);
 
@@ -5421,7 +5441,7 @@ void Game::Render() {
 	//2. 프러스텀 업데이트
 	gd.viewportArr[0].UpdateFrustum();
 	
-	//BoxLOD_BeginFrame();
+	BoxLOD_BeginFrame();
 
 	//2.5. 인스턴싱 이름 수집
 	if (SceneRenderBatch) {
@@ -5534,6 +5554,7 @@ void Game::Render() {
 
 	// 18. 모든 게임오브젝트들을 출력한다.
 	dbgc[0] = 0;
+	ClearAutoLODInstancing();
 
 	if (true) {
 		//gd.AverageTimerStart();
@@ -5580,6 +5601,23 @@ void Game::Render() {
 				if (game.Current_Zone->bReqireBakeLight_Raster == false)gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
 			}
 			RenderTour<false>();
+
+			// Batch only generated AutoLOD meshes. Unresolved objects remain on the
+			// original path, so enabling LOD cannot make them disappear.
+			gd.gpucmd.SetShader(MyPBRShader1, ShaderType::InstancingWithShadow);
+			game.PresentShaderType = ShaderType::InstancingWithShadow;
+			gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+			{
+				using PRID = PBRShader1::RootParamId;
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
+				gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::CBVTable_Instancing_DirLightData, game.DirLightResCBV.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialPool, Material::MaterialStructuredBufferSRV.hRender.hgpu);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+				DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Instancing_MaterialTexturePool, texarrSRV.hRender.hgpu);
+			}
+			RenderAutoLODInstancing(gd.gpucmd);
 
 			// 18-2. 스킨 메쉬들을 출력하기 위해 Shader를 Set.
 			gd.gpucmd.SetShader(MyPBRShader1, ShaderType::SkinMeshRender);
@@ -6529,6 +6567,14 @@ void Game::Render_ShadowPass()
 		AutoLOD_SetModelLODRenderLevel(previousAutoLODRenderLevel);
 		AutoLOD_SetModelLODRenderActive(previousAutoLODRenderActive);
 	}
+	// The instancing shader samples cascade 0 only. Keep its matrices paired
+	// with shadow map 0 even when a farther cascade was refreshed last.
+	const int zoneLightIndex = game.Current_Zone->Asset_OffsetMul;
+	MappedDirLightData->DirLightView = LightCBData_withShadow[zoneLightIndex]->LightView[0];
+	MappedDirLightData->DirLightProjection = LightCBData_withShadow[zoneLightIndex]->LightProjection[0];
+	MappedDirLightData->DirLightPos = LightCBData_withShadow[zoneLightIndex]->LightPos[0];
+	MappedDirLightData->DirLightDir = LightDirection;
+	MappedDirLightData->DirLightColor = vec4(1, 1, 1, 1);
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
@@ -6555,6 +6601,7 @@ void Game::SetRenderMod(bool isbatch)
 void Game::ClearAllMeshInstancing()
 {
 	for (int i = 0; i < MeshTable.size(); ++i) {
+		if (MeshTable[i] == nullptr || MeshTable[i]->InstanceData == nullptr) continue;
 		for (int k = 0; k < MeshTable[i]->subMeshNum; ++k) {
 			//dbglog3(L"Instancing %d %d : %d \n", i, k, MeshTable[i]->InstanceData[k].Capacity);
 			MeshTable[i]->InstanceData[k].ClearInstancing();
@@ -6575,8 +6622,162 @@ GameChunk* Game::GetChunckFromPos(vec4 pos)
 void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
 {
 	for (int i = 0; i < MeshTable.size(); ++i) {
-		MeshTable[i]->BatchRender(cmd);
+		if (MeshTable[i] != nullptr) MeshTable[i]->BatchRender(cmd);
 	}
+}
+
+bool Game::ShouldCullAutoLODShadow(const matrix& transposedWorld, int sourceSubMeshCount)
+{
+	if (!AutoLOD_IsModelLODRenderActive() || PresentShaderType != ShaderType::RenderShadowMap ||
+		sourceSubMeshCount <= 0) {
+		return false;
+	}
+
+	matrix objectWorld = transposedWorld;
+	objectWorld.transpose();
+	vec4 cameraDelta = objectWorld.pos - gd.viewportArr[0].Camera_Pos;
+	cameraDelta.w = 0.0f;
+	if (cameraDelta.getlen3() < kAutoLODShadowCasterDistance) return false;
+
+	++PerfAutoLODShadowCulledObjects;
+	PerfAutoLODShadowCulledSubMeshes += static_cast<uint64_t>(sourceSubMeshCount);
+	return true;
+}
+
+void Game::SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
+	std::vector<int>& selectedSubMeshes)
+{
+	selectedSubMeshes.clear();
+	if (mesh == nullptr || mesh->SubMeshIndexStart == nullptr || mesh->subMeshNum <= 0) return;
+
+	selectedSubMeshes.reserve(mesh->subMeshNum);
+	for (int i = 0; i < mesh->subMeshNum; ++i) {
+		if (mesh->SubMeshIndexStart[i + 1] > mesh->SubMeshIndexStart[i]) {
+			selectedSubMeshes.push_back(i);
+		}
+	}
+
+	matrix objectWorld = transposedWorld;
+	objectWorld.transpose();
+	vec4 cameraDelta = objectWorld.pos - gd.viewportArr[0].Camera_Pos;
+	cameraDelta.w = 0.0f;
+	const float distance = cameraDelta.getlen3();
+	const uint64_t sourceSubMeshCount = static_cast<uint64_t>(selectedSubMeshes.size());
+
+	// Distant LODs do not need to populate the far shadow cascade. This keeps
+	// the main pass stable while removing many light-camera draws.
+	if (PresentShaderType == ShaderType::RenderShadowMap && distance >= kAutoLODShadowCasterDistance) {
+		++PerfAutoLODShadowCulledObjects;
+		PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
+		PerfAutoLODShadowCulledSubMeshes += sourceSubMeshCount;
+		selectedSubMeshes.clear();
+		return;
+	}
+
+	int subMeshLimit = static_cast<int>(selectedSubMeshes.size());
+	if (distance >= kAutoLODFarSubMeshDistance) subMeshLimit = kAutoLODFarSubMeshLimit;
+	else if (distance >= kAutoLODMidSubMeshDistance) subMeshLimit = kAutoLODMidSubMeshLimit;
+
+	if (static_cast<int>(selectedSubMeshes.size()) <= subMeshLimit) {
+		if (PresentShaderType == ShaderType::RenderShadowMap) {
+			PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
+			PerfAutoLODShadowRenderedSubMeshes += sourceSubMeshCount;
+		}
+		return;
+	}
+	std::sort(selectedSubMeshes.begin(), selectedSubMeshes.end(),
+		[mesh](int lhs, int rhs) {
+			const int lhsIndexCount = mesh->SubMeshIndexStart[lhs + 1] - mesh->SubMeshIndexStart[lhs];
+			const int rhsIndexCount = mesh->SubMeshIndexStart[rhs + 1] - mesh->SubMeshIndexStart[rhs];
+			return lhsIndexCount > rhsIndexCount;
+		});
+	selectedSubMeshes.resize(subMeshLimit);
+	if (PresentShaderType == ShaderType::RenderShadowMap) {
+		PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
+		PerfAutoLODShadowRenderedSubMeshes += static_cast<uint64_t>(selectedSubMeshes.size());
+	}
+}
+
+bool Game::QueueAutoLODInstance(Mesh* mesh, const matrix& world, const int* materialIndices, int materialCount)
+{
+	if (!AutoLOD_IsModelLODRenderActive() || PresentShaderType != ShaderType::RenderWithShadow ||
+		mesh == nullptr || mesh->type != Mesh::MeshType::_BumpMesh || materialIndices == nullptr) {
+		return false;
+	}
+
+	BumpMesh* bumpMesh = static_cast<BumpMesh*>(mesh);
+	if (!bumpMesh->IsAutoLODGenerated || bumpMesh->InstanceData == nullptr ||
+		bumpMesh->subMeshNum <= 0 || materialCount < bumpMesh->subMeshNum) {
+		return false;
+	}
+
+	std::vector<int> queuedSubMeshes;
+	SelectAutoLODSubMeshes(bumpMesh, world, queuedSubMeshes);
+	if (queuedSubMeshes.empty()) return false;
+
+	// Never resize an instance buffer while recording this frame. Resizing updates
+	// its SRV in the creation heap, but the shader-visible heap was baked earlier;
+	// using that new buffer immediately can leave the GPU reading a stale SRV.
+	for (int i : queuedSubMeshes) {
+		const int materialIndex = materialIndices[i];
+		if (materialIndex < 0 ||
+			materialIndex >= static_cast<int>(RenderMaterialTable.size()) ||
+			materialIndex >= static_cast<int>(gd.ShaderVisibleDescPool.MaterialCBVCap) ||
+			RenderMaterialTable[materialIndex] == nullptr ||
+			RenderMaterialTable[materialIndex]->CB_Resource.resource == nullptr ||
+			RenderMaterialTable[materialIndex]->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
+			return false;
+		}
+		if (bumpMesh->InstanceData[i].InstanceSize >= bumpMesh->InstanceData[i].Capacity) {
+			return false;
+		}
+	}
+
+	bool queuedAny = false;
+	for (int i : queuedSubMeshes) {
+		const int materialIndex = materialIndices[i];
+		queuedAny |= bumpMesh->InstanceData[i].PushInstance(RenderInstanceData(world, materialIndex)) >= 0;
+	}
+	if (queuedAny) {
+		++PerfAutoLODMainInstances;
+		const uint64_t sourceSubMeshes = static_cast<uint64_t>(bumpMesh->subMeshNum);
+		const uint64_t renderedSubMeshes = static_cast<uint64_t>(queuedSubMeshes.size());
+		if (sourceSubMeshes > renderedSubMeshes) {
+			PerfAutoLODMainTrimmedSubMeshes += sourceSubMeshes - renderedSubMeshes;
+		}
+	}
+	return queuedAny;
+}
+
+void Game::ClearAutoLODInstancing()
+{
+	for (BumpMesh* bumpMesh : AutoLOD_GetGeneratedMeshes()) {
+		if (bumpMesh == nullptr || bumpMesh->InstanceData == nullptr ||
+			bumpMesh->SubMeshIndexStart == nullptr || bumpMesh->subMeshNum <= 0) continue;
+		for (int i = 0; i < bumpMesh->subMeshNum; ++i) {
+			bumpMesh->InstanceData[i].ClearInstancing();
+		}
+	}
+}
+
+void Game::RenderAutoLODInstancing(ID3D12GraphicsCommandList* cmd)
+{
+	if (!AutoLOD_IsModelLODRenderActive() || cmd == nullptr) return;
+	size_t sourceDraws = 0;
+	size_t renderedDraws = 0;
+	for (BumpMesh* bumpMesh : AutoLOD_GetGeneratedMeshes()) {
+		if (bumpMesh == nullptr || bumpMesh->InstanceData == nullptr ||
+			bumpMesh->SubMeshIndexStart == nullptr || bumpMesh->subMeshNum <= 0) continue;
+		for (int i = 0; i < bumpMesh->subMeshNum; ++i) {
+			const int instanceCount = bumpMesh->InstanceData[i].InstanceSize;
+			if (instanceCount <= 0) continue;
+			sourceDraws += static_cast<size_t>(instanceCount);
+			++renderedDraws;
+		}
+		bumpMesh->BatchRender(cmd);
+	}
+	PerfAutoLODMainDraws = static_cast<uint64_t>(renderedDraws);
+	AutoLOD_RecordCombinedLOD1(renderedDraws > 0, sourceDraws, renderedDraws);
 }
 
 // [seamless] Build queued skinmesh GPU bone buffers a few per frame so a server transfer never
@@ -6664,7 +6865,8 @@ void Game::Update()
 		mainPageStack[mainPageStack.size() - 1]->Update(game.DeltaTime);
 	}
 
-	LightDirection = LightDirection * XMMatrixRotationAxis(vec4(-1, 0, 1), DeltaTime / 120.0f);
+	// Keep the sun direction fixed. Continuously rotating it moved every shadow
+	// between frames and caused thin or distant cascade shadows to shimmer.
 	for (int i = 0; i < 9; ++i) {
 		LightCBData_withShadow[i]->dirlight.gLightDirection = LightDirection.f3;
 	}

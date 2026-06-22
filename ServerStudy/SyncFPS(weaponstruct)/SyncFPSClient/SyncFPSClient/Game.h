@@ -665,6 +665,13 @@ public:
 	double PerfGPUComputeWaitMs = 0.0;
 	double PerfGPUFinalWaitMs = 0.0;
 	double PerfPresentMs = 0.0;
+	uint64_t PerfAutoLODMainInstances = 0;
+	uint64_t PerfAutoLODMainDraws = 0;
+	uint64_t PerfAutoLODMainTrimmedSubMeshes = 0;
+	uint64_t PerfAutoLODShadowSourceSubMeshes = 0;
+	uint64_t PerfAutoLODShadowRenderedSubMeshes = 0;
+	uint64_t PerfAutoLODShadowCulledObjects = 0;
+	uint64_t PerfAutoLODShadowCulledSubMeshes = 0;
 	int AutoLODShadowStabilityLevel = 0;
 
 	UINT TourID = 0;
@@ -824,6 +831,13 @@ public:
 	}
 
 	void BatchRender(ID3D12GraphicsCommandList* cmd);
+	void RemoveMesh(Mesh* mesh);
+	bool ShouldCullAutoLODShadow(const matrix& transposedWorld, int sourceSubMeshCount);
+	void SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
+		std::vector<int>& selectedSubMeshes);
+	bool QueueAutoLODInstance(Mesh* mesh, const matrix& world, const int* materialIndices, int materialCount);
+	void ClearAutoLODInstancing();
+	void RenderAutoLODInstancing(ID3D12GraphicsCommandList* cmd);
 
 	/*
 	*/
@@ -875,15 +889,20 @@ public:
 	}
 
 	Material* GetMaterialFromRenderMaterialIndex(int matindex) {
+		if (matindex < 0) return nullptr;
 		Material* mat = nullptr;
 		int MaterialIndex = matindex;
 		int ZoneOff = (MaterialIndex / Zone::MAXZoneMaterialCount);
 		int InnerZoneIndex = MaterialIndex - ZoneOff * Zone::MAXZoneMaterialCount;
 		if (ZoneOff > 0) {
 			ZoneOff -= 1;
-			mat = Current_Zone->AssetOffsetToNearZone[ZoneOff]->MaterialTable[InnerZoneIndex];
+			if (Current_Zone == nullptr || ZoneOff < 0 || ZoneOff >= 9) return nullptr;
+			Zone* materialZone = Current_Zone->AssetOffsetToNearZone[ZoneOff];
+			if (materialZone == nullptr || InnerZoneIndex < 0 || InnerZoneIndex >= static_cast<int>(materialZone->MaterialTable.size())) return nullptr;
+			mat = materialZone->MaterialTable[InnerZoneIndex];
 		}
 		else {
+			if (InnerZoneIndex < 0 || InnerZoneIndex >= static_cast<int>(MaterialTable.size())) return nullptr;
 			mat = MaterialTable[InnerZoneIndex];
 		}
 		return mat;
@@ -942,17 +961,39 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 				cmd->SetGraphicsRoot32BitConstants(PBRShader1::RootParamId::Const_ModelHitFlash, 4, &hitFlash, 0);
 			}
 			for (int i = 0; i < numMesh; ++i) {
-				Mesh* drawMesh = pModel->mMeshes[Meshes[i]];
+				Mesh* sourceMesh = pModel->mMeshes[Meshes[i]];
+				if (sourceMesh == nullptr || materialIndex == nullptr) continue;
+				if (game.ShouldCullAutoLODShadow(m, sourceMesh->subMeshNum)) continue;
+				Mesh* drawMesh = sourceMesh;
 				if (AutoLOD_IsModelLODRenderActive()) {
 					Mesh* lodMesh = AutoLOD_GetLODMesh(drawMesh, AutoLOD_GetModelLODRenderLevel());
 					if (lodMesh == nullptr && AutoLOD_GetModelLODRenderLevel() > 0) lodMesh = AutoLOD_GetLODMesh(drawMesh, 0);
-					if (lodMesh != nullptr) drawMesh = lodMesh;
+					if (lodMesh != nullptr &&
+						sourceMesh->type == Mesh::MeshType::_BumpMesh &&
+						lodMesh->type == Mesh::MeshType::_BumpMesh &&
+						lodMesh->subMeshNum > 0 &&
+						lodMesh->subMeshNum <= sourceMesh->subMeshNum) {
+						drawMesh = lodMesh;
+					}
 				}
 				if (drawMesh->type == Mesh::MeshType::_BumpMesh) {
 					BumpMesh* Bmesh = (BumpMesh*)drawMesh;
-					for (int k = 0; k < Bmesh->subMeshNum; ++k) {
+					if (Bmesh->IsAutoLODGenerated &&
+						game.QueueAutoLODInstance(Bmesh, m, materialIndex, sourceMesh->subMeshNum)) {
+						continue;
+					}
+					std::vector<int> selectedSubMeshes;
+					if (Bmesh->IsAutoLODGenerated) {
+						game.SelectAutoLODSubMeshes(Bmesh, m, selectedSubMeshes);
+					}
+					else {
+						selectedSubMeshes.reserve(Bmesh->subMeshNum);
+						for (int k = 0; k < Bmesh->subMeshNum; ++k) selectedSubMeshes.push_back(k);
+					}
+					for (int k : selectedSubMeshes) {
 						using PBRRPI = PBRShader1::RootParamId;
 						Material* mat = game.GetMaterialFromRenderMaterialIndex(materialIndex[k]);
+						if (mat == nullptr || mat->CB_Resource.resource == nullptr || mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) continue;
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::SRVTable_MaterialTextures, mat->TextureSRVTableIndex.hRender.hgpu);
 						cmd->SetGraphicsRootDescriptorTable(PBRRPI::CBVTable_Material, mat->CB_Resource.descindex.hRender.hgpu);
 						drawMesh->Render(cmd, 1, k);

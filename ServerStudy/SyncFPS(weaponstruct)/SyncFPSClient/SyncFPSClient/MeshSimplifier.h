@@ -1,12 +1,15 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 class Mesh;
 class BumpMesh;
 class Model;
 
 void AutoLOD_RegisterBumpMesh(BumpMesh* mesh);
+void AutoLOD_OnBumpMeshReleased(BumpMesh* mesh);
+const std::vector<BumpMesh*>& AutoLOD_GetGeneratedMeshes();
 Mesh* AutoLOD_GetLODMesh(Mesh* sourceMesh);
 Mesh* AutoLOD_GetLODMesh(Mesh* sourceMesh, int lodLevel);
 

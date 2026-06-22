@@ -202,6 +202,18 @@ float4 PBRPS(VS_OUTPUT input)
     uint idx = mat.diffuseTexId;
     idx = max(min(mat.diffuseTexId, MAX_TEXTURES - 1), 0);
     float3 Color = MaterialTexArr[idx].Sample(StaticSampler, input.uv) * mat.baseColor;
+    if (distance(Camera_Position.xyz, input.positionW.xyz) >= 35.0f)
+    {
+        // Far LODs use one diffuse sample and geometric-normal lighting.
+        // This avoids normal/AO/metallic/roughness reads and the BRDF cost.
+        float3 lightDir = normalize(-DirLightDir);
+        float diffuse = saturate(dot(normalize(input.N), lightDir));
+        float3 color = Color * (0.35f + 0.65f * diffuse);
+        color = 1.0f - exp(-color);
+        color = color / (color + float3(0.5f, 0.5f, 0.5f));
+        color = pow(color, float3(1.0f / 2.2f, 1.0f / 2.2f, 1.0f / 2.2f));
+        return float4(color, 1.0f);
+    }
     idx = max(min(mat.normalTexId, MAX_TEXTURES - 1), 0);
     float3 TBNnormal = MaterialTexArr[mat.normalTexId].Sample(StaticSampler, input.uv);
     TBNnormal = TBNnormal.xyz;
@@ -269,7 +281,10 @@ float4 PBRPS(VS_OUTPUT input)
     }
     
     //diffuseColor = saturate(diffuseColor);
-    float3 ambient = float3(0.03, 0.03, 0.03) * albedo * AmbientOculusion;
+    // Generated LOD instances do not bind the full environment-light data used
+    // by the regular PBR path. Preserve their base color with a cheap indirect
+    // term instead of letting back-facing surfaces collapse to almost black.
+    float3 ambient = float3(0.18, 0.18, 0.18) * albedo * max(AmbientOculusion, 0.5f);
     float3 color = ambient + Lo;
 
     float exposure = 1; // 1.0º¸´Ù Å©¸é ´õ ¹àÀ½
@@ -319,52 +334,10 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
  //ÇÈ¼¿ ¼ÎÀÌ´õ¸¦ Á¤ÀÇÇÑ´Ù.
 float4 PSInstancingMain(VS_OUTPUT input) : SV_TARGET
 {
-    //return float4(input.normalW, 1.0f);
-    //float depth = LightShadowMap.Sample(StaticSampler, vShadowTexCoord).r;
-    if (distance(Camera_Position, input.positionW) > 200)
-    {
-        return PBRPS(input);
-    }
-    else
-    {
-        // Compute pixel position in light space.
-        float4 vLightSpacePos = input.positionW;
-        vLightSpacePos = mul(vLightSpacePos, DirLightView);
-        vLightSpacePos = mul(vLightSpacePos, DirLightProjection);
-        vLightSpacePos.xyz /= vLightSpacePos.w;
-        //vLightSpacePos.xy = vLightSpacePos.xy * 0.5f + 0.5f;
-
-        float2 vShadowTexCoord = 0.5f * vLightSpacePos.xy + 0.5f;
-        vShadowTexCoord.y = 1.0f - vShadowTexCoord.y;
-        
-        // Depth bias to avoid pixel self-shadowing.
-        float vLightSpaceDepth = vLightSpacePos.z - SHADOW_DEPTH_BIAS;
-
-        // Find sub-pixel weights.
-        float2 vShadowMapDims = float2(4096, 4096); // need to keep in sync with .cpp file
-        float4 vSubPixelCoords = float4(1.0f, 1.0f, 1.0f, 1.0f);
-        vSubPixelCoords.xy = frac(vShadowMapDims * vShadowTexCoord);
-        vSubPixelCoords.zw = 1.0f - vSubPixelCoords.xy;
-        float4 vBilinearWeights = vSubPixelCoords.zxzx * vSubPixelCoords.wwyy;
-        
-        float2 vTexelUnits = 1.0f / vShadowMapDims;
-        float4 vShadowDepths;
-        vShadowDepths.x = LightShadowMap.Sample(StaticSampler, vShadowTexCoord);
-        vShadowDepths.y = LightShadowMap.Sample(StaticSampler, vShadowTexCoord + float2(vTexelUnits.x, 0.0f));
-        vShadowDepths.z = LightShadowMap.Sample(StaticSampler, vShadowTexCoord + float2(0.0f, vTexelUnits.y));
-        vShadowDepths.w = LightShadowMap.Sample(StaticSampler, vShadowTexCoord + vTexelUnits);
-
-        // What weighted fraction of the 4 samples are nearer to the light than this pixel?
-        float4 vShadowTests = (vShadowDepths >= vLightSpaceDepth) ? 1.0f : 0.0f;
-        float f = 0.25 * (vShadowTests.x + vShadowTests.y + vShadowTests.z + vShadowTests.w);
-        //dot(vBilinearWeights, vShadowTests);
-        
-        float4 Color = PBRPS(input); //baseColor * PBR_Tex[0].Sample(StaticSampler, input.uv);
-        if (f <= 0.001 /*abs(vShadowDepths - vLightSpaceDepth) > SHADOW_DEPTH_BIAS*/)
-        {
-            //PBR_Tex[0].Sample(StaticSampler, input.uv);
-            return float4(Color.xyz * 0.2f, 1);
-        }
-        return float4((f * Color).xyz, 1);
-    }
+    // The regular path has three cascades and full environment lighting. The
+    // generated-instance path binds only one cascade, which caused broad false
+    // shadows on furniture and also cost four shadow samples per pixel. Use the
+    // stable low-cost LOD lighting result here; LOD meshes still cast nearby
+    // shadows in the shadow pass.
+    return PBRPS(input);
 }

@@ -206,6 +206,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	double perfGPUComputeWaitMs = 0.0;
 	double perfGPUFinalWaitMs = 0.0;
 	double perfPresentMs = 0.0;
+	double perfAutoLODMainInstances = 0.0;
+	double perfAutoLODMainDraws = 0.0;
+	double perfAutoLODMainTrimmedSubMeshes = 0.0;
+	double perfAutoLODShadowSourceSubMeshes = 0.0;
+	double perfAutoLODShadowRenderedSubMeshes = 0.0;
+	double perfAutoLODShadowCulledObjects = 0.0;
+	double perfAutoLODShadowCulledSubMeshes = 0.0;
 	double perfMaxFrameMs = 0.0;
 	int perfFrameCount = 0;
 	bool perfLODState = AutoLOD_IsModelLODRenderActive();
@@ -223,6 +230,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		perfGPUComputeWaitMs = 0.0;
 		perfGPUFinalWaitMs = 0.0;
 		perfPresentMs = 0.0;
+		perfAutoLODMainInstances = 0.0;
+		perfAutoLODMainDraws = 0.0;
+		perfAutoLODMainTrimmedSubMeshes = 0.0;
+		perfAutoLODShadowSourceSubMeshes = 0.0;
+		perfAutoLODShadowRenderedSubMeshes = 0.0;
+		perfAutoLODShadowCulledObjects = 0.0;
+		perfAutoLODShadowCulledSubMeshes = 0.0;
 		perfMaxFrameMs = 0.0;
 		perfFrameCount = 0;
 	};
@@ -272,6 +286,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 					perfGPUComputeWaitMs += game.PerfGPUComputeWaitMs;
 					perfGPUFinalWaitMs += game.PerfGPUFinalWaitMs;
 					perfPresentMs += game.PerfPresentMs;
+					perfAutoLODMainInstances += double(game.PerfAutoLODMainInstances);
+					perfAutoLODMainDraws += double(game.PerfAutoLODMainDraws);
+					perfAutoLODMainTrimmedSubMeshes += double(game.PerfAutoLODMainTrimmedSubMeshes);
+					perfAutoLODShadowSourceSubMeshes += double(game.PerfAutoLODShadowSourceSubMeshes);
+					perfAutoLODShadowRenderedSubMeshes += double(game.PerfAutoLODShadowRenderedSubMeshes);
+					perfAutoLODShadowCulledObjects += double(game.PerfAutoLODShadowCulledObjects);
+					perfAutoLODShadowCulledSubMeshes += double(game.PerfAutoLODShadowCulledSubMeshes);
 					didRender = true;
 					g_suppressLoadingScreen = false;   // back to normal -> loading screen allowed again
 					//gd.AverageSecPer60End(0);
@@ -330,6 +351,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 							const double avgGPUComputeWaitMs = perfGPUComputeWaitMs * invFrameCount;
 							const double avgGPUFinalWaitMs = perfGPUFinalWaitMs * invFrameCount;
 							const double avgPresentMs = perfPresentMs * invFrameCount;
+							const double avgAutoLODMainInstances = perfAutoLODMainInstances * invFrameCount;
+							const double avgAutoLODMainDraws = perfAutoLODMainDraws * invFrameCount;
+							const double avgAutoLODMainTrimmedSubMeshes = perfAutoLODMainTrimmedSubMeshes * invFrameCount;
+							const double avgAutoLODShadowSourceSubMeshes = perfAutoLODShadowSourceSubMeshes * invFrameCount;
+							const double avgAutoLODShadowRenderedSubMeshes = perfAutoLODShadowRenderedSubMeshes * invFrameCount;
+							const double avgAutoLODShadowCulledObjects = perfAutoLODShadowCulledObjects * invFrameCount;
+							const double avgAutoLODShadowCulledSubMeshes = perfAutoLODShadowCulledSubMeshes * invFrameCount;
 							const double avgCPURecordMs = (std::max)(0.0, avgRenderMs - avgGPUWaitMs - avgPresentMs);
 							if (perfLODState) {
 								const bool heavyFrame =
@@ -352,9 +380,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 							else {
 								SetShadowStabilityLevel(0);
 							}
-							char perfDbg[768];
+							char perfDbg[1024];
 							sprintf_s(perfDbg,
-								"[Perf] lod=%s shadowQ=%d fps=%.1f frame=%.2fms workFps=%.1f work=%.2fms maxWork=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms samples=%d\n",
+								"[Perf] lod=%s shadowQ=%d fps=%.1f frame=%.2fms workFps=%.1f work=%.2fms maxWork=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms lodInst=%.1f->%.1f lodTrim=%.1f shLOD=%.1f->%.1f shCull=%.1f/%.1f samples=%d\n",
 								perfLODState ? "ON" : "OFF",
 								game.AutoLODShadowStabilityLevel,
 								avgPacedFrameMs > 0.0 ? 1000.0 / avgPacedFrameMs : 0.0,
@@ -372,6 +400,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 								avgGPUFinalWaitMs,
 								avgPresentMs,
 								avgCPURecordMs,
+								avgAutoLODMainInstances,
+								avgAutoLODMainDraws,
+								avgAutoLODMainTrimmedSubMeshes,
+								avgAutoLODShadowSourceSubMeshes,
+								avgAutoLODShadowRenderedSubMeshes,
+								avgAutoLODShadowCulledObjects,
+								avgAutoLODShadowCulledSubMeshes,
 								perfFrameCount);
 							OutputDebugStringA(perfDbg);
 							ResetPerfAccum();

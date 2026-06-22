@@ -3277,11 +3277,12 @@ Mesh::~Mesh()
 {
 }
 
-void Mesh::InstancingInit()
+void Mesh::InstancingInit(unsigned int initialCapacity)
 {
+	initialCapacity = (std::max)(1u, initialCapacity);
 	InstanceData = new InstancingStruct[subMeshNum];
 	for (int i = 0; i < subMeshNum; ++i) {
-		InstanceData[i].Init(16, this);
+		InstanceData[i].Init(initialCapacity, this);
 	}
 }
 
@@ -3775,6 +3776,7 @@ void Mesh::InstancingStruct::Release() {
 
 void Mesh::Release()
 {
+	game.RemoveMesh(this);
 	VertexBuffer.Release();
 	VertexUploadBuffer.Release();
 	IndexBuffer.Release();
@@ -3784,6 +3786,7 @@ void Mesh::Release()
 			InstanceData[i].Release();
 		}
 		delete[] InstanceData;
+		InstanceData = nullptr;
 	}
 	
 	if (SubMeshIndexStart != nullptr) {
@@ -4889,6 +4892,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 
 void BumpMesh::Release()
 {
+	AutoLOD_OnBumpMeshReleased(this);
 	rmesh.Release();
 	sourceVertexData.clear();
 	sourceIndexData.clear();
@@ -4898,6 +4902,10 @@ void BumpMesh::Release()
 }
 
 void BumpMesh::BatchRender(ID3D12GraphicsCommandList* pCommandList) {
+	if (pCommandList == nullptr || InstanceData == nullptr ||
+		SubMeshIndexStart == nullptr || subMeshNum <= 0) {
+		return;
+	}
 	bool hasInstance = false;
 	for (int i = 0; i < subMeshNum; ++i) {
 		if (InstanceData[i].InstanceSize > 0) {

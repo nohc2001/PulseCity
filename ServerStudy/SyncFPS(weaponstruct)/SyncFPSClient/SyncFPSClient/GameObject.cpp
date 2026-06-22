@@ -744,10 +744,16 @@ void GameObject::Render(matrix parent)
 		matrix rootWorld = world;
 		rootWorld.transpose();
 		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
+		if (material == nullptr) return;
+		if (Bmesh->IsAutoLODGenerated &&
+			game.QueueAutoLODInstance(Bmesh, rootWorld, material, mesh->subMeshNum)) {
+			return;
+		}
 		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &rootWorld, 0);
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
 			if (material[i] < 0 || material[i] >= game.RenderMaterialTable.size()) continue;
 			Material* Mat = game.GetMaterialFromRenderMaterialIndex(material[i]);
+			if (Mat == nullptr || Mat->CB_Resource.resource == nullptr || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) continue;
 			
 			//if (Mat == nullptr) continue;
 			//if (Mat->CB_Resource.descindex.hRender.hgpu.ptr == 0 || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) {
@@ -895,7 +901,8 @@ void GameObject::PushRenderBatch(matrix parent)
 		rootWorld.transpose();
 		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
 		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
-			if (material[i] < 0 || material[i] >= static_cast<int>(game.MaterialTable.size())) continue;
+			if (material[i] < 0 || material[i] >= static_cast<int>(game.RenderMaterialTable.size())) continue;
+			if (Bmesh->InstanceData == nullptr) continue;
 			Bmesh->InstanceData[i].PushInstance(RenderInstanceData(rootWorld, material[i]));
 		}
 	}
