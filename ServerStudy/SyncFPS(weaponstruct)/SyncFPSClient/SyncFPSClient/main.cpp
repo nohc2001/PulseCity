@@ -35,7 +35,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 			return 1;
 		}
 
-		DWORD_PTR dwThreadAffinityMask = 0xFF; // 예: Core 0
+		DWORD_PTR dwThreadAffinityMask = 0xFFFF; // 예: Core 0
 		if (!SetThreadAffinityMask(hMainThread, dwThreadAffinityMask)) {
 			printf("SetThreadAffinityMask failed\n");
 			return 1;

@@ -2376,7 +2376,7 @@ struct World {
 	}
 
 	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
-	const char* GetZoneIP(int zoneId) const { return "192.168.45.73"; }
+	const char* GetZoneIP(int zoneId) const { return "127.0.0.1"; }
 	int IssueTransferToken() { return nextTransferToken++; }
 	bool SendPlayerTransferToServer(const PlayerTransferData& data);
 	void AcceptClientHello(int clientIndex);

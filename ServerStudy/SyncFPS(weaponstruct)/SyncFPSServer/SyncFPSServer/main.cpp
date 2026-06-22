@@ -17,6 +17,37 @@ void dbgbreak(bool condition) {
 }
 
 int main() {
+	{
+		HANDLE hMainThread = GetCurrentThread();
+
+		if (hMainThread == NULL) {
+			printf("Failed to get the main thread handle\n");
+			return 1;
+		}
+
+		DWORD_PTR dwThreadAffinityMask = 0xFFFF; // 예: Core 0
+		if (!SetThreadAffinityMask(hMainThread, dwThreadAffinityMask)) {
+			printf("SetThreadAffinityMask failed\n");
+			return 1;
+		}
+
+		// Time Critical은 위험하지 않을까? ..
+		if (!SetThreadPriority(hMainThread, THREAD_PRIORITY_HIGHEST)) {
+			printf("SetThreadPriority failed\n");
+			return 1;
+		}
+
+		int priority = GetThreadPriority(hMainThread);
+		if (priority == THREAD_PRIORITY_ERROR_RETURN) {
+			printf("GetThreadPriority failed\n");
+			return 1;
+		}
+		printf("Thread priority is set to %d\n", priority);
+
+		// yeild and revisit -> update priority and affinity.
+		Sleep(100);
+	}
+
 	// 개발시 존 아이디 지정.
 	constexpr int testZoneID = 73; // Zone_4_7
 	int serverId = testZoneID;

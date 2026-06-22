@@ -1338,6 +1338,7 @@ public:
 	GameObject* PlayerWeaponObj[MaxWeapon] = {};
 	GameObject* LeftHand = {};
 	GameObject* DronObj[2] = {};
+	GameObject* Knife[2] = {};
 	void PlayerWeaponObjectInit();
 
 #pragma pack(push, 1)

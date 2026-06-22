@@ -3969,6 +3969,10 @@ void Player::PlayerWeaponObjectInit()
 		DronObj[i] = new GameObject();
 		DronObj[i]->worldMat = 0;
 		DronObj[i]->SetShape(game.SupportDroneModel);
+
+		Knife[i] = new GameObject();
+		Knife[i]->worldMat = 0;
+		Knife[i]->SetShape(game.DualGunBladeModel);
 	}
 }
 
@@ -4011,13 +4015,44 @@ void Player::Render_ThirdPersonWeapon()
 
 		for (int i = 0; i < Game::MaxWeapon; ++i) {
 			if (PlayerWeaponObj[i] == nullptr) continue;
-			if (m_currentWeaponType != i) {
-				PlayerWeaponObj[i]->worldMat = 0;
+
+			if ((WeaponType)i == WeaponType::DualPistol) {
+				if (m_dualBladeVisualTimer > 0.0f) {
+					if (m_currentWeaponType != i) {
+						Knife[0]->worldMat = 0;
+						Knife[1]->worldMat = 0;
+					}
+					else {
+						Knife[0]->worldMat = gunmat;
+						Knife[1]->worldMat = gunmat;
+					}
+					PlayerWeaponObj[i]->worldMat = 0;
+				}
+				else {
+					if (m_currentWeaponType != i) {
+						PlayerWeaponObj[i]->worldMat = 0;
+						Knife[0]->worldMat = 0;
+						Knife[1]->worldMat = 0;
+					}
+					else {
+						Knife[0]->worldMat = 0;
+						Knife[1]->worldMat = 0;
+						PlayerWeaponObj[i]->worldMat = gunmat;
+					}
+				}
+				PlayerWeaponObj[i]->RaytracingUpdateTransform();
+				Knife[0]->RaytracingUpdateTransform();
+				Knife[1]->RaytracingUpdateTransform();
 			}
 			else {
-				PlayerWeaponObj[i]->worldMat = gunmat;
+				if (m_currentWeaponType != i) {
+					PlayerWeaponObj[i]->worldMat = 0;
+				}
+				else {
+					PlayerWeaponObj[i]->worldMat = gunmat;
+				}
+				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 			}
-			PlayerWeaponObj[i]->RaytracingUpdateTransform();
 		}
 	}
 	else {
@@ -4272,13 +4307,31 @@ void Player::Render_AfterDepthClear()
 			leftGunMat *= viewmat;
 			for (int i = 0; i < Game::MaxWeapon; ++i) {
 				if (PlayerWeaponObj[i] == nullptr) continue;
-				if (m_currentWeaponType != i) {
-					PlayerWeaponObj[i]->worldMat = 0;
+				
+				if ((WeaponType)i == WeaponType::DualPistol ) {
+					if (m_dualBladeVisualTimer > 0.0f) {
+						Knife[0]->worldMat = leftGunMat;
+						Knife[1]->worldMat = gunmat;
+						PlayerWeaponObj[i]->worldMat = 0;
+					}
+					else {
+						Knife[0]->worldMat = 0;
+						Knife[1]->worldMat = 0;
+						PlayerWeaponObj[i]->worldMat = gunmat;
+					}
+					Knife[0]->RaytracingUpdateTransform();
+					Knife[1]->RaytracingUpdateTransform();
+					PlayerWeaponObj[i]->RaytracingUpdateTransform();
 				}
 				else {
-					PlayerWeaponObj[i]->worldMat = gunmat;
+					if (m_currentWeaponType != i) {
+						PlayerWeaponObj[i]->worldMat = 0;
+					}
+					else {
+						PlayerWeaponObj[i]->worldMat = gunmat;
+					}
+					PlayerWeaponObj[i]->RaytracingUpdateTransform();
 				}
-				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 			}
 
 			if (isdrawLeft) {
