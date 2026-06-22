@@ -1071,7 +1071,7 @@ void Zone::SpawnObjects() {
         PushGameObject(boss);
 
         static constexpr int range = 100;
-        for (int i = 0; i < 20; ++i) {
+        for (int i = 0; i < 0; ++i) {
             Monster* mon = new Monster();
             mon->zone = this;
             MonsterType monsterType = (MonsterType)(rand() % (int)MonsterType::Max);
@@ -1101,7 +1101,7 @@ void Zone::SpawnObjects() {
         float py = map.AABB[1].y - 4.0f;   // drop from the ceiling like the player -> falls to the real walkable floor
         cout << "[ZoneMonster] zone73 spawn center=(" << cx << "," << cz << ") py=" << py
              << " AABB.min.y=" << map.AABB[0].y << " AABB.max.y=" << map.AABB[1].y << endl;
-        for (int i = 0; i < 40; ++i) {
+        for (int i = 0; i < 0; ++i) {
             Monster* mon = new Monster();
             mon->zone = this;
             mon->ApplyMonsterData((MonsterType)(rand() % 2));   // fixed type (Monster001) so shape is definitely present

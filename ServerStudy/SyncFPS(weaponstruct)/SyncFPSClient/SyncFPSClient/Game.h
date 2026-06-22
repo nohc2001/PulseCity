@@ -556,6 +556,7 @@ public:
 	void NotifyPlayerDamaged(float damage);
 	void SpawnFloatingDamageText(vec4 worldPosition, float damage);
 	void RenderGameplayStatusHUD();
+	void RenderDungeonPartyHUD();
 	void RenderDamageFeedbackHUD();
 	void RenderBossPrototypeHUD();
 	void RenderBossPrototypeCoreHealthPlates();

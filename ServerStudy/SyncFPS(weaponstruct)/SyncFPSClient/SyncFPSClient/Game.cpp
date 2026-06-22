@@ -5762,15 +5762,18 @@ void Game::Render() {
 			}
 			RenderTour<true>();
 
-			//for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
-			//	SkinMeshGameObject* smgo = dynamic_cast<SkinMeshGameObject*>(DynmaicGameObjects[i]);
-			//	if (smgo == nullptr) continue;
-			//	if (smgo->tag[GameObjectTag::Tag_Enable] == false) continue;
-			//	if (smgo->tag[GameObjectTag::Tag_SkinMeshObject] == false) continue;
-			//	if (smgo->TourID == TourID) continue;
-			//	(smgo->*SkinMeshGameObject::CurrentRenderFunc)(idmat);
-			//	smgo->TourID = TourID;
-			//}
+			// Dungeon players can temporarily fall out of the camera-driven chunk tour while their
+			// interpolated OBB crosses a chunk boundary (most visible during jump). Render only the
+			// enabled skinmeshes that the tour missed; TourID prevents duplicate draws.
+			for (int i = 0; i < DynmaicGameObjects.size(); ++i) {
+				SkinMeshGameObject* smgo = dynamic_cast<SkinMeshGameObject*>(DynmaicGameObjects[i]);
+				if (smgo == nullptr) continue;
+				if (smgo->tag[GameObjectTag::Tag_Enable] == false) continue;
+				if (smgo->tag[GameObjectTag::Tag_SkinMeshObject] == false) continue;
+				if (smgo->TourID == TourID) continue;
+				(smgo->*SkinMeshGameObject::CurrentRenderFunc)(idmat);
+				smgo->TourID = TourID;
+			}
 
 			if (game.player != nullptr && game.bFirstPersonVision == false) {
 				BindStaticPBRRenderState();
@@ -6133,6 +6136,7 @@ void Game::Render() {
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
 	RenderGameplayStatusHUD();
+	RenderDungeonPartyHUD();
 	RenderBossPrototypeHUD();
 	RenderBossPrototypeCoreHealthPlates();
 	RenderMonsterHealthPlates();
@@ -6165,6 +6169,10 @@ void Game::Render() {
 	}
 	
 	// 27.
+	// UI quads write depth. Clear it once more so the batched SDF pass (HP/ammo/keys/party labels)
+	// cannot disappear behind dungeon HUD textures or map-dependent depth state.
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 	MyScreenShader->RenderAllSDFTexts();
 
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -6612,6 +6620,7 @@ void Game::Render_RayTracing()
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
 	RenderGameplayStatusHUD();
+	RenderDungeonPartyHUD();
 	RenderBossPrototypeHUD();
 	RenderBossPrototypeCoreHealthPlates();
 	RenderMonsterHealthPlates();
@@ -6645,6 +6654,8 @@ void Game::Render_RayTracing()
 	}
 
 	// 27.
+	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 	MyScreenShader->RenderAllSDFTexts();
 
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -7546,6 +7557,13 @@ READ_START:
 			game.ApplyZoneOffsetToDynamicObject(DynmaicGameObjects[netObjIndex]);
 			if (DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
 				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[netObjIndex];
+				// Players need their bone resources immediately after a server/zone transfer. The deferred
+				// path can leave the body without a valid skin draw while the separately rendered weapon
+				// remains visible. There are at most a few party players, so initialize them synchronously;
+				// keep the amortized queue for monsters/NPCs where the transfer burst is actually large.
+				if (header.type == GameObjectType::_Player && smgo->BoneToWorldMatrixCB.empty()) {
+					smgo->InitRootBoneMatrixs();
+				}
 				// [seamless-B] Building GPU bone buffers (InitRootBoneMatrixs) does several full GPU
 				// flushes. On a server transfer ~20 skinmesh objects arrive in ONE frame; building all
 				// at once freezes the main thread ~1s and starves the input pump. Instead, disable the
@@ -7555,7 +7573,7 @@ READ_START:
 				// Only defer objects that have NOT been built yet (empty bone buffers); an already-built
 				// object that re-syncs through this path is left enabled. Dedup the queue so the same
 				// object is never enqueued (and later render-pushed) twice.
-				if (smgo->BoneToWorldMatrixCB.empty()) {
+				if (header.type != GameObjectType::_Player && smgo->BoneToWorldMatrixCB.empty()) {
 					smgo->tag[GameObjectTag::Tag_Enable] = false;
 					bool alreadyQueued = false;
 					for (size_t k = 0; k < game.m_pendingSkinBoneInit.size(); ++k) {
@@ -8425,7 +8443,6 @@ void Game::RenderGameplayStatusHUD()
 {
 	if (player == nullptr || UITextureTable.empty()) return;
 
-	constexpr int FillTexture = 0; // temp: DefaultTex
 	constexpr int FirstJobIndex = 0;
 
 	const float screenWidth = (float)gd.ClientFrameWidth;
@@ -8441,15 +8458,15 @@ void Game::RenderGameplayStatusHUD()
 	float hpRate = min(1.0f, max(0.0f, player->HP / maxHP));
 	vec4 panel = vec4(left, panelBottom, left + panelWidth, panelBottom + panelHeight);
 	vec4 shadow = panel + vec4(5.0f, -5.0f, 5.0f, -5.0f) * scale;
-	UIDraw_TextureRect(shadow, vec4(0.0f, 0.0f, 0.0f, 0.45f), depth + ui_depth_epsilon, FillTexture);
-	UIDraw_TextureRect(panel, vec4(0.04f, 0.05f, 0.06f, 0.82f), depth, FillTexture);
+	UIDraw_SolidRect(shadow, vec4(0.0f, 0.0f, 0.0f, 0.45f), depth + ui_depth_epsilon);
+	UIDraw_SolidRect(panel, vec4(0.04f, 0.05f, 0.06f, 0.82f), depth);
 
 	vec4 hpBack = vec4(panel.x + 18.0f * scale, panel.y + 26.0f * scale, panel.z - 18.0f * scale, panel.y + 56.0f * scale);
 	vec4 hpFill = hpBack;
 	hpFill.z = hpFill.x + (hpBack.z - hpBack.x) * hpRate;
-	UIDraw_TextureRect(hpBack, vec4(0.11f, 0.03f, 0.04f, 0.96f), depth - ui_depth_epsilon, FillTexture);
-	UIDraw_TextureRect(hpFill, vec4(0.95f, 0.08f, 0.16f, 1.0f), depth - ui_depth_epsilon * 2, FillTexture);
-	UIDraw_TextureRect(vec4(hpBack.x, hpBack.w - 4.0f * scale, hpFill.z, hpBack.w), vec4(1.0f, 0.28f, 0.36f, 0.88f), depth - ui_depth_epsilon * 3, FillTexture);
+	UIDraw_SolidRect(hpBack, vec4(0.11f, 0.03f, 0.04f, 0.96f), depth - ui_depth_epsilon);
+	UIDraw_SolidRect(hpFill, vec4(0.95f, 0.08f, 0.16f, 1.0f), depth - ui_depth_epsilon * 2);
+	UIDraw_SolidRect(vec4(hpBack.x, hpBack.w - 4.0f * scale, hpFill.z, hpBack.w), vec4(1.0f, 0.28f, 0.36f, 0.88f), depth - ui_depth_epsilon * 3);
 
 	wchar_t hpText[32] = {};
 	swprintf_s(hpText, L"%.0f / %.0f", max(0.0f, player->HP), maxHP);
@@ -8471,17 +8488,138 @@ void Game::RenderGameplayStatusHUD()
 		float maxHeat = max(player->MaxHeatGauge, 1.0f);
 		float heatRate = min(1.0f, max(0.0f, player->HeatGauge / maxHeat));
 		gaugeFill.z = gaugeFill.x + (gaugeBack.z - gaugeBack.x) * heatRate;
-		UIDraw_TextureRect(gaugeBack, vec4(0.08f, 0.0f, 0.0f, 0.72f), depth - ui_depth_epsilon, FillTexture);
-		UIDraw_TextureRect(gaugeFill, vec4(1.0f, 0.10f, 0.06f, 0.98f), depth - ui_depth_epsilon * 2, FillTexture);
+		UIDraw_SolidRect(gaugeBack, vec4(0.08f, 0.0f, 0.0f, 0.72f), depth - ui_depth_epsilon);
+		UIDraw_SolidRect(gaugeFill, vec4(1.0f, 0.10f, 0.06f, 0.98f), depth - ui_depth_epsilon * 2);
 	}
 	else if (player->m_currentJob == AegisJobIndex) {
 		float maxShield = max(player->MaxShieldDurability, 1.0f);
 		float shieldRate = min(1.0f, max(0.0f, player->ShieldDurability / maxShield));
 		gaugeFill.z = gaugeFill.x + (gaugeBack.z - gaugeBack.x) * shieldRate;
-		UIDraw_TextureRect(gaugeBack, vec4(0.0f, 0.03f, 0.10f, 0.76f), depth - ui_depth_epsilon, FillTexture);
-		UIDraw_TextureRect(gaugeFill, vec4(0.12f, 0.58f, 1.0f, 0.98f), depth - ui_depth_epsilon * 2, FillTexture);
-		UIDraw_TextureRect(vec4(gaugeBack.x, gaugeBack.w - 2.0f * scale, gaugeFill.z, gaugeBack.w),
-			vec4(0.68f, 0.92f, 1.0f, 0.72f), depth - ui_depth_epsilon * 3, FillTexture);
+		UIDraw_SolidRect(gaugeBack, vec4(0.0f, 0.03f, 0.10f, 0.76f), depth - ui_depth_epsilon);
+		UIDraw_SolidRect(gaugeFill, vec4(0.12f, 0.58f, 1.0f, 0.98f), depth - ui_depth_epsilon * 2);
+		UIDraw_SolidRect(vec4(gaugeBack.x, gaugeBack.w - 2.0f * scale, gaugeFill.z, gaugeBack.w),
+			vec4(0.68f, 0.92f, 1.0f, 0.72f), depth - ui_depth_epsilon * 3);
+	}
+}
+
+static const wchar_t* GetPartyJobName(int job)
+{
+	static const wchar_t* JobNames[] = {
+		L"JUGGERNAUT", L"FROST", L"AEGIS", L"MAGE", L"HEALER",
+		L"GUNNER", L"DRONE", L"HACKER", L"BOMBER"
+	};
+	return (job >= 0 && job < (int)(sizeof(JobNames) / sizeof(JobNames[0]))) ? JobNames[job] : L"UNKNOWN";
+}
+
+void Game::RenderDungeonPartyHUD()
+{
+	// The lobby queue reuses this snapshot, but the gameplay roster belongs only in dungeon zones.
+	if (player == nullptr || currentZoneId < 100 || !m_dungeonQueue.active || m_dungeonQueue.count <= 0) return;
+	if (UITextureTable.size() <= 41) return;
+
+	constexpr int FillTexture = 0;
+	constexpr int PartySlotTexture = 38;
+	constexpr int HPBarTexture = 40;
+	constexpr int HPFillTexture = 41;
+
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.72f, screenHeight / 960.0f);
+	const float depth = 0.020f;
+	// Keep one visual row per unique player. This also protects the HUD from a transient duplicate
+	// snapshot while a dungeon connection is being replaced.
+	int memberSlots[3] = { -1, -1, -1 };
+	int memberCount = 0;
+	const int snapshotCount = min(3, max(0, m_dungeonQueue.count));
+	for (int i = 0; i < snapshotCount; ++i) {
+		const int objectIndex = m_dungeonQueue.objindex[i];
+		if (objectIndex < 0) continue;
+		bool duplicate = false;
+		for (int k = 0; k < memberCount; ++k) {
+			if (m_dungeonQueue.objindex[memberSlots[k]] == objectIndex) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) memberSlots[memberCount++] = i;
+	}
+	if (memberCount <= 0) return;
+
+	const float panelLeft = -screenWidth * 0.5f + 34.0f * scale;
+	const float panelTop = screenHeight * 0.5f - 78.0f * scale;
+	const float panelWidth = 346.0f * scale;
+	const float headerHeight = 44.0f * scale;
+	const float slotHeight = 88.0f * scale;
+	const float slotGap = 8.0f * scale;
+	const float panelHeight = headerHeight + 18.0f * scale + memberCount * slotHeight + max(0, memberCount - 1) * slotGap;
+	const vec4 panel(panelLeft, panelTop - panelHeight, panelLeft + panelWidth, panelTop);
+
+	UIDraw_TextureRect(panel + vec4(5.0f, -5.0f, 5.0f, -5.0f) * scale,
+		vec4(0.0f, 0.0f, 0.0f, 0.48f), depth + ui_depth_epsilon, FillTexture);
+	UIDraw_TextureRect(panel, vec4(0.018f, 0.035f, 0.045f, 0.92f), depth, FillTexture);
+	// The original party-window bitmap contains a decorative fake HP row. Use clean cyan edge strips
+	// instead, while retaining the original party-slot and gameplay HP resources for actual members.
+	const float edge = 2.0f * scale;
+	const vec4 frameColor(0.18f, 0.72f, 0.90f, 0.82f);
+	UIDraw_SolidRect(vec4(panel.x, panel.y, panel.z, panel.y + edge), frameColor, depth - ui_depth_epsilon);
+	UIDraw_SolidRect(vec4(panel.x, panel.w - edge, panel.z, panel.w), frameColor, depth - ui_depth_epsilon);
+	UIDraw_SolidRect(vec4(panel.x, panel.y, panel.x + edge, panel.w), frameColor, depth - ui_depth_epsilon);
+	UIDraw_SolidRect(vec4(panel.z - edge, panel.y, panel.z, panel.w), frameColor, depth - ui_depth_epsilon);
+
+	vec4 titleRt(panel.x + 20.0f * scale, panel.w - 40.0f * scale,
+		panel.z - 18.0f * scale, panel.w - 8.0f * scale);
+	RenderSDFText(L"PARTY", 5, titleRt, 24.0f * scale,
+		vec4(0.48f, 0.90f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+
+	for (int i = 0; i < memberCount; ++i) {
+		const int snapshotIndex = memberSlots[i];
+
+		const float slotTop = panel.w - headerHeight - 12.0f * scale - i * (slotHeight + slotGap);
+		const vec4 slot(panel.x + 14.0f * scale, slotTop - slotHeight,
+			panel.z - 14.0f * scale, slotTop);
+		const int job = m_dungeonQueue.m_currentJob[snapshotIndex];
+		const vec4 jobColor = GetUltimateHUDColor(job);
+
+		UIDraw_TextureRect(slot, vec4(0.03f, 0.055f, 0.07f, 0.92f), depth - ui_depth_epsilon * 2, FillTexture);
+		UIDraw_TextureRect(slot, vec4(jobColor.r, jobColor.g, jobColor.b, 0.42f),
+			depth - ui_depth_epsilon * 3, PartySlotTexture);
+
+		const vec4 portrait(slot.x + 10.0f * scale, slot.y + 10.0f * scale,
+			slot.x + 76.0f * scale, slot.w - 10.0f * scale);
+		UIDraw_TextureRect(portrait, vec4(0.02f, 0.04f, 0.055f, 0.94f), depth - ui_depth_epsilon * 4, PartySlotTexture);
+		if (job >= 0 && job < 9) {
+			UIDraw_TextureRect(portrait, vec4(0.78f, 0.94f, 1.0f, 0.90f),
+				depth - ui_depth_epsilon * 5, &gJobCardTex[job]);
+		}
+
+		wchar_t memberText[32] = {};
+		swprintf_s(memberText, L"P%d  %ls", i + 1, GetPartyJobName(job));
+		const vec4 memberRt(portrait.z + 12.0f * scale, slot.w - 31.0f * scale,
+			slot.z - 10.0f * scale, slot.w - 5.0f * scale);
+		RenderSDFText(memberText, (int)wcslen(memberText), memberRt, 18.0f * scale,
+			vec4(0.92f, 0.98f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 7);
+
+		const float maxHP = max(1.0f, m_dungeonQueue.maxhp[snapshotIndex]);
+		const float currentHP = min(maxHP, max(0.0f, m_dungeonQueue.hp[snapshotIndex]));
+		const float hpRate = currentHP / maxHP;
+		const vec4 hpBack(portrait.z + 12.0f * scale, slot.y + 15.0f * scale,
+			slot.z - 70.0f * scale, slot.y + 35.0f * scale);
+		vec4 hpFill = hpBack;
+		hpFill.z = hpFill.x + (hpBack.z - hpBack.x) * hpRate;
+		UIDraw_TextureRect(hpBack, vec4(0.15f, 0.04f, 0.055f, 0.96f),
+			depth - ui_depth_epsilon * 4, HPBarTexture);
+		if (hpRate > 0.0f) {
+			const vec4 hpColor = hpRate <= 0.25f ? vec4(1.0f, 0.10f, 0.12f, 1.0f) :
+				vec4(jobColor.r, jobColor.g, jobColor.b, 1.0f);
+			UIDraw_TextureRect(hpFill, hpColor, depth - ui_depth_epsilon * 5, HPFillTexture);
+		}
+
+		wchar_t hpText[32] = {};
+		swprintf_s(hpText, L"%.0f / %.0f", currentHP, maxHP);
+		const vec4 hpTextRt(hpBack.z + 7.0f * scale, slot.y + 12.0f * scale,
+			slot.z - 6.0f * scale, slot.y + 37.0f * scale);
+		RenderSDFText(hpText, (int)wcslen(hpText), hpTextRt, 15.0f * scale,
+			vec4(0.96f, 0.98f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 7);
 	}
 }
 

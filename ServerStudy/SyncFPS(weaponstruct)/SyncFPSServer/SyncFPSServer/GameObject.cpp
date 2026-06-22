@@ -5700,23 +5700,110 @@ void World::Init() {
 }
 
 void World::Update() {
+	using TickClock = std::chrono::steady_clock;
+	auto elapsedMs = [](TickClock::time_point begin, TickClock::time_point end) {
+		return std::chrono::duration<double, std::milli>(end - begin).count();
+	};
+
+	const TickClock::time_point tickBegin = TickClock::now();
+	const TickClock::time_point zoneUpdateBegin = tickBegin;
+	double slowestZoneMs = 0.0;
+	int slowestZoneId = -1;
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
+		const TickClock::time_point zoneBegin = TickClock::now();
 		gameworld.ZoneTable[i]->Update(DeltaTime);
+		const double currentZoneMs = elapsedMs(zoneBegin, TickClock::now());
+		if (currentZoneMs > slowestZoneMs) {
+			slowestZoneMs = currentZoneMs;
+			slowestZoneId = i;
+		}
 	}
+	const double zoneUpdateMs = elapsedMs(zoneUpdateBegin, TickClock::now());
+
 	// [party/dungeon] keep waiting members' HP/job live each tick (queued into PersonalSDS, flushed below).
+	const TickClock::time_point queueBegin = TickClock::now();
 	BroadcastDungeonQueue();
+	const double queueMs = elapsedMs(queueBegin, TickClock::now());
+
 	// [party/dungeon] in the dungeon the lobby queue is empty (cleared on entry), so share the in-dungeon
 	// party's HP/job on a ~0.2s throttle (few members -> light) using the same party UI.
+	double dungeonPartyMs = 0.0;
 	static float s_dungeonPartyHpTimer = 0.0f;
 	s_dungeonPartyHpTimer += DeltaTime;
 	if (s_dungeonPartyHpTimer >= 0.2f) {
 		s_dungeonPartyHpTimer = 0.0f;
+		const TickClock::time_point dungeonPartyBegin = TickClock::now();
 		BroadcastDungeonParty();
+		dungeonPartyMs = elapsedMs(dungeonPartyBegin, TickClock::now());
 	}
+
+	const TickClock::time_point flushBegin = TickClock::now();
 	for (int i = 0; i < ZoneTable.size(); ++i) {
 		if (IsZoneOwned(i) == false) continue;
 		gameworld.ZoneTable[i]->FlushSendToClients();
+	}
+	const TickClock::time_point tickEnd = TickClock::now();
+	const double flushMs = elapsedMs(flushBegin, tickEnd);
+	const double totalMs = elapsedMs(tickBegin, tickEnd);
+
+	// Aggregate for one real second so profiling output itself does not become a server hitch.
+	static TickClock::time_point reportBegin = tickBegin;
+	static double sumTotalMs = 0.0;
+	static double maxTotalMs = 0.0;
+	static double maxZoneUpdateMs = 0.0;
+	static double maxSingleZoneMs = 0.0;
+	static int maxSingleZoneId = -1;
+	static double maxQueueMs = 0.0;
+	static double maxDungeonPartyMs = 0.0;
+	static double maxFlushMs = 0.0;
+	static int sampleCount = 0;
+	static int over16Ms = 0;
+	static int over50Ms = 0;
+	static int over100Ms = 0;
+	static int over500Ms = 0;
+
+	sumTotalMs += totalMs;
+	maxTotalMs = (std::max)(maxTotalMs, totalMs);
+	maxZoneUpdateMs = (std::max)(maxZoneUpdateMs, zoneUpdateMs);
+	if (slowestZoneMs > maxSingleZoneMs) {
+		maxSingleZoneMs = slowestZoneMs;
+		maxSingleZoneId = slowestZoneId;
+	}
+	maxQueueMs = (std::max)(maxQueueMs, queueMs);
+	maxDungeonPartyMs = (std::max)(maxDungeonPartyMs, dungeonPartyMs);
+	maxFlushMs = (std::max)(maxFlushMs, flushMs);
+	++sampleCount;
+	if (totalMs >= 16.0) ++over16Ms;
+	if (totalMs >= 50.0) ++over50Ms;
+	if (totalMs >= 100.0) ++over100Ms;
+	if (totalMs >= 500.0) ++over500Ms;
+
+	if (elapsedMs(reportBegin, tickEnd) >= 1000.0) {
+		const double averageTotalMs = sampleCount > 0 ? sumTotalMs / sampleCount : 0.0;
+		printf(
+			"[TickProfile] samples=%d avg=%.2fms max=%.2fms "
+			"sections{zone=%.2fms singleZone=%d:%.2fms queue=%.2fms party=%.2fms flush=%.2fms} "
+			"over{16=%d 50=%d 100=%d 500=%d}\n",
+			sampleCount, averageTotalMs, maxTotalMs,
+			maxZoneUpdateMs, maxSingleZoneId, maxSingleZoneMs,
+			maxQueueMs, maxDungeonPartyMs, maxFlushMs,
+			over16Ms, over50Ms, over100Ms, over500Ms);
+
+		reportBegin = tickEnd;
+		sumTotalMs = 0.0;
+		maxTotalMs = 0.0;
+		maxZoneUpdateMs = 0.0;
+		maxSingleZoneMs = 0.0;
+		maxSingleZoneId = -1;
+		maxQueueMs = 0.0;
+		maxDungeonPartyMs = 0.0;
+		maxFlushMs = 0.0;
+		sampleCount = 0;
+		over16Ms = 0;
+		over50Ms = 0;
+		over100Ms = 0;
+		over500Ms = 0;
 	}
 }
 
@@ -5764,20 +5851,26 @@ void World::BroadcastDungeonQueue() {
 // STC_DungeonQueueUpdate the client already renders. On servers that don't own dungeon zones this finds
 // no in-dungeon players and is a no-op. (Assumes one party per dungeon instance; caps at DungeonPartyMax.)
 void World::BroadcastDungeonParty() {
-	int members[DungeonPartyMax];
-	int n = 0;
-	for (int ci = 0; ci < clients.size && n < DungeonPartyMax; ++ci) {
-		if (clients.isnull(ci)) continue;
-		if (clients[ci].isServerPeer) continue;
-		if (clients[ci].pObjData == nullptr) continue;
-		int zid = clients[ci].zoneId;
-		if (zid >= DungeonZoneId && zid < DungeonZoneId + DungeonFloorCount) {
+	// Build a roster per exact dungeon floor. A reconnecting client can briefly remain on the previous
+	// floor; collecting the whole dungeon range made that stale connection appear as a duplicate member.
+	for (int recipient = 0; recipient < clients.size; ++recipient) {
+		if (clients.isnull(recipient)) continue;
+		ClientData& target = clients[recipient];
+		if (target.isServerPeer || target.socket == INVALID_SOCKET || target.pObjData == nullptr) continue;
+		const int targetZone = target.zoneId;
+		if (targetZone < DungeonZoneId || targetZone >= DungeonZoneId + DungeonFloorCount) continue;
+
+		int members[DungeonPartyMax] = { -1, -1, -1 };
+		int n = 0;
+		for (int ci = 0; ci < clients.size && n < DungeonPartyMax; ++ci) {
+			if (clients.isnull(ci)) continue;
+			ClientData& candidate = clients[ci];
+			if (candidate.isServerPeer || candidate.socket == INVALID_SOCKET || candidate.pObjData == nullptr) continue;
+			if (candidate.zoneId != targetZone) continue;
+			if (candidate.pObjData->clientIndex != ci) continue;
 			members[n++] = ci;
 		}
-	}
-	if (n <= 0) return;
-	for (int i = 0; i < n; ++i) {
-		Sending_DungeonQueueUpdate(clients[members[i]].PersonalSDS, members, n);
+		if (n > 0) Sending_DungeonQueueUpdate(target.PersonalSDS, members, n);
 	}
 }
 

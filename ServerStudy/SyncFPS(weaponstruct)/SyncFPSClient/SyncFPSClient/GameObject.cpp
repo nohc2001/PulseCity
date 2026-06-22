@@ -3892,7 +3892,9 @@ void Player::ModifyLocalToWorld() {
 	Model* model = shape.GetModel();
 	if (model == nullptr) return;
 	matrix rootworld = worldMat;
-	if (game.bFirstPersonVision) {
+	// Only the local first-person body is hidden. Applying this to every Player collapses
+	// remote players' skinning root to the world origin (visible inside origin-authored dungeons).
+	if (game.player == this && game.bFirstPersonVision) {
 		rootworld.right = vec4(0, 0, 0, 0);
 		rootworld.up = vec4(0, 0, 0, 0);
 		rootworld.look = vec4(0, 0, 0, 0);
