@@ -1328,6 +1328,7 @@ public:
 	void Render_AfterDepthClear();
 	void Render_ThirdPersonWeapon();
 	void UpdateThirdPersonWeaponAttachmentCache();
+	void ClearThirdPersonWeaponVisuals();
 
 	virtual void Release();
 

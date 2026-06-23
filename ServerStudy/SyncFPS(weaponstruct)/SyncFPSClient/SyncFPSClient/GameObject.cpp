@@ -3996,16 +3996,38 @@ static int GetPlayerWeaponVisualKey(const Player* player)
 	return player->m_currentWeaponType + bladeMode * 256;
 }
 
+void Player::ClearThirdPersonWeaponVisuals()
+{
+	cachedThirdPersonRightHandMatrixValid = false;
+	cachedThirdPersonLeftHandMatrixValid = false;
+	cachedRightHandForwardAxisIndex = -1;
+	cachedRightHandRightAxisIndex = -1;
+	cachedRightHandForwardAxisSign = 1.0f;
+	cachedRightHandRightAxisSign = 1.0f;
+	cachedThirdPersonWeaponMatrixValid = false;
+	cachedThirdPersonLeftWeaponMatrixValid = false;
+	cachedThirdPersonWeaponType = -1;
+
+	for (int i = 0; i < Game::MaxWeapon; ++i) {
+		if (PlayerWeaponObj[i] == nullptr) continue;
+		PlayerWeaponObj[i]->worldMat = 0;
+		PlayerWeaponObj[i]->RaytracingUpdateTransform();
+	}
+	for (int i = 0; i < 2; ++i) {
+		if (Knife[i] == nullptr) continue;
+		Knife[i]->worldMat = 0;
+		Knife[i]->RaytracingUpdateTransform();
+	}
+	if (LeftHand != nullptr) {
+		LeftHand->worldMat = 0;
+		LeftHand->RaytracingUpdateTransform();
+	}
+}
+
 void Player::Render_ThirdPersonWeapon()
 {
-	if (m_weaponHolstered) {
-		if (gd.isRaytracingRender) {
-			for (int i = 0; i < Game::MaxWeapon; ++i) {
-				if (PlayerWeaponObj[i] == nullptr) continue;
-				PlayerWeaponObj[i]->worldMat = 0;
-				PlayerWeaponObj[i]->RaytracingUpdateTransform();
-			}
-		}
+	if (tag[GameObjectTag::Tag_Enable] == false || m_weaponHolstered) {
+		ClearThirdPersonWeaponVisuals();
 		return;
 	}
 	if (game.bFirstPersonVision) return;
@@ -4102,14 +4124,8 @@ void Player::Render_ThirdPersonWeapon()
 
 void Player::Render_AfterDepthClear()
 {
-	if (m_weaponHolstered) {
-		if (gd.isRaytracingRender) {
-			for (int i = 0; i < Game::MaxWeapon; ++i) {
-				if (game.PlayerWeaponObj[i] == nullptr) continue;
-				PlayerWeaponObj[i]->worldMat = 0;
-				PlayerWeaponObj[i]->RaytracingUpdateTransform();
-			}
-		}
+	if (tag[GameObjectTag::Tag_Enable] == false || m_weaponHolstered) {
+		ClearThirdPersonWeaponVisuals();
 		return;
 	}
 

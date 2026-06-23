@@ -4587,7 +4587,8 @@ void Monster::Update(float deltaTime)
 			}
 			
 
-			zone->Sending_ChangeGameObjectMember<matrix>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &(worldMat));
+			// Monster world matrix is broadcast centrally from Zone::Update().
+			// Sending it here as well doubled monster movement packets under load.
 		}
 	}
 }
@@ -6504,6 +6505,24 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	clients[clientIndex].PersonalSDS.Init(4096);
 	clients[clientIndex].pendingTransferToken = 0;
+
+	// This player was visible on the destination server as a peer ghost before transfer.
+	// Remove that stale ghost immediately so the real transferred Player does not coexist
+	// with a clone until the next GhostSync cleanup arrives.
+	if (data.srcZoneId >= 0 && data.srcObjIndex >= 0) {
+		const unsigned long long ghostKey = MakeGhostKey(data.srcZoneId, data.srcObjIndex);
+		auto ghostIt = ghostPlayers.find(ghostKey);
+		if (ghostIt != ghostPlayers.end()) {
+			Zone* srcZone = (data.srcZoneId >= 0 && data.srcZoneId < ZoneTable.size()) ? ZoneTable[data.srcZoneId] : nullptr;
+			Zone* outZone = (IsZoneOwned(ownedZoneId) && ownedZoneId >= 0 && ownedZoneId < ZoneTable.size()) ? ZoneTable[ownedZoneId] : nullptr;
+			if (srcZone != nullptr && outZone != nullptr) {
+				srcZone->Sending_DeleteGameObject(outZone->CommonSDS, data.srcObjIndex);
+			}
+			delete ghostIt->second;
+			ghostPlayers.erase(ghostIt);
+		}
+	}
+
 	Sending_SyncGameState(clients[clientIndex].PersonalSDS);
 
 	Player* p = new Player();
@@ -6724,6 +6743,8 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 	if (IsZoneOwned(dstZoneId) == false) {
 		PlayerTransferData data = {};
 		data.transferToken = IssueTransferToken();
+		data.srcZoneId = srcZoneId;
+		data.srcObjIndex = clients[clientIndex].objindex;
 		data.dstZoneId = dstZoneId;
 		data.spawnPos = spawnPos;
 		data.yaw = player->m_yaw;

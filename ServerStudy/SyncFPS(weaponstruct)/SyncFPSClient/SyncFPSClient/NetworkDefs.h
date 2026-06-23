@@ -95,7 +95,7 @@ struct Client {
 		return retval;
 	}
 
-	DWORD send_all(const char* data, int len, DWORD flag, DWORD timeoutMs = 250) {
+	DWORD send_all(const char* data, int len, DWORD flag, DWORD timeoutMs = 30) {
 		if (sock == INVALID_SOCKET || data == nullptr || len <= 0) return 0;
 		DWORD total = 0;
 		const ULONGLONG deadline = GetTickCount64() + timeoutMs;

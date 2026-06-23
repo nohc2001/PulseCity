@@ -241,7 +241,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	CTS_ClientHello_Header hello;
 	hello.size = sizeof(CTS_ClientHello_Header);
 	hello.st = CTS_Protocol::ClientHello;
-	client.send((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
+	client.send_all((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
 
 	// [jobselect] Chosen job is sent from the main loop once the connection is confirmed (the server
 	// caches its Player* per recv buffer and only has it after ClientHello; sending now would be dropped).
@@ -318,7 +318,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 			jobHeader.size = sizeof(CTS_ChangeJob_Header);
 			jobHeader.st = CTS_Protocol::ChangeJob;
 			jobHeader.job = (PlayerJob)chosenJob;
-			client.send((char*)&jobHeader, sizeof(CTS_ChangeJob_Header), 0);
+			client.send_all((char*)&jobHeader, sizeof(CTS_ChangeJob_Header), 0);
 			jobSent = true;
 		}
 
@@ -594,7 +594,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = InputID::KeyboardR;
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -606,7 +606,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = InputID::KeyboardX;
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -618,7 +618,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = 'W';
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -630,7 +630,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = 'A';
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -642,7 +642,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = 'S';
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -654,7 +654,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = 'D';
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -665,7 +665,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.size = sizeof(CTS_UseSkill_Header);
 					header.st = CTS_Protocol::UseSkill;
 					header.slot = SkillSlot::Ultimate;
-					client.send((char*)&header, sizeof(CTS_UseSkill_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_UseSkill_Header), 0);
 				}
 			}
 			break;
@@ -676,7 +676,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					CTS_DungeonStart_Header header;
 					header.size = sizeof(CTS_DungeonStart_Header);
 					header.st = CTS_Protocol::DungeonStart;
-					client.send((char*)&header, sizeof(CTS_DungeonStart_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_DungeonStart_Header), 0);
 				}
 			}
 			break;
@@ -688,7 +688,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.st = CTS_Protocol::KeyInput;
 					header.Key = VK_SPACE;
 					header.isdown = true;
-					client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 				}
 			}
 			break;
@@ -699,7 +699,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.size = sizeof(CTS_UseSkill_Header);
 					header.st = CTS_Protocol::UseSkill;
 					header.slot = SkillSlot::Skill1;
-					client.send((char*)&header, sizeof(CTS_UseSkill_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_UseSkill_Header), 0);
 				}
 			}
 			break;
@@ -710,7 +710,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.size = sizeof(CTS_UseSkill_Header);
 					header.st = CTS_Protocol::UseSkill;
 					header.slot = SkillSlot::Skill2;
-					client.send((char*)&header, sizeof(CTS_UseSkill_Header), 0);
+					client.send_all((char*)&header, sizeof(CTS_UseSkill_Header), 0);
 				}
 			}
 			break;
@@ -731,7 +731,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 						header.size = sizeof(CTS_ChangeJob_Header);
 						header.st = CTS_Protocol::ChangeJob;
 						header.job = (PlayerJob)jobIndex;
-						client.send((char*)&header, sizeof(CTS_ChangeJob_Header), 0);
+						client.send_all((char*)&header, sizeof(CTS_ChangeJob_Header), 0);
 					}
 				}
 			}
@@ -780,7 +780,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = InputID::KeyboardR;
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'X':
@@ -790,7 +790,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = InputID::KeyboardX;
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'W':
@@ -800,7 +800,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = 'W';
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'A':
@@ -810,7 +810,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = 'A';
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'S':
@@ -820,7 +820,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = 'S';
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'D':
@@ -830,7 +830,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = 'D';
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'Q':
@@ -840,7 +840,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = 'Q';
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case 'E':
@@ -850,7 +850,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = 'E';
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			case VK_SPACE:
@@ -860,7 +860,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				header.st = CTS_Protocol::KeyInput;
 				header.Key = VK_SPACE;
 				header.isdown = false;
-				client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
 			}
@@ -873,7 +873,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			header.st = CTS_Protocol::KeyInput;
 			header.Key = InputID::MouseLbutton;
 			header.isdown = true;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			// [sfx] gunshot on fire. Add Resources/Sound/gunshot.wav (PCM, stereo, 16-bit, 44100Hz).
 			// If the file is missing, CreateWaveFromFile returns empty and pushWave is a no-op (safe).
 			static WaveDataStruct s_gunshot = CreateWaveFromFile(L"Resources/Sound/gun.wav");
@@ -894,7 +894,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			header.st = CTS_Protocol::KeyInput;
 			header.Key = InputID::MouseLbutton;
 			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 		}
 		break;
 		case WM_RBUTTONDOWN:
@@ -904,7 +904,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			header.st = CTS_Protocol::KeyInput;
 			header.Key = InputID::MouseRbutton;
 			header.isdown = true;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 		}
 		break;
 		case WM_RBUTTONUP:
@@ -914,7 +914,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			header.st = CTS_Protocol::KeyInput;
 			header.Key = InputID::MouseRbutton;
 			header.isdown = false;
-			client.send((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 		}
 		break;
 		}

@@ -524,6 +524,8 @@ struct CTS_TransferConnect_Header {
 
 struct PlayerTransferData {
 	int transferToken = 0;
+	int srcZoneId = -1;
+	int srcObjIndex = -1;
 	int dstZoneId = 0;
 	vec4 spawnPos = vec4(0, 0, 0, 1);
 	float yaw = 0.0f;

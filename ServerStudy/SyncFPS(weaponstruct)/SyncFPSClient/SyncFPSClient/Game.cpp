@@ -1921,7 +1921,9 @@ namespace
 			const int netObjIndex = game.GetDynamicObjectNetIndex(event.ZoneId, event.ObjectIndex);
 			if (netObjIndex >= 0 && netObjIndex < (int)game.DynmaicGameObjects.size()) {
 				GameObject* object = game.DynmaicGameObjects[netObjIndex];
-				if (object != nullptr && *(void**)object == GameObjectType::vptr[GameObjectType::_Player]) {
+				if (object != nullptr &&
+					object->tag[GameObjectTag::Tag_Enable] &&
+					*(void**)object == GameObjectType::vptr[GameObjectType::_Player]) {
 					PlayPlayerFireVisual((Player*)object, event.LeftHand);
 				}
 			}
@@ -5174,7 +5176,7 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	header.size = sizeof(CTS_TransferConnect_Header);
 	header.st = CTS_Protocol::TransferConnect;
 	header.transferToken = transferToken;
-	DWORD _sent = client.send_all((char*)&header, sizeof(CTS_TransferConnect_Header), 0);
+	DWORD _sent = client.send_all((char*)&header, sizeof(CTS_TransferConnect_Header), 0, 250);
 	{
 		char _dbg[128] = {};
 		sprintf_s(_dbg, "[BeginServerTransfer] sent TransferConnect bytes=%u (lastErr=%d)\n",
@@ -7842,6 +7844,18 @@ READ_START:
 			return 2;
 		}
 		if (DynmaicGameObjects[netObjIndex] != nullptr) {
+			if (*(void**)DynmaicGameObjects[netObjIndex] == GameObjectType::vptr[GameObjectType::_Player]) {
+				((Player*)DynmaicGameObjects[netObjIndex])->ClearThirdPersonWeaponVisuals();
+				for (size_t i = 0; i < gDelayedWeaponFireVisuals.size();) {
+					const DelayedWeaponFireVisual& event = gDelayedWeaponFireVisuals[i];
+					if (event.ZoneId == header.zoneId && event.ObjectIndex == header.obj_index) {
+						gDelayedWeaponFireVisuals.erase(gDelayedWeaponFireVisuals.begin() + i);
+					}
+					else {
+						++i;
+					}
+				}
+			}
 			DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable] = false;
 		}
 		// [seamless-B] If this object is still waiting in the deferred bone-init queues, drop it so

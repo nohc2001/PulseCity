@@ -109,6 +109,7 @@ void Zone::Update(float deltaTime) {
     // �� ���� ������Ʈ
     lowFrequencyFlow += deltaTime;
     midFrequencyFlow += deltaTime;
+    highFrequencyFlow += deltaTime;
 
     static vector<indexRange> ir;
     if (ir.size() < Dynamic_gameObjects.size / 2 + 1) {
@@ -332,9 +333,12 @@ void Zone::Update(float deltaTime) {
                 gbj1->tickLVelocity = XMVectorZero();
 
                 //dbgbreak(GameObjectType::VptrToTypeTable[*(void**)gbj1] == GameObjectType::_Player);
-                // send matrix to client
-
-                Sending_ChangeGameObjectMember<matrix>(CommonSDS, i, gbj1, GameObjectType::VptrToTypeTable[*(void**)gbj1], &gbj1->worldMat);
+                // Send player/object movement immediately, but throttle monster snapshots.
+                // Server authority and collision still run every tick; only the network broadcast is reduced.
+                const GameObjectType movedType = GameObjectType::VptrToTypeTable[*(void**)gbj1];
+                if (movedType.id != GameObjectType::_Monster || highHit()) {
+                    Sending_ChangeGameObjectMember<matrix>(CommonSDS, i, gbj1, movedType, &gbj1->worldMat);
+                }
             }
         }
 
@@ -918,6 +922,8 @@ void Zone::CheckBoundaryCrossing(Player* p, float deltaTime)
 }
 
 void Zone::FlushSendToClients() {
+    constexpr int MaxGameplayPendingBytes = 128 * 1024;
+
     for (int i = 0; i < gameworld.clients.size; ++i) {
         if (gameworld.clients.isnull(i)) continue;
         ClientData& client = gameworld.clients[i];
@@ -943,7 +949,13 @@ void Zone::FlushSendToClients() {
             client.PersonalSDS.Clear();
         }
         if (hasCommon) {
-            client.PendingSDS.push_senddata(CommonSDS.buffer, CommonSDS.size);
+            // CommonSDS is mostly high-rate world snapshots. If a client is already
+            // behind, appending more old snapshots creates visible input/skill delay.
+            // Keep personal packets, but drop this tick's common broadcast until the
+            // socket catches up; the next fresh snapshot will repair visual state.
+            if (client.PendingSDS.size < MaxGameplayPendingBytes) {
+                client.PendingSDS.push_senddata(CommonSDS.buffer, CommonSDS.size);
+            }
         }
 
         // The owner-zone flush is responsible for retrying an older partial send even when no

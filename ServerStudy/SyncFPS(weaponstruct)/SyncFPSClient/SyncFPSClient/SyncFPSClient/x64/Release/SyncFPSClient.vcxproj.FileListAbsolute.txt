@@ -1,0 +1,4 @@
+C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxcompiler.dll
+C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxcompiler.pdb
+C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxil.dll
+C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxil.pdb
