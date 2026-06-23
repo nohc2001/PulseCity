@@ -217,6 +217,9 @@ struct GameObject {
 	inline static RenderFuncType CurrentRenderFunc = &GameObject::Render;
 
 	virtual void Release();
+	// Keep the allocated TLAS slot, but include/exclude this object's instances from ray queries.
+	// This is used for network object deletion because the same net slot may be synchronized again.
+	void SetRaytracingInstanceEnabled(bool enabled);
 	virtual BoundingOrientedBox GetOBB();
 
 	virtual void SetShape(Shape _shape, int ZoneID = -1);
@@ -1329,6 +1332,8 @@ public:
 	void Render_ThirdPersonWeapon();
 	void UpdateThirdPersonWeaponAttachmentCache();
 	void ClearThirdPersonWeaponVisuals();
+	void UpdateRaytracingWeaponVisibility();
+	void SetRaytracingVisualsEnabled(bool enabled);
 
 	virtual void Release();
 

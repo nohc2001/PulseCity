@@ -656,6 +656,7 @@ struct GhostPlayerState {
 	float HP = 0.0f;
 	float MaxHP = 0.0f;
 	int isDead = 0;
+	int partyId = -1;
 };
 
 // [4단계-STEP4] 고스트 히트 시 소유 서버로 보내는 데미지 적용 RPC.
@@ -665,6 +666,7 @@ struct CTS_GhostDamage_Header {
 	int targetZoneId = -1;
 	int targetObjIndex = -1;
 	float damage = 0.0f;
+	int sourcePartyId = -1;
 };
 
 // [4단계-STEP5] 몬스터 소유권 이양: 넘어간 쪽 서버가 이 정보로 진짜 몬스터를 새로 생성.

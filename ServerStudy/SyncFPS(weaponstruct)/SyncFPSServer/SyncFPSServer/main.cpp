@@ -354,6 +354,14 @@ READ_START:
 						z->currentIndex = ti;
 						((Monster*)obj)->ApplyDamage(nullptr, header.damage);
 					}
+					else if (ot == GameObjectType::_Player) {
+						Player* target = (Player*)obj;
+						// The target owner is authoritative. A matching non-negative party id blocks
+						// friendly fire even if the source peer briefly had stale ghost data.
+						if (header.sourcePartyId < 0 || target->partyId != header.sourcePartyId) {
+							target->TakeDamage(header.damage);
+						}
+					}
 				}
 			}
 		}
