@@ -837,7 +837,6 @@ public:
 
 	void BatchRender(ID3D12GraphicsCommandList* cmd);
 	void RemoveMesh(Mesh* mesh);
-	bool ShouldCullAutoLODShadow(const matrix& transposedWorld, int sourceSubMeshCount);
 	void SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
 		std::vector<int>& selectedSubMeshes);
 	bool QueueAutoLODInstance(Mesh* mesh, const matrix& world, const int* materialIndices, int materialCount);
@@ -968,7 +967,6 @@ void ModelNode::Render(void* model, GPUCmd& cmd, const matrix& parentMat, void* 
 			for (int i = 0; i < numMesh; ++i) {
 				Mesh* sourceMesh = pModel->mMeshes[Meshes[i]];
 				if (sourceMesh == nullptr || materialIndex == nullptr) continue;
-				if (game.ShouldCullAutoLODShadow(m, sourceMesh->subMeshNum)) continue;
 				Mesh* drawMesh = sourceMesh;
 				if (AutoLOD_IsModelLODRenderActive()) {
 					Mesh* lodMesh = AutoLOD_GetLODMesh(drawMesh, AutoLOD_GetModelLODRenderLevel());

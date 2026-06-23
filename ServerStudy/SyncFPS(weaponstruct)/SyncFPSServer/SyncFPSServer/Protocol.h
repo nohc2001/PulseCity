@@ -1,4 +1,8 @@
 #pragma once
+
+// Network object indexes are encoded as zoneId * stride + localObjectIndex on the client.
+// The stride must never depend on a zone's current monster count or grow during a transfer.
+constexpr int NetworkDynamicObjectCapacityPerZone = 512;
 #pragma region ProtocolStruct
 
 ///���� �߿� ���� ���ǵ�.

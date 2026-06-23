@@ -5880,10 +5880,14 @@ void World::EnterDungeonStub() {
 bool World::SendPlayerTransferToServer(const PlayerTransferData& data) {
 	// [지연 개선] 상시 peer 링크가 있으면 일회성 소켓 대신 그걸로 보낸다.
 	// 데이터가 클라 재접속보다 먼저 도착 -> AcceptTransferConnect 가 토큰을 바로 찾아 대기 없음.
+	// Drain queued ghost packets first. Never write a transfer packet directly behind a partially sent
+	// snapshot, otherwise the TCP stream loses its packet boundary.
+	FlushPeerSends();
 	for (int i = 0; i < clients.size; ++i) {
 		if (clients.isnull(i)) continue;
 		if (clients[i].isServerPeer == false) continue;
 		if (clients[i].peerServerId != data.dstZoneId) continue;
+		if (clients[i].PendingSDS.size > clients[i].pendingSendOffset) continue;
 		CTS_ServerPlayerTransfer_Header header = {};
 		header.size = sizeof(CTS_ServerPlayerTransfer_Header);
 		header.st = CTS_Protocol::ServerPlayerTransfer;
@@ -6093,12 +6097,63 @@ bool World::CompleteOutboundPeerConnection(int zoneId, SOCKET socket) {
 	clients[idx].zoneId = ownedZoneId;
 	clients[idx].rbufoffset = 0;
 	clients[idx].pendingTransferToken = 0;
+	clients[idx].PendingSDS.Init(8192);
+	clients[idx].pendingSendOffset = 0;
 
 	peerLinkUp[zoneId] = true;
 	peerRetryAfterMs[zoneId] = 0;
 	cout << "[Peer] outbound link established to zone " << zoneId
 		<< " (" << GetZoneIP(zoneId) << ":" << GetZonePort(zoneId) << ")" << endl;
 	return true;
+}
+
+bool World::QueuePeerPacket(int peerClientIndex, const void* data, int size) {
+	if (peerClientIndex < 0 || peerClientIndex >= clients.size || clients.isnull(peerClientIndex)) return false;
+	if (data == nullptr || size <= 0) return false;
+	ClientData& peer = clients[peerClientIndex];
+	if (!peer.isServerPeer || peer.socket == INVALID_SOCKET) return false;
+
+	if (peer.PendingSDS.buffer == nullptr) peer.PendingSDS.Init((std::max)(8192, size));
+	if (peer.pendingSendOffset > 0) {
+		const int remaining = peer.PendingSDS.size - peer.pendingSendOffset;
+		if (remaining > 0) {
+			memmove(peer.PendingSDS.buffer, peer.PendingSDS.buffer + peer.pendingSendOffset, remaining);
+		}
+		peer.PendingSDS.size = (std::max)(remaining, 0);
+		peer.pendingSendOffset = 0;
+	}
+
+	// A slow/dead peer must not grow the server queue without limit.
+	constexpr int MaxPeerPendingBytes = 1024 * 1024;
+	if (peer.PendingSDS.size > MaxPeerPendingBytes - size) return false;
+	peer.PendingSDS.push_senddata((char*)data, size);
+	return true;
+}
+
+void World::FlushPeerSends() {
+	int failed[256] = {};
+	int failedCount = 0;
+	for (int i = 0; i < clients.size; ++i) {
+		if (clients.isnull(i)) continue;
+		ClientData& peer = clients[i];
+		if (!peer.isServerPeer || peer.socket == INVALID_SOCKET) continue;
+		if (peer.PendingSDS.size <= peer.pendingSendOffset) continue;
+
+		const int sent = send(peer.socket,
+			peer.PendingSDS.buffer + peer.pendingSendOffset,
+			peer.PendingSDS.size - peer.pendingSendOffset, 0);
+		if (sent > 0) {
+			peer.pendingSendOffset += sent;
+			if (peer.pendingSendOffset >= peer.PendingSDS.size) {
+				peer.PendingSDS.Clear();
+				peer.pendingSendOffset = 0;
+			}
+			continue;
+		}
+		if (sent == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) continue;
+		if (failedCount < 256) failed[failedCount++] = i;
+	}
+	for (int i = 0; i < failedCount; ++i) ClientData::DisconnectToServer(failed[i]);
 }
 
 void World::PumpPeerConnections() {
@@ -6225,10 +6280,12 @@ void World::SendGhostToPeers() {
 	for (int i = 0; i < clients.size; ++i) {
 		if (clients.isnull(i)) continue;
 		if (clients[i].isServerPeer == false) continue;
-		const int sent = send(clients[i].socket, buf, (int)h->size, 0);
-		if (sent == (int)h->size) continue;
-		if (sent == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) continue;
-		if (failedPeerCount < 256) failedPeerIndices[failedPeerCount++] = i;
+		// A full snapshot supersedes the previous one. When a peer still has queued bytes, skip this
+		// frame instead of accumulating stale monster snapshots and delaying transfer packets.
+		if (clients[i].PendingSDS.size > clients[i].pendingSendOffset) continue;
+		if (!QueuePeerPacket(i, buf, (int)h->size) && failedPeerCount < 256) {
+			failedPeerIndices[failedPeerCount++] = i;
+		}
 	}
 	for (int i = 0; i < failedPeerCount; ++i) {
 		ClientData::DisconnectToServer(failedPeerIndices[i]);
@@ -6255,16 +6312,26 @@ void World::OnGhostSync(char* data) {
 		if (seenCount < 256) seen[seenCount++] = idx;
 
 		short t = (short)arr[k].objType;
-		auto it = ghostPlayers.find(idx);
+		const unsigned long long ghostKey = MakeGhostKey(fromZone, idx);
+		auto it = ghostPlayers.find(ghostKey);
 		bool isNew = (it == ghostPlayers.end());
 		DynamicGameObject* ghost;
+		if (!isNew) {
+			const short existingType = (short)GameObjectType::VptrToTypeTable[*(void**)it->second];
+			if (existingType != t) {
+				gameworld.ZoneTable[fromZone]->Sending_DeleteGameObject(outSDS, idx);
+				delete it->second;
+				ghostPlayers.erase(it);
+				isNew = true;
+			}
+		}
 		if (isNew) {
 			if (t == GameObjectType::_Monster) ghost = new Monster();
 			else ghost = new Player();
 			ghost->SetShape(arr[k].shapeindex);
 			ghost->zoneId = fromZone;
 			ghost->tag[GameObjectTag::Tag_Enable] = true;
-			ghostPlayers[idx] = ghost;
+			ghostPlayers[ghostKey] = ghost;
 		}
 		else {
 			ghost = it->second;
@@ -6296,10 +6363,15 @@ void World::OnGhostSync(char* data) {
 
 	// 이번 목록에 없는 고스트 = 이웃 존에서 사라짐 -> 삭제 패킷 보내고 정리.
 	for (auto it = ghostPlayers.begin(); it != ghostPlayers.end(); ) {
+		if (GhostKeyZone(it->first) != fromZone) {
+			++it;
+			continue;
+		}
+		const int sourceObjIndex = GhostKeyObject(it->first);
 		bool found = false;
-		for (int s = 0; s < seenCount; ++s) { if (seen[s] == it->first) { found = true; break; } }
+		for (int s = 0; s < seenCount; ++s) { if (seen[s] == sourceObjIndex) { found = true; break; } }
 		if (found == false) {
-			gameworld.ZoneTable[fromZone]->Sending_DeleteGameObject(outSDS, it->first);
+			gameworld.ZoneTable[fromZone]->Sending_DeleteGameObject(outSDS, sourceObjIndex);
 			delete it->second;
 			it = ghostPlayers.erase(it);
 		}
@@ -6322,30 +6394,40 @@ void World::SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float d
 		if (clients.isnull(i)) continue;
 		if (clients[i].isServerPeer == false) continue;
 		if (clients[i].peerServerId != targetZoneId) continue;  // 그 존(객체)을 소유한 서버에게만
-		send(clients[i].socket, (const char*)&h, sizeof(h), 0);
+		QueuePeerPacket(i, &h, sizeof(h));
 	}
 
 	//AverageSecPer60End(2);
 }
 
-void World::SendMonsterHandoff(int dstZoneId, Monster* m) {
-	if (singleProcessAllZones) return;
-	if (m == nullptr) return;
+bool World::SendMonsterHandoff(int dstZoneId, Monster* m) {
+	if (singleProcessAllZones || m == nullptr) return false;
 
 	//AverageSecPer60Start(3);
 	CTS_MonsterHandoff_Header h;
 	h.dstZoneId = dstZoneId;
 	h.monsterType = (int)m->m_monsterType;
 	h.pos = m->worldMat.pos;
+	// Put the new owner just beyond the seam. Without this offset the cooldown expires while the
+	// monster is still inside the same boundary and ownership ping-pongs between servers.
+	if (m->zone != nullptr && dstZoneId >= 0 && dstZoneId < ZoneTable.size()) {
+		Zone* dst = ZoneTable[dstZoneId];
+		if (dst->x < m->zone->x) h.pos.x -= 4.5f;
+		else if (dst->x > m->zone->x) h.pos.x += 4.5f;
+		if (dst->y < m->zone->y) h.pos.z -= 4.5f;
+		else if (dst->y > m->zone->y) h.pos.z += 4.5f;
+		h.pos.w = 1.0f;
+	}
 	h.HP = m->HP;
 	h.MaxHP = m->MaxHP;
 	for (int i = 0; i < clients.size; ++i) {
 		if (clients.isnull(i)) continue;
 		if (clients[i].isServerPeer == false) continue;
 		if (clients[i].peerServerId != dstZoneId) continue;  // 넘겨받을 서버에게만
-		send(clients[i].socket, (const char*)&h, sizeof(h), 0);
+		return QueuePeerPacket(i, &h, sizeof(h));
 	}
 	//AverageSecPer60End(3);
+	return false;
 }
 
 void World::SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp) {
@@ -6538,6 +6620,20 @@ void ClientData::DisconnectToServer(int index) {
 	if (client.isServerPeer) {
 		int lostServerId = client.peerServerId;
 		if (lostServerId >= 0 && lostServerId < gameworld.ZoneTable.size()) gameworld.peerLinkUp[lostServerId] = false;
+		if (lostServerId >= 0 && lostServerId < gameworld.ZoneTable.size() &&
+			gameworld.IsZoneOwned(gameworld.ownedZoneId)) {
+			SendDataSaver& outSDS = gameworld.ZoneTable[gameworld.ownedZoneId]->CommonSDS;
+			for (auto it = gameworld.ghostPlayers.begin(); it != gameworld.ghostPlayers.end(); ) {
+				if (World::GhostKeyZone(it->first) != lostServerId) {
+					++it;
+					continue;
+				}
+				gameworld.ZoneTable[lostServerId]->Sending_DeleteGameObject(
+					outSDS, World::GhostKeyObject(it->first));
+				delete it->second;
+				it = gameworld.ghostPlayers.erase(it);
+			}
+		}
 		if (client.socket != INVALID_SOCKET) {
 			closesocket(client.socket);
 			client.socket = INVALID_SOCKET;

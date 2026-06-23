@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "main.h"
 #include "Render.h"
 #include "Game.h"
@@ -36,7 +36,6 @@ namespace {
 	constexpr int kAutoLODMidSubMeshLimit = 6;
 	constexpr float kAutoLODFarSubMeshDistance = 80.0f;
 	constexpr int kAutoLODFarSubMeshLimit = 3;
-	constexpr float kAutoLODShadowCasterDistance = 80.0f;
 	constexpr float kBossPrototypeNormalScale = 4.20f;
 	constexpr float kBossPrototypeGroggyScale = 4.20f;
 	constexpr float kBossPrototypeHeightOffset = -1.50f;
@@ -5175,16 +5174,22 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	header.size = sizeof(CTS_TransferConnect_Header);
 	header.st = CTS_Protocol::TransferConnect;
 	header.transferToken = transferToken;
-	DWORD _sent = client.send((char*)&header, sizeof(CTS_TransferConnect_Header), 0);
+	DWORD _sent = client.send_all((char*)&header, sizeof(CTS_TransferConnect_Header), 0);
 	{
 		char _dbg[128] = {};
 		sprintf_s(_dbg, "[BeginServerTransfer] sent TransferConnect bytes=%u (lastErr=%d)\n",
 			(unsigned)_sent, WSAGetLastError());
 		OutputDebugStringA(_dbg); printf("%s", _dbg); fflush(stdout);
 	}
+	if (_sent != sizeof(CTS_TransferConnect_Header)) {
+		client.Disconnect();
+		return false;
+	}
 
 	MoveZone(dstZoneId);
-	isPrepared = true;
+	// Receiving AllocPlayerIndexes is the authoritative completion signal. Marking this true here
+	// allowed a rotated camera with no bound player when transfer setup was delayed or failed.
+	isPrepared = (player != nullptr && isPreparedClientIndex && isMapInit);
 	return true;
 }
 
@@ -6273,6 +6278,7 @@ void Game::Render_RayTracing()
 
 	for (int i = 0; i < 9; ++i) {
 		gd.raytracing.MappedCB[i]->DirLight_invDirection = vec4(vec4(0) - LightDirection).f3;
+		gd.raytracing.MappedCB[i]->padding = AutoLOD_IsModelLODRenderActive() ? 1.0f : 0.0f;
 	}
 
 	for (int i = 0; i < 9; ++i) {
@@ -6318,7 +6324,9 @@ void Game::Render_RayTracing()
 	//gd.gpucmd.pCommandAllocator->Reset(); // origin : m_commandAllocators[m_backBufferIndex]->Reset()
 	//commandList->Reset(gd.gpucmd.pCommandAllocator, nullptr);
 	//gd.CmdReset(commandList, gd.pCommandAllocator);
-	gd.gpucmd.Reset(true);
+	if (gd.gpucmd.isClose) {
+		gd.gpucmd.Reset(true);
+	}
 
 	// Transition the render target into the correct state to allow for drawing into it.
 	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -6953,26 +6961,15 @@ GameChunk* Game::GetChunckFromPos(vec4 pos)
 void Game::BatchRender(ID3D12GraphicsCommandList* cmd)
 {
 	for (int i = 0; i < MeshTable.size(); ++i) {
-		if (MeshTable[i] != nullptr) MeshTable[i]->BatchRender(cmd);
+		Mesh* mesh = MeshTable[i];
+		if (mesh == nullptr) continue;
+		if (AutoLOD_IsModelLODRenderActive() && mesh->InstanceData != nullptr) {
+			for (int subMesh = 0; subMesh < mesh->subMeshNum; ++subMesh) {
+				if (mesh->InstanceData[subMesh].InstanceSize > 0) ++PerfAutoLODMainDraws;
+			}
+		}
+		mesh->BatchRender(cmd);
 	}
-}
-
-bool Game::ShouldCullAutoLODShadow(const matrix& transposedWorld, int sourceSubMeshCount)
-{
-	if (!AutoLOD_IsModelLODRenderActive() || PresentShaderType != ShaderType::RenderShadowMap ||
-		sourceSubMeshCount <= 0) {
-		return false;
-	}
-
-	matrix objectWorld = transposedWorld;
-	objectWorld.transpose();
-	vec4 cameraDelta = objectWorld.pos - gd.viewportArr[0].Camera_Pos;
-	cameraDelta.w = 0.0f;
-	if (cameraDelta.getlen3() < kAutoLODShadowCasterDistance) return false;
-
-	++PerfAutoLODShadowCulledObjects;
-	PerfAutoLODShadowCulledSubMeshes += static_cast<uint64_t>(sourceSubMeshCount);
-	return true;
 }
 
 void Game::SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
@@ -6994,16 +6991,6 @@ void Game::SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
 	cameraDelta.w = 0.0f;
 	const float distance = cameraDelta.getlen3();
 	const uint64_t sourceSubMeshCount = static_cast<uint64_t>(selectedSubMeshes.size());
-
-	// Distant LODs do not need to populate the far shadow cascade. This keeps
-	// the main pass stable while removing many light-camera draws.
-	if (PresentShaderType == ShaderType::RenderShadowMap && distance >= kAutoLODShadowCasterDistance) {
-		++PerfAutoLODShadowCulledObjects;
-		PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
-		PerfAutoLODShadowCulledSubMeshes += sourceSubMeshCount;
-		selectedSubMeshes.clear();
-		return;
-	}
 
 	int subMeshLimit = static_cast<int>(selectedSubMeshes.size());
 	if (distance >= kAutoLODFarSubMeshDistance) subMeshLimit = kAutoLODFarSubMeshLimit;
@@ -7107,7 +7094,7 @@ void Game::RenderAutoLODInstancing(ID3D12GraphicsCommandList* cmd)
 		}
 		bumpMesh->BatchRender(cmd);
 	}
-	PerfAutoLODMainDraws = static_cast<uint64_t>(renderedDraws);
+	PerfAutoLODMainDraws += static_cast<uint64_t>(renderedDraws);
 	AutoLOD_RecordCombinedLOD1(renderedDraws > 0, sourceDraws, renderedDraws);
 }
 
@@ -7832,8 +7819,7 @@ READ_START:
 			//	player->Inventory[i].ItemCount = 0;
 			//}
 		}
-
-		game.isPreparedClientIndex = true;
+			game.isPreparedClientIndex = true;
 		if (game.player != nullptr && game.isMapInit) {
 			game.isPrepared = true;
 		}

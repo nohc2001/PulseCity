@@ -29,7 +29,7 @@ struct SceneConstantBuffer
     float3 DirLight_invDirection;
     float DirLight_intencity;
     float3 DirLight_color;
-    float extra;
+    float autoLODEnabled;
     
     // 스테틱 라이팅을 위한 추가 요소.
     float4 ChunckStart; // 가장 인덱스가 작은 청크 시작점.
@@ -477,11 +477,13 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float3 ViewDir = (hitPosition - g_sceneCB.cameraPosition.xyz);
     float Distance = length(ViewDir);
     ViewDir = normalize(ViewDir);
+    bool useRayLOD = g_sceneCB.autoLODEnabled > 0.5f;
+    bool useCheapReflection = useRayLOD && Distance >= 35.0f;
+    bool useFarMip = useRayLOD && Distance >= 80.0f;
     float3 invViewDir = -ViewDir;
     float depth = min(Distance / 1000.0f, 1.0f);
     float SampleLevel = CalculateMipFromDistance(hitPosition, g_sceneCB.cameraPosition.xyz, Normal, 3.141592 / 3.0);
-    float SampleInterploate = SampleLevel - floor(SampleLevel);
-    SampleLevel = floor(SampleLevel);
+    SampleLevel += useFarMip ? 1.5f : (useCheapReflection ? 0.75f : 0.0f);
     
      //Get Material & Tiling
     stMaterial material;
@@ -489,16 +491,12 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     hitUV.x = material.TilingX * (hitUV.x + material.TilingOffsetX);
     hitUV.y = material.TilingY * (hitUV.y + material.TilingOffsetY);
     hitUV -= floor(hitUV);
-    float3 Color = ((1.0 - SampleInterploate) * MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) 
-        + SampleInterploate * MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1)) * material.baseColor;
-    float3 TBNnormal = (1.0 - SampleInterploate) * MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) 
-        + SampleInterploate * MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1);
+    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).rgb * material.baseColor.rgb;
+    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).rgb;
     TBNnormal = TBNnormal.xyz;
     TBNnormal = 2.0 * (TBNnormal - 0.5);
-    float AmbientOculusion = (1.0 - SampleInterploate) * MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r
-        + SampleInterploate * MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1).r;
-    float Metalic = (1 - SampleInterploate) * MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r
-        + SampleInterploate * MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel + 1).r;
+    float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
+    float Metalic = MaterialTexArr[material.metalicTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
     //float Roughness = min(0.5 + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0);
     float Roughness = max(min(material.smoothness + MaterialTexArr[material.roughnessTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r, 1.0), 0.02f);
     
@@ -544,7 +542,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         ray.TMax = 10000.0f; /*length(vec);*/
         RayPayload LightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
         LightPayload.CalculationCount = payload.CalculationCount;
-        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, LightPayload);
+        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, LightPayload);
         ShadowRate = LightPayload.isCollide_Light;
         float3 wi = normalize(g_sceneCB.DirLight_invDirection);
         float3 H = normalize(invViewDir + wi);
@@ -586,7 +584,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
                 ray.TMin = 0.001;
                 ray.TMax = Lightlen;
                 RayPayload ShadowLightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
-                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, ShadowLightPayload);
+                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, ShadowLightPayload);
                 ShadowRate = ShadowLightPayload.isCollide_Light;
                 wi = -LightVector;
                 float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
@@ -597,7 +595,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         
         float Reflectrate = min(length(Lo), 1);
         // Reflection
-        if (MAX_TraceRayCount > payload.CalculationCount)
+        if (!useCheapReflection && MAX_TraceRayCount > payload.CalculationCount)
         {
             wi = reflect(ViewDir, realNormal);
             ray.Origin = hitPosition;
@@ -684,11 +682,16 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     }
     
     //Get Sample Level
-    float3 ViewDir = normalize(hitPosition - g_sceneCB.cameraPosition.xyz);
-    float3 invViewDir = -ViewDir;
+    float3 ViewDir = hitPosition - g_sceneCB.cameraPosition.xyz;
     float Distance = length(ViewDir);
+    ViewDir = normalize(ViewDir);
+    bool useRayLOD = g_sceneCB.autoLODEnabled > 0.5f;
+    bool useCheapReflection = useRayLOD && Distance >= 35.0f;
+    bool useFarMip = useRayLOD && Distance >= 80.0f;
+    float3 invViewDir = -ViewDir;
     float depth = min(Distance / 1000.0f, 1.0f);
     float SampleLevel = CalculateMipFromDistance(hitPosition, g_sceneCB.cameraPosition.xyz, Normal, 3.141592 / 3.0);
+    SampleLevel += useFarMip ? 1.5f : (useCheapReflection ? 0.75f : 0.0f);
     
      //Get Material & Tiling
     stMaterial material;
@@ -696,8 +699,8 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     hitUV.x = material.TilingX * (hitUV.x + material.TilingOffsetX);
     hitUV.y = material.TilingY * (hitUV.y + material.TilingOffsetY);
     hitUV -= floor(hitUV);
-    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel) * material.baseColor;
-    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel);
+    float3 Color = MaterialTexArr[material.diffuseTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).rgb * material.baseColor.rgb;
+    float3 TBNnormal = MaterialTexArr[material.normalTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).rgb;
     TBNnormal = TBNnormal.xyz;
     TBNnormal = 2.0 * (TBNnormal - 0.5);
     float AmbientOculusion = MaterialTexArr[material.AOTexId].SampleLevel(StaticSampler, hitUV, SampleLevel).r;
@@ -738,7 +741,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         ray.TMax = 10000.0f; /*length(vec);*/
         RayPayload LightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
         LightPayload.CalculationCount = payload.CalculationCount;
-        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, LightPayload);
+        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, LightPayload);
         ShadowRate = LightPayload.isCollide_Light;
         float3 wi = normalize(g_sceneCB.DirLight_invDirection);
         float3 H = normalize(invViewDir + wi);
@@ -780,7 +783,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
                 ray.TMin = 0.001;
                 ray.TMax = Lightlen;
                 RayPayload ShadowLightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
-                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, ShadowLightPayload);
+                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, ShadowLightPayload);
                 ShadowRate = ShadowLightPayload.isCollide_Light;
                 wi = -LightVector;
                 float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
@@ -791,7 +794,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         
         float Reflectrate = min(length(Lo), 1);
         // Reflection
-        if (MAX_TraceRayCount > payload.CalculationCount)
+        if (!useCheapReflection && MAX_TraceRayCount > payload.CalculationCount)
         {
             wi = reflect(ViewDir, realNormal);
             ray.Origin = hitPosition;

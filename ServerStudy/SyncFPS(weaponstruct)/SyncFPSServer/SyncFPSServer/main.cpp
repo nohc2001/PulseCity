@@ -81,7 +81,7 @@ int main() {
 
 	// Listen on every local interface. The advertised peer address is configured separately by
 	// GetZoneIP(); binding the listener to that remote/deployment address breaks on another host.
-	server.Init("127.0.0.1", listenPort);
+	server.Init("0.0.0.0", listenPort);
 
 	cout << "Server Start"
 		<< " | serverId=" << serverId
@@ -120,6 +120,7 @@ int main() {
 			// [4단계-STEP2] 매 틱 내 존 플레이어 상태를 이웃 서버로 복제.
 			gameworld.PumpPeerConnections();
 			gameworld.SendGhostToPeers();
+			gameworld.FlushPeerSends();
 
 			// [4단계-STEP1] 약 1초마다 아직 연결 안 된 이웃에 재접속 시도.
 			static int peerRetryCounter = 0;

@@ -95,6 +95,32 @@ struct Client {
 		return retval;
 	}
 
+	DWORD send_all(const char* data, int len, DWORD flag, DWORD timeoutMs = 250) {
+		if (sock == INVALID_SOCKET || data == nullptr || len <= 0) return 0;
+		DWORD total = 0;
+		const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+		while (total < (DWORD)len) {
+			WSABUF buf;
+			buf.buf = const_cast<char*>(data) + total;
+			buf.len = (ULONG)(len - total);
+			DWORD sent = 0;
+			const int result = WSASend(sock, &buf, 1, &sent, flag, NULL, NULL);
+			if (result == 0 && sent > 0) {
+				total += sent;
+				continue;
+			}
+			const int error = WSAGetLastError();
+			if (result != SOCKET_ERROR || error != WSAEWOULDBLOCK || GetTickCount64() >= deadline) break;
+			fd_set writeSet;
+			FD_ZERO(&writeSet);
+			FD_SET(sock, &writeSet);
+			timeval wait = {};
+			wait.tv_usec = 10000;
+			select(0, nullptr, &writeSet, nullptr, &wait);
+		}
+		return total;
+	}
+
 	__forceinline int recv(char* data, int len) {
 		WSABUF buf;
 		buf.buf = data;

@@ -2179,16 +2179,25 @@ struct World {
 	// 이웃이 보낸 ServerLink 핸드셰이크를 받았을 때 그 소켓을 peer 링크로 확정.
 	void OnPeerLinkEstablished(int clientIndex, int fromServerId);
 
-	// [4단계-STEP2] 이웃 존에서 받아 둔 플레이어 고스트(읽기 전용 사본). 키 = 이웃 존에서의 objindex.
-	unordered_map<int, DynamicGameObject*> ghostPlayers;
+	// Ghost object indexes are local to each zone. Keep the source zone in the key so equal indexes
+	// from different peers cannot overwrite or delete one another.
+	unordered_map<unsigned long long, DynamicGameObject*> ghostPlayers;
+	static unsigned long long MakeGhostKey(int zoneId, int objindex) {
+		return (static_cast<unsigned long long>(static_cast<unsigned int>(zoneId)) << 32) |
+			static_cast<unsigned int>(objindex);
+	}
+	static int GhostKeyZone(unsigned long long key) { return static_cast<int>(key >> 32); }
+	static int GhostKeyObject(unsigned long long key) { return static_cast<int>(key & 0xffffffffULL); }
 	// 내 존 플레이어들의 상태를 peer 링크로 이웃에 전송(매 틱).
 	void SendGhostToPeers();
+	bool QueuePeerPacket(int peerClientIndex, const void* data, int size);
+	void FlushPeerSends();
 	// 이웃이 보낸 GhostSync 를 받아 고스트를 갱신/생성/제거하고, 그 변화를 내 클라들에게 중계.
 	void OnGhostSync(char* data);
 	// 고스트를 맞혔을 때, 그 객체를 소유한 서버로 데미지 적용 요청을 보낸다.
 	void SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage);
 	// 몬스터가 경계를 넘었을 때 소유권을 이웃 서버로 넘긴다.
-	void SendMonsterHandoff(int dstZoneId, Monster* m);
+	bool SendMonsterHandoff(int dstZoneId, Monster* m);
 	// 이웃이 넘긴 몬스터를 내 존에 진짜 몬스터로 생성한다.
 	void SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp);
 
@@ -2345,7 +2354,7 @@ struct World {
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)sds.ofbuff;
 		header.size = reqsiz;
 		header.st = STC_Protocol::SyncGameState;
-		header.DynamicGameObjectCapacityPerZone = ZoneTable[ownedZoneId]->Dynamic_gameObjects.Capacity;
+		header.DynamicGameObjectCapacityPerZone = NetworkDynamicObjectCapacityPerZone;
 		header.ZoneCount = ZoneTable.size();
 		header.DynamicGameObjectCapacity = header.DynamicGameObjectCapacityPerZone * header.ZoneCount;
 		Zone* staticZone = GetStaticChunkZone();

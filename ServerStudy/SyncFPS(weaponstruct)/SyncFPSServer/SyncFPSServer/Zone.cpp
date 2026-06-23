@@ -382,7 +382,7 @@ void Zone::Update(float deltaTime) {
         if (g.second == nullptr) continue;
         if ((short)GameObjectType::VptrToTypeTable[*(void**)g.second] == GameObjectType::_Player) { hasGhostPlayer = true; break; }
     }
-    if (false && hasGhostPlayer)   // [임시 비활성화] step5b 몬스터 핸드오프 크래시 격리용
+    if (hasGhostPlayer)
     for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
         if (Dynamic_gameObjects.isnull(i)) continue;
         DynamicGameObject* o = Dynamic_gameObjects[i];
@@ -395,15 +395,38 @@ void Zone::Update(float deltaTime) {
             Zoneboundary& b = boundaries[bi];
             if (b.enabled == false) continue;
             if (gameworld.IsZoneOwned(b.dstzoneId)) continue;
-            float centerZ = (b.minPos.f3.z + b.maxPos.f3.z) * 0.5f;
-            bool dstPlusZ = (b.spawnPos.f3.z > centerZ);
-            bool crossed = dstPlusZ ? (m->worldMat.pos.f3.z > b.maxPos.f3.z)
-                                    : (m->worldMat.pos.f3.z < b.minPos.f3.z);
-            if (crossed == false) continue;
+            const vec4 pos = m->worldMat.pos;
+            const bool inside =
+                pos.f3.x >= b.minPos.f3.x && pos.f3.x <= b.maxPos.f3.x &&
+                pos.f3.y >= b.minPos.f3.y && pos.f3.y <= b.maxPos.f3.y &&
+                pos.f3.z >= b.minPos.f3.z && pos.f3.z <= b.maxPos.f3.z;
+            if (!inside) continue;
 
-            gameworld.SendMonsterHandoff(b.dstzoneId, m);
-            m->tag[GameObjectTag::Tag_Enable] = false;
-            Sending_DeleteGameObject(CommonSDS, i);
+            // Keep ownership here when the peer link is unavailable. Deleting before a successful
+            // queue made roaming monsters vanish and could leave clients with stale object state.
+            if (gameworld.SendMonsterHandoff(b.dstzoneId, m)) {
+                m->tag[GameObjectTag::Tag_Enable] = false;
+                Sending_DeleteGameObject(CommonSDS, i);
+
+				// The destination now owns this monster. Remove the disabled source copy from its
+				// spatial chunks and object table so repeated handoffs do not leak dead entries.
+				if (m->chunkAllocIndexs != nullptr) {
+					ChunkIndex ci(m->IncludeChunks.xmin, m->IncludeChunks.ymin, m->IncludeChunks.zmin);
+					const int chunkCount = m->IncludeChunks.GetChunckSize();
+					for (; ci.extra < chunkCount; m->IncludeChunks.Inc(ci)) {
+						auto chunkIt = chunck.find(ci);
+						if (chunkIt == chunck.end()) continue;
+						GameChunk* chunk = chunkIt->second;
+						const int allocIndex = m->chunkAllocIndexs[ci.extra];
+						if (chunk->SkinMesh_gameobjects.isAlloc(allocIndex)) {
+							chunk->SkinMesh_gameobjects.Free(allocIndex);
+						}
+					}
+				}
+				Dynamic_gameObjects[i] = nullptr;
+				Dynamic_gameObjects.Free(i);
+				delete m;
+            }
             break;
         }
     }
@@ -1026,7 +1049,7 @@ void Zone::SendingAllObjectForNewClient(SendDataSaver& sds, bool includeDynamicO
     // [4단계-STEP2] 이웃 서버에서 받아 둔 플레이어 고스트도 신규 클라에게 전송(중간 접속자 대응).
     for (auto& g : gameworld.ghostPlayers) {
         if (g.second == nullptr) continue;
-        g.second->SendGameObject(g.first, sds);
+        g.second->SendGameObject(World::GhostKeyObject(g.first), sds);
     }
 }
 
@@ -1270,7 +1293,7 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
         if (obb.Intersects(rayOrigin, rayDirection, distance)) {
             if (distance < closestDistance) {
                 closestDistance = distance;
-                ghostHitIndex = g.first;
+                ghostHitIndex = World::GhostKeyObject(g.first);
                 ghostHitZone = gh->zoneId;
             }
         }
