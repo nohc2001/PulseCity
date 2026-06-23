@@ -3680,6 +3680,10 @@ void Player::Update(float deltaTime)
 	}
 }
 
+void Player::SetShape(Shape _shape, int ZoneID) {
+	SkinMeshGameObject::SetShape(_shape, ZoneID);
+}
+
 void Player::ClientUpdate(float deltaTime)
 {
 	if (m_dualBladeVisualTimer > 0.0f) {
@@ -5042,6 +5046,24 @@ void Player::TriggerDualPistolRecoil(bool leftHand)
 
 void Player::Release() {
 	SkinMeshGameObject::Release();
+
+	for (int i = 0; i < MaxWeapon; ++i) {
+		PlayerWeaponObj[i]->Release();
+		delete PlayerWeaponObj[i];
+		PlayerWeaponObj[i] = nullptr;
+	}
+	LeftHand->Release();
+	delete LeftHand;
+	LeftHand = nullptr;
+	for (int i = 0; i < 2; ++i) {
+		DronObj[i]->Release();
+		delete DronObj[i];
+		DronObj[i] = nullptr;
+
+		Knife[i]->Release();
+		delete Knife[i];
+		Knife[i] = nullptr;
+	}
 }
 
 void Portal::RecvSTC_SyncObj(char* data) {

@@ -483,6 +483,8 @@ public:
 		float HitFlashTimer = 0.0f;
 		float HitFlashDuration = 0.45f;
 		bool Active = true;
+
+		GameObject* BossProtoTypeCoreObj = nullptr;
 	};
 
 	struct BossMissileVisual {
@@ -954,6 +956,8 @@ public:
 	vector<int> QuestArr;
 	int presentShowQuestOffset; // ���� ����?����Ʈ�� �����ְ� �ִ���
 	vector<Quest*> QuestPrograss;
+
+	
 };
 
 extern Game game;

@@ -1253,6 +1253,8 @@ struct Player : public SkinMeshGameObject {
 		int Gold = 0;
 		int Exp = 0;
 		int Level = 0;
+
+		int clientIndex = 0;
 	};
 #pragma pack(pop)
 

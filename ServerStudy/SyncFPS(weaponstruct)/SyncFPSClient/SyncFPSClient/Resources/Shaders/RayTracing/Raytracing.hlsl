@@ -542,7 +542,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         ray.TMax = 10000.0f; /*length(vec);*/
         RayPayload LightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
         LightPayload.CalculationCount = payload.CalculationCount;
-        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, LightPayload);
+        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER /*| (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE)*/, ~0, 0, 1, 0, ray, LightPayload);
         ShadowRate = LightPayload.isCollide_Light;
         float3 wi = normalize(g_sceneCB.DirLight_invDirection);
         float3 H = normalize(invViewDir + wi);
@@ -584,7 +584,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
                 ray.TMin = 0.001;
                 ray.TMax = Lightlen;
                 RayPayload ShadowLightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
-                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, ShadowLightPayload);
+                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER /*| (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE)*/, ~0, 0, 1, 0, ray, ShadowLightPayload);
                 ShadowRate = ShadowLightPayload.isCollide_Light;
                 wi = -LightVector;
                 float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);
@@ -741,7 +741,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         ray.TMax = 10000.0f; /*length(vec);*/
         RayPayload LightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
         LightPayload.CalculationCount = payload.CalculationCount;
-        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, LightPayload);
+        TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER /*| (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE)*/, ~0, 0, 1, 0, ray, LightPayload);
         ShadowRate = LightPayload.isCollide_Light;
         float3 wi = normalize(g_sceneCB.DirLight_invDirection);
         float3 H = normalize(invViewDir + wi);
@@ -783,7 +783,7 @@ void MySkinMeshClosestHitShader(inout RayPayload payload, in MyAttributes attr)
                 ray.TMin = 0.001;
                 ray.TMax = Lightlen;
                 RayPayload ShadowLightPayload = { 0, 0, 0, 1, 0, 0, 0, 0 };
-                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE), ~0, 0, 1, 0, ray, ShadowLightPayload);
+                TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER /*| (useRayLOD ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : RAY_FLAG_NONE)*/, ~0, 0, 1, 0, ray, ShadowLightPayload);
                 ShadowRate = ShadowLightPayload.isCollide_Light;
                 wi = -LightVector;
                 float3 Radiance = l.LightColor * l.intencity * CosAttenuation(1 - rate);

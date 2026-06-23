@@ -1344,6 +1344,8 @@ public:
 	GameObject* Knife[2] = {};
 	void PlayerWeaponObjectInit();
 
+	virtual void SetShape(Shape _shape, int ZoneID = -1);
+
 #pragma pack(push, 1)
 	struct STC_SyncObjData {
 		Tag tag;

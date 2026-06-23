@@ -3119,6 +3119,9 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 		core.HP = header.cores[i].hp;
 		core.MaxHP = header.cores[i].maxHP;
 		core.Active = header.cores[i].active;
+		core.BossProtoTypeCoreObj = new GameObject();
+		core.BossProtoTypeCoreObj->SetShape(BossPrototypeCoreModel);
+		core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
 
 		if (i < (int)previousCores.size()) {
 			const BossPrototypeCore& prev = previousCores[i];
@@ -3535,39 +3538,64 @@ void Game::RenderBossPrototypeObjects()
 	matrix view = gd.viewportArr[0].ViewMatrix * gd.viewportArr[0].ProjectMatrix;
 	view.transpose();
 
-	gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
-	game.PresentShaderType = ShaderType::RenderWithShadow;
-	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-	{
-		using PRID = PBRShader1::RootParamId;
-		gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
-		gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
-		gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
-		gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
-		gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
-		if (game.Current_Zone->bReqireBakeLight_Raster == false) {
-			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+	if (gd.isRaytracingRender) {
+		for (const BossPrototypeCore& core : BossPrototypeCores) {
+			if (!core.Active) continue;
+			matrix world;
+			world.Id();
+			world.right *= 1.65f;
+			world.up *= 1.65f;
+			world.look *= 1.65f;
+			world.pos = core.Position;
+			if (BossPrototypeCoreModel != nullptr) {
+				world.pos -= world.up * BossPrototypeCoreModel->AABB[0].y;
+			}
+			world.pos.y += 0.16f;
+			world.pos.w = 1.0f;
+			float hitRate = core.HitFlashDuration > 0.0f ? min(1.0f, max(0.0f, core.HitFlashTimer / core.HitFlashDuration)) : 0.0f;
+			ModelRenderTintOverrideActive = true;
+			ModelRenderTintOverride = vec4(hitRate * 1.35f, 1.0f, 0.0f, 0.0f);
+			//BossPrototypeCoreModel->Render<false>(gd.gpucmd, world, nullptr);
+			core.BossProtoTypeCoreObj->worldMat = world;
+			core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
+			ModelRenderTintOverrideActive = false;
 		}
 	}
-
-	for (const BossPrototypeCore& core : BossPrototypeCores) {
-		if (!core.Active) continue;
-		matrix world;
-		world.Id();
-		world.right *= 1.65f;
-		world.up *= 1.65f;
-		world.look *= 1.65f;
-		world.pos = core.Position;
-		if (BossPrototypeCoreModel != nullptr) {
-			world.pos -= world.up * BossPrototypeCoreModel->AABB[0].y;
+	else {
+		gd.gpucmd.SetShader(MyPBRShader1, ShaderType::RenderWithShadow);
+		game.PresentShaderType = ShaderType::RenderWithShadow;
+		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		{
+			using PRID = PBRShader1::RootParamId;
+			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 16, &view, 0);
+			gd.gpucmd->SetGraphicsRoot32BitConstants(PRID::Const_Camera, 4, &gd.viewportArr[0].Camera_Pos, 16);
+			gd.gpucmd->SetGraphicsRootConstantBufferView(PRID::CBV_StaticLight, game.LightCB_withShadowResource[game.Current_Zone->Asset_OffsetMul].resource->GetGPUVirtualAddress());
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_ShadowMap, game.MyDirLight[0].descindex.hRender.hgpu);
+			gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_EnvionmentMap, game.MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu);
+			if (game.Current_Zone->bReqireBakeLight_Raster == false) {
+				gd.gpucmd->SetGraphicsRootDescriptorTable(PRID::SRVTable_Chunck_StaticLightStructuredBuffer, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu);
+			}
 		}
-		world.pos.y += 0.16f;
-		world.pos.w = 1.0f;
-		float hitRate = core.HitFlashDuration > 0.0f ? min(1.0f, max(0.0f, core.HitFlashTimer / core.HitFlashDuration)) : 0.0f;
-		ModelRenderTintOverrideActive = true;
-		ModelRenderTintOverride = vec4(hitRate * 1.35f, 1.0f, 0.0f, 0.0f);
-		BossPrototypeCoreModel->Render<false>(gd.gpucmd, world, nullptr);
-		ModelRenderTintOverrideActive = false;
+
+		for (const BossPrototypeCore& core : BossPrototypeCores) {
+			if (!core.Active) continue;
+			matrix world;
+			world.Id();
+			world.right *= 1.65f;
+			world.up *= 1.65f;
+			world.look *= 1.65f;
+			world.pos = core.Position;
+			if (BossPrototypeCoreModel != nullptr) {
+				world.pos -= world.up * BossPrototypeCoreModel->AABB[0].y;
+			}
+			world.pos.y += 0.16f;
+			world.pos.w = 1.0f;
+			float hitRate = core.HitFlashDuration > 0.0f ? min(1.0f, max(0.0f, core.HitFlashTimer / core.HitFlashDuration)) : 0.0f;
+			ModelRenderTintOverrideActive = true;
+			ModelRenderTintOverride = vec4(hitRate * 1.35f, 1.0f, 0.0f, 0.0f);
+			BossPrototypeCoreModel->Render<false>(gd.gpucmd, world, nullptr);
+			ModelRenderTintOverrideActive = false;
+		}
 	}
 }
 
@@ -5087,7 +5115,6 @@ void Game::RebuildStaticChunks()
 * spec :
 * 1. must load all nearzone.
 */
-#pragma optimize ("", off)
 void Game::LoadLinkedZoneMaps()
 {
 	bool loadingMap = false;
@@ -5141,7 +5168,7 @@ void Game::LoadLinkedZoneMaps()
 		PrebuildStaticObjectAutoLOD();
 	}
 }
-#pragma optimize ("", on)
+
 bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneId, int transferToken)
 {
 	char ipLocal[64] = {};
@@ -5505,7 +5532,7 @@ void Game::DrawJobSelectScreen(int hovered, int selected, bool confirmHover, boo
 	gd.gpucmd.Reset();
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	/*gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);*/
 
 	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
 	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
@@ -5553,7 +5580,7 @@ void Game::DrawJobSelectScreen(int hovered, int selected, bool confirmHover, boo
 	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
-	gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	//gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
@@ -6323,7 +6350,10 @@ void Game::Render_RayTracing()
 	gd.ShaderVisibleDescPool.DynamicReset();
 
 	//rebuild AS
-	game.MyRayTracingShader->PrepareRender();
+	if (true) {
+		game.MyRayTracingShader->PrepareRender();
+	}
+	
 
 	// Reset command list and allocator.
 	ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
@@ -6341,50 +6371,52 @@ void Game::Render_RayTracing()
 	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	commandList->ResourceBarrier(1, &barrier);
 
-	commandList->SetComputeRootSignature(MyRayTracingShader->pGlobalRootSignature);
+	if(true)
+	{
+		commandList->SetComputeRootSignature(MyRayTracingShader->pGlobalRootSignature);
 
-	// Bind the heaps, acceleration structure and dispatch rays.
-	D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
-	commandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
-	commandList->SetComputeRootDescriptorTable(0, gd.raytracing.RTO_UAV_index.hRender.hgpu); // sub render target, raytracing output
-	commandList->SetComputeRootDescriptorTable(1, gd.raytracing.MainDepth_UAV.hRender.hgpu); // DSV
+		// Bind the heaps, acceleration structure and dispatch rays.
+		D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
+		commandList->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+		commandList->SetComputeRootDescriptorTable(0, gd.raytracing.RTO_UAV_index.hRender.hgpu); // sub render target, raytracing output
+		commandList->SetComputeRootDescriptorTable(1, gd.raytracing.MainDepth_UAV.hRender.hgpu); // DSV
 
-	commandList->SetComputeRootShaderResourceView(2, MyRayTracingShader->TLAS->GetGPUVirtualAddress()); // AS SRV
-	commandList->SetComputeRootConstantBufferView(3, gd.raytracing.CameraCB[game.Current_Zone->Asset_OffsetMul]->GetGPUVirtualAddress()); // Camera CB CBV
-	commandList->SetComputeRootDescriptorTable(4, RayTracingMesh::VBIB_DescIndex.hRender.hgpu); // Vertex, IndexBuffer SRV
-	commandList->SetComputeRootDescriptorTable(5, MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu); // SkyBox SRV
-	commandList->SetComputeRootDescriptorTable(6, RayTracingMesh::UAV_VBIB_DescIndex.hRender.hgpu); // SkinMesh SRV
+		commandList->SetComputeRootShaderResourceView(2, MyRayTracingShader->TLAS->GetGPUVirtualAddress()); // AS SRV
+		commandList->SetComputeRootConstantBufferView(3, gd.raytracing.CameraCB[game.Current_Zone->Asset_OffsetMul]->GetGPUVirtualAddress()); // Camera CB CBV
+		commandList->SetComputeRootDescriptorTable(4, RayTracingMesh::VBIB_DescIndex.hRender.hgpu); // Vertex, IndexBuffer SRV
+		commandList->SetComputeRootDescriptorTable(5, MySkyBoxShader->CurrentSkyBox.descindex.hRender.hgpu); // SkyBox SRV
+		commandList->SetComputeRootDescriptorTable(6, RayTracingMesh::UAV_VBIB_DescIndex.hRender.hgpu); // SkinMesh SRV
 
-	commandList->SetComputeRootDescriptorTable(7, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
-	DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
+		commandList->SetComputeRootDescriptorTable(7, Material::MaterialStructuredBufferSRV.hRender.hgpu); // Material Arr
+		DescIndex texarrSRV = DescIndex(true, gd.ShaderVisibleDescPool.TextureSRVStart);
 
-	commandList->SetComputeRootDescriptorTable(8, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu); // ZoneLightChuncks Arr
-	commandList->SetComputeRootDescriptorTable(9, texarrSRV.hRender.hgpu); // Texture Arr
+		commandList->SetComputeRootDescriptorTable(8, game.Current_Zone->Immortal_ZoneLightBuffer_SRV.hRender.hgpu); // ZoneLightChuncks Arr
+		commandList->SetComputeRootDescriptorTable(9, texarrSRV.hRender.hgpu); // Texture Arr
 
-	commandList->SetPipelineState1(MyRayTracingShader->RTPSO);
+		commandList->SetPipelineState1(MyRayTracingShader->RTPSO);
 
-	// Since each shader table has only one shader record, the stride is same as the size.
-	//size_t v = MyRayTracingShader->HitGroupShaderTable->GetGPUVirtualAddress();
-	//v = (v + 63) & ~63;
-	dispatchDesc.HitGroupTable.StartAddress = MyRayTracingShader->HitGroupShaderTable->GetGPUVirtualAddress();
-	dispatchDesc.HitGroupTable.SizeInBytes = MyRayTracingShader->HitGroupShaderTable->GetDesc().Width;
-	dispatchDesc.HitGroupTable.StrideInBytes = MyRayTracingShader->shaderIdentifierSize + sizeof(LocalRootSigData);
+		// Since each shader table has only one shader record, the stride is same as the size.
+		//size_t v = MyRayTracingShader->HitGroupShaderTable->GetGPUVirtualAddress();
+		//v = (v + 63) & ~63;
+		dispatchDesc.HitGroupTable.StartAddress = MyRayTracingShader->HitGroupShaderTable->GetGPUVirtualAddress();
+		dispatchDesc.HitGroupTable.SizeInBytes = MyRayTracingShader->HitGroupShaderTable->GetDesc().Width;
+		dispatchDesc.HitGroupTable.StrideInBytes = MyRayTracingShader->shaderIdentifierSize + sizeof(LocalRootSigData);
 
-	/*v = MyRayTracingShader->MissShaderTable->GetGPUVirtualAddress();
-	v = (v + 63) & ~63;*/
-	dispatchDesc.MissShaderTable.StartAddress = MyRayTracingShader->MissShaderTable->GetGPUVirtualAddress();
-	dispatchDesc.MissShaderTable.SizeInBytes = MyRayTracingShader->MissShaderTable->GetDesc().Width;
-	dispatchDesc.MissShaderTable.StrideInBytes = dispatchDesc.MissShaderTable.SizeInBytes;
+		/*v = MyRayTracingShader->MissShaderTable->GetGPUVirtualAddress();
+		v = (v + 63) & ~63;*/
+		dispatchDesc.MissShaderTable.StartAddress = MyRayTracingShader->MissShaderTable->GetGPUVirtualAddress();
+		dispatchDesc.MissShaderTable.SizeInBytes = MyRayTracingShader->MissShaderTable->GetDesc().Width;
+		dispatchDesc.MissShaderTable.StrideInBytes = dispatchDesc.MissShaderTable.SizeInBytes;
 
-	dispatchDesc.RayGenerationShaderRecord.StartAddress = MyRayTracingShader->RayGenShaderTable->GetGPUVirtualAddress();
-	dispatchDesc.RayGenerationShaderRecord.SizeInBytes = MyRayTracingShader->RayGenShaderTable->GetDesc().Width;
+		dispatchDesc.RayGenerationShaderRecord.StartAddress = MyRayTracingShader->RayGenShaderTable->GetGPUVirtualAddress();
+		dispatchDesc.RayGenerationShaderRecord.SizeInBytes = MyRayTracingShader->RayGenShaderTable->GetDesc().Width;
 
-	dispatchDesc.Width = gd.ClientFrameWidth;
-	dispatchDesc.Height = gd.ClientFrameHeight;
-	dispatchDesc.Depth = 1;
-	commandList->DispatchRays(&dispatchDesc);
-	gd.gpucmd.ResBarrierTr(&gd.raytracing.DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
+		dispatchDesc.Width = gd.ClientFrameWidth;
+		dispatchDesc.Height = gd.ClientFrameHeight;
+		dispatchDesc.Depth = 1;
+		commandList->DispatchRays(&dispatchDesc);
+	}
+	
 	// 3D UI ���
 	{
 		gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
@@ -6495,6 +6527,8 @@ void Game::Render_RayTracing()
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	//gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	//gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	gd.gpucmd.ResBarrierTr(&gd.raytracing.DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	//9. ����Ʈ/������Ʈ ����
 	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);

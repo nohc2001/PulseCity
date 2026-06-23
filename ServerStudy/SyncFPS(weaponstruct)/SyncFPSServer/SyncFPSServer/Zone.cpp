@@ -925,6 +925,8 @@ void Zone::FlushSendToClients() {
         if (gameworld.clients.isnull(i)) continue;
         ClientData& client = gameworld.clients[i];
         if (client.isServerPeer) continue;   // peer links do not receive gameplay packets
+        //if (gameworld.singleProcessAllZones == false && client.zoneId != gameworld.ownedZoneId) continue;
+
         const bool isOwnerZoneFlush = (client.zoneId == this->zoneId);
         const bool isAdjacent = gameworld.IsAdjacentZone(client.zoneId, this->zoneId);
         const bool isTransferring = (client.pObjData == nullptr);

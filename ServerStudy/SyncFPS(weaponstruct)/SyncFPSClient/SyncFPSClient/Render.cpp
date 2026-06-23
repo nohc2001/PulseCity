@@ -27,6 +27,57 @@ LocalRootSigData::LocalRootSigData(unsigned int VBOff, unsigned int IBOff, unsig
 	MaterialStart = off * Zone::MAXZoneMaterialCount + MaterialSt;
 }
 
+void GPUCmd::Execute(bool dxr) {
+	dbgc[0] += 1;
+	ID3D12CommandList* ppd3dCommandLists[] = { GraphicsCmdList };
+	if (dxr) {
+		ppd3dCommandLists[0] = DXRCmdList;
+	}
+	pCommandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
+
+#ifdef DIRECTX12_DEVICEREMOVE_DBG
+	HRESULT reason = gd.pDevice->GetDeviceRemovedReason();
+	if (FAILED(reason))
+	{
+		dbgbreak(true);
+	}
+#endif
+}
+
+void GPUCmd::WaitGPUComplete() {
+	ID3D12CommandQueue* selectQueue;
+	if (pCommandQueue == nullptr) {
+		selectQueue = pCommandQueue;
+	}
+	else selectQueue = pCommandQueue;
+	FenceValue++;
+	const UINT64 nFence = FenceValue;
+	HRESULT hResult = selectQueue->Signal(pFence, nFence);
+	//Add Signal Command (it update gpu fence value.)
+	if (pFence->GetCompletedValue() < nFence)
+	{
+		//When GPU Fence is smaller than CPU FenceValue, Wait.
+		hResult = pFence->SetEventOnCompletion(nFence, hFenceEvent);
+		::WaitForSingleObject(hFenceEvent, INFINITE);
+	}
+
+	// Ŀ�ǵ尡 �����?���� �ε��?�ؽ��İ� ������, �ش� ���ε� ���۸� �����Ѵ�.
+	for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
+		if (GPUResource::TextureLoadedUploadBuffers[i] != nullptr) {
+			GPUResource::TextureLoadedUploadBuffers[i]->Release();
+		}
+	}
+	GPUResource::TextureLoadedUploadBuffers.clear();
+
+#ifdef DIRECTX12_DEVICEREMOVE_DBG
+	HRESULT reason = gd.pDevice->GetDeviceRemovedReason();
+	if (FAILED(reason))
+	{
+		dbgbreak(true);
+	}
+#endif
+}
+
 void GPUCmd::SetShader(Shader* shader, ShaderType reg) {
 	shader->Add_RegisterShaderCommand(*this, reg);
 }
@@ -1762,8 +1813,11 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 		gr.resource = pBuffer2;
 
 #ifdef DEVELOPMODE_DBG_GPURESOURCES
+		
 		dbgc[0] += 1;
 		dbglog2(L"GPUResource %llx Created. dbgc0 = %d \n", gr.resource->GetGPUVirtualAddress(), dbgc[0]);
+		dbgbreak(dbgc[0] == 10522);
+		
 #endif
 
 		gr.CurrentState_InCommandWriteLine = d3dResourceInitialStates;
@@ -10251,7 +10305,6 @@ void RayTracingShader::InitAccelationStructure()
 void RayTracingShader::BuildAccelationStructure()
 {
 	static volatile int inc = 0;
-
 	ID3D12Device5* device = gd.raytracing.dxrDevice;
 	ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
 
@@ -10267,7 +10320,16 @@ void RayTracingShader::BuildAccelationStructure()
 	// Get required sizes for an acceleration structure.
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS topLevelInputs = {};
 	topLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-	topLevelInputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+	if (gd.raytracing.kEnableTLASUpdate) {
+		topLevelInputs.Flags =
+			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
+			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+	}
+	else {
+		topLevelInputs.Flags =
+			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+	}
+	
 	topLevelInputs.NumDescs = TLASAlloter.size;
 #ifdef RAYTRACING_TLAS_DEBUG
 	if (game.currentZoneId == 74) {
@@ -10275,6 +10337,36 @@ void RayTracingShader::BuildAccelationStructure()
 	}
 #endif
 	topLevelInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+
+	/*const int descCountForBuild = static_cast<int>(topLevelInputs.NumDescs);
+	ui64 topologyHash = 1469598103934665603ull;
+	auto MixTLASHash = [](ui64 h, ui64 value) -> ui64 {
+		h ^= value;
+		h *= 1099511628211ull;
+		return h;
+	};
+
+	if (TLAS_InstanceDescs_MappedData != nullptr) {
+		for (int i = 0; i < descCountForBuild; ++i) {
+			const D3D12_RAYTRACING_INSTANCE_DESC& desc = TLAS_InstanceDescs_MappedData[i];
+			topologyHash = MixTLASHash(topologyHash, desc.AccelerationStructure);
+			topologyHash = MixTLASHash(topologyHash, desc.InstanceID);
+			topologyHash = MixTLASHash(topologyHash, desc.InstanceMask);
+			topologyHash = MixTLASHash(topologyHash, desc.InstanceContributionToHitGroupIndex);
+			topologyHash = MixTLASHash(topologyHash, desc.Flags);
+		}
+	}
+
+	const bool canUpdateTLAS =
+		gd.raytracing.kEnableTLASUpdate &&
+		TLASHasBuild &&
+		TLASPreviousDescCount == descCountForBuild &&
+		TLASPreviousTopologyHash == topologyHash;
+
+	if (canUpdateTLAS) {
+		topLevelInputs.Flags |=
+			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+	}*/
 
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO topLevelPrebuildInfo = {};
 	device->GetRaytracingAccelerationStructurePrebuildInfo(&topLevelInputs, &topLevelPrebuildInfo);
@@ -10287,27 +10379,63 @@ void RayTracingShader::BuildAccelationStructure()
 		topLevelInputs.InstanceDescs = TLAS_InstanceDescs_Res->GetGPUVirtualAddress();
 		TLASBuildDesc.Inputs = topLevelInputs;
 		TLASBuildDesc.DestAccelerationStructureData = TLAS->GetGPUVirtualAddress();
-		TLASBuildDesc.ScratchAccelerationStructureData =
-			gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
-	}
+		TLASBuildDesc.ScratchAccelerationStructureData = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
 
-	// Build acceleration structure.
-	commandList->BuildRaytracingAccelerationStructure(&TLASBuildDesc, 0, nullptr);
+		//UINT64 requiredScratchSize = topLevelPrebuildInfo.ScratchDataSizeInBytes;
+		//if (canUpdateTLAS && topLevelPrebuildInfo.UpdateScratchDataSizeInBytes > requiredScratchSize) {
+		//	requiredScratchSize = topLevelPrebuildInfo.UpdateScratchDataSizeInBytes;
+		//}
 
-	gd.gpucmd.Close(true);
+		//if (requiredScratchSize > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
+		//	gd.raytracing.ASBuild_ScratchResource->Release();
+		//	gd.raytracing.ASBuild_ScratchResource = nullptr;
+		//	AllocateUAVBuffer(
+		//		device,
+		//		requiredScratchSize,
+		//		&gd.raytracing.ASBuild_ScratchResource,
+		//		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		//		L"ScratchResource"
+		//	);
+		//	gd.raytracing.ASBuild_ScratchResource_Maxsiz = requiredScratchSize;
+		//}
 
-	// Kick off acceleration structure construction.
-	gd.gpucmd.Execute(true);
-	gd.gpucmd.WaitGPUComplete();
+		//topLevelInputs.InstanceDescs = TLAS_InstanceDescs_Res->GetGPUVirtualAddress();
+		//TLASBuildDesc.Inputs = topLevelInputs;
+		//TLASBuildDesc.SourceAccelerationStructureData = canUpdateTLAS ? TLAS->GetGPUVirtualAddress() : 0;
+		//TLASBuildDesc.DestAccelerationStructureData = TLAS->GetGPUVirtualAddress();
+		//TLASBuildDesc.ScratchAccelerationStructureData = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
 
-	HRESULT reason = gd.pDevice->GetDeviceRemovedReason();
-	if (FAILED(reason)) {
-	}
-	else {
-		if (inc + 5 <= TLASAlloter.size) {
-			inc += 5;
+		commandList->BuildRaytracingAccelerationStructure(&TLASBuildDesc, 0, nullptr);
+
+		gd.gpucmd.Close(true);
+
+		// Kick off acceleration structure construction.
+		gd.gpucmd.Execute(true);
+		gd.gpucmd.WaitGPUComplete();
+
+		/*D3D12_RESOURCE_BARRIER tlasBarrier = {};
+		tlasBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+		tlasBarrier.UAV.pResource = TLAS;
+		commandList->ResourceBarrier(1, &tlasBarrier);
+
+		TLASHasBuild = true;
+		TLASPreviousDescCount = descCountForBuild;
+		TLASPreviousTopologyHash = topologyHash;*/
+
+		HRESULT reason = gd.pDevice->GetDeviceRemovedReason();
+		if (FAILED(reason)) {
+		}
+		else {
+			if (inc + 5 <= TLASAlloter.size) {
+				inc += 5;
+			}
 		}
 	}
+#ifdef RAYTRACING_TLAS_DEBUG
+	if (inc + 5 <= TLASAlloter.size) {
+		inc += 5;
+	}
+#endif
 }
 void RayTracingShader::InitShaderTable()
 {
@@ -10469,7 +10597,6 @@ void RayTracingShader::SkinMeshModify()
 
 			// ��Ų �޽����� �� ȥ�� ��ġ�� �ٲٱ� ������
 			// TLAS Instance�� Matrix�� Identity��.
-			
 			if((cnt & 15) == 0) smgo->RaytracingUpdateTransform();
 		}
 	}

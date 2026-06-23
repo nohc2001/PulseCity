@@ -773,9 +773,11 @@ struct RootParam1 {
 };
 #pragma endregion
 
-class Shader;
+struct GlobalDevice;
 
+class Shader;
 struct GPUCmd {
+	int dbgc[20] = {};
 	ID3D12GraphicsCommandList* GraphicsCmdList;
 	ID3D12GraphicsCommandList4* DXRCmdList;
 	ID3D12CommandAllocator* pCommandAllocator;
@@ -838,13 +840,16 @@ struct GPUCmd {
 			return GraphicsCmdList->Close();
 		}
 	}
-	void Execute(bool dxr = false) {
-		ID3D12CommandList* ppd3dCommandLists[] = { GraphicsCmdList };
-		if (dxr) {
-			ppd3dCommandLists[0] = DXRCmdList;
-		}
-		pCommandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
-	}
+
+	void Execute(bool dxr = false);
+	//void Execute(bool dxr = false) {
+	//	dbgc[0] += 1;
+	//	ID3D12CommandList* ppd3dCommandLists[] = { GraphicsCmdList };
+	//	if (dxr) {
+	//		ppd3dCommandLists[0] = DXRCmdList;
+	//	}
+	//	pCommandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
+	//}
 
 	__forceinline void ResBarrierTr(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after, UINT subRes = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_BARRIER_FLAGS flag = D3D12_RESOURCE_BARRIER_FLAG_NONE) {
 		CD3DX12_RESOURCE_BARRIER resBarrier = CD3DX12_RESOURCE_BARRIER::Transition(res, before, after, subRes, flag);
@@ -857,31 +862,32 @@ struct GPUCmd {
 
 	void SetShader(Shader* shader, ShaderType reg = ShaderType::RenderNormal);
 
-	void WaitGPUComplete() {
-		ID3D12CommandQueue* selectQueue;
-		if (pCommandQueue == nullptr) {
-			selectQueue = pCommandQueue;
-		}
-		else selectQueue = pCommandQueue;
-		FenceValue++;
-		const UINT64 nFence = FenceValue;
-		HRESULT hResult = selectQueue->Signal(pFence, nFence);
-		//Add Signal Command (it update gpu fence value.)
-		if (pFence->GetCompletedValue() < nFence)
-		{
-			//When GPU Fence is smaller than CPU FenceValue, Wait.
-			hResult = pFence->SetEventOnCompletion(nFence, hFenceEvent);
-			::WaitForSingleObject(hFenceEvent, INFINITE);
-		}
+	void WaitGPUComplete();
+	//void WaitGPUComplete() {
+	//	ID3D12CommandQueue* selectQueue;
+	//	if (pCommandQueue == nullptr) {
+	//		selectQueue = pCommandQueue;
+	//	}
+	//	else selectQueue = pCommandQueue;
+	//	FenceValue++;
+	//	const UINT64 nFence = FenceValue;
+	//	HRESULT hResult = selectQueue->Signal(pFence, nFence);
+	//	//Add Signal Command (it update gpu fence value.)
+	//	if (pFence->GetCompletedValue() < nFence)
+	//	{
+	//		//When GPU Fence is smaller than CPU FenceValue, Wait.
+	//		hResult = pFence->SetEventOnCompletion(nFence, hFenceEvent);
+	//		::WaitForSingleObject(hFenceEvent, INFINITE);
+	//	}
 
-		// Ŀ�ǵ尡 �����?���� �ε��?�ؽ��İ� ������, �ش� ���ε� ���۸� �����Ѵ�.
-		for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
-			if (GPUResource::TextureLoadedUploadBuffers[i] != nullptr) {
-				GPUResource::TextureLoadedUploadBuffers[i]->Release();
-			}
-		}
-		GPUResource::TextureLoadedUploadBuffers.clear();
-	}
+	//	// Ŀ�ǵ尡 �����?���� �ε��?�ؽ��İ� ������, �ش� ���ε� ���۸� �����Ѵ�.
+	//	for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
+	//		if (GPUResource::TextureLoadedUploadBuffers[i] != nullptr) {
+	//			GPUResource::TextureLoadedUploadBuffers[i]->Release();
+	//		}
+	//	}
+	//	GPUResource::TextureLoadedUploadBuffers.clear();
+	//}
 
 	void Release() {
 		if (GraphicsCmdList) GraphicsCmdList->Release();
@@ -936,8 +942,6 @@ struct RayGenConstantBuffer
 };
 //Code From : megayuchi - DXR Sample End
 
-struct GlobalDevice;
-
 struct RayTracingDevice {
 	struct CameraConstantBuffer
 	{
@@ -979,6 +983,8 @@ struct RayTracingDevice {
 	vec4 m_eye;
 	vec4 m_up;
 	vec4 m_at;
+
+	static constexpr bool kEnableTLASUpdate = false;
 
 	void Init(void* origin_gd);
 

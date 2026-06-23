@@ -222,9 +222,7 @@ struct STC_PlayerMoveZone_Header {
 	int zoneId;
 };
 
-/*
-* ���� : ������ �̵��� ���� Ŭ���̾�Ʈ���� ������ ������ �������� �����Ѵ�.
-*/
+
 struct STC_ServerTransfer_Header {
 	unsigned int size = 48;
 	STC_Protocol st = STC_Protocol::ServerTransfer;
