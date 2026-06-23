@@ -5159,21 +5159,29 @@ void Player::Release() {
 	SkinMeshGameObject::Release();
 
 	for (int i = 0; i < MaxWeapon; ++i) {
-		PlayerWeaponObj[i]->Release();
-		delete PlayerWeaponObj[i];
-		PlayerWeaponObj[i] = nullptr;
+		if (PlayerWeaponObj[i]) {
+			PlayerWeaponObj[i]->Release();
+			delete PlayerWeaponObj[i];
+			PlayerWeaponObj[i] = nullptr;
+		}
 	}
-	LeftHand->Release();
-	delete LeftHand;
-	LeftHand = nullptr;
+	if (LeftHand) {
+		LeftHand->Release();
+		delete LeftHand;
+		LeftHand = nullptr;
+	}
 	for (int i = 0; i < 2; ++i) {
-		DronObj[i]->Release();
-		delete DronObj[i];
-		DronObj[i] = nullptr;
-
-		Knife[i]->Release();
-		delete Knife[i];
-		Knife[i] = nullptr;
+		if (DronObj[i]) {
+			DronObj[i]->Release();
+			delete DronObj[i];
+			DronObj[i] = nullptr;
+		}
+		
+		if (Knife[i]) {
+			Knife[i]->Release();
+			delete Knife[i];
+			Knife[i] = nullptr;
+		}
 	}
 }
 
