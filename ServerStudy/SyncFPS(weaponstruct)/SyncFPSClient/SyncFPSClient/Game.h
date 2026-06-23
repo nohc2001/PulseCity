@@ -336,7 +336,37 @@ public:
 		float hp[3] = {};
 		float maxhp[3] = {};
 		int   m_currentJob[3] = {};
+		int   leaderClientIndex = -1; // [party] clientIndex of the leader; show [start] if == my clientIndex
+		int   partyId = -1;          // [party] which party this snapshot is for (-1 = not in a party)
+		int   number = 0;            // [party] display number -> "파티N" (0 = none)
 	} m_dungeonQueue;
+
+	// [party] open-party list (from STC_PartyList), shown in the "join party" window.
+	struct PartyListState {
+		struct Entry { int partyId = -1; int number = 0; int memberCount = 0; int maxCount = 3; int started = 0; };
+		int count = 0;
+		Entry entries[16];
+	} m_partyList;
+
+	// [party] portal lobby UI client state.
+	bool  m_partyMenuOpen = false;     // [파티 만들기]/[파티 참가하기] menu visible (near the entry portal)
+	bool  m_partyJoinListOpen = false; // join-list window visible
+	bool  m_nearDungeonPortal = false; // updated each frame from portal proximity
+	bool  m_partyMenuClosed = false;   // user closed the create/join menu manually; reset when leaving the portal
+	float m_dungeonRejectFlash = 0.0f; // >0: show "던전이 가득 찼습니다" for a few seconds
+
+	// [party] click targets registered during RenderPartyLobbyUI() and hit-tested in WndProc on
+	// WM_LBUTTONDOWN (the normal DXUI event path needs a DXPage on mainPageStack, which the lobby UI is not).
+	enum PartyUIAction { PUI_None = 0, PUI_Create, PUI_OpenJoin, PUI_Join, PUI_Start, PUI_Leave, PUI_CloseJoin, PUI_Refresh, PUI_CloseMenu, PUI_Disband };
+	struct PartyUIButton { vec4 rect = 0; int action = 0; int param = 0; };
+	PartyUIButton m_partyButtons[24];
+	int  m_partyButtonCount = 0;
+
+	// [party] send a tiny header-only CTS message of the given CTS_Protocol type.
+	void PartySendSimple(int protocolType);
+	void RenderPartyLobbyUI();           // menu + join list + party room (immediate mode); registers buttons
+	void UpdateDungeonPortalProximity(); // sets m_nearDungeonPortal from the entry portal distance
+	void HandlePartyClick();             // called from WndProc on WM_LBUTTONDOWN; acts on a hit button
 
 	bool isInventoryOpen = false;
 

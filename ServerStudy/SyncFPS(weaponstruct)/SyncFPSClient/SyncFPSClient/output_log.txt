@@ -1,5 +1,5 @@
 Microsoft (R) DirectX Texture Converter [DirectXTex] Version 208 (library)
 Copyright (C) Microsoft Corp.
 
-reading Resources\Map\OfficeDungeon_2floor\Model\elevator3.bmp (2048x2048 B8G8R8X8_UNORM 2D) as (2048x2048,12 BC3_UNORM 2D ес:Opaque)
-writing elevator3.dds
+reading ..\..\SyncFPSServer\SyncFPSServer\Resources\Map\OfficeDungeon_Boss\Model\shelf330.bmp (2048x2048 B8G8R8X8_UNORM 2D) as (2048x2048,12 BC3_UNORM 2D ес:Opaque)
+writing shelf330.dds

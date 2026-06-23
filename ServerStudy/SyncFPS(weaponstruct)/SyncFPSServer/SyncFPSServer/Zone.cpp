@@ -28,7 +28,7 @@ void Zone::Set_world_id_pos(World* w, int id, int _x, int _y)
     // [dungeon] dungeon maps are authored at the world ORIGIN (only map object[0] gets moved to the zone
     // center in LoadMap, the rest stay near origin). So place the dungeon zone at origin -> object[0],
     // the room, and the player spawn all line up at (0,0).
-    if (id >= World::DungeonZoneId) {
+    if (World::IsDungeonZone(id)) {
         BasicAABB_onlyXZ = vec4(-ZoneHalfWidth, -ZoneHalfWidth, ZoneHalfWidth, ZoneHalfWidth);
     }
 }
@@ -36,9 +36,10 @@ void Zone::Set_world_id_pos(World* w, int id, int _x, int _y)
 void Zone::Init() {
     const int gridWidth = 80;
     const int gridHeight = 80;
-    const float cellSize = 1.0f;
-    const float offsetX = -gridWidth * cellSize * 0.5f;
-    const float offsetZ = -gridHeight * cellSize * 0.5f;
+    const float cellSizeX = (BasicAABB_onlyXZ.z - BasicAABB_onlyXZ.x) / (float)gridWidth;
+    const float cellSizeZ = (BasicAABB_onlyXZ.w - BasicAABB_onlyXZ.y) / (float)gridHeight;
+    const float offsetX = BasicAABB_onlyXZ.x;
+    const float offsetZ = BasicAABB_onlyXZ.y;
 
     allnodes.clear();
     allnodes.reserve(gridWidth * gridHeight);
@@ -46,8 +47,8 @@ void Zone::Init() {
     for (int z = 0; z < gridHeight; ++z) {
         for (int x = 0; x < gridWidth; ++x) {
             AstarNode* node = new AstarNode();
-            node->worldx = offsetX + x * cellSize + cellSize * 0.5f;
-            node->worldz = offsetZ + z * cellSize + cellSize * 0.5f;
+            node->worldx = offsetX + x * cellSizeX + cellSizeX * 0.5f;
+            node->worldz = offsetZ + z * cellSizeZ + cellSizeZ * 0.5f;
             node->xIndex = x;
             node->zIndex = z;
             node->gCost = 0;
@@ -623,15 +624,16 @@ void Zone::SpawnPortal() {
     //  - open-world zone        : entry portal -> dungeon queue (dstzoneId == DungeonZoneId marker).
     int dstZone;
     bool isEntry;
-    if (zoneId == World::DungeonZoneId + World::DungeonFloorCount - 1) {
+    const int dungeonFloor = World::DungeonFloorOf(zoneId); // 0=1F,1=2F,2=Boss; -1 if not a dungeon zone
+    if (dungeonFloor == World::DungeonFloorCount - 1) {
         return; // Boss floor: no next-floor portal
     }
-    else if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) {
-        dstZone = zoneId + 1;   // dungeon floor -> next floor
+    else if (dungeonFloor >= 0) {
+        dstZone = zoneId + 1;   // dungeon floor -> next floor (same instance, consecutive zone ids)
         isEntry = false;
     }
     else {
-        dstZone = World::DungeonZoneId;   // open world -> dungeon entry (queue join)
+        dstZone = World::DungeonZoneId;   // open world -> dungeon entry marker (client opens the party menu)
         isEntry = true;
     }
 
@@ -648,7 +650,7 @@ void Zone::SpawnPortal() {
 	float gy = map.AABB[0].y + 2.0f;
 	float forwardX = isEntry ? 5.0f : 72.0f;   // dungeon floor portal shifted +X (2 -> 12 -> 52 -> 72)
 	float forwardZ = isEntry ? 0.0f : 3.0f;    // dungeon floor portal shifted +3 Z
-	if (!isEntry && zoneId == World::DungeonZoneId + 1) {
+	if (!isEntry && dungeonFloor == 1) {
 		forwardX -= 35.0f;
 	}
     portal->worldMat =
@@ -664,10 +666,10 @@ void Zone::SpawnPortal() {
 			portal->spawnX = 0.5f * (nz->BasicAABB_onlyXZ.x + nz->BasicAABB_onlyXZ.z);
 			portal->spawnZ = 0.5f * (nz->BasicAABB_onlyXZ.y + nz->BasicAABB_onlyXZ.w);
 			portal->spawnY = nz->map.AABB[0].y + 1.5f;
-			if (zoneId == World::DungeonZoneId) {
+			if (dungeonFloor == 0) {
 				portal->spawnX -= 5.0f;
 			}
-			else if (zoneId == World::DungeonZoneId + 1) {
+			else if (dungeonFloor == 1) {
 				portal->spawnX += 20.0f;
 				portal->spawnY += 3.0f;
 				portal->spawnZ -= 50.0f;
@@ -687,7 +689,7 @@ void Zone::Spawnboundary()
 
     // [party/dungeon] dungeon floors are isolated (no adjacent zones -> nearZones[1..4] null) and need no
     // zone-crossing boundaries. Skip ALL floors to avoid dereferencing null neighbors (startup crash).
-    if (zoneId >= World::DungeonZoneId && zoneId < World::DungeonZoneId + World::DungeonFloorCount) return;
+    if (World::IsDungeonZone(zoneId)) return;
 
     for (int ix = 0; ix < 2; ++ix) {
         Zoneboundary boundary{};
@@ -809,16 +811,11 @@ void Zone::CheckPortalCollision(Player* p) {
         int ci = p->clientIndex;
         float r = portal->radius;
 
-        // [party/dungeon] dungeon-entry portal: standing in it adds you to the party queue (XZ distance,
-        // ignore height). Idempotent: only add when not already queued so it never auto-starts on repeat.
+        // [party] dungeon-entry portal: the server takes NO automatic action now. Party formation is
+        // driven entirely by the client UI (the client detects portal proximity locally and shows the
+        // [파티 만들기]/[파티 참가하기] menu). Actual entry happens via PartyLeaderStart -> MovePlayerToZone.
+        // So this portal must not behave like an ordinary zone-move portal: just skip it here.
         if (portal->dstzoneId == World::DungeonZoneId) {
-            float dx = playerPos.f3.x - portalPos.f3.x;
-            float dz = playerPos.f3.z - portalPos.f3.z;
-            if (dx * dx + dz * dz <= r * r) {
-                if (gameworld.DungeonQueueContains(ci) == false) {
-                    gameworld.DungeonQueueAdd(ci);
-                }
-            }
             continue;
         }
 
@@ -1119,8 +1116,9 @@ void Zone::SpawnObjects() {
     // zoneId == 1 => no spawn monster
     if (zoneId == 1) return;
 
-    const int bossZoneId = World::DungeonZoneId + World::DungeonFloorCount - 1;
-    if (zoneId == bossZoneId) {
+    // [party] boss floor is the LAST floor of EVERY instance (e.g. zones 102 and 105), so key off the
+    // instance-relative floor index rather than a single hard-coded boss zone id.
+    if (World::DungeonFloorOf(zoneId) == World::DungeonFloorCount - 1) {
         const float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
         const float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
         const vec4 bossSpawn(cx + 20.0f, map.AABB[0].y, cz - 80.0f, 1.0f);
@@ -1143,8 +1141,8 @@ void Zone::SpawnObjects() {
         return;
     }
 
-    // 1F/2F intentionally contain no random open-world monsters.
-    if (zoneId >= World::DungeonZoneId && zoneId < bossZoneId) return;
+    // 1F/2F (any instance) intentionally contain no random open-world monsters.
+    if (World::IsDungeonZone(zoneId)) return;
 
     // [monsters] populate the player's spawn zone (73) with monsters at the ZONE CENTER (not origin),
     // properly registered (NewObject + PushGameObject) so they sync to clients. Start here, expand later.

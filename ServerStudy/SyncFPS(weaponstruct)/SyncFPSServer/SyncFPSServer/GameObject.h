@@ -2213,10 +2213,10 @@ struct World {
 			b = b && (miny <= zptr->y && zptr->y <= maxy);
 			return b;
 		}
-		// [party/dungeon] the dungeon server owns ALL dungeon floor zones (100..102), not just one,
-		// so floor-to-floor transitions are same-server zone moves.
-		if (ownedZoneId >= DungeonZoneId && ownedZoneId < DungeonZoneId + DungeonFloorCount) {
-			return (zoneId >= DungeonZoneId && zoneId < DungeonZoneId + DungeonFloorCount);
+		// [party/dungeon] the dungeon server owns EVERY instance's floor zones (100..100+DungeonZoneSpan-1),
+		// so floor-to-floor moves AND cross-instance re-homing are same-server (local) zone moves.
+		if (IsDungeonZone(ownedZoneId)) {
+			return IsDungeonZone(zoneId);
 		}
 		return zoneId == ownedZoneId;
 	}
@@ -2303,7 +2303,8 @@ struct World {
 
 	// [party/dungeon] Write a party/queue roster snapshot (per-member objindex, HP, MaxHP, job) into a
 	// client's send buffer. Pass the member list to send: the waiting queue (count<=DungeonPartyMax).
-	__forceinline void Sending_DungeonQueueUpdate(SendDataSaver& sds, const int* members, int count) {
+	__forceinline void Sending_DungeonQueueUpdate(SendDataSaver& sds, const int* members, int count,
+		int leaderClientIndex = -1, int partyId = -1, int number = 0) {
 		sds.postpush_start();
 		constexpr int reqsiz = sizeof(STC_DungeonQueueUpdate_Header);
 		sds.postpush_reserve(reqsiz);
@@ -2312,6 +2313,9 @@ struct World {
 		header.st = STC_Protocol::DungeonQueueUpdate;
 		header.count = count;
 		header.maxCount = DungeonPartyMax;
+		header.leaderClientIndex = leaderClientIndex;
+		header.partyId = partyId;
+		header.number = number;
 		for (int i = 0; i < DungeonPartyMax; ++i) {
 			int ci = (members != nullptr && i < count) ? members[i] : -1;
 			if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false && clients[ci].pObjData != nullptr) {
@@ -2326,6 +2330,21 @@ struct World {
 				header.m_currentJob[i] = -1;
 			}
 		}
+		sds.postpush_end();
+	}
+
+	// [party] write the current open-party list into a client's buffer (the "join party" window renders it).
+	void Sending_PartyList(SendDataSaver& sds);
+
+	// [party] tell a leader their start request was refused (every dungeon instance is busy).
+	__forceinline void Sending_DungeonReject(SendDataSaver& sds, int reason) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_DungeonReject_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_DungeonReject_Header& header = *(STC_DungeonReject_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::DungeonReject;
+		header.reason = reason;
 		sds.postpush_end();
 	}
 
@@ -2365,25 +2384,82 @@ struct World {
 	/*
 	* 설명 : 플레이어를 srcZone에서 dstZone으로 이동시킨다.
 	*/
-	void MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos);
+	// partyId/originZoneId are only meaningful for dungeon-entry moves (carried into the transfer so the
+	// dungeon server can group party members into one instance and bounce them back if it is full).
+	void MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId = -1, int originZoneId = -1);
 
 	// [party/dungeon] portal waiting-queue. Up to DungeonPartyMax players gather here.
 	static constexpr int DungeonPartyMax = 3;
 	// [party/dungeon][phase2] the dungeon is a special zone OUTSIDE the open-world grid (ids 0..99),
 	// served by its own process on port 9000+DungeonZoneId. Coords are far away so it is never adjacent.
 	static constexpr int DungeonZoneId = 100;
-	// [party/dungeon] dungeon floors: 100=1F, 101=2F, 102=Boss. One dungeon server owns them all.
-	// 1F + 2F + boss room.
+	// [party/dungeon] dungeon floors: 1F + 2F + boss room. One dungeon server owns ALL instances' floors.
 	static constexpr int DungeonFloorCount = 3;
-	int dungeonQueue[DungeonPartyMax] = { -1, -1, -1 };   // client indices, -1 = empty
-	int dungeonQueueCount = 0;
-	bool DungeonQueueContains(int clientIndex);
-	void DungeonQueueAdd(int clientIndex);     // add once + broadcast; re-press starts, full auto-starts
-	void DungeonQueueRemove(int clientIndex);  // remove + broadcast (leave/disconnect)
-	void BroadcastDungeonQueue();              // send STC_DungeonQueueUpdate to current waiters (lobby)
+	// [party] number of independent dungeon copies (instances). Each instance = a block of DungeonFloorCount
+	// consecutive zone ids. Instance i occupies zones [DungeonZoneId + i*DungeonFloorCount, +DungeonFloorCount).
+	// With DungeonInstanceCount=2 the dungeon process owns zones 100..105 (inst0:100-102, inst1:103-105).
+	static constexpr int DungeonInstanceCount = 2;
+	static constexpr int DungeonZoneSpan = DungeonInstanceCount * DungeonFloorCount; // total dungeon zones
+
+	// --- dungeon zone-id helpers (instance math) ---
+	static bool IsDungeonZone(int zoneId) {
+		return zoneId >= DungeonZoneId && zoneId < DungeonZoneId + DungeonZoneSpan;
+	}
+	static int DungeonInstanceBase(int instanceIndex) {
+		return DungeonZoneId + instanceIndex * DungeonFloorCount;
+	}
+	static int DungeonInstanceIndexOf(int zoneId) {
+		return IsDungeonZone(zoneId) ? (zoneId - DungeonZoneId) / DungeonFloorCount : -1;
+	}
+	static int DungeonInstanceBaseOf(int zoneId) {
+		int idx = DungeonInstanceIndexOf(zoneId);
+		return idx < 0 ? -1 : DungeonInstanceBase(idx);
+	}
+	static int DungeonFloorOf(int zoneId) {
+		return IsDungeonZone(zoneId) ? (zoneId - DungeonZoneId) % DungeonFloorCount : -1;
+	}
+
+	// --- [party] lobby-side party formation (lives on the open-world server that owns the portal) ---
+	struct LobbyParty {
+		int id = -1;                                  // unique party id (serverId-scoped)
+		int number = 0;                               // display number -> "파티N"
+		int leaderClientIndex = -1;
+		int members[DungeonPartyMax] = { -1, -1, -1 };
+		int memberCount = 0;
+		bool started = false;                         // true once routed into a dungeon instance
+		bool active = false;
+	};
+	static constexpr int MaxParties = MaxPartyListEntries;
+	LobbyParty parties[MaxParties];
+	int nextPartyNumber = 1;
+	int nextPartyId = 1;
+
+	int PartyFindSlotByClient(int clientIndex);       // party array index containing this client, or -1
+	int PartyFindSlotById(int partyId);               // party array index with this id, or -1
+	int PartyAllocSlot();                             // first inactive party slot, or -1 if full
+	void PartyCreate(int clientIndex);                // make a party (caller = leader + first member)
+	void PartyJoin(int clientIndex, int partyId);     // join an open party
+	void PartyLeave(int clientIndex);                 // leave current party (disband/promote as needed)
+	void PartyDisband(int clientIndex);               // leader-only: destroy the whole party (kick all members)
+	void PartyLeaderStart(int clientIndex);           // leader pressed start -> route members to a free instance
+	void BroadcastPartyRoom(int partySlot);           // push STC_DungeonQueueUpdate (HP/job/leader) to members
+	void BroadcastPartyListToMembers();               // push STC_PartyList to everyone currently in a party
+
+	// --- [party] dungeon-side instance pool (lives on the dungeon server, ownedZoneId in dungeon range) ---
+	struct DungeonInstanceSlot {
+		bool busy = false;
+		int partyId = -1;       // which lobby party currently occupies this instance
+		int number = 0;         // that party's display number (logging only)
+	};
+	DungeonInstanceSlot dungeonInstances[DungeonInstanceCount];
+	int DungeonAllocInstanceForParty(int partyId, int number); // returns instance index, or -1 if all busy
+	int DungeonInstanceForPartyId(int partyId);                 // existing instance index for a party, or -1
+	int CountPlayersInInstance(int instanceIndex);              // live players across that instance's floors
+	void DungeonUpdateInstances();                              // free + reset instances whose floors emptied
+	void ResetDungeonInstance(int instanceIndex);               // respawn monsters / clear drops on its floors
+
+	// legacy single-queue API kept for the in-dungeon HP/job share; portal no longer auto-queues.
 	void BroadcastDungeonParty();              // [party] in-dungeon: share in-dungeon players' HP/job with each other
-	void DungeonTryStart(bool force);          // force=true: start now with current members (>=1)
-	void EnterDungeonStub();                   // send each member STC_DungeonEnter + clear the queue
 
 	/*
 	* 설명 : 플레이어가 속한 Zone을 얻는다.

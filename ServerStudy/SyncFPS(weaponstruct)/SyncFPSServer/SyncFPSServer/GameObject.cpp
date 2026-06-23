@@ -5686,9 +5686,17 @@ void World::Init() {
 	{
 		// Floor coords chosen so the render offset (client: OffsetMulArr[y%3][x%3]) lands on FREE descriptor
 		// slots, not colliding with open-world zones 73/74/83/84 (offsets 2/0/7/4). 1F->1, 2F->3, Boss->8.
+		// [party] instance 0: zones 100..102.
 		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 0, "OfficeDungeon_1floor", 1000, 1002)); // 1F (off 1)
 		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 1, "OfficeDungeon_2floor", 1001, 1000)); // 2F (off 3)
 		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 2, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
+		// [party] instance 1: zones 103..105. Coords are instance-0 + x100 so they are non-adjacent to every
+		// other dungeon/open-world zone (separate ghost/visibility) yet reuse the same layout. A client only
+		// ever loads ONE instance (it reconnects fresh and instances are non-adjacent), so the fact that some
+		// of these coords map to an already-used Asset_OffsetMul slot is harmless (never co-loaded).
+		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 3, "OfficeDungeon_1floor", 1100, 1102)); // inst1 1F
+		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 4, "OfficeDungeon_2floor", 1101, 1100)); // inst1 2F
+		gameworld.ZoneTable.push_back(new Zone(World::DungeonZoneId + 5, "OfficeDungeon_Boss",   1101, 1110)); // inst1 Boss
 	}
 
 	//Set Near Zones
@@ -5741,11 +5749,16 @@ void World::Update() {
 		gameworld.ZoneTable[i]->Update(DeltaTime);
 	}
 
-	// [party/dungeon] keep waiting members' HP/job live each tick (queued into PersonalSDS, flushed below).
-	BroadcastDungeonQueue();
+	// [party] keep every waiting party room (HP/job/leader) live each tick (queued into PersonalSDS).
+	for (int p = 0; p < MaxParties; ++p) {
+		if (parties[p].active && !parties[p].started) BroadcastPartyRoom(p);
+	}
 
-	// [party/dungeon] in the dungeon the lobby queue is empty (cleared on entry), so share the in-dungeon
-	// party's HP/job on a ~0.2s throttle (few members -> light) using the same party UI.
+	// [party] dungeon server: free + reset any instance whose floors have emptied out.
+	DungeonUpdateInstances();
+
+	// [party/dungeon] in the dungeon, share the in-dungeon party's HP/job on a ~0.2s throttle
+	// (few members -> light) using the same party UI.
 	static float s_dungeonPartyHpTimer = 0.0f;
 	s_dungeonPartyHpTimer += DeltaTime;
 	if (s_dungeonPartyHpTimer >= 0.2f) {
@@ -5759,43 +5772,167 @@ void World::Update() {
 	}
 }
 
-// [party/dungeon] ---- portal waiting-queue / party formation ----
-bool World::DungeonQueueContains(int clientIndex) {
-	for (int i = 0; i < dungeonQueueCount; ++i)
-		if (dungeonQueue[i] == clientIndex) return true;
-	return false;
+// [party] ---- portal party formation (lobby side) ----
+int World::PartyFindSlotByClient(int clientIndex) {
+	if (clientIndex < 0) return -1;
+	for (int p = 0; p < MaxParties; ++p) {
+		if (!parties[p].active) continue;
+		for (int m = 0; m < parties[p].memberCount; ++m)
+			if (parties[p].members[m] == clientIndex) return p;
+	}
+	return -1;
 }
 
-void World::DungeonQueueAdd(int clientIndex) {
+int World::PartyFindSlotById(int partyId) {
+	if (partyId < 0) return -1;
+	for (int p = 0; p < MaxParties; ++p)
+		if (parties[p].active && parties[p].id == partyId) return p;
+	return -1;
+}
+
+int World::PartyAllocSlot() {
+	for (int p = 0; p < MaxParties; ++p)
+		if (!parties[p].active) return p;
+	return -1;
+}
+
+void World::PartyCreate(int clientIndex) {
 	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return;
-	if (DungeonQueueContains(clientIndex)) { DungeonTryStart(true); return; }   // re-press F = start now
-	if (dungeonQueueCount >= DungeonPartyMax) return;   // already full; wait for it to start
-	dungeonQueue[dungeonQueueCount++] = clientIndex;
-	cout << "[Dungeon] queue add client=" << clientIndex << " (" << dungeonQueueCount << "/" << DungeonPartyMax << ")" << endl;
-	BroadcastDungeonQueue();
-	if (dungeonQueueCount >= DungeonPartyMax) DungeonTryStart(false);   // auto-start when full
+	if (PartyFindSlotByClient(clientIndex) >= 0) return;   // already in a party
+	int slot = PartyAllocSlot();
+	if (slot < 0) return;                                   // lobby party table full
+
+	LobbyParty& party = parties[slot];
+	party = LobbyParty();
+	party.active = true;
+	party.started = false;
+	party.id = serverId * 100000 + (nextPartyId++);         // serverId-scoped so ids never collide across lobbies
+	// reuse display numbers: pick the smallest number not currently used by an active party,
+	// so disbanding 파티1 frees the name and the next created party becomes 파티1 again.
+	int num = 1;
+	for (bool taken = true; taken; ) {
+		taken = false;
+		for (int p = 0; p < MaxParties; ++p) {
+			if (parties[p].active && parties[p].number == num) { taken = true; ++num; break; }
+		}
+	}
+	party.number = num;
+	party.leaderClientIndex = clientIndex;
+	party.members[0] = clientIndex;
+	party.memberCount = 1;
+
+	cout << "[Party] create #" << party.number << " (id=" << party.id << ") leader client=" << clientIndex << endl;
+	BroadcastPartyRoom(slot);
+	BroadcastPartyListToMembers();
 }
 
-void World::DungeonQueueRemove(int clientIndex) {
+void World::PartyJoin(int clientIndex, int partyId) {
+	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return;
+	if (PartyFindSlotByClient(clientIndex) >= 0) return;    // already in a party
+	int slot = PartyFindSlotById(partyId);
+	if (slot < 0) return;                                    // no such party
+	LobbyParty& party = parties[slot];
+	if (party.started) return;                               // already entered the dungeon
+	if (party.memberCount >= DungeonPartyMax) return;        // full
+
+	party.members[party.memberCount++] = clientIndex;
+	cout << "[Party] join #" << party.number << " client=" << clientIndex
+		<< " (" << party.memberCount << "/" << DungeonPartyMax << ")" << endl;
+	BroadcastPartyRoom(slot);
+	BroadcastPartyListToMembers();
+}
+
+void World::PartyLeave(int clientIndex) {
+	int slot = PartyFindSlotByClient(clientIndex);
+	if (slot < 0) return;
+	LobbyParty& party = parties[slot];
+
+	// compact the member list, dropping the leaver.
 	int w = 0;
-	bool removed = false;
-	for (int i = 0; i < dungeonQueueCount; ++i) {
-		if (dungeonQueue[i] == clientIndex) { removed = true; continue; }
-		dungeonQueue[w++] = dungeonQueue[i];
+	for (int m = 0; m < party.memberCount; ++m)
+		if (party.members[m] != clientIndex) party.members[w++] = party.members[m];
+	for (int m = w; m < DungeonPartyMax; ++m) party.members[m] = -1;
+	party.memberCount = w;
+
+	// clear the leaver's own party UI.
+	if (clientIndex >= 0 && clientIndex < clients.size && clients.isnull(clientIndex) == false)
+		Sending_DungeonQueueUpdate(clients[clientIndex].PersonalSDS, nullptr, 0, -1, -1);
+
+	if (party.memberCount <= 0) {
+		cout << "[Party] disband #" << party.number << endl;
+		party.active = false;
+		party.id = -1;
+	} else {
+		if (party.leaderClientIndex == clientIndex) party.leaderClientIndex = party.members[0]; // promote
+		BroadcastPartyRoom(slot);
 	}
-	if (!removed) return;
-	dungeonQueueCount = w;
-	for (int i = dungeonQueueCount; i < DungeonPartyMax; ++i) dungeonQueue[i] = -1;
-	cout << "[Dungeon] queue remove client=" << clientIndex << " (" << dungeonQueueCount << "/" << DungeonPartyMax << ")" << endl;
-	BroadcastDungeonQueue();
+	BroadcastPartyListToMembers();
 }
 
-void World::BroadcastDungeonQueue() {
-	for (int i = 0; i < dungeonQueueCount; ++i) {
-		int ci = dungeonQueue[i];
+void World::BroadcastPartyRoom(int partySlot) {
+	if (partySlot < 0 || partySlot >= MaxParties) return;
+	LobbyParty& party = parties[partySlot];
+	if (!party.active) return;
+	for (int m = 0; m < party.memberCount; ++m) {
+		int ci = party.members[m];
 		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
-		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, dungeonQueue, dungeonQueueCount);
+		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, party.members, party.memberCount, party.leaderClientIndex, party.id, party.number);
 	}
+}
+
+void World::PartyDisband(int clientIndex) {
+	int slot = PartyFindSlotByClient(clientIndex);
+	if (slot < 0) return;
+	LobbyParty& party = parties[slot];
+	if (party.leaderClientIndex != clientIndex) return;   // only the leader can disband
+	if (party.started) return;                            // already entered the dungeon
+
+	// clear every member's party window before tearing the party down.
+	for (int m = 0; m < party.memberCount; ++m) {
+		int ci = party.members[m];
+		if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false)
+			Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0, -1, -1, 0);
+	}
+
+	cout << "[Party] disband(by leader) #" << party.number << " (id=" << party.id << ")" << endl;
+	party.active = false;
+	party.id = -1;
+	party.leaderClientIndex = -1;
+	for (int m = 0; m < DungeonPartyMax; ++m) party.members[m] = -1;
+	party.memberCount = 0;
+
+	BroadcastPartyListToMembers();
+}
+
+void World::BroadcastPartyListToMembers() {
+	// Anyone currently sitting in a party (i.e. with a party window open) gets a fresh list.
+	for (int ci = 0; ci < clients.size; ++ci) {
+		if (clients.isnull(ci)) continue;
+		if (clients[ci].isServerPeer || clients[ci].socket == INVALID_SOCKET) continue;
+		if (PartyFindSlotByClient(ci) < 0) continue;
+		Sending_PartyList(clients[ci].PersonalSDS);
+	}
+}
+
+void World::Sending_PartyList(SendDataSaver& sds) {
+	sds.postpush_start();
+	constexpr int reqsiz = sizeof(STC_PartyList_Header);
+	sds.postpush_reserve(reqsiz);
+	STC_PartyList_Header& header = *(STC_PartyList_Header*)sds.ofbuff;
+	header.size = reqsiz;
+	header.st = STC_Protocol::PartyList;
+	int n = 0;
+	for (int p = 0; p < MaxParties && n < MaxPartyListEntries; ++p) {
+		if (!parties[p].active) continue;
+		PartyListEntry& e = header.parties[n++];
+		e.partyId = parties[p].id;
+		e.number = parties[p].number;
+		e.memberCount = parties[p].memberCount;
+		e.maxCount = DungeonPartyMax;
+		e.started = parties[p].started ? 1 : 0;
+	}
+	header.count = n;
+	sds.postpush_end();
 }
 
 // [party/dungeon] Players currently inside the dungeon floors ARE the party for that instance (the lobby
@@ -5810,7 +5947,8 @@ void World::BroadcastDungeonParty() {
 		ClientData& target = clients[recipient];
 		if (target.isServerPeer || target.socket == INVALID_SOCKET || target.pObjData == nullptr) continue;
 		const int targetZone = target.zoneId;
-		if (targetZone < DungeonZoneId || targetZone >= DungeonZoneId + DungeonFloorCount) continue;
+		// per-exact-floor roster works for every instance, since each floor zone id is unique per instance.
+		if (!IsDungeonZone(targetZone)) continue;
 
 		int members[DungeonPartyMax] = { -1, -1, -1 };
 		int n = 0;
@@ -5826,41 +5964,131 @@ void World::BroadcastDungeonParty() {
 	}
 }
 
-void World::DungeonTryStart(bool force) {
-	if (dungeonQueueCount <= 0) return;
-	if (!force && dungeonQueueCount < DungeonPartyMax) return;   // auto-start only when full
-	EnterDungeonStub();
+// [party] helper: a sensible spawn point (AABB center, slightly above the floor) for a dungeon zone.
+static vec4 DungeonZoneSpawn(Zone* z) {
+	if (z == nullptr) return vec4(0, 5, 0, 1);
+	return vec4(
+		0.5f * (z->BasicAABB_onlyXZ.x + z->BasicAABB_onlyXZ.z),
+		z->map.AABB[0].y + 1.5f,
+		0.5f * (z->BasicAABB_onlyXZ.y + z->BasicAABB_onlyXZ.w),
+		1.0f);
 }
 
-// [party/dungeon][phase2] form the party and portal-teleport every member to the dungeon server.
-void World::EnterDungeonStub() {
+// [party] the LEADER pressed start: route every member to the dungeon entry, tagged with this party id.
+// The dungeon server authoritatively assigns an instance for that party on arrival (or bounces them back
+// if every instance is busy), so the lobby does not need to know which instance is free.
+void World::PartyLeaderStart(int clientIndex) {
+	int slot = PartyFindSlotByClient(clientIndex);
+	if (slot < 0) return;
+	LobbyParty& party = parties[slot];
+	if (party.leaderClientIndex != clientIndex) return;   // only the leader may start
+	if (party.started) return;
+
 	int members[DungeonPartyMax];
-	int n = dungeonQueueCount;
-	for (int i = 0; i < n; ++i) members[i] = dungeonQueue[i];
+	int n = party.memberCount;
+	for (int i = 0; i < n; ++i) members[i] = party.members[i];
+	const int partyId = party.id;
+	const int number = party.number;
 
-	cout << "[Dungeon] START with " << n << " player(s):";
-	for (int i = 0; i < n; ++i) cout << " client" << members[i];
-	cout << endl;
+	cout << "[Party] START #" << number << " (id=" << partyId << ") members=" << n << endl;
 
-	for (int i = 0; i < DungeonPartyMax; ++i) dungeonQueue[i] = -1;
-	dungeonQueueCount = 0;
+	Zone* entryZone = (DungeonZoneId >= 0 && DungeonZoneId < (int)ZoneTable.size()) ? ZoneTable[DungeonZoneId] : nullptr;
+	vec4 spawnPos = DungeonZoneSpawn(entryZone);
 
-	Zone* dungeonZone = (DungeonZoneId >= 0 && DungeonZoneId < (int)ZoneTable.size())
-		? ZoneTable[DungeonZoneId] : nullptr;
-	if (dungeonZone == nullptr) return;
-	vec4 spawnPos(
-		0.5f * (dungeonZone->BasicAABB_onlyXZ.x + dungeonZone->BasicAABB_onlyXZ.z),
-		dungeonZone->map.AABB[0].y + 1.5f,
-		0.5f * (dungeonZone->BasicAABB_onlyXZ.y + dungeonZone->BasicAABB_onlyXZ.w),
-		1.0f);
-
-	// Clear the waiting UI, then reuse the normal server-transfer path so job, weapons,
-	// inventory, HP, cooldowns, reload/holster state, and combat counters survive entry.
 	for (int i = 0; i < n; ++i) {
 		int ci = members[i];
 		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
-		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0);
-		MovePlayerToZone(ci, DungeonZoneId, spawnPos);
+		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0, -1, -1);  // close the lobby party UI
+		MovePlayerToZone(ci, DungeonZoneId, spawnPos, partyId, clients[ci].zoneId);
+	}
+
+	// the lobby hands this group off to the dungeon; remove the lobby party entry.
+	party.active = false;
+	party.started = true;
+	party.id = -1;
+	BroadcastPartyListToMembers();
+}
+
+// [party] dungeon-side instance pool -----------------------------------------------------------
+int World::DungeonInstanceForPartyId(int partyId) {
+	if (partyId < 0) return -1;
+	for (int i = 0; i < DungeonInstanceCount; ++i)
+		if (dungeonInstances[i].busy && dungeonInstances[i].partyId == partyId) return i;
+	return -1;
+}
+
+int World::DungeonAllocInstanceForParty(int partyId, int number) {
+	int existing = DungeonInstanceForPartyId(partyId);
+	if (existing >= 0) return existing;                  // same party -> same instance
+	for (int i = 0; i < DungeonInstanceCount; ++i) {
+		if (dungeonInstances[i].busy) continue;
+		dungeonInstances[i].busy = true;
+		dungeonInstances[i].partyId = partyId;
+		dungeonInstances[i].number = number;
+		cout << "[Dungeon] instance " << i << " (zones " << DungeonInstanceBase(i) << ".."
+			<< (DungeonInstanceBase(i) + DungeonFloorCount - 1) << ") -> party id=" << partyId << endl;
+		return i;
+	}
+	return -1;   // every instance busy
+}
+
+int World::CountPlayersInInstance(int instanceIndex) {
+	if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) return 0;
+	int base = DungeonInstanceBase(instanceIndex);
+	int count = 0;
+	for (int ci = 0; ci < clients.size; ++ci) {
+		if (clients.isnull(ci)) continue;
+		ClientData& c = clients[ci];
+		if (c.isServerPeer || c.socket == INVALID_SOCKET || c.pObjData == nullptr) continue;
+		if (c.zoneId >= base && c.zoneId < base + DungeonFloorCount) ++count;
+	}
+	return count;
+}
+
+void World::DungeonUpdateInstances() {
+	if (!IsDungeonZone(ownedZoneId)) return;             // only the dungeon server manages instances
+	for (int i = 0; i < DungeonInstanceCount; ++i) {
+		if (!dungeonInstances[i].busy) continue;
+		if (CountPlayersInInstance(i) > 0) continue;     // still occupied
+		cout << "[Dungeon] instance " << i << " emptied -> reset + free (party id was "
+			<< dungeonInstances[i].partyId << ")" << endl;
+		ResetDungeonInstance(i);
+		dungeonInstances[i].busy = false;
+		dungeonInstances[i].partyId = -1;
+		dungeonInstances[i].number = 0;
+	}
+}
+
+void World::ResetDungeonInstance(int instanceIndex) {
+	if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) return;
+	int base = DungeonInstanceBase(instanceIndex);
+	for (int f = 0; f < DungeonFloorCount; ++f) {
+		int zid = base + f;
+		if (zid < 0 || zid >= (int)ZoneTable.size()) continue;
+		if (!IsZoneOwned(zid)) continue;
+		Zone* z = ZoneTable[zid];
+		if (z == nullptr) continue;
+
+		// revive every monster on this floor.
+		for (int oi = 0; oi < z->Dynamic_gameObjects.size; ++oi) {
+			if (z->Dynamic_gameObjects.isnull(oi)) continue;
+			DynamicGameObject* obj = z->Dynamic_gameObjects[oi];
+			if (obj == nullptr) continue;
+			if (GameObjectType::VptrToTypeTable[*(void**)obj] != GameObjectType::_Monster) continue;
+			Monster* mon = (Monster*)obj;
+			mon->HP = mon->MaxHP;
+			mon->isDead = false;
+			mon->respawntimer = 0.0f;
+			z->Sending_ChangeGameObjectMember<float>(z->CommonSDS, z->currentIndex, mon, GameObjectType::_Monster, &mon->HP);
+			z->Sending_ChangeGameObjectMember<bool>(z->CommonSDS, z->currentIndex, mon, GameObjectType::_Monster, &mon->isDead);
+		}
+
+		// clear any loot left on the floor.
+		for (int di = 0; di < z->DropedItems.size; ++di) {
+			if (z->DropedItems.isnull(di)) continue;
+			z->DropedItems.Free(di);
+			z->Sending_ItemRemove(z->CommonSDS, di);
+		}
 	}
 }
 
@@ -6469,7 +6697,7 @@ void World::AcceptClientHello(int clientIndex) {
 	p->worldMat.pos.f3.y = StartZone->map.AABB[1].y - 4;
 	// [party/dungeon] dungeon ceiling is too high -> player spawned at the ceiling. Spawn near the floor
 	// instead so they drop into the room. (Tune the +5 if needed.)
-	if (StartzoneId >= DungeonZoneId && StartzoneId < DungeonZoneId + DungeonFloorCount) {
+	if (IsDungeonZone(StartzoneId)) {
 		p->worldMat.pos.f3.y = StartZone->map.AABB[0].y + 1.5;
 	}
 	p->SetShape(Shape::StrToShapeIndex["Player"]);
@@ -6502,6 +6730,27 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	// inconsistent (ABI mismatch / corrupted packet), that is an out-of-bounds crash. Drop instead.
 	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return false;
 	if (data.dstZoneId < 0 || data.dstZoneId >= ZoneTable.size()) return false;
+
+	// [party] dungeon entry: assign this party an instance and re-home into its floor-1 zone. The first
+	// member of a party allocates the instance; the rest follow into the same one. If every instance is
+	// busy, flag a bounce: create the player, then send them back to where they came from with a reject.
+	bool dungeonBounceFull = false;
+	bool dungeonZoneCorrected = false;   // [party] instance != entry -> must resend the client its real zone
+	if (IsDungeonZone(data.dstZoneId) && IsDungeonZone(ownedZoneId)) {
+		int inst = DungeonAllocInstanceForParty(data.partyId, 0);
+		if (inst >= 0) {
+			int base = DungeonInstanceBase(inst);
+			// The client entered believing it is at data.dstZoneId (the entry, DungeonZoneId). If we placed
+			// it in a different instance's floor, AddPlayer must send SyncPlayerMoveZone so the client's
+			// currentZoneId (and thus its AllocPlayerIndexes net-index binding) matches the server.
+			if (base != data.dstZoneId) dungeonZoneCorrected = true;
+			data.dstZoneId = base;
+			Zone* iz = (base >= 0 && base < (int)ZoneTable.size()) ? ZoneTable[base] : nullptr;
+			if (iz != nullptr) data.spawnPos = DungeonZoneSpawn(iz);
+		} else {
+			dungeonBounceFull = true;
+		}
+	}
 
 	clients[clientIndex].PersonalSDS.Init(4096);
 	clients[clientIndex].pendingTransferToken = 0;
@@ -6561,8 +6810,20 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = data.dstZoneId;
-	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, false, false);
+	// update_Map = dungeonZoneCorrected: only when we placed them in an instance other than the entry zone
+	// must the client be told its real zone (SyncPlayerMoveZone) so its net-index binding matches the server.
+	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, dungeonZoneCorrected, false);
 	clients[clientIndex].objindex = objindex;
+
+	// [party] every dungeon instance was busy: tell the player ("던전이 가득 찼습니다") and bounce them back
+	// to the open-world zone they came from. The player object now exists, so reuse the normal zone-move path.
+	if (dungeonBounceFull) {
+		cout << "[Dungeon] all instances busy -> reject party id=" << data.partyId
+			<< " client=" << clientIndex << " (bounce to zone " << data.originZoneId << ")" << endl;
+		Sending_DungeonReject(clients[clientIndex].PersonalSDS, 0);
+		int back = (data.originZoneId >= 0 && data.originZoneId < (int)ZoneTable.size()) ? data.originZoneId : data.dstZoneId;
+		MovePlayerToZone(clientIndex, back, data.spawnPos);
+	}
 	return true;
 }
 
@@ -6666,7 +6927,7 @@ void ClientData::DisconnectToServer(int index) {
 	}
 
 	Player* player = client.pObjData;
-	gameworld.DungeonQueueRemove(index);
+	gameworld.PartyLeave(index);   // [party] drop from any lobby party on disconnect (disband/promote as needed)
 
 	if (client.socket != INVALID_SOCKET) {
 		closesocket(client.socket);
@@ -6724,7 +6985,7 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename) {
 	}
 }
 
-void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
+void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId, int originZoneId) {
 	if (clientIndex < 0 || clientIndex >= clients.size) return;
 	if (clients.isnull(clientIndex)) return;
 	if (dstZoneId < 0 || dstZoneId >= ZoneTable.size()) return;
@@ -6746,6 +7007,8 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos) {
 		data.srcZoneId = srcZoneId;
 		data.srcObjIndex = clients[clientIndex].objindex;
 		data.dstZoneId = dstZoneId;
+		data.partyId = partyId;                                            // [party] dungeon grouping tag
+		data.originZoneId = (originZoneId >= 0) ? originZoneId : srcZoneId; // [party] where to bounce back on full
 		data.spawnPos = spawnPos;
 		data.yaw = player->m_yaw;
 		data.pitch = player->m_pitch;

@@ -532,6 +532,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		break;
 	case WM_LBUTTONDOWN:
 		game.LBtnDown = true;
+		game.HandlePartyClick(); // [party] hit-test the lobby party buttons (menu / join list / room)
 		break;
 	case WM_LBUTTONUP:
 		game.LBtnDown = false;
@@ -1053,5 +1054,6 @@ void PrintOffset() {
 	//	n = (char*)&temp - (char*)&temp.m_pShader;
 	//	dbglog1(L"class Monster.m_pShader%d\n", n);
 	//	n = (char*)&temp - (char*)&temp.Destpos;
-	//	dbglog1(L"class Monster.Dest
+	//	dbglog1(L"class Monster.Destpos%d\n", n);
+	//}
 }

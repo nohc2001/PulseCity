@@ -4439,15 +4439,19 @@ void Game::Init()
 			}
 		}
 
-		// [party/dungeon] client must mirror the server's 3 dungeon-floor zones (same ids/coords) so
-		// MoveZone(100/101/102) is valid for entry + floor transitions.
+		// [party/dungeon] client must mirror the server's dungeon-floor zones (same ids/coords) so
+		// MoveZone(100..105) is valid for entry + floor transitions. MUST match the server exactly
+		// (see World dungeon zone creation: 2 instances x 3 floors = zones 100..105).
 		{
-			// Floor coords chosen so Asset_OffsetMul (=OffsetMulArr[y%3][x%3]) lands on FREE descriptor slots,
-			// not colliding with open-world zones 73/74/83/84 (offsets 2/0/7/4). 1F->1, 2F->3, Boss->8.
-			// MUST match the server's dungeon floor coords exactly.
-			game.ZoneTable.push_back(new Zone(100, "OfficeDungeon_1floor", 1000, 1002)); // 1F (off 1)
-			game.ZoneTable.push_back(new Zone(101, "OfficeDungeon_2floor", 1001, 1000)); // 2F (off 3)
-			game.ZoneTable.push_back(new Zone(102, "OfficeDungeon_Boss",   1001, 1010)); // Boss (off 8)
+			// instance 0: zones 100..102.
+			game.ZoneTable.push_back(new Zone(100, "OfficeDungeon_1floor", 1000, 1002)); // inst0 1F
+			game.ZoneTable.push_back(new Zone(101, "OfficeDungeon_2floor", 1001, 1000)); // inst0 2F
+			game.ZoneTable.push_back(new Zone(102, "OfficeDungeon_Boss",   1001, 1010)); // inst0 Boss
+			// instance 1: zones 103..105 (instance-0 coords + x100; non-adjacent so a client only ever
+			// loads one instance -> any Asset_OffsetMul slot reuse is harmless, never co-loaded).
+			game.ZoneTable.push_back(new Zone(103, "OfficeDungeon_1floor", 1100, 1102)); // inst1 1F
+			game.ZoneTable.push_back(new Zone(104, "OfficeDungeon_2floor", 1101, 1100)); // inst1 2F
+			game.ZoneTable.push_back(new Zone(105, "OfficeDungeon_Boss",   1101, 1110)); // inst1 Boss
 		}
 
 		//Set Near Zones
@@ -5908,7 +5912,7 @@ void Game::Render() {
 			static int  _dgWait = 0;
 			static int  _dgZone = -999;
 			static vec4 _dgAnchor = vec4(0);
-			if (currentZoneId == 100) {
+			if (currentZoneId >= 100 && currentZoneId < 106 && ((currentZoneId - 100) % 3) == 0) {
 				if (_dgZone != currentZoneId) { _dgZone = currentZoneId; _dgSet = false; _dgWait = 0; }
 				if (havePlayer) {
 					if (!_dgSet) {
@@ -6190,6 +6194,7 @@ void Game::Render() {
 
 	RenderGameplayStatusHUD();
 	RenderDungeonPartyHUD();
+	RenderPartyLobbyUI();
 	RenderBossPrototypeHUD();
 	RenderBossPrototypeCoreHealthPlates();
 	RenderMonsterHealthPlates();
@@ -6554,7 +6559,7 @@ void Game::Render_RayTracing()
 			static int  _dgWait = 0;
 			static int  _dgZone = -999;
 			static vec4 _dgAnchor = vec4(0);
-			if (currentZoneId == 100) {
+			if (currentZoneId >= 100 && currentZoneId < 106 && ((currentZoneId - 100) % 3) == 0) {
 				if (_dgZone != currentZoneId) { _dgZone = currentZoneId; _dgSet = false; _dgWait = 0; }
 				if (havePlayer) {
 					if (!_dgSet) {
@@ -6681,6 +6686,7 @@ void Game::Render_RayTracing()
 
 	RenderGameplayStatusHUD();
 	RenderDungeonPartyHUD();
+	RenderPartyLobbyUI();
 	RenderBossPrototypeHUD();
 	RenderBossPrototypeCoreHealthPlates();
 	RenderMonsterHealthPlates();
@@ -7206,7 +7212,10 @@ void Game::Update()
 	const float SendPeriod = 0.05f;
 
 	accSend += DeltaTime;
-	if ((isPrepared && !isInventoryOpen) && (GetActiveWindow() == hWnd && mainPageStack.size() == 0)) {
+	// [party] free the cursor while the party menu / join list is open so its buttons can be clicked.
+	const bool partyUIOpen = (m_partyMenuOpen || m_partyJoinListOpen ||
+		(m_dungeonQueue.active && m_dungeonQueue.partyId >= 0 && currentZoneId < 100));
+	if ((isPrepared && !isInventoryOpen && !partyUIOpen) && (GetActiveWindow() == hWnd && mainPageStack.size() == 0)) {
 		while (ShowCursor(FALSE) >= 0);
 
 		POINT center = { (LONG)gd.ClientFrameWidth / 2, (LONG)gd.ClientFrameHeight / 2 };
@@ -8008,12 +8017,39 @@ READ_START:
 		game.m_dungeonQueue.count = header.count;
 		game.m_dungeonQueue.maxCount = header.maxCount;
 		game.m_dungeonQueue.active = (header.count > 0);
+		game.m_dungeonQueue.leaderClientIndex = header.leaderClientIndex;
+		game.m_dungeonQueue.partyId = header.partyId;
+		game.m_dungeonQueue.number = header.number;
 		for (int i = 0; i < 3; ++i) {
 			game.m_dungeonQueue.objindex[i] = header.objindex[i];
 			game.m_dungeonQueue.hp[i] = header.hp[i];
 			game.m_dungeonQueue.maxhp[i] = header.maxhp[i];
 			game.m_dungeonQueue.m_currentJob[i] = header.m_currentJob[i];
 		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::PartyList:
+	{
+		STC_PartyList_Header& header = *(STC_PartyList_Header*)currentPivot;
+		int n = header.count; if (n < 0) n = 0; if (n > 16) n = 16;
+		game.m_partyList.count = n;
+		for (int i = 0; i < n; ++i) {
+			game.m_partyList.entries[i].partyId = header.parties[i].partyId;
+			game.m_partyList.entries[i].number = header.parties[i].number;
+			game.m_partyList.entries[i].memberCount = header.parties[i].memberCount;
+			game.m_partyList.entries[i].maxCount = header.parties[i].maxCount;
+			game.m_partyList.entries[i].started = header.parties[i].started;
+		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::DungeonReject:
+	{
+		STC_DungeonReject_Header& header = *(STC_DungeonReject_Header*)currentPivot;
+		game.m_dungeonRejectFlash = 4.0f; // show "던전이 가득 찼습니다" for ~4s
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -8132,7 +8168,10 @@ READ_START:
 
 void Game::AddMouseInput(int deltaX, int deltaY)
 {
-	if (player != nullptr && mainPageStack.size() == 0)
+	// [party] suppress camera look while the party menu / join list / room is open (cursor is free then).
+	const bool partyUIOpen = (m_partyMenuOpen || m_partyJoinListOpen ||
+		(m_dungeonQueue.active && m_dungeonQueue.partyId >= 0 && currentZoneId < 100));
+	if (player != nullptr && mainPageStack.size() == 0 && !partyUIOpen)
 	{
 		m_stackMouseX += deltaX;
 		m_stackMouseY += deltaY;
@@ -8573,8 +8612,10 @@ static const wchar_t* GetPartyJobName(int job)
 
 void Game::RenderDungeonPartyHUD()
 {
-	// The lobby queue reuses this snapshot, but the gameplay roster belongs only in dungeon zones.
-	if (player == nullptr || currentZoneId < 100 || !m_dungeonQueue.active || m_dungeonQueue.count <= 0) return;
+	// Show the roster both inside a dungeon AND while sitting in a lobby party (partyId >= 0),
+	// so members can see each other's HP/job before the leader starts.
+	if (player == nullptr || !m_dungeonQueue.active || m_dungeonQueue.count <= 0) return;
+	if (currentZoneId < 100 && m_dungeonQueue.partyId < 0) return;
 	if (UITextureTable.size() <= 41) return;
 
 	constexpr int FillTexture = 0;
@@ -8680,6 +8721,215 @@ void Game::RenderDungeonPartyHUD()
 			slot.z - 6.0f * scale, slot.y + 37.0f * scale);
 		RenderSDFText(hpText, (int)wcslen(hpText), hpTextRt, 15.0f * scale,
 			vec4(0.96f, 0.98f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 7);
+	}
+}
+
+// [party] -------- portal party-lobby UI (immediate mode; clicks handled in WndProc) --------
+
+void Game::PartySendSimple(int protocolType) {
+	// Header-only messages are {unsigned int size; CTS_Protocol st;} = 6 bytes packed on the wire.
+	// Build the exact 6-byte layout by hand so client/server agree regardless of struct padding.
+	char buf[6];
+	*(unsigned int*)(buf + 0) = 6;
+	*(short*)(buf + 4) = (short)protocolType;
+	client.send_all(buf, 6, 0);
+}
+
+void Game::UpdateDungeonPortalProximity() {
+	m_nearDungeonPortal = false;
+	if (player == nullptr) return;
+	if (currentZoneId >= 100) return; // only in the open world (dungeon has no entry portal)
+	vec4 pp = player->worldMat.pos;
+	for (int i = 0; i < (int)Portals.size(); ++i) {
+		Portal* portal = Portals[i];
+		if (portal == nullptr) continue;
+		if (portal->dstzoneId != 100) continue; // dungeon-entry portal marker (DungeonZoneId)
+		vec4 d = portal->worldMat.pos - pp;
+		float r = portal->radius + 3.0f; // a little generous so the menu opens before you stand dead-center
+		if (d.x * d.x + d.z * d.z <= r * r) { m_nearDungeonPortal = true; break; }
+	}
+}
+
+void Game::RenderPartyLobbyUI() {
+	if (m_dungeonRejectFlash > 0.0f) m_dungeonRejectFlash -= DeltaTime;
+
+	UpdateDungeonPortalProximity();
+
+	// Am I already in a party (lobby room)? partyId>=0 and not yet inside the dungeon.
+	const bool inParty = (m_dungeonQueue.active && m_dungeonQueue.partyId >= 0 && currentZoneId < 100);
+	if (!inParty) {
+		// auto open/close the create/join menu from portal proximity only.
+		if (m_nearDungeonPortal) {
+			if (!m_partyMenuClosed) m_partyMenuOpen = true;   // stays closed if the user pressed X until they leave
+		}
+		else { m_partyMenuOpen = false; m_partyJoinListOpen = false; m_partyMenuClosed = false; }
+	} else {
+		m_partyMenuOpen = false;     // the party room replaces the menu once you have joined
+		m_partyJoinListOpen = false;
+	}
+
+	m_partyButtonCount = 0;
+	auto addButton = [&](vec4 rect, int action, int param) {
+		if (m_partyButtonCount < 24) {
+			m_partyButtons[m_partyButtonCount].rect = rect;
+			m_partyButtons[m_partyButtonCount].action = action;
+			m_partyButtons[m_partyButtonCount].param = param;
+			m_partyButtonCount++;
+		}
+	};
+
+	const float sw = (float)gd.ClientFrameWidth;
+	const float sh = (float)gd.ClientFrameHeight;
+	const float scale = max(0.72f, sh / 960.0f);
+	const float depth = 0.015f;
+	constexpr int Fill = 0;
+	const vec4 frameCol(0.18f, 0.72f, 0.90f, 0.85f);
+
+	auto drawPanel = [&](vec4 p) {
+		UIDraw_SolidRect(p, vec4(0.02f, 0.04f, 0.06f, 0.93f), depth);
+		const float e = 2.0f * scale;
+		UIDraw_SolidRect(vec4(p.x, p.y, p.z, p.y + e), frameCol, depth - ui_depth_epsilon);
+		UIDraw_SolidRect(vec4(p.x, p.w - e, p.z, p.w), frameCol, depth - ui_depth_epsilon);
+		UIDraw_SolidRect(vec4(p.x, p.y, p.x + e, p.w), frameCol, depth - ui_depth_epsilon);
+		UIDraw_SolidRect(vec4(p.z - e, p.y, p.z, p.w), frameCol, depth - ui_depth_epsilon);
+	};
+	auto drawButton = [&](vec4 r, const wchar_t* label, vec4 col, int action, int param) {
+		UIDraw_SolidRect(r, col, depth - ui_depth_epsilon * 2);
+		const float e = 1.5f * scale;
+		UIDraw_SolidRect(vec4(r.x, r.y, r.z, r.y + e), frameCol, depth - ui_depth_epsilon * 3);
+		UIDraw_SolidRect(vec4(r.x, r.w - e, r.z, r.w), frameCol, depth - ui_depth_epsilon * 3);
+		vec4 tr(r.x + 10.0f * scale, r.y + 4.0f * scale, r.z - 10.0f * scale, r.w - 4.0f * scale);
+		RenderSDFText(label, (int)wcslen(label), tr, 20.0f * scale, vec4(0.95f, 0.99f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 5);
+		addButton(r, action, param);
+	};
+
+	// reject flash (centered, near top).
+	if (m_dungeonRejectFlash > 0.0f) {
+		vec4 rt(-220.0f * scale, sh * 0.5f - 150.0f * scale, 220.0f * scale, sh * 0.5f - 110.0f * scale);
+		RenderSDFText(L"던전이 가득 찼습니다", 11, rt, 26.0f * scale, vec4(1.0f, 0.35f, 0.30f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 6);
+	}
+
+	const float bw = 240.0f * scale;
+	const float bh = 52.0f * scale;
+	const float gap = 14.0f * scale;
+
+	if (inParty) {
+		// ---- compact party room, anchored at the top so it doesn't block the view ----
+		// title "파티N" + [X] (leader: disband / member: leave) on the header row, 인원 below, [시작] for the leader.
+		const float cx = 0.0f;
+		const float pad = 14.0f * scale;
+		const float titleH = 30.0f * scale;
+		const float countH = 24.0f * scale;
+		const float bh2 = 42.0f * scale;   // compact button height
+		const bool amLeader = (m_dungeonQueue.leaderClientIndex >= 0 && m_dungeonQueue.leaderClientIndex == clientIndexInServer);
+
+		const float innerW = bw;
+		const float panelW = innerW + pad * 2.0f;
+		const float contentH = titleH + 6.0f * scale + countH + (amLeader ? (gap + bh2) : 0.0f);
+		const float panelTopY = sh * 0.5f - 20.0f * scale;   // near the top edge
+		const float panelBotY = panelTopY - (pad * 2.0f + contentH);
+		vec4 panel(cx - panelW * 0.5f, panelBotY, cx + panelW * 0.5f, panelTopY);
+		drawPanel(panel);
+
+		wchar_t title[32];
+		swprintf_s(title, L"파티%d", m_dungeonQueue.number);
+		vec4 titleRt(panel.x + pad, panel.w - pad - titleH, panel.z - 46.0f * scale, panel.w - pad);
+		RenderSDFText(title, (int)wcslen(title), titleRt, 22.0f * scale, vec4(0.5f, 0.92f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+
+		drawButton(vec4(panel.z - 42.0f * scale, panel.w - pad - titleH, panel.z - pad, panel.w - pad),
+			L"X", vec4(0.40f, 0.12f, 0.14f, 0.95f), amLeader ? PUI_Disband : PUI_Leave, 0);
+
+		wchar_t memline[48];
+		swprintf_s(memline, L"인원 %d / %d", m_dungeonQueue.count, m_dungeonQueue.maxCount);
+		const float countTop = panel.w - pad - titleH - 6.0f * scale;
+		vec4 memRt(panel.x + pad, countTop - countH, panel.z - pad, countTop);
+		RenderSDFText(memline, (int)wcslen(memline), memRt, 18.0f * scale, vec4(0.9f, 0.96f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+
+		if (amLeader) {
+			const float by = countTop - countH - gap;
+			drawButton(vec4(cx - innerW * 0.5f, by - bh2, cx + innerW * 0.5f, by), L"시작", vec4(0.10f, 0.45f, 0.22f, 0.95f), PUI_Start, 0);
+		}
+		return;
+	}
+
+	if (!m_partyMenuOpen) return;
+
+	if (!m_partyJoinListOpen) {
+		// ---- create/join menu ----
+		const float cx = 0.0f;
+		float by = 80.0f * scale;
+		vec4 panel(cx - bw * 0.5f - 16.0f * scale, by - bh * 2 - gap - 50.0f * scale, cx + bw * 0.5f + 16.0f * scale, by + 36.0f * scale);
+		drawPanel(panel);
+		vec4 titleRt(panel.x + 16.0f * scale, panel.w - 34.0f * scale, panel.z - 48.0f * scale, panel.w - 4.0f * scale);
+		RenderSDFText(L"던전 파티", 5, titleRt, 22.0f * scale, vec4(0.5f, 0.92f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+		// close (X) on the title row.
+		drawButton(vec4(panel.z - 42.0f * scale, panel.w - 36.0f * scale, panel.z - 8.0f * scale, panel.w - 6.0f * scale), L"X", vec4(0.40f, 0.12f, 0.14f, 0.95f), PUI_CloseMenu, 0);
+		drawButton(vec4(cx - bw * 0.5f, by - bh, cx + bw * 0.5f, by), L"파티 만들기", vec4(0.10f, 0.30f, 0.50f, 0.95f), PUI_Create, 0);
+		by -= bh + gap;
+		drawButton(vec4(cx - bw * 0.5f, by - bh, cx + bw * 0.5f, by), L"파티 참가하기", vec4(0.12f, 0.32f, 0.40f, 0.95f), PUI_OpenJoin, 0);
+		return;
+	}
+
+	// ---- join list ----
+	{
+		const float cx = 0.0f;
+		const float listTop = 140.0f * scale;
+		const int n = m_partyList.count;
+		const float rowH = 46.0f * scale;
+		const float panelH = 70.0f * scale + (n > 0 ? n : 1) * (rowH + 8.0f * scale) + 60.0f * scale;
+		vec4 panel(cx - bw * 0.5f - 18.0f * scale, listTop - panelH, cx + bw * 0.5f + 18.0f * scale, listTop + 36.0f * scale);
+		drawPanel(panel);
+		vec4 titleRt(panel.x + 16.0f * scale, panel.w - 34.0f * scale, panel.z - 90.0f * scale, panel.w - 4.0f * scale);
+		RenderSDFText(L"파티 참가", 5, titleRt, 22.0f * scale, vec4(0.5f, 0.92f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+		// refresh + close on the title row.
+		drawButton(vec4(panel.z - 84.0f * scale, panel.w - 36.0f * scale, panel.z - 46.0f * scale, panel.w - 6.0f * scale), L"↻", vec4(0.10f, 0.30f, 0.40f, 0.95f), PUI_Refresh, 0);
+		drawButton(vec4(panel.z - 42.0f * scale, panel.w - 36.0f * scale, panel.z - 8.0f * scale, panel.w - 6.0f * scale), L"X", vec4(0.40f, 0.12f, 0.14f, 0.95f), PUI_CloseJoin, 0);
+
+		float ry = listTop - 50.0f * scale;
+		if (n <= 0) {
+			vec4 rt(panel.x + 16.0f * scale, ry - rowH, panel.z - 16.0f * scale, ry);
+			RenderSDFText(L"열린 파티가 없습니다", 11, rt, 18.0f * scale, vec4(0.8f, 0.85f, 0.9f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+		}
+		for (int i = 0; i < n; ++i) {
+			PartyListState::Entry& e = m_partyList.entries[i];
+			wchar_t label[48];
+			swprintf_s(label, L"파티%d  (%d/%d)%ls", e.number, e.memberCount, e.maxCount, e.started ? L" 진행중" : L"");
+			vec4 r(cx - bw * 0.5f, ry - rowH, cx + bw * 0.5f, ry);
+			bool joinable = (e.started == 0 && e.memberCount < e.maxCount);
+			vec4 col = joinable ? vec4(0.10f, 0.28f, 0.42f, 0.95f) : vec4(0.18f, 0.18f, 0.20f, 0.9f);
+			UIDraw_SolidRect(r, col, depth - ui_depth_epsilon * 2);
+			vec4 tr(r.x + 10.0f * scale, r.y + 4.0f * scale, r.z - 10.0f * scale, r.w - 4.0f * scale);
+			RenderSDFText(label, (int)wcslen(label), tr, 18.0f * scale, vec4(0.95f, 0.99f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 5);
+			if (joinable) addButton(r, PUI_Join, e.partyId);
+			ry -= rowH + 8.0f * scale;
+		}
+	}
+}
+
+void Game::HandlePartyClick() {
+	for (int i = 0; i < m_partyButtonCount; ++i) {
+		if (!RectContainPos(m_partyButtons[i].rect, CurrentCursorPos)) continue;
+		switch (m_partyButtons[i].action) {
+		case PUI_Create:   PartySendSimple(CTS_Protocol::PartyCreate); break;
+		case PUI_OpenJoin: m_partyJoinListOpen = true; PartySendSimple(CTS_Protocol::PartyListRequest); break;
+		case PUI_Refresh:  PartySendSimple(CTS_Protocol::PartyListRequest); break;
+		case PUI_CloseJoin:m_partyJoinListOpen = false; break;
+		case PUI_CloseMenu:m_partyMenuOpen = false; m_partyJoinListOpen = false; m_partyMenuClosed = true; break;
+		case PUI_Start:    PartySendSimple(CTS_Protocol::DungeonStart); break;
+		case PUI_Leave:    PartySendSimple(CTS_Protocol::PartyLeave); break;
+		case PUI_Disband:  PartySendSimple(CTS_Protocol::PartyDisband); break;
+		case PUI_Join:
+		{
+			CTS_PartyJoin_Header pkt;
+			pkt.size = sizeof(pkt);
+			pkt.st = CTS_Protocol::PartyJoin;
+			pkt.partyId = m_partyButtons[i].param;
+			client.send_all((char*)&pkt, sizeof(pkt), 0);
+			break;
+		}
+		default: break;
+		}
+		break; // one click acts on at most one button
 	}
 }
 

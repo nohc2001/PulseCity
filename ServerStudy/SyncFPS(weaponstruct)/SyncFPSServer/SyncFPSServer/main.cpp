@@ -380,12 +380,50 @@ READ_START:
 	break;
 	case CTS_Protocol::DungeonStart:
 	{
-		// [party/dungeon] F-key = START the dungeon, but ONLY if already in the queue (joined via the portal).
-		// Pressing F when not queued does nothing -> entry is gated behind walking into the portal.
+		// [party] the party LEADER pressed the start button: route members into a free dungeon instance.
 		CTS_DungeonStart_Header& header = *(CTS_DungeonStart_Header*)currentPivot;
-		if (gameworld.DungeonQueueContains(clientIndex)) {
-			gameworld.DungeonTryStart(true);
-		}
+		gameworld.PartyLeaderStart(clientIndex);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::PartyCreate:
+	{
+		CTS_PartyCreate_Header& header = *(CTS_PartyCreate_Header*)currentPivot;
+		gameworld.PartyCreate(clientIndex);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::PartyJoin:
+	{
+		CTS_PartyJoin_Header& header = *(CTS_PartyJoin_Header*)currentPivot;
+		gameworld.PartyJoin(clientIndex, header.partyId);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::PartyLeave:
+	{
+		CTS_PartyLeave_Header& header = *(CTS_PartyLeave_Header*)currentPivot;
+		gameworld.PartyLeave(clientIndex);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::PartyListRequest:
+	{
+		CTS_PartyListRequest_Header& header = *(CTS_PartyListRequest_Header*)currentPivot;
+		if (clientIndex >= 0 && clientIndex < gameworld.clients.size && gameworld.clients.isnull(clientIndex) == false)
+			gameworld.Sending_PartyList(gameworld.clients[clientIndex].PersonalSDS);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::PartyDisband:
+	{
+		CTS_PartyDisband_Header& header = *(CTS_PartyDisband_Header*)currentPivot;
+		gameworld.PartyDisband(clientIndex);
 		currentPivot += header.size;
 		offset += header.size;
 	}

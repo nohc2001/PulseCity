@@ -79,6 +79,12 @@ union STC_Protocol {
 		DungeonQueueUpdate = 20,
 
 		DungeonEnter = 21,
+
+		// [party] full list of open parties at the portal (shown in the "join party" window).
+		PartyList = 22,
+
+		// [party] start was refused because every dungeon instance is busy.
+		DungeonReject = 23,
 	};
 
 	short n;
@@ -239,6 +245,34 @@ struct STC_DungeonQueueUpdate_Header {
 	float hp[3] = {};
 	float maxhp[3] = {};
 	int m_currentJob[3] = {};   // [party] each member's job (PlayerJob int), -1 if empty slot
+	int leaderClientIndex = -1; // [party] clientIndex of the leader; client shows [start] if == own clientIndex
+	int partyId = -1;           // [party] which party this snapshot belongs to (-1 = not in a party)
+	int number = 0;             // [party] display number -> "파티N" (0 = none)
+};
+
+// [party] one row in the open-party list (the "join party" window renders one button per entry).
+struct PartyListEntry {
+	int partyId = -1;
+	int number = 0;        // display number -> "파티N"
+	int memberCount = 0;
+	int maxCount = 3;
+	int started = 0;       // 1 once the party has entered the dungeon (no longer joinable)
+};
+
+constexpr int MaxPartyListEntries = 16;
+
+struct STC_PartyList_Header {
+	unsigned int size = sizeof(STC_PartyList_Header);
+	STC_Protocol st = STC_Protocol::PartyList;
+	int count = 0;
+	PartyListEntry parties[MaxPartyListEntries];
+};
+
+// [party] server -> leader: the start request was refused (every dungeon instance is occupied).
+struct STC_DungeonReject_Header {
+	unsigned int size = sizeof(STC_DungeonReject_Header);
+	STC_Protocol st = STC_Protocol::DungeonReject;
+	int reason = 0; // 0 = all dungeon instances busy
 };
 
 // [party/dungeon] Portal-teleport command: the client should disconnect from its current server and
@@ -469,7 +503,14 @@ union CTS_Protocol {
 		CTS_ChangeEquipSlotWithInventorySlot = 12,
 		Client_NPCTalkSelection = 13,
 		// [party/dungeon] reassigned to 14 to avoid collision with ChangeEquipSlot(12)/NPCTalk(13).
+		// [party] now means: the party LEADER pressed the start button.
 		DungeonStart = 14,
+		// [party] portal party-lobby actions.
+		PartyCreate = 15,       // make a new party (caller becomes leader+first member)
+		PartyJoin = 16,         // join an existing party by id (CTS_PartyJoin_Header.partyId)
+		PartyLeave = 17,        // leave current party
+		PartyListRequest = 18,  // ask the server for the current open-party list
+		PartyDisband = 19,      // [party] leader-only: disband the whole party (kick all members)
 	};
 	short n;
 	char two_byte[2];
@@ -478,10 +519,41 @@ union CTS_Protocol {
 	operator short() { return n; }
 };
 
-// [party/dungeon] sent when a waiting player presses the start key (F) to begin with current members.
+// [party/dungeon] sent when the party LEADER presses the start button to begin with current members.
 struct CTS_DungeonStart_Header {
 	unsigned int size = sizeof(CTS_DungeonStart_Header);
 	CTS_Protocol st = CTS_Protocol::DungeonStart;
+};
+
+// [party] create a new party. The caller becomes its leader and first member.
+struct CTS_PartyCreate_Header {
+	unsigned int size = sizeof(CTS_PartyCreate_Header);
+	CTS_Protocol st = CTS_Protocol::PartyCreate;
+};
+
+// [party] join an existing party by id.
+struct CTS_PartyJoin_Header {
+	unsigned int size = sizeof(CTS_PartyJoin_Header);
+	CTS_Protocol st = CTS_Protocol::PartyJoin;
+	int partyId = -1;
+};
+
+// [party] leave the party the caller currently belongs to.
+struct CTS_PartyLeave_Header {
+	unsigned int size = sizeof(CTS_PartyLeave_Header);
+	CTS_Protocol st = CTS_Protocol::PartyLeave;
+};
+
+// [party] request the current open-party list (server replies with STC_PartyList).
+struct CTS_PartyListRequest_Header {
+	unsigned int size = sizeof(CTS_PartyListRequest_Header);
+	CTS_Protocol st = CTS_Protocol::PartyListRequest;
+};
+
+// [party] leader-only: disband the entire party (every member is removed and the party is destroyed).
+struct CTS_PartyDisband_Header {
+	unsigned int size = sizeof(CTS_PartyDisband_Header);
+	CTS_Protocol st = CTS_Protocol::PartyDisband;
 };
 
 struct CTS_KeyInput_Header {
@@ -552,6 +624,11 @@ struct PlayerTransferData {
 	ItemStack Inventory[36] = {};
 	Weapon weapon[3];
 	int SelectedWeapone;
+	// [party] which party this player belongs to, and the open-world zone they started from.
+	// The dungeon process uses partyId to group members into the same instance, and originZoneId
+	// to send them back if every instance is busy.
+	int partyId = -1;
+	int originZoneId = -1;
 };
 
 struct CTS_ServerPlayerTransfer_Header {
