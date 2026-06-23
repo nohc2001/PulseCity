@@ -10240,9 +10240,6 @@ void RayTracingShader::InitAccelationStructure()
 	//instanceDesc.InstanceContributionToHitGroupIndex = 0;
 	TLAS_InstanceDescs_MappedData = (D3D12_RAYTRACING_INSTANCE_DESC*)AllocateUploadBuffer(device, nullptr, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * TLAS_InstanceDescs_Capacity, &TLAS_InstanceDescs_Res, L"InstanceDescs", false);
 	TLASAlloter.Init(TLAS_InstanceDescs_Capacity);
-	TLASHasBuild = false;
-	TLASPreviousDescCount = -1;
-	TLASPreviousTopologyHash = 0;
 
 	if (copyData) {
 		memcpy_s(TLAS_InstanceDescs_MappedData, TLASAlloter.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), copyData, TLASAlloter.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
@@ -10254,7 +10251,6 @@ void RayTracingShader::InitAccelationStructure()
 void RayTracingShader::BuildAccelationStructure()
 {
 	static volatile int inc = 0;
-	static constexpr bool kEnableTLASUpdate = true;
 
 	ID3D12Device5* device = gd.raytracing.dxrDevice;
 	ID3D12GraphicsCommandList4* commandList = gd.raytracing.dxrCommandList;
@@ -10267,11 +10263,11 @@ void RayTracingShader::BuildAccelationStructure()
 	}
 	gd.gpucmd.Reset(true);
 
+	//2. real build start
+	// Get required sizes for an acceleration structure.
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS topLevelInputs = {};
 	topLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-	topLevelInputs.Flags =
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+	topLevelInputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 	topLevelInputs.NumDescs = TLASAlloter.size;
 #ifdef RAYTRACING_TLAS_DEBUG
 	if (game.currentZoneId == 74) {
@@ -10280,82 +10276,38 @@ void RayTracingShader::BuildAccelationStructure()
 #endif
 	topLevelInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
 
-	const int descCountForBuild = static_cast<int>(topLevelInputs.NumDescs);
-	ui64 topologyHash = 1469598103934665603ull;
-	auto MixTLASHash = [](ui64 h, ui64 value) -> ui64 {
-		h ^= value;
-		h *= 1099511628211ull;
-		return h;
-	};
-
-	if (TLAS_InstanceDescs_MappedData != nullptr) {
-		for (int i = 0; i < descCountForBuild; ++i) {
-			const D3D12_RAYTRACING_INSTANCE_DESC& desc = TLAS_InstanceDescs_MappedData[i];
-			topologyHash = MixTLASHash(topologyHash, desc.AccelerationStructure);
-			topologyHash = MixTLASHash(topologyHash, desc.InstanceID);
-			topologyHash = MixTLASHash(topologyHash, desc.InstanceMask);
-			topologyHash = MixTLASHash(topologyHash, desc.InstanceContributionToHitGroupIndex);
-			topologyHash = MixTLASHash(topologyHash, desc.Flags);
-		}
-	}
-
-	const bool canUpdateTLAS =
-		kEnableTLASUpdate &&
-		TLASHasBuild &&
-		TLASPreviousDescCount == descCountForBuild &&
-		TLASPreviousTopologyHash == topologyHash;
-
-	if (canUpdateTLAS) {
-		topLevelInputs.Flags |=
-			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
-	}
-
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO topLevelPrebuildInfo = {};
 	device->GetRaytracingAccelerationStructurePrebuildInfo(&topLevelInputs, &topLevelPrebuildInfo);
 	if (topLevelPrebuildInfo.ResultDataMaxSizeInBytes <= 0) {
 		throw "GetRaytracingAccelerationStructurePrebuildInfo Failed.";
 	}
 
-	UINT64 requiredScratchSize = topLevelPrebuildInfo.ScratchDataSizeInBytes;
-	if (canUpdateTLAS && topLevelPrebuildInfo.UpdateScratchDataSizeInBytes > requiredScratchSize) {
-		requiredScratchSize = topLevelPrebuildInfo.UpdateScratchDataSizeInBytes;
+	// Top Level Acceleration Structure desc
+	{
+		topLevelInputs.InstanceDescs = TLAS_InstanceDescs_Res->GetGPUVirtualAddress();
+		TLASBuildDesc.Inputs = topLevelInputs;
+		TLASBuildDesc.DestAccelerationStructureData = TLAS->GetGPUVirtualAddress();
+		TLASBuildDesc.ScratchAccelerationStructureData =
+			gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
 	}
 
-	if (requiredScratchSize > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
-		gd.raytracing.ASBuild_ScratchResource->Release();
-		gd.raytracing.ASBuild_ScratchResource = nullptr;
-		AllocateUAVBuffer(
-			device,
-			requiredScratchSize,
-			&gd.raytracing.ASBuild_ScratchResource,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			L"ScratchResource"
-		);
-		gd.raytracing.ASBuild_ScratchResource_Maxsiz = requiredScratchSize;
-	}
-
-	topLevelInputs.InstanceDescs = TLAS_InstanceDescs_Res->GetGPUVirtualAddress();
-	TLASBuildDesc.Inputs = topLevelInputs;
-	TLASBuildDesc.SourceAccelerationStructureData = canUpdateTLAS ? TLAS->GetGPUVirtualAddress() : 0;
-	TLASBuildDesc.DestAccelerationStructureData = TLAS->GetGPUVirtualAddress();
-	TLASBuildDesc.ScratchAccelerationStructureData = gd.raytracing.ASBuild_ScratchResource->GetGPUVirtualAddress();
-
+	// Build acceleration structure.
 	commandList->BuildRaytracingAccelerationStructure(&TLASBuildDesc, 0, nullptr);
 
-	D3D12_RESOURCE_BARRIER tlasBarrier = {};
-	tlasBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-	tlasBarrier.UAV.pResource = TLAS;
-	commandList->ResourceBarrier(1, &tlasBarrier);
+	gd.gpucmd.Close(true);
 
-	TLASHasBuild = true;
-	TLASPreviousDescCount = descCountForBuild;
-	TLASPreviousTopologyHash = topologyHash;
+	// Kick off acceleration structure construction.
+	gd.gpucmd.Execute(true);
+	gd.gpucmd.WaitGPUComplete();
 
-#ifdef RAYTRACING_TLAS_DEBUG
-	if (inc + 5 <= TLASAlloter.size) {
-		inc += 5;
+	HRESULT reason = gd.pDevice->GetDeviceRemovedReason();
+	if (FAILED(reason)) {
 	}
-#endif
+	else {
+		if (inc + 5 <= TLASAlloter.size) {
+			inc += 5;
+		}
+	}
 }
 void RayTracingShader::InitShaderTable()
 {

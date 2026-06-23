@@ -1234,9 +1234,6 @@ struct RayTracingShader {
 	ID3D12Resource* TLAS = nullptr;
 	ID3D12Resource* TLAS_InstanceDescs_Res; // UploadBuffer
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC TLASBuildDesc = {};
-	bool TLASHasBuild = false;
-	int TLASPreviousDescCount = -1;
-	ui64 TLASPreviousTopologyHash = 0;
 
 	// ï¿½ï¿½ï¿½ï¿½ï¿?Mesh ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	static constexpr int TLAS_InstanceDescs_Capacity = 1048576;
