@@ -4086,10 +4086,18 @@ void Game::RenderSupportDrones()
 	if (gd.isRaytracingRender) {
 		for (GameObject* object : DynmaicGameObjects) {
 			Player* droneOwner = dynamic_cast<Player*>(object);
-			if (droneOwner == nullptr || (PlayerJob)droneOwner->m_currentJob != PlayerJob::DroneOperator) continue;
-			if (!droneOwner->tag[GameObjectTag::Tag_Enable]) continue;
+			if (droneOwner == nullptr) continue;
+			const bool showDrones = droneOwner->tag[GameObjectTag::Tag_Enable] &&
+				(PlayerJob)droneOwner->m_currentJob == PlayerJob::DroneOperator;
+			for (int droneIndex = 0; droneIndex < 2; ++droneIndex) {
+				if (droneOwner->DronObj[droneIndex] != nullptr) {
+					droneOwner->DronObj[droneIndex]->SetRaytracingInstanceEnabled(showDrones);
+				}
+			}
+			if (!showDrones) continue;
 
 			for (int droneIndex = 0; droneIndex < 2; ++droneIndex) {
+				if (droneOwner->DronObj[droneIndex] == nullptr) continue;
 				const bool leftDrone = droneIndex == 0;
 				const float phase = droneBobTime * 2.6f + (leftDrone ? 0.0f : XM_PI);
 				const float bob = sinf(phase) * 0.09f;
@@ -5915,44 +5923,6 @@ void Game::Render() {
 			if (Portals[i] == nullptr) continue;
 			SpawnPortalParticles(Portals[i]->worldMat.pos);
 		}
-		// [party/dungeon] guaranteed-visible portal ring.
-		//  - Open world: anchored ONCE at the very first spawn and stays fixed there (does NOT follow zone moves).
-		//  - Dungeon 1F (zone 100): anchored when entering the dungeon (floor portal +72X/+3Z). 2F(101) has no portal.
-		{
-			bool havePlayer = (playerGameObjectIndex >= 0 && playerGameObjectIndex < (int)DynmaicGameObjects.size()
-				&& DynmaicGameObjects[playerGameObjectIndex] != nullptr);
-
-			// open-world entry portal: capture once, then never move
-			static bool _owSet = false;
-			static int  _owWait = 0;
-			static vec4 _owAnchor = vec4(0);
-			if (currentZoneId < 100 && havePlayer) {
-				if (!_owSet) {
-					_owAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(5.0f, 0.0f, 0.0f, 0.0f);
-					if (++_owWait > 120) _owSet = true;
-				}
-				if (_owWait > 0) SpawnPortalParticles(_owAnchor);
-			}
-
-			// dungeon 1F floor portal: re-anchor each time we (re-)enter the dungeon
-			static bool _dgSet = false;
-			static int  _dgWait = 0;
-			static int  _dgZone = -999;
-			static vec4 _dgAnchor = vec4(0);
-			if (currentZoneId >= 100 && currentZoneId < 106 && ((currentZoneId - 100) % 3) == 0) {
-				if (_dgZone != currentZoneId) { _dgZone = currentZoneId; _dgSet = false; _dgWait = 0; }
-				if (havePlayer) {
-					if (!_dgSet) {
-						_dgAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(72.0f, 0.0f, 3.0f, 0.0f);
-						if (++_dgWait > 120) _dgSet = true;
-					}
-					if (_dgWait > 0) SpawnPortalParticles(_dgAnchor);
-				}
-			}
-			else {
-				_dgZone = currentZoneId;   // left the dungeon -> allow a fresh anchor next entry
-			}
-		}
 		// [PORTAL-DBG] throttled: confirms client has the portal + particles are being produced.
 		{
 			static int _pdbg = 0;
@@ -6568,44 +6538,6 @@ void Game::Render_RayTracing()
 		for (int i = 0; i < Portals.size(); ++i) {
 			if (Portals[i] == nullptr) continue;
 			SpawnPortalParticles(Portals[i]->worldMat.pos);
-		}
-		// [party/dungeon] guaranteed-visible portal ring.
-		//  - Open world: anchored ONCE at the very first spawn and stays fixed there (does NOT follow zone moves).
-		//  - Dungeon 1F (zone 100): anchored when entering the dungeon (floor portal +72X/+3Z). 2F(101) has no portal.
-		{
-			bool havePlayer = (playerGameObjectIndex >= 0 && playerGameObjectIndex < (int)DynmaicGameObjects.size()
-				&& DynmaicGameObjects[playerGameObjectIndex] != nullptr);
-
-			// open-world entry portal: capture once, then never move
-			static bool _owSet = false;
-			static int  _owWait = 0;
-			static vec4 _owAnchor = vec4(0);
-			if (currentZoneId < 100 && havePlayer) {
-				if (!_owSet) {
-					_owAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(5.0f, 0.0f, 0.0f, 0.0f);
-					if (++_owWait > 120) _owSet = true;
-				}
-				if (_owWait > 0) SpawnPortalParticles(_owAnchor);
-			}
-
-			// dungeon 1F floor portal: re-anchor each time we (re-)enter the dungeon
-			static bool _dgSet = false;
-			static int  _dgWait = 0;
-			static int  _dgZone = -999;
-			static vec4 _dgAnchor = vec4(0);
-			if (currentZoneId >= 100 && currentZoneId < 106 && ((currentZoneId - 100) % 3) == 0) {
-				if (_dgZone != currentZoneId) { _dgZone = currentZoneId; _dgSet = false; _dgWait = 0; }
-				if (havePlayer) {
-					if (!_dgSet) {
-						_dgAnchor = DynmaicGameObjects[playerGameObjectIndex]->worldMat.pos + vec4(72.0f, 0.0f, 3.0f, 0.0f);
-						if (++_dgWait > 120) _dgSet = true;
-					}
-					if (_dgWait > 0) SpawnPortalParticles(_dgAnchor);
-				}
-			}
-			else {
-				_dgZone = currentZoneId;   // left the dungeon -> allow a fresh anchor next entry
-			}
 		}
 		// [PORTAL-DBG] throttled: confirms client has the portal + particles are being produced.
 		{
@@ -7601,6 +7533,7 @@ READ_START:
 
 			if (DynmaicGameObjects[netObjIndex]) {
 				if (*(void**)DynmaicGameObjects[netObjIndex] != GameObjectType::vptr[header.type]) {
+					DynmaicGameObjects[netObjIndex]->SetRaytracingInstanceEnabled(false);
 					delete DynmaicGameObjects[netObjIndex];
 					DynmaicGameObjects[netObjIndex] = nullptr;
 					switch (header.type) {
@@ -7891,7 +7824,9 @@ READ_START:
 		}
 		if (DynmaicGameObjects[netObjIndex] != nullptr) {
 			if (*(void**)DynmaicGameObjects[netObjIndex] == GameObjectType::vptr[GameObjectType::_Player]) {
-				((Player*)DynmaicGameObjects[netObjIndex])->ClearThirdPersonWeaponVisuals();
+				Player* deletedPlayer = (Player*)DynmaicGameObjects[netObjIndex];
+				deletedPlayer->ClearThirdPersonWeaponVisuals();
+				deletedPlayer->SetRaytracingVisualsEnabled(false);
 				for (size_t i = 0; i < gDelayedWeaponFireVisuals.size();) {
 					const DelayedWeaponFireVisual& event = gDelayedWeaponFireVisuals[i];
 					if (event.ZoneId == header.zoneId && event.ObjectIndex == header.obj_index) {
@@ -7901,6 +7836,9 @@ READ_START:
 						++i;
 					}
 				}
+			}
+			else {
+				DynmaicGameObjects[netObjIndex]->SetRaytracingInstanceEnabled(false);
 			}
 			DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_Enable] = false;
 		}

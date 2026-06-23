@@ -969,6 +969,38 @@ void GameObject::Release()
 	}
 }
 
+void GameObject::SetRaytracingInstanceEnabled(bool enabled)
+{
+	if (!gd.isSupportRaytracing || game.MyRayTracingShader == nullptr ||
+		game.MyRayTracingShader->TLAS_InstanceDescs_MappedData == nullptr) {
+		return;
+	}
+
+	auto setInstanceMask = [&](float* transformPtr) {
+		if (transformPtr == nullptr) return;
+		const uintptr_t base = reinterpret_cast<uintptr_t>(game.MyRayTracingShader->TLAS_InstanceDescs_MappedData);
+		const uintptr_t ptr = reinterpret_cast<uintptr_t>(transformPtr);
+		if (ptr < base) return;
+		const uintptr_t byteOffset = ptr - base;
+		if (byteOffset % sizeof(D3D12_RAYTRACING_INSTANCE_DESC) != 0) return;
+		const uintptr_t index = byteOffset / sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
+		if (index >= static_cast<uintptr_t>(game.MyRayTracingShader->TLASAlloter.size)) return;
+		game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[index].InstanceMask = enabled ? 1 : 0;
+	};
+
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr) {
+		setInstanceMask(RaytracingWorldMatInput);
+	}
+	else if (model != nullptr && RaytracingWorldMatInput_Model != nullptr) {
+		for (int i = 0; i < model->nodeCount; ++i) {
+			setInstanceMask(RaytracingWorldMatInput_Model[i]);
+		}
+	}
+}
+
 BoundingOrientedBox GameObject::GetOBB()
 {
 	BoundingOrientedBox obb_local;
@@ -3957,9 +3989,11 @@ void Player::PlayerWeaponObjectInit()
 	auto RegisterPlayerWeaponObject = [&](WeaponType type, Model* model) {
 		const int weaponIndex = (int)type;
 		if (weaponIndex < 0 || weaponIndex >= Game::MaxWeapon || model == nullptr) return;
+		if (PlayerWeaponObj[weaponIndex] != nullptr) return;
 		PlayerWeaponObj[weaponIndex] = new GameObject();
 		PlayerWeaponObj[weaponIndex]->worldMat = 0;
 		PlayerWeaponObj[weaponIndex]->SetShape(model);
+		PlayerWeaponObj[weaponIndex]->SetRaytracingInstanceEnabled(false);
 		};
 	RegisterPlayerWeaponObject(WeaponType::Sniper, game.SniperModel);
 	RegisterPlayerWeaponObject(WeaponType::Rifle, game.RifleModel);
@@ -3972,19 +4006,27 @@ void Player::PlayerWeaponObjectInit()
 	RegisterPlayerWeaponObject(WeaponType::GrenadeGun, game.BomberGrenadeGunModel);
 
 	const int weaponIndex = (int)WeaponType::DualPistol;
-	if (weaponIndex < 0 || weaponIndex >= Game::MaxWeapon || game.DualRevolverModel == nullptr) return;
-	LeftHand = new GameObject();
-	LeftHand->worldMat = 0;
-	LeftHand->SetShape(game.DualRevolverModel);
+	if (weaponIndex >= 0 && weaponIndex < Game::MaxWeapon && game.DualRevolverModel != nullptr && LeftHand == nullptr) {
+		LeftHand = new GameObject();
+		LeftHand->worldMat = 0;
+		LeftHand->SetShape(game.DualRevolverModel);
+		LeftHand->SetRaytracingInstanceEnabled(false);
+	}
 
 	for (int i = 0; i < 2; ++i) {
-		DronObj[i] = new GameObject();
-		DronObj[i]->worldMat = 0;
-		DronObj[i]->SetShape(game.SupportDroneModel);
+		if (DronObj[i] == nullptr && game.SupportDroneModel != nullptr) {
+			DronObj[i] = new GameObject();
+			DronObj[i]->worldMat = 0;
+			DronObj[i]->SetShape(game.SupportDroneModel);
+			DronObj[i]->SetRaytracingInstanceEnabled(false);
+		}
 
-		Knife[i] = new GameObject();
-		Knife[i]->worldMat = 0;
-		Knife[i]->SetShape(game.DualGunBladeModel);
+		if (Knife[i] == nullptr && game.DualGunBladeModel != nullptr) {
+			Knife[i] = new GameObject();
+			Knife[i]->worldMat = 0;
+			Knife[i]->SetShape(game.DualGunBladeModel);
+			Knife[i]->SetRaytracingInstanceEnabled(false);
+		}
 	}
 }
 
@@ -4016,20 +4058,61 @@ void Player::ClearThirdPersonWeaponVisuals()
 		if (PlayerWeaponObj[i] == nullptr) continue;
 		PlayerWeaponObj[i]->worldMat = 0;
 		PlayerWeaponObj[i]->RaytracingUpdateTransform();
+		PlayerWeaponObj[i]->SetRaytracingInstanceEnabled(false);
 	}
 	for (int i = 0; i < 2; ++i) {
 		if (Knife[i] == nullptr) continue;
 		Knife[i]->worldMat = 0;
 		Knife[i]->RaytracingUpdateTransform();
+		Knife[i]->SetRaytracingInstanceEnabled(false);
 	}
 	if (LeftHand != nullptr) {
 		LeftHand->worldMat = 0;
 		LeftHand->RaytracingUpdateTransform();
+		LeftHand->SetRaytracingInstanceEnabled(false);
+	}
+}
+
+void Player::UpdateRaytracingWeaponVisibility()
+{
+	if (!gd.isSupportRaytracing) return;
+	const bool canShowWeapon = tag[GameObjectTag::Tag_Enable] && !m_weaponHolstered;
+	const bool dualPistol = m_currentWeaponType == (int)WeaponType::DualPistol;
+	const bool bladeMode = dualPistol && m_dualBladeVisualTimer > 0.0f;
+
+	for (int i = 0; i < Game::MaxWeapon; ++i) {
+		if (PlayerWeaponObj[i] == nullptr) continue;
+		const bool visible = canShowWeapon && m_currentWeaponType == i && !(dualPistol && bladeMode);
+		PlayerWeaponObj[i]->SetRaytracingInstanceEnabled(visible);
+	}
+	for (int i = 0; i < 2; ++i) {
+		if (Knife[i] != nullptr) Knife[i]->SetRaytracingInstanceEnabled(canShowWeapon && bladeMode);
+	}
+	if (LeftHand != nullptr) {
+		LeftHand->SetRaytracingInstanceEnabled(canShowWeapon && dualPistol && !bladeMode);
+	}
+}
+
+void Player::SetRaytracingVisualsEnabled(bool enabled)
+{
+	SetRaytracingInstanceEnabled(enabled);
+	// Attachments have their own visibility rules. Enabling the player must not revive every cached
+	// weapon/drone instance; disabling the player, however, must remove all of them immediately.
+	if (!enabled) {
+		for (int i = 0; i < Game::MaxWeapon; ++i) {
+			if (PlayerWeaponObj[i] != nullptr) PlayerWeaponObj[i]->SetRaytracingInstanceEnabled(false);
+		}
+		for (int i = 0; i < 2; ++i) {
+			if (DronObj[i] != nullptr) DronObj[i]->SetRaytracingInstanceEnabled(false);
+			if (Knife[i] != nullptr) Knife[i]->SetRaytracingInstanceEnabled(false);
+		}
+		if (LeftHand != nullptr) LeftHand->SetRaytracingInstanceEnabled(false);
 	}
 }
 
 void Player::Render_ThirdPersonWeapon()
 {
+	UpdateRaytracingWeaponVisibility();
 	if (tag[GameObjectTag::Tag_Enable] == false || m_weaponHolstered) {
 		ClearThirdPersonWeaponVisuals();
 		return;
@@ -4893,6 +4976,10 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, bool leftHand, matri
 
 void Player::RecvSTC_SyncObj(char* data) {
 	int offset = 0;
+	// A full SyncGameObject can arrive through both PersonalSDS and CommonSDS during a zone handoff.
+	// Re-running SetShape would allocate another BLAS/TLAS instance for the same client object and leave
+	// the previous instance permanently visible to DXR. Reuse the existing GPU resources instead.
+	const bool hasRaytracingShapeResources = gd.isSupportRaytracing && RaytracingWorldMatInput_Model != nullptr;
 	STC_SyncObjData& stcsod = *(STC_SyncObjData*)(data);
 	if (stcsod.shapeindex >= 0 && stcsod.shapeindex < (int)Shape::ShapeTable.size()) shape = Shape::ShapeTable[stcsod.shapeindex]; else shape.FlagPtr = 0;   // [crash-fix] out-of-range shapeindex -> null shape (avoids garbage Model pointer)
 	tag = stcsod.tag;
@@ -4980,9 +5067,12 @@ void Player::RecvSTC_SyncObj(char* data) {
 		}
 	}
 
-	SetShape(shape);
+	if (!hasRaytracingShapeResources) {
+		SetShape(shape);
+	}
 
 	PlayerWeaponObjectInit();
+	SetRaytracingVisualsEnabled(true);
 }
 
 void Player::ChangeState(State newState)
@@ -5045,6 +5135,27 @@ void Player::TriggerDualPistolRecoil(bool leftHand)
 }
 
 void Player::Release() {
+	// Player attachments are independent GameObjects with their own TLAS slots. MoveZone() releases
+	// the Player directly (without necessarily receiving DeleteGameObject first), so releasing only
+	// the skinned body leaves the last weapon/drone BLAS instances permanently visible in DXR.
+	ClearThirdPersonWeaponVisuals();
+	SetRaytracingVisualsEnabled(false);
+
+	auto releaseAttachment = [](GameObject*& attachment) {
+		if (attachment == nullptr) return;
+		attachment->Release();
+		delete attachment;
+		attachment = nullptr;
+	};
+	for (int i = 0; i < Game::MaxWeapon; ++i) {
+		releaseAttachment(PlayerWeaponObj[i]);
+	}
+	releaseAttachment(LeftHand);
+	for (int i = 0; i < 2; ++i) {
+		releaseAttachment(DronObj[i]);
+		releaseAttachment(Knife[i]);
+	}
+
 	SkinMeshGameObject::Release();
 
 	for (int i = 0; i < MaxWeapon; ++i) {

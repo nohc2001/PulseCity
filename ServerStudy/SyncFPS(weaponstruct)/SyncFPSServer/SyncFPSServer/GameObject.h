@@ -1122,6 +1122,9 @@ struct Player : public SkinMeshGameObject {
 	float zoneMoveCooldownRemain = 0.0f;
 	int lastBoundaryIndex = -1;
 	bool wasInsideBoundary = false;
+	// Stable combat-team identity. Unlike clientIndex, this survives server/zone transfers.
+	// -1 means solo; solo players are enemies to one another, while self is always allied.
+	int partyId = -1;
 
 	// OBB.Center
 	float JumpVelocity = 5;
@@ -1308,12 +1311,13 @@ struct MonsterData {
 	float Defense;
 	float MoveSpeed;
 	float FireDelay;
+	float ChaseRange;
 };
 
 static MonsterData GMonsterTable[] = {
-	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f },
-	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f },
-	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f },
+	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f, 8.0f },
+	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f, 14.0f },
+	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f, 22.0f },
 };
 
 inline const MonsterData& GetMonsterData(MonsterType type) {
@@ -2190,6 +2194,7 @@ struct World {
 	}
 	static int GhostKeyZone(unsigned long long key) { return static_cast<int>(key >> 32); }
 	static int GhostKeyObject(unsigned long long key) { return static_cast<int>(key & 0xffffffffULL); }
+	static bool ArePlayersAllies(const Player* source, const Player* target);
 	// 내 존 플레이어들의 상태를 peer 링크로 이웃에 전송(매 틱).
 	void SendGhostToPeers();
 	bool QueuePeerPacket(int peerClientIndex, const void* data, int size);
@@ -2197,7 +2202,7 @@ struct World {
 	// 이웃이 보낸 GhostSync 를 받아 고스트를 갱신/생성/제거하고, 그 변화를 내 클라들에게 중계.
 	void OnGhostSync(char* data);
 	// 고스트를 맞혔을 때, 그 객체를 소유한 서버로 데미지 적용 요청을 보낸다.
-	void SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage);
+	void SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage, int sourcePartyId = -1);
 	// 몬스터가 경계를 넘었을 때 소유권을 이웃 서버로 넘긴다.
 	bool SendMonsterHandoff(int dstZoneId, Monster* m);
 	// 이웃이 넘긴 몬스터를 내 존에 진짜 몬스터로 생성한다.
@@ -2486,7 +2491,7 @@ struct World {
 	void StoreIncomingPlayerTransfer(const PlayerTransferData& data);
 
 	void PrintOffset();
-	
+
 	//NPC Talk Data
 	vector<NPCTalkData> NPCTalkTable;
 
@@ -2612,6 +2617,3 @@ struct Portal : public GameObject {
 	}
 #undef STC_CurrentStruct
 };
-
-
-

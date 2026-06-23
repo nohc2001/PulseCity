@@ -2637,7 +2637,7 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 			for (int i = 0; i < gameworld.clients.size; ++i) {
 				if (gameworld.clients.isnull(i) || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 				Player* ally = gameworld.clients[i].pObjData;
-				if (ally == nullptr) continue;
+				if (ally == nullptr || !World::ArePlayersAllies(this, ally)) continue;
 				vec4 allyDelta = ally->worldMat.pos - worldMat.pos;
 				if (allyDelta.fast_square_of_len3 > 144.0f) continue;
 				ally->HP = min(ally->MaxHP, ally->HP + 10.0f);
@@ -2660,7 +2660,7 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 			for (int i = 0; i < gameworld.clients.size; ++i) {
 				if (gameworld.clients.isnull(i) || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 				Player* ally = gameworld.clients[i].pObjData;
-				if (ally == nullptr || ally->HP <= 0.0f) continue;
+				if (ally == nullptr || ally->HP <= 0.0f || !World::ArePlayersAllies(this, ally)) continue;
 				vec4 allyDelta = ally->worldMat.pos - worldMat.pos;
 				if (allyDelta.fast_square_of_len3 > 900.0f) continue;
 				ally->HP = min(ally->MaxHP, ally->HP + 20.0f);
@@ -2730,7 +2730,8 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 				for (int i = 0; i < gameworld.clients.size && !explode; ++i) {
 					if (gameworld.clients.isnull(i) || i == clientIndex || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 					Player* ally = gameworld.clients[i].pObjData;
-					if (ally != nullptr && ally->HP > 0.0f && projectileSphere.Intersects(ally->GetOBB())) explode = true;
+					if (ally != nullptr && ally->HP > 0.0f && World::ArePlayersAllies(this, ally) &&
+						projectileSphere.Intersects(ally->GetOBB())) explode = true;
 				}
 			}
 			else {
@@ -2764,7 +2765,7 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 			for (int i = 0; i < gameworld.clients.size; ++i) {
 				if (gameworld.clients.isnull(i) || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 				Player* ally = gameworld.clients[i].pObjData;
-				if (ally == nullptr || ally->HP <= 0.0f) continue;
+				if (ally == nullptr || ally->HP <= 0.0f || !World::ArePlayersAllies(this, ally)) continue;
 				vec4 delta = ally->worldMat.pos - projectile.Position;
 				if (delta.fast_square_of_len3 > bomberSplashRadius * bomberSplashRadius) continue;
 				ally->HP = min(ally->MaxHP, ally->HP + 15.0f);
@@ -2799,7 +2800,7 @@ void Player::UpdateJobTimers(float deltaTime, Zone* zones)
 			for (int i = 0; i < gameworld.clients.size; ++i) {
 				if (gameworld.clients.isnull(i) || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 				Player* ally = gameworld.clients[i].pObjData;
-				if (ally == nullptr || ally->HP <= 0.0f) continue;
+				if (ally == nullptr || ally->HP <= 0.0f || !World::ArePlayersAllies(this, ally)) continue;
 				vec4 delta = ally->worldMat.pos - m_bomberMeteorTarget;
 				if (delta.fast_square_of_len3 > 1296.0f) continue;
 				ally->HP = min(ally->MaxHP, ally->HP + 75.0f);
@@ -3020,9 +3021,9 @@ bool Player::TryUseSkill(SkillSlot slot)
 		float radiusSq = skill.radius * skill.radius;
 		int casterObjIndex = gameworld.clients[clientIndex].objindex;
 		for (int i = 0; i < gameworld.clients.size; ++i) {
-			if (gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
+			if (gameworld.clients.isnull(i) || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 			Player* ally = gameworld.clients[i].pObjData;
-			if (ally == nullptr) continue;
+			if (ally == nullptr || !World::ArePlayersAllies(this, ally)) continue;
 
 			vec4 toAlly = ally->worldMat.pos - worldMat.pos;
 			if (toAlly.fast_square_of_len3 > radiusSq) continue;
@@ -3066,7 +3067,7 @@ bool Player::TryUseSkill(SkillSlot slot)
 			if (gameworld.clients.isnull(i) || i == clientIndex ||
 				gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 			Player* ally = gameworld.clients[i].pObjData;
-			if (ally == nullptr || ally->HP <= 0.0f) continue;
+			if (ally == nullptr || ally->HP <= 0.0f || !World::ArePlayersAllies(this, ally)) continue;
 			vec4 targetCenter = ally->worldMat.pos + vec4(0, 1.0f, 0, 0);
 			vec4 toTarget = targetCenter - droneCastPosition;
 			float alongRay = toTarget.x * aimDirection.x + toTarget.y * aimDirection.y + toTarget.z * aimDirection.z;
@@ -3261,7 +3262,7 @@ bool Player::TryUseSkill(SkillSlot slot)
 		for (int i = 0; i < gameworld.clients.size; ++i) {
 			if (gameworld.clients.isnull(i) || gameworld.clients[i].zoneId != gameworld.clients[clientIndex].zoneId) continue;
 			Player* ally = gameworld.clients[i].pObjData;
-			if (ally == nullptr || ally->HP <= 0.0f) continue;
+			if (ally == nullptr || ally->HP <= 0.0f || !World::ArePlayersAllies(this, ally)) continue;
 			vec4 delta = ally->worldMat.pos - worldMat.pos;
 			if (delta.fast_square_of_len3 > skill.radius * skill.radius) continue;
 			ally->m_bomberSpeedBuffTimer = max(ally->m_bomberSpeedBuffTimer, skill.duration);
@@ -4197,6 +4198,7 @@ void Monster::ApplyMonsterData(MonsterType type)
 	Defense = data.Defense;
 	m_speed = data.MoveSpeed;
 	m_fireDelay = data.FireDelay;
+	m_chaseRange = data.ChaseRange;
 	for (int i = 0; i < (int)StatusEffectType::Max; ++i) {
 		StatusRemain[i] = 0.0f;
 		StatusDuration[i] = 0.0f;
@@ -4216,6 +4218,7 @@ void Monster::ApplyMonsterData(MonsterType type)
 		<< " Defense=" << Defense
 		<< " Speed=" << m_speed
 		<< " FireDelay=" << m_fireDelay
+		<< " ChaseRange=" << m_chaseRange
 		<< endl;
 }
 
@@ -4311,6 +4314,54 @@ void Monster::Update(float deltaTime)
 								LVelocity.y += 3;
 							}
 						}
+					}
+				}
+				// Attack while tail-chasing the current target (uses per-type m_chaseRange).
+				if (CurrentTarget != nullptr) {
+					vec4 atkMonsterPos = worldMat.pos; atkMonsterPos.w = 0;
+					vec4 atkPlayerPos = CurrentTarget->worldMat.pos; atkPlayerPos.w = 0;
+					float distanceToPlayer = vec4(atkPlayerPos - atkMonsterPos).len3;
+					m_fireTimer += deltaTime;
+					if (distanceToPlayer <= m_chaseRange && m_fireTimer >= m_fireDelay) {
+						m_fireTimer = 0.0f;
+						vec4 rayStart = atkMonsterPos + (worldMat.look * 0.5f);
+						rayStart.y += 0.7f;
+						vec4 rayDirection = atkPlayerPos - rayStart;
+						float InverseAccurcy = distanceToPlayer / 6;
+						rayDirection.x += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+						rayDirection.y += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+						rayDirection.z += (-1 + (float)(rand() & 255) / 128.0f) * InverseAccurcy;
+						rayDirection.len3 = 1.0f;
+						const float effectRadius = (m_monsterType == MonsterType::Tower) ? 0.42f : 0.35f;
+						const float effectPower = 18.0f;
+						const float effectDuration = 0.20f;
+						vec4 effectPosition = rayStart + rayDirection * 0.35f;
+						if (m_monsterType == MonsterType::Dron) {
+							vec4 right = worldMat.right;
+							right.y = 0.0f;
+							if (right.len3 < 0.0001f) {
+								right = vec4(-rayDirection.z, 0.0f, rayDirection.x, 0.0f);
+							}
+							right.len3 = 1.0f;
+							vec4 leftMuzzle = effectPosition - right * 0.8f;
+							vec4 rightMuzzle = effectPosition + right * 0.8f;
+							leftMuzzle.y -= 0.40f;
+							rightMuzzle.y -= 0.40f;
+							zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
+								SkillEffectType::Rifle_GrenadeTrail, leftMuzzle, rayDirection, effectRadius, effectPower, effectDuration);
+							zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
+								SkillEffectType::Rifle_GrenadeTrail, rightMuzzle, rayDirection, effectRadius, effectPower, effectDuration);
+						}
+						else {
+							effectPosition.y += 0.6f;
+							if (m_monsterType == MonsterType::Tower) {
+								effectPosition.y += 0.7f;
+								effectPosition += rayDirection * 0.8f;
+							}
+							zone->Sending_SkillCast(zone->CommonSDS, zone->currentIndex, PlayerJob::Gunner, SkillSlot::Skill1,
+								SkillEffectType::Rifle_GrenadeTrail, effectPosition, rayDirection, effectRadius, effectPower, effectDuration);
+						}
+						zone->FireRaycast(this, rayStart, rayDirection, m_chaseRange, Attack);
 					}
 				}
 			}
@@ -5820,6 +5871,7 @@ void World::PartyCreate(int clientIndex) {
 	party.leaderClientIndex = clientIndex;
 	party.members[0] = clientIndex;
 	party.memberCount = 1;
+	if (clients[clientIndex].pObjData != nullptr) clients[clientIndex].pObjData->partyId = party.id;
 
 	cout << "[Party] create #" << party.number << " (id=" << party.id << ") leader client=" << clientIndex << endl;
 	BroadcastPartyRoom(slot);
@@ -5836,6 +5888,7 @@ void World::PartyJoin(int clientIndex, int partyId) {
 	if (party.memberCount >= DungeonPartyMax) return;        // full
 
 	party.members[party.memberCount++] = clientIndex;
+	if (clients[clientIndex].pObjData != nullptr) clients[clientIndex].pObjData->partyId = party.id;
 	cout << "[Party] join #" << party.number << " client=" << clientIndex
 		<< " (" << party.memberCount << "/" << DungeonPartyMax << ")" << endl;
 	BroadcastPartyRoom(slot);
@@ -5844,8 +5897,20 @@ void World::PartyJoin(int clientIndex, int partyId) {
 
 void World::PartyLeave(int clientIndex) {
 	int slot = PartyFindSlotByClient(clientIndex);
-	if (slot < 0) return;
+	if (slot < 0) {
+		// After a server transfer the lobby-side client-index roster no longer exists on this process,
+		// but the stable party id still lives on Player. An explicit leave must still clear it.
+		if (clientIndex >= 0 && clientIndex < clients.size && clients.isnull(clientIndex) == false &&
+			clients[clientIndex].pObjData != nullptr) {
+			clients[clientIndex].pObjData->partyId = -1;
+		}
+		return;
+	}
 	LobbyParty& party = parties[slot];
+	if (clientIndex >= 0 && clientIndex < clients.size && clients.isnull(clientIndex) == false &&
+		clients[clientIndex].pObjData != nullptr) {
+		clients[clientIndex].pObjData->partyId = -1;
+	}
 
 	// compact the member list, dropping the leaver.
 	int w = 0;
@@ -5890,8 +5955,10 @@ void World::PartyDisband(int clientIndex) {
 	// clear every member's party window before tearing the party down.
 	for (int m = 0; m < party.memberCount; ++m) {
 		int ci = party.members[m];
-		if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false)
+		if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false) {
+			if (clients[ci].pObjData != nullptr) clients[ci].pObjData->partyId = -1;
 			Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0, -1, -1, 0);
+		}
 	}
 
 	cout << "[Party] disband(by leader) #" << party.number << " (id=" << party.id << ")" << endl;
@@ -6444,6 +6511,12 @@ void World::OnPeerLinkEstablished(int clientIndex, int fromServerId) {
 }
 
 // [4단계-STEP2] 내 존에 있는 플레이어들의 위치/시선을 peer 링크로 이웃 서버에 매 틱 전송.
+bool World::ArePlayersAllies(const Player* source, const Player* target) {
+	if (source == nullptr || target == nullptr) return false;
+	if (source == target) return true;
+	return source->partyId >= 0 && source->partyId == target->partyId;
+}
+
 void World::SendGhostToPeers() {
 	if (NotMakePeer || singleProcessAllZones) return;
 
@@ -6487,6 +6560,7 @@ void World::SendGhostToPeers() {
 		arr[count].pos = o->worldMat.pos;
 		arr[count].yaw = (t == GameObjectType::_Player) ? ((Player*)o)->m_yaw : 0.0f;
 		arr[count].pitch = (t == GameObjectType::_Player) ? ((Player*)o)->m_pitch : 0.0f;
+		arr[count].partyId = -1;
 		if (t == GameObjectType::_Monster) {
 			Monster* mo = (Monster*)o;
 			arr[count].HP = mo->HP;
@@ -6494,6 +6568,7 @@ void World::SendGhostToPeers() {
 			arr[count].isDead = mo->isDead ? 1 : 0;
 		}
 		else {
+			arr[count].partyId = ((Player*)o)->partyId;
 			arr[count].HP = 0.0f;
 			arr[count].MaxHP = 0.0f;
 			arr[count].isDead = 0;
@@ -6576,6 +6651,9 @@ void World::OnGhostSync(char* data) {
 			mg->MaxHP = arr[k].MaxHP;
 			mg->isDead = (arr[k].isDead != 0);
 		}
+		else if (t == GameObjectType::_Player) {
+			((Player*)ghost)->partyId = arr[k].partyId;
+		}
 
 		if (isNew) {
 			ghost->SendGameObject(idx, outSDS);  // 처음 본 고스트 -> 풀 생성 패킷 1회
@@ -6610,7 +6688,7 @@ void World::OnGhostSync(char* data) {
 	}
 }
 
-void World::SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage) {
+void World::SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float damage, int sourcePartyId) {
 	if (singleProcessAllZones) return;
 
 	//AverageSecPer60Start(2);
@@ -6619,6 +6697,7 @@ void World::SendGhostDamageToOwner(int targetZoneId, int targetObjIndex, float d
 	h.targetZoneId = targetZoneId;
 	h.targetObjIndex = targetObjIndex;
 	h.damage = damage;
+	h.sourcePartyId = sourcePartyId;
 	for (int i = 0; i < clients.size; ++i) {
 		if (clients.isnull(i)) continue;
 		if (clients[i].isServerPeer == false) continue;
@@ -6694,7 +6773,7 @@ void World::AcceptClientHello(int clientIndex) {
 	avgpos.z = 0.5f * (StartZone->BasicAABB_onlyXZ.y + StartZone->BasicAABB_onlyXZ.w);
 	avgpos.w = 1;
 	p->worldMat.pos = avgpos;
-	p->worldMat.pos.f3.y = StartZone->map.AABB[1].y - 4;
+	p->worldMat.pos.f3.y = 10.0f;   // open-world initial spawn: drop from ~y10 instead of the ceiling
 	// [party/dungeon] dungeon ceiling is too high -> player spawned at the ceiling. Spawn near the floor
 	// instead so they drop into the room. (Tune the +5 if needed.)
 	if (IsDungeonZone(StartzoneId)) {
@@ -6793,6 +6872,7 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->lastBoundaryIndex = data.lastBoundaryIndex;
 	p->wasInsideBoundary = data.wasInsideBoundary;
 	p->m_currentJob = data.m_currentJob;
+	p->partyId = data.partyId;
 	memcpy(p->SkillCooldown, data.SkillCooldown, sizeof(p->SkillCooldown));
 	memcpy(p->SkillCooldownFlow, data.SkillCooldownFlow, sizeof(p->SkillCooldownFlow));
 	p->m_currentWeaponType = data.m_currentWeaponType;
@@ -7007,7 +7087,8 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		data.srcZoneId = srcZoneId;
 		data.srcObjIndex = clients[clientIndex].objindex;
 		data.dstZoneId = dstZoneId;
-		data.partyId = partyId;                                            // [party] dungeon grouping tag
+		// Preserve an established party across every server transfer, not only the initial dungeon entry.
+		data.partyId = (partyId >= 0) ? partyId : player->partyId;
 		data.originZoneId = (originZoneId >= 0) ? originZoneId : srcZoneId; // [party] where to bounce back on full
 		data.spawnPos = spawnPos;
 		data.yaw = player->m_yaw;
@@ -7104,3 +7185,4 @@ void Player::EraseQuest(int index)
 	delete q;
 	QuestPrograss.erase(QuestPrograss.begin() + index);
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           

@@ -1143,6 +1143,34 @@ void Zone::SpawnObjects() {
         return;
     }
 
+    // [dungeon 1F] Walker / Dron(z-1) / Tower(z+1) spawned 2 units along +X from the player spawn (zone center).
+    // Keyed on floor index, so it applies identically to every instance's 1F (zones 100 and 103).
+    if (World::DungeonFloorOf(zoneId) == 0) {
+        float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
+        float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
+        float my = map.AABB[0].y + 2.0f;   // a bit above the floor; gravity settles it
+        Monster* walker = new Monster();
+        walker->zone = this;
+        walker->ApplyMonsterData(MonsterType::Walker);
+        walker->Init(XMMatrixTranslation(cx + 2.0f, my, cz));
+        NewObject(walker, GameObjectType::_Monster);
+        PushGameObject(walker);
+
+        Monster* dron = new Monster();          // z - 1, next to the walker
+        dron->zone = this;
+        dron->ApplyMonsterData(MonsterType::Dron);
+        dron->Init(XMMatrixTranslation(cx + 2.0f, my, cz - 1.0f));
+        NewObject(dron, GameObjectType::_Monster);
+        PushGameObject(dron);
+
+        Monster* tower = new Monster();         // z + 1, next to the walker
+        tower->zone = this;
+        tower->ApplyMonsterData(MonsterType::Tower);
+        tower->Init(XMMatrixTranslation(cx + 2.0f, my, cz + 1.0f));
+        NewObject(tower, GameObjectType::_Monster);
+        PushGameObject(tower);
+    }
+
     // 1F/2F (any instance) intentionally contain no random open-world monsters.
     if (World::IsDungeonZone(zoneId)) return;
 
@@ -1159,10 +1187,13 @@ void Zone::SpawnObjects() {
         for (int i = 0; i < 40; ++i) {
             Monster* mon = new Monster();
             mon->zone = this;
-            mon->ApplyMonsterData((MonsterType)(rand() % 2));   // fixed type (Monster001) so shape is definitely present
+            MonsterType mtype = (MonsterType)(rand() % 2);
+            mon->ApplyMonsterData(mtype);   // 0=Walker, 1=Dron
             float mx = cx + (float)(rand() % 300 - 150);
             float mz = cz + (float)(rand() % 300 - 150);
-            mon->Init(XMMatrixTranslation(mx, py, mz));
+            // Drones hover and never fall, so spawn them in the hover band (~y10) instead of dropping from the ceiling.
+            float my = (mtype == MonsterType::Dron) ? (10.0f + (float)(rand() % 3 - 1)) : py;
+            mon->Init(XMMatrixTranslation(mx, my, mz));
             NewObject(mon, GameObjectType::_Monster);
             PushGameObject(mon);
         }
@@ -1293,8 +1324,9 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
         }
     }
 
-    int ghostHitIndex = -1;
-    int ghostHitZone = -1;
+	int ghostHitIndex = -1;
+	int ghostHitZone = -1;
+	DynamicGameObject* ghostHitObject = nullptr;
     for (auto& g : gameworld.ghostPlayers) {
         DynamicGameObject* gh = g.second;
         if (gh == nullptr) continue;
@@ -1305,14 +1337,21 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
         if (obb.Intersects(rayOrigin, rayDirection, distance)) {
             if (distance < closestDistance) {
                 closestDistance = distance;
-                ghostHitIndex = World::GhostKeyObject(g.first);
-                ghostHitZone = gh->zoneId;
+				ghostHitIndex = World::GhostKeyObject(g.first);
+				ghostHitZone = gh->zoneId;
+				ghostHitObject = gh;
             }
         }
     }
 
-    if (ghostHitIndex >= 0) {
-        gameworld.SendGhostDamageToOwner(ghostHitZone, ghostHitIndex, damage);
+	Player* shooterPlayer = dynamic_cast<Player*>(shooter);
+	if (ghostHitIndex >= 0) {
+		Player* ghostPlayer = dynamic_cast<Player*>(ghostHitObject);
+		if (shooterPlayer == nullptr || ghostPlayer == nullptr ||
+			!World::ArePlayersAllies(shooterPlayer, ghostPlayer)) {
+			gameworld.SendGhostDamageToOwner(ghostHitZone, ghostHitIndex, damage,
+				shooterPlayer != nullptr ? shooterPlayer->partyId : -1);
+		}
     }
     else {
         float coreHitDistance = closestDistance;
@@ -1322,10 +1361,14 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
         }
     }
 
-    if (!hitBossCore && ghostHitIndex < 0 && hitObject != nullptr) {
-        hitZone->currentIndex = hitObjectIndex;
-        hitObject->OnCollisionRayWithBullet(shooter, damage);
-    }
+	if (!hitBossCore && ghostHitIndex < 0 && hitObject != nullptr) {
+		Player* hitPlayer = dynamic_cast<Player*>(hitObject);
+		if (shooterPlayer == nullptr || hitPlayer == nullptr ||
+			!World::ArePlayersAllies(shooterPlayer, hitPlayer)) {
+			hitZone->currentIndex = hitObjectIndex;
+			hitObject->OnCollisionRayWithBullet(shooter, damage);
+		}
+	}
 
     currentIndex = lastcurrentindex;
 
@@ -1540,8 +1583,9 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
         skillSphere.Radius = radius;
     }
 
-    int hitCount = 0;
-    int lastCurrentIndex = currentIndex;
+	int hitCount = 0;
+	int lastCurrentIndex = currentIndex;
+	Player* casterPlayer = dynamic_cast<Player*>(caster);
 
     for (int zi = 0; zi < 9; ++zi) {
         /*if (gameworld.IsZoneOwned(zi) == false) continue;
@@ -1554,30 +1598,58 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
             GameObject* object = (GameObject*)testZone->Dynamic_gameObjects[i];
             if (object == caster) continue;
 
-            void* vptr = *(void**)object;
-            if (GameObjectType::VptrToTypeTable[vptr] != GameObjectType::_Monster) continue;
+			void* vptr = *(void**)object;
+			GameObjectType objectType = GameObjectType::VptrToTypeTable[vptr];
+			if (objectType != GameObjectType::_Monster && objectType != GameObjectType::_Player) continue;
 
-            Monster* monster = (Monster*)object;
-            if (monster->isDead) continue;
+			Monster* monster = objectType == GameObjectType::_Monster ? (Monster*)object : nullptr;
+			Player* targetPlayer = objectType == GameObjectType::_Player ? (Player*)object : nullptr;
+			if (monster != nullptr && monster->isDead) continue;
+			if (casterPlayer != nullptr && targetPlayer != nullptr &&
+				World::ArePlayersAllies(casterPlayer, targetPlayer)) continue;
 
-            BoundingOrientedBox monsterOBB = monster->GetOBB();
-            bool hit = directional ? skillBox.Intersects(monsterOBB) : skillSphere.Intersects(monsterOBB);
-            if (hit == false) continue;
-            if (hitTargets != nullptr && std::find(hitTargets->begin(), hitTargets->end(), object) != hitTargets->end()) continue;
+			BoundingOrientedBox targetOBB = object->GetOBB();
+			bool hit = directional ? skillBox.Intersects(targetOBB) : skillSphere.Intersects(targetOBB);
+			if (hit == false) continue;
+			if (hitTargets != nullptr && std::find(hitTargets->begin(), hitTargets->end(), object) != hitTargets->end()) continue;
 
-            testZone->currentIndex = i;
-            monster->ApplyDamage(caster, damage);
-            float statusDuration = 0.0f;
-            float statusPower = 0.0f;
-            StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
-            if (statusType != StatusEffectType::None) {
-                monster->ApplyStatusEffect(caster, statusType, statusDuration, statusPower);
-            }
-            ++hitCount;
-        }
-    }
+			testZone->currentIndex = i;
+			if (monster != nullptr) {
+				monster->ApplyDamage(caster, damage);
+				float statusDuration = 0.0f;
+				float statusPower = 0.0f;
+				StatusEffectType statusType = GetSkillStatusEffect(effectType, statusDuration, statusPower);
+				if (statusType != StatusEffectType::None) {
+					monster->ApplyStatusEffect(caster, statusType, statusDuration, statusPower);
+				}
+			}
+			else {
+				targetPlayer->TakeDamage(damage);
+			}
+			++hitCount;
+		}
+	}
 
-    currentIndex = lastCurrentIndex;
+	// Adjacent-server players/monsters are represented by ghosts. Apply only an event RPC to the
+	// authoritative owner; the 20 Hz ghost snapshot remains read-only presentation state.
+	for (auto& entry : gameworld.ghostPlayers) {
+		DynamicGameObject* ghost = entry.second;
+		if (ghost == nullptr || !ghost->tag[GameObjectTag::Tag_Enable]) continue;
+		GameObjectType ghostType = GameObjectType::VptrToTypeTable[*(void**)ghost];
+		if (ghostType != GameObjectType::_Monster && ghostType != GameObjectType::_Player) continue;
+		Player* ghostPlayer = ghostType == GameObjectType::_Player ? (Player*)ghost : nullptr;
+		if (casterPlayer != nullptr && ghostPlayer != nullptr &&
+			World::ArePlayersAllies(casterPlayer, ghostPlayer)) continue;
+		BoundingOrientedBox ghostOBB = ghost->GetOBB();
+		bool hit = directional ? skillBox.Intersects(ghostOBB) : skillSphere.Intersects(ghostOBB);
+		if (!hit) continue;
+		if (hitTargets != nullptr && std::find(hitTargets->begin(), hitTargets->end(), ghost) != hitTargets->end()) continue;
+		gameworld.SendGhostDamageToOwner(World::GhostKeyZone(entry.first), World::GhostKeyObject(entry.first),
+			damage, casterPlayer != nullptr ? casterPlayer->partyId : -1);
+		++hitCount;
+	}
+
+	currentIndex = lastCurrentIndex;
     return hitCount;
 }
 
