@@ -229,8 +229,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	}
 
 	constexpr unsigned short InitServerPort = 9073;   // open world (zone 73 = the player's spawn zone). Use 9100 to test the dungeon directly.
-	const char* IP0 = "127.0.0.1";
-	const char* localhost = "127.0.0.1";
+	const char* IP0 = "192.168.35.73";
+	const char* localhost = "192.168.35.73";
 	bool Connected = client.Init(localhost, InitServerPort);
 
 	if (Connected == false) {
@@ -744,7 +744,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 			case VK_F8:
 			{
-				gd.isRaytracingRender = !gd.isRaytracingRender;
+				if (gd.isSupportRaytracing) {
+					gd.isRaytracingRender = !gd.isRaytracingRender;
+				}
+				else {
+					gd.isRaytracingRender = false;
+				}
 				break;
 			}
 			case VK_F5:

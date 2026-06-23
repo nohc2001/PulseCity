@@ -1355,7 +1355,7 @@ struct GlobalDevice {
 	RayTracingDevice raytracing;
 	bool debugDXGI = false;
 	bool isSupportRaytracing = true;
-	bool isRaytracingRender = false;
+	bool isRaytracingRender = true;
 
 	IDXGIAdapter1* pSelectedAdapter = nullptr;
 	IDXGIAdapter1* pOutputAdapter = nullptr;

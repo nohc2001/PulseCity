@@ -4047,14 +4047,19 @@ void Player::Render_ThirdPersonWeapon()
 			if (PlayerWeaponObj[i] == nullptr) continue;
 
 			if ((WeaponType)i == WeaponType::DualPistol) {
+				matrix leftGunmat;
+				const bool hasLeftGun = TryBuildThirdPersonWeaponMatrix(this, true, leftGunmat);
 				if (m_dualBladeVisualTimer > 0.0f) {
 					if (m_currentWeaponType != i) {
 						Knife[0]->worldMat = 0;
 						Knife[1]->worldMat = 0;
 					}
 					else {
-						Knife[0]->worldMat = gunmat;
+						Knife[0]->worldMat = hasLeftGun ? leftGunmat : 0;
 						Knife[1]->worldMat = gunmat;
+					}
+					if (LeftHand != nullptr) {
+						LeftHand->worldMat = 0;
 					}
 					PlayerWeaponObj[i]->worldMat = 0;
 				}
@@ -4068,13 +4073,23 @@ void Player::Render_ThirdPersonWeapon()
 						Knife[0]->worldMat = 0;
 						Knife[1]->worldMat = 0;
 						PlayerWeaponObj[i]->worldMat = gunmat;
+						if (LeftHand != nullptr) {
+							LeftHand->worldMat = hasLeftGun ? leftGunmat : 0;
+						}
 					}
 				}
 				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 				Knife[0]->RaytracingUpdateTransform();
 				Knife[1]->RaytracingUpdateTransform();
+				if (LeftHand != nullptr) {
+					LeftHand->RaytracingUpdateTransform();
+				}
 			}
 			else {
+				if ((WeaponType)m_currentWeaponType != WeaponType::DualPistol && LeftHand != nullptr) {
+					LeftHand->worldMat = 0;
+					LeftHand->RaytracingUpdateTransform();
+				}
 				if (m_currentWeaponType != i) {
 					PlayerWeaponObj[i]->worldMat = 0;
 				}

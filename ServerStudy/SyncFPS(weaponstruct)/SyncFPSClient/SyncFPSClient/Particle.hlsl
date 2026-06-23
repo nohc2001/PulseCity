@@ -54,6 +54,9 @@ cbuffer CameraCB : register(b0)
     float3 CamRight;
     float pad0;
     float3 CamUp;
+    float UseRaytracingDepth;
+    float3 CamPos;
+    float pad1;
 };
 
 static const uint PARTICLE_FLAG_COLLIDE_GROUND = 1u;
@@ -1024,6 +1027,7 @@ struct VSOut
     float4 Pos : SV_POSITION;
     float4 Color : COLOR;
     float2 UV : TEXCOORD0;
+    float LinearDepth01 : TEXCOORD1;
 };
 
 VSOut VS(uint id : SV_VertexID)
@@ -1068,6 +1072,7 @@ VSOut VS(uint id : SV_VertexID)
 
     VSOut o;
     o.Pos = mul(float4(worldPos, 1.0f), ViewProj);
+    o.LinearDepth01 = saturate(length(worldPos - CamPos) / 1000.0f);
 
     float flicker = 0.92f + rand(p.Position.x * 2.7f + p.Position.y * 1.5f + p.Position.z * 2.1f + p.Age * 11.0f) * 0.18f;
     o.Color = lerp(p.StartColor, p.EndColor, lifeT) * flicker;
@@ -1087,10 +1092,26 @@ VSOut VS(uint id : SV_VertexID)
 }
 
 Texture2D FireTex : register(t1);
+Texture2D<float> RaytracingDepthTex : register(t2);
 SamplerState LinearSampler : register(s0);
 
 float4 PS(VSOut i) : SV_Target
 {
+    if (UseRaytracingDepth > 0.5f)
+    {
+        uint width;
+        uint height;
+        RaytracingDepthTex.GetDimensions(width, height);
+        uint2 pixel = uint2(
+            clamp((uint)i.Pos.x, 0u, max(width, 1u) - 1u),
+            clamp((uint)i.Pos.y, 0u, max(height, 1u) - 1u));
+        float sceneDepth01 = RaytracingDepthTex.Load(uint3(pixel, 0));
+        if (i.LinearDepth01 > sceneDepth01 + 0.0025f)
+        {
+            discard;
+        }
+    }
+
     float4 tex = FireTex.Sample(LinearSampler, i.UV);
     tex.rgb *= 1.12f;
     tex.a = saturate(pow(max(tex.a, 0.0f), 1.35f));

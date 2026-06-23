@@ -6330,6 +6330,8 @@ void Game::Render_RayTracing()
 		gd.gpucmd.Reset(true);
 	}
 
+	gd.gpucmd.ResBarrierTr(&gd.raytracing.DepthBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
 	// Transition the render target into the correct state to allow for drawing into it.
 	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	commandList->ResourceBarrier(1, &barrier);
@@ -6376,6 +6378,7 @@ void Game::Render_RayTracing()
 	dispatchDesc.Height = gd.ClientFrameHeight;
 	dispatchDesc.Depth = 1;
 	commandList->DispatchRays(&dispatchDesc);
+	gd.gpucmd.ResBarrierTr(&gd.raytracing.DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	// 3D UI ���
 	{

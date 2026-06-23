@@ -9620,19 +9620,24 @@ void ParticleShader::InitShader()
 
 void ParticleShader::CreateRootSignature()
 {
-	CD3DX12_ROOT_PARAMETER rootParams[3];
+	CD3DX12_ROOT_PARAMETER rootParams[4];
 
 	// t0 : StructuredBuffer<Particle> (VS)
 	rootParams[0].InitAsShaderResourceView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
 	// b0 : ViewProj + CamRight + CamUp (VS)
-	rootParams[1].InitAsConstants(23, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParams[1].InitAsConstants(28, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
 
 	// t1 : Fire Texture (PS)
 	CD3DX12_DESCRIPTOR_RANGE srvRange;
 	srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1); // t1
 
 	rootParams[2].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	// t2 : Raytracing linear depth texture (PS)
+	CD3DX12_DESCRIPTOR_RANGE rtDepthRange;
+	rtDepthRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2); // t2
+	rootParams[3].InitAsDescriptorTable(1, &rtDepthRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	// s0 : Linear Sampler
 	CD3DX12_STATIC_SAMPLER_DESC samplerDesc(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
@@ -9737,6 +9742,12 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 	// t1 : Fire Texture SRV
 	cmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	cmd->SetGraphicsRootDescriptorTable(2, FireTexture->descindex.hRender.hgpu);
+	if (gd.isRaytracingRender) {
+		cmd->SetGraphicsRootDescriptorTable(3, gd.raytracing.MainDepth_SRV.hRender.hgpu);
+	}
+	else {
+		cmd->SetGraphicsRootDescriptorTable(3, gd.MainDS_SRV.hRender.hgpu);
+	}
 
 	// b0 : ViewProj + Cam vectors
 	matrix viewProj = gd.viewportArr[0].ViewMatrix;
@@ -9752,11 +9763,17 @@ void ParticleShader::Render(ID3D12GraphicsCommandList* cmd, GPUResource* particl
 	XMFLOAT3 camRight = invView.right.f3;
 	XMFLOAT3 camUp = invView.up.f3;
 	float pad0 = 0.0f;
+	float useRaytracingDepth = gd.isRaytracingRender ? 1.0f : 0.0f;
+	XMFLOAT3 camPos = gd.viewportArr[0].Camera_Pos.f3;
+	float pad1 = 0.0f;
 
 	cmd->SetGraphicsRoot32BitConstants(1, 16, &viewProj, 0);
 	cmd->SetGraphicsRoot32BitConstants(1, 3, &camRight, 16);
 	cmd->SetGraphicsRoot32BitConstants(1, 1, &pad0, 19);
 	cmd->SetGraphicsRoot32BitConstants(1, 3, &camUp, 20);
+	cmd->SetGraphicsRoot32BitConstants(1, 1, &useRaytracingDepth, 23);
+	cmd->SetGraphicsRoot32BitConstants(1, 3, &camPos, 24);
+	cmd->SetGraphicsRoot32BitConstants(1, 1, &pad1, 27);
 
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	cmd->DrawInstanced(particleCount * 6, 1, 0, 0);
