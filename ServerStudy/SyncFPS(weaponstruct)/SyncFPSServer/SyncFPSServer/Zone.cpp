@@ -525,26 +525,73 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // AllocPlayerIndexes(dst 버킷)?� ?�덱??불일�?-> ??player ?�바?�딩 ?�패(조작/카메??멈춤).
     player->zoneId = this->zoneId;
 
-    // Do not stack multiple players at the exact same portal/spawn coordinate. Overlapping player
-    // OBBs make the two-player case jitter or launch one another before their first movement tick.
-    vec4 resolvedSpawn = spawnPos;
-    constexpr float PlayerSpawnSpacing = 1.75f;
-    for (int attempt = 0; attempt < 8; ++attempt) {
-        bool occupied = false;
-        for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
-            if (Dynamic_gameObjects.isnull(i)) continue;
-            Player* existingPlayer = dynamic_cast<Player*>((GameObject*)Dynamic_gameObjects[i]);
-            if (existingPlayer == nullptr) continue;
-            const float dx = existingPlayer->worldMat.pos.x - resolvedSpawn.x;
-            const float dz = existingPlayer->worldMat.pos.z - resolvedSpawn.z;
-            if (dx * dx + dz * dz < PlayerSpawnSpacing * PlayerSpawnSpacing) {
-                occupied = true;
-                break;
-            }
-        }
-        if (!occupied) break;
-        resolvedSpawn.x += PlayerSpawnSpacing;
-    }
+	// Find a nearby unoccupied point that has actual collision geometry below it. The old code moved
+	// every overlapping player only along +X and could eventually place a transfer over a hole/ledge.
+	constexpr float PlayerSpawnSpacing = 1.75f;
+	const vec4 candidateOffsets[] = {
+		vec4(0, 0, 0, 0),
+		vec4(PlayerSpawnSpacing, 0, 0, 0), vec4(-PlayerSpawnSpacing, 0, 0, 0),
+		vec4(0, 0, PlayerSpawnSpacing, 0), vec4(0, 0, -PlayerSpawnSpacing, 0),
+		vec4(PlayerSpawnSpacing, 0, PlayerSpawnSpacing, 0), vec4(-PlayerSpawnSpacing, 0, PlayerSpawnSpacing, 0),
+		vec4(PlayerSpawnSpacing, 0, -PlayerSpawnSpacing, 0), vec4(-PlayerSpawnSpacing, 0, -PlayerSpawnSpacing, 0)
+	};
+
+	auto isOccupiedByPlayer = [&](const vec4& candidate) {
+		for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+			if (Dynamic_gameObjects.isnull(i)) continue;
+			Player* existingPlayer = dynamic_cast<Player*>((GameObject*)Dynamic_gameObjects[i]);
+			if (existingPlayer == nullptr || existingPlayer == player) continue;
+			const float dx = existingPlayer->worldMat.pos.x - candidate.x;
+			const float dz = existingPlayer->worldMat.pos.z - candidate.z;
+			if (dx * dx + dz * dz < PlayerSpawnSpacing * PlayerSpawnSpacing) return true;
+		}
+		return false;
+	};
+
+	auto projectToGround = [&](vec4& candidate) {
+		const float rayTop = map.AABB[1].y + 10.0f;
+		const float rayLength = max(20.0f, rayTop - map.AABB[0].y + 10.0f);
+		const vec4 rayOrigin(candidate.x, rayTop, candidate.z, 1.0f);
+		const vec4 rayDirection(0, -1, 0, 0);
+		bool found = false;
+		float bestDelta = FLT_MAX;
+		float bestGroundY = candidate.y;
+		for (StaticGameObject* mapObject : map.MapObjects) {
+			if (mapObject == nullptr) continue;
+			for (const BoundingOrientedBox& obb : mapObject->obbArr) {
+				float distance = 0.0f;
+				if (!obb.Intersects(rayOrigin, rayDirection, distance) || distance < 0.0f || distance > rayLength) continue;
+				const float groundY = rayTop - distance;
+				const float delta = fabsf(groundY - spawnPos.y);
+				if (delta < bestDelta) {
+					bestDelta = delta;
+					bestGroundY = groundY;
+					found = true;
+				}
+			}
+		}
+		if (found) candidate.y = bestGroundY + 0.15f;
+		candidate.w = 1.0f;
+		return found;
+	};
+
+	vec4 resolvedSpawn = spawnPos;
+	bool resolvedOnGround = false;
+	for (const vec4& offset : candidateOffsets) {
+		vec4 candidate = spawnPos + offset;
+		candidate.w = 1.0f;
+		if (isOccupiedByPlayer(candidate)) continue;
+		if (!projectToGround(candidate)) continue;
+		resolvedSpawn = candidate;
+		resolvedOnGround = true;
+		break;
+	}
+	if (!resolvedOnGround) {
+		// Preserve the requested transfer point if this map has no usable collision OBB at all.
+		// The below-world recovery in Player::Update remains the final safety net.
+		resolvedSpawn = spawnPos;
+		resolvedSpawn.w = 1.0f;
+	}
 
     // ��ġ ����
     player->worldMat.pos = resolvedSpawn;

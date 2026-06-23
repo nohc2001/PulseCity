@@ -3361,6 +3361,20 @@ void Player::StartReload(Zone* zones)
 void Player::Update(float deltaTime)
 {
 	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (zones == nullptr) return;
+
+	// A missed floor collision used to let a transferred player fall forever because only monsters
+	// had an out-of-world recovery. Respawn at the last validated zone-entry point once below the map.
+	const float recoveryY = zones->map.AABB[0].y - 5.0f;
+	if (!std::isfinite(worldMat.pos.x) || !std::isfinite(worldMat.pos.y) ||
+		!std::isfinite(worldMat.pos.z) || worldMat.pos.y < recoveryY) {
+		worldMat.pos = RespawnPosition;
+		worldMat.pos.w = 1.0f;
+		LVelocity = 0;
+		tickLVelocity = 0;
+		isGround = false;
+		collideCount = 0;
+	}
 	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
 	const bool wasReloading = ReloadRemain > 0.0f;
 	weapon[SelectedWeapon].Update(deltaTime);

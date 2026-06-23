@@ -7533,7 +7533,18 @@ READ_START:
 
 			if (DynmaicGameObjects[netObjIndex]) {
 				if (*(void**)DynmaicGameObjects[netObjIndex] != GameObjectType::vptr[header.type]) {
-					DynmaicGameObjects[netObjIndex]->SetRaytracingInstanceEnabled(false);
+					// A zone handoff may reuse the same network slot for a different object type.
+					// Release the old object instead of deleting it directly: Player owns independent
+					// weapon/drone TLAS instances which otherwise survive as weapon-only ghosts.
+					for (size_t k = 0; k < game.m_pendingSkinBoneInit.size();) {
+						if (game.m_pendingSkinBoneInit[k] == netObjIndex) game.m_pendingSkinBoneInit.erase(game.m_pendingSkinBoneInit.begin() + k);
+						else ++k;
+					}
+					for (size_t k = 0; k < game.m_pendingSkinRenderEnable.size();) {
+						if (game.m_pendingSkinRenderEnable[k] == netObjIndex) game.m_pendingSkinRenderEnable.erase(game.m_pendingSkinRenderEnable.begin() + k);
+						else ++k;
+					}
+					DynmaicGameObjects[netObjIndex]->Release();
 					delete DynmaicGameObjects[netObjIndex];
 					DynmaicGameObjects[netObjIndex] = nullptr;
 					switch (header.type) {

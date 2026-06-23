@@ -4112,6 +4112,17 @@ void Player::SetRaytracingVisualsEnabled(bool enabled)
 
 void Player::Render_ThirdPersonWeapon()
 {
+	Model* bodyModel = shape.GetModel();
+	const bool bodyReady = bodyModel != nullptr &&
+		(bodyModel->mNumSkinMesh == 0 || !BoneToWorldMatrixCB.empty()) &&
+		(!gd.isSupportRaytracing || RaytracingWorldMatInput_Model != nullptr);
+	// Attachments are separate render objects and can become visible even when a handoff left the
+	// skinned body waiting for GPU resources. Keep the whole visual atomic: never show only a gun.
+	if (!bodyReady) {
+		ClearThirdPersonWeaponVisuals();
+		return;
+	}
+
 	UpdateRaytracingWeaponVisibility();
 	if (tag[GameObjectTag::Tag_Enable] == false || m_weaponHolstered) {
 		ClearThirdPersonWeaponVisuals();
@@ -5157,32 +5168,6 @@ void Player::Release() {
 	}
 
 	SkinMeshGameObject::Release();
-
-	for (int i = 0; i < MaxWeapon; ++i) {
-		if (PlayerWeaponObj[i]) {
-			PlayerWeaponObj[i]->Release();
-			delete PlayerWeaponObj[i];
-			PlayerWeaponObj[i] = nullptr;
-		}
-	}
-	if (LeftHand) {
-		LeftHand->Release();
-		delete LeftHand;
-		LeftHand = nullptr;
-	}
-	for (int i = 0; i < 2; ++i) {
-		if (DronObj[i]) {
-			DronObj[i]->Release();
-			delete DronObj[i];
-			DronObj[i] = nullptr;
-		}
-		
-		if (Knife[i]) {
-			Knife[i]->Release();
-			delete Knife[i];
-			Knife[i] = nullptr;
-		}
-	}
 }
 
 void Portal::RecvSTC_SyncObj(char* data) {
