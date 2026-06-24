@@ -3837,6 +3837,11 @@ void Game::RenderBossPrototypeShield()
 	vec4 uvAnim = vec4(1.0f, 1.0f, 0.0f, 0.0f);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_UVAnim, 4, &uvAnim, 0);
 	MyWorldTextureShader->SetTextureCommand(shieldTexture);
+	if (gd.isRaytracingRender) {
+		vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+		depthInfo.w = 1.0f;
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_DepthInfo, 4, &depthInfo, 0);
+	}
 	BossPrototypeShieldMesh->Render(gd.gpucmd, 1);
 }
 
@@ -3868,6 +3873,11 @@ void Game::RenderAegisShieldVisuals()
 	gd.gpucmd.SetShader(MyWorldTextureShader);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_Camera, 16, &view, 0);
 	MyWorldTextureShader->SetTextureCommand(shieldTexture);
+	if (gd.isRaytracingRender) {
+		vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+		depthInfo.w = 1.0f;
+		gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_DepthInfo, 4, &depthInfo, 0);
+	}
 
 	for (AegisShieldVisual& visual : gAegisShieldVisuals) {
 		if (!visual.Active) continue;

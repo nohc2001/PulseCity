@@ -18,7 +18,13 @@ cbuffer TintCB : register(b0)
     float4 Tint;
 };
 
+cbuffer DepthInfoCB : register(b3)
+{
+    float4 CameraPosUseRayDepth;
+};
+
 Texture2D DiffuseTex : register(t0);
+Texture2D RayDepthTex : register(t1);
 SamplerState LinearSampler : register(s0);
 
 struct VSIn
@@ -34,6 +40,7 @@ struct VSOut
     float4 Position : SV_POSITION;
     float4 Color : COLOR;
     float2 UV : TEXCOORD0;
+    float3 WorldPos : TEXCOORD1;
 };
 
 VSOut VSMain(VSIn input)
@@ -43,11 +50,27 @@ VSOut VSMain(VSIn input)
     output.Position = mul(worldPos, ViewProj);
     output.Color = input.Color;
     output.UV = input.UV * UVAnim.xy + UVAnim.zw;
+    output.WorldPos = worldPos.xyz;
     return output;
 }
 
 float4 PSMain(VSOut input) : SV_Target
 {
+    if (CameraPosUseRayDepth.w > 0.5f)
+    {
+        int2 pixel = int2(input.Position.xy);
+        uint depthWidth = 0;
+        uint depthHeight = 0;
+        RayDepthTex.GetDimensions(depthWidth, depthHeight);
+        pixel = clamp(pixel, int2(0, 0), int2((int)depthWidth - 1, (int)depthHeight - 1));
+        float sceneDepth = RayDepthTex.Load(int3(pixel, 0)).r;
+        float effectDepth = saturate(length(input.WorldPos - CameraPosUseRayDepth.xyz) / 1000.0f);
+        if (sceneDepth < 0.9999f && effectDepth > sceneDepth + 0.0015f)
+        {
+            discard;
+        }
+    }
+
     float4 tex = DiffuseTex.Sample(LinearSampler, input.UV);
     float brightness = max(max(tex.r, tex.g), tex.b);
     float glowMask = saturate((brightness - 0.045f) * 2.8f);

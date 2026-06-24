@@ -3447,7 +3447,9 @@ public:
 		Const_Tint = 2,
 		Const_UVAnim = 3,
 		SRVTable_Texture = 4,
-		RootParamCapacity = 5,
+		SRVTable_RayDepth = 5,
+		Const_DepthInfo = 6,
+		RootParamCapacity = 7,
 	};
 };
 

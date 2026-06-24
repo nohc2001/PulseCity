@@ -7632,10 +7632,15 @@ void WorldTextureShader::CreateRootSignature()
 	rootParams[Const_Transform].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 	rootParams[Const_Tint].InitAsConstants(4, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParams[Const_UVAnim].InitAsConstants(4, 2, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParams[Const_DepthInfo].InitAsConstants(4, 3, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	CD3DX12_DESCRIPTOR_RANGE srvRange;
 	srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	rootParams[SRVTable_Texture].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	CD3DX12_DESCRIPTOR_RANGE depthRange;
+	depthRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	rootParams[SRVTable_RayDepth].InitAsDescriptorTable(1, &depthRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	CD3DX12_STATIC_SAMPLER_DESC samplerDesc(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -7730,6 +7735,15 @@ void WorldTextureShader::SetTextureCommand(GPUResource* texture)
 	gd.pDevice->CopyDescriptorsSimple(1, descH.hcpu, texture->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_Texture, descH.hgpu);
+	if (gd.isRaytracingRender) {
+		gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_RayDepth, gd.raytracing.MainDepth_SRV.hRender.hgpu);
+	}
+	else {
+		gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_RayDepth, gd.MainDS_SRV.hRender.hgpu);
+	}
+	vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+	depthInfo.w = 0.0f;
+	gd.gpucmd->SetGraphicsRoot32BitConstants(Const_DepthInfo, 4, &depthInfo, 0);
 }
 
 void WorldTextureShader::Release()
