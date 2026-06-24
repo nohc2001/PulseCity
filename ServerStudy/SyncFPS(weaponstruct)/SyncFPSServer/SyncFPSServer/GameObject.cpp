@@ -5952,14 +5952,14 @@ void World::Init() {
 	//Quest Table
 	{
 		Quest* q = new Quest(L"불법 개조 드론 20개 파괴", L"저 빌어먹을 [네온 하이브] 놈들이 드디어 미쳐 날뛰고 있어.\n놈들이 시장 외곽 폐기물 처리장에 불법 개조한 드론들을 풀어놨거든?\n방금 전에도 물건을 떼러 가던 내 조카가 다리를 뜯길 뻔했어.\n구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.\n네가 가서 그 쇳덩어리 개새끼들 20마리만 고철로 만들어 주면, \n 내 창고에 있는 최고급 방수 사이버웨어를 넘겨주지.어때?\n - 요구사항 : 불법 개조 드론 20개 파괴.");
-		q->PushReq(QuestType::KillMonster, 1, 1); // 1번째 몬스터 20마리 처치
+		q->PushReq(QuestType::KillMonster, 1, 20); // 1번째 몬스터 20마리 처치
 		q->PushReward(QuestRewardType::QRT_Exp, 0, 100);
 		constexpr int RewardItemID = 1;
 		q->PushReward(QuestRewardType::QRT_Item, RewardItemID, 1);
 		QuestTable.push_back(q);
 
 		q = new Quest(L"네온 하이브 조직원 30명 소탕", L"어이, 용병. 네가 개새끼들을 고철로 만든 게 네온 하이브 놈들 귀에 들어갔나 봐.\n방금 전 놈들이 내 진료소 문 앞에 '경고장'이랍시고 잘린 사람 손목을 던져두고 갔어.\n내 조카 녀석은 겁에 질려 울고 있고... 더는 못 참겠다.\n이 구역 놈들을 소탕해야 끝날 일이야.\n구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.\n그 녀석들을 닥치는 대로 소탕해줘. 한 30명쯤은 필요해.\n - 요구사항 : 네온 하이브 조직원 30명 소탕");
-		q->PushReq(QuestType::KillMonster, 0, 1); // 0번째 몬스터 30마리 처치
+		q->PushReq(QuestType::KillMonster, 0, 30); // 0번째 몬스터 30마리 처치
 		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
 		q->PushReward(QuestRewardType::QRT_Exp, 0, 200);
 		QuestTable.push_back(q);
