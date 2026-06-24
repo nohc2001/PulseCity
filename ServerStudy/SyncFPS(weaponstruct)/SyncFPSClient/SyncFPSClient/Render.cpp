@@ -1832,7 +1832,7 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 		
 		dbgc[0] += 1;
 		dbglog2(L"GPUResource %llx Created. dbgc0 = %d \n", gr.resource->GetGPUVirtualAddress(), dbgc[0]);
-		dbgbreak(dbgc[0] == 10522);
+		//dbgbreak(dbgc[0] == 10522);
 		
 #endif
 

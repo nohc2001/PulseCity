@@ -3432,6 +3432,25 @@ void Player::Update(float deltaTime)
 		isGround = false;
 		collideCount = 0;
 	}
+
+	if (World::IsDungeonZone(zoneId)) {
+		m_dungeonPositionLogFlow += deltaTime;
+		if (m_dungeonPositionLogFlow >= 10.0f) {
+			m_dungeonPositionLogFlow -= 10.0f;
+			printf("[DungeonPlayerPosition] zone=%d floor=%d client=%d object=%d pos=(%.6f, %.6f, %.6f)\n",
+				zoneId,
+				World::DungeonFloorOf(zoneId) + 1,
+				clientIndex,
+				gameworld.clients[clientIndex].objindex,
+				worldMat.pos.x,
+				worldMat.pos.y,
+				worldMat.pos.z);
+		}
+	}
+	else {
+		m_dungeonPositionLogFlow = 0.0f;
+	}
+
 	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
 	const bool wasReloading = ReloadRemain > 0.0f;
 	weapon[SelectedWeapon].Update(deltaTime);
@@ -4493,6 +4512,7 @@ Monster::Monster() {
 	m_targetPos = 0;
 	m_speed = 2.0f;
 	m_patrolRange = 20.0f;
+	m_detectionRange = 12.0f;
 	m_chaseRange = 10.0f;
 	m_patrolTimer = 0.0f;
 	m_fireDelay = 1.0f;
@@ -4525,6 +4545,7 @@ void Monster::ApplyMonsterData(MonsterType type)
 	Defense = data.Defense;
 	m_speed = data.MoveSpeed;
 	m_fireDelay = data.FireDelay;
+	m_detectionRange = data.DetectionRange;
 	m_chaseRange = data.ChaseRange;
 	for (int i = 0; i < (int)StatusEffectType::Max; ++i) {
 		StatusRemain[i] = 0.0f;
@@ -4545,6 +4566,7 @@ void Monster::ApplyMonsterData(MonsterType type)
 		<< " Defense=" << Defense
 		<< " Speed=" << m_speed
 		<< " FireDelay=" << m_fireDelay
+		<< " DetectionRange=" << m_detectionRange
 		<< " ChaseRange=" << m_chaseRange
 		<< endl;
 }
@@ -4603,10 +4625,20 @@ void Monster::Update(float deltaTime)
 		if (MoveByTail) {
 			bool b = CurrentTarget != nullptr;
 			if (b) {
-				if (vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 40)
+				const float currentTargetDistance = vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3;
+				vec4 sightStart = worldMat.pos;
+				vec4 sightEnd = CurrentTarget->worldMat.pos;
+				sightStart.y += 0.7f;
+				sightEnd.y += 0.9f;
+				const bool lostLineOfSight = zone->midHit() && !zone->HasStaticLineOfSight(sightStart, sightEnd);
+				if (currentTargetDistance > m_detectionRange || lostLineOfSight) {
 					CurrentTarget = nullptr;
+					LVelocity.x = 0.0f;
+					LVelocity.z = 0.0f;
+					m_isMove = false;
+				}
 
-				if (CurrentTarget != nullptr && vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 3) {
+				if (CurrentTarget != nullptr && currentTargetDistance > m_chaseRange) {
 					// Tail Move
 					vec4 minDir = 0;
 					float minDist = 999999999;
@@ -4643,6 +4675,7 @@ void Monster::Update(float deltaTime)
 					if (minDir.x != 0 || minDir.z != 0) {
 						LVelocity.x = minDir.x * 5;
 						LVelocity.z = minDir.z * 5;
+						m_isMove = true;
 						LookAt(vec4(minDir.x, 0, minDir.z, 0));
 						if (m_monsterType == MonsterType::Dron) {
 							LVelocity.y = minDir.y * 2;
@@ -4654,13 +4687,37 @@ void Monster::Update(float deltaTime)
 						}
 					}
 				}
+				else if (CurrentTarget != nullptr) {
+					// The target is already inside this monster's maximum attack range.
+					// Stop horizontal movement, but keep facing the target while firing.
+					LVelocity.x = 0.0f;
+					LVelocity.z = 0.0f;
+					m_isMove = false;
+					vec4 lookToTarget = CurrentTarget->worldMat.pos - worldMat.pos;
+					lookToTarget.y = 0.0f;
+					if (lookToTarget.len3 > 0.0001f) {
+						lookToTarget.len3 = 1.0f;
+						LookAt(lookToTarget);
+					}
+				}
 				// Attack while tail-chasing the current target (uses per-type m_chaseRange).
 				if (CurrentTarget != nullptr) {
 					vec4 atkMonsterPos = worldMat.pos; atkMonsterPos.w = 0;
 					vec4 atkPlayerPos = CurrentTarget->worldMat.pos; atkPlayerPos.w = 0;
 					float distanceToPlayer = vec4(atkPlayerPos - atkMonsterPos).len3;
 					m_fireTimer += deltaTime;
-					if (distanceToPlayer <= m_chaseRange && m_fireTimer >= m_fireDelay) {
+					vec4 aimToTarget = atkPlayerPos - atkMonsterPos;
+					aimToTarget.y = 0.0f;
+					if (aimToTarget.len3 > 0.0001f) {
+						aimToTarget.len3 = 1.0f;
+						LookAt(aimToTarget);
+					}
+					vec4 attackSightStart = atkMonsterPos + (worldMat.look * 0.5f);
+					attackSightStart.y += 0.7f;
+					vec4 attackSightEnd = atkPlayerPos;
+					attackSightEnd.y += 0.9f;
+					if (distanceToPlayer <= m_chaseRange && m_fireTimer >= m_fireDelay &&
+						zone->HasStaticLineOfSight(attackSightStart, attackSightEnd)) {
 						m_fireTimer = 0.0f;
 						vec4 rayStart = atkMonsterPos + (worldMat.look * 0.5f);
 						rayStart.y += 0.7f;
@@ -4964,7 +5021,12 @@ void Monster::Update(float deltaTime)
 							if (gc->SkinMesh_gameobjects[k]->tag[GameObjectTag::Tag_Player]) {
 								Player* p = (Player*)gc->SkinMesh_gameobjects[k];
 								float dist = vec4(p->worldMat.pos - worldMat.pos).fast_square_of_len3;
-								if (dist < CurrentDist) {
+								if (dist <= m_detectionRange * m_detectionRange && dist < CurrentDist) {
+									vec4 candidateSightStart = worldMat.pos;
+									vec4 candidateSightEnd = p->worldMat.pos;
+									candidateSightStart.y += 0.7f;
+									candidateSightEnd.y += 0.9f;
+									if (!zone->HasStaticLineOfSight(candidateSightStart, candidateSightEnd)) continue;
 									// 만약 이 플레이어를 따라갈 수 있다면 채택함.
 									CurrentDist = dist;
 									CurrentTarget = p;
@@ -6540,9 +6602,24 @@ void World::ResetDungeonInstance(int instanceIndex) {
 			if (obj == nullptr) continue;
 			if (GameObjectType::VptrToTypeTable[*(void**)obj] != GameObjectType::_Monster) continue;
 			Monster* mon = (Monster*)obj;
+			mon->worldMat.pos = mon->m_homePos;
+			mon->worldMat.pos.w = 1.0f;
+			mon->LVelocity = 0;
+			mon->tickLVelocity = 0;
+			mon->Target = nullptr;
+			mon->TargetClientIndex = -1;
+			mon->CurrentTarget = nullptr;
+			mon->m_isMove = false;
+			mon->isGround = false;
+			mon->collideCount = 0;
+			mon->m_fireTimer = 0.0f;
+			mon->path.clear();
+			mon->currentPathIndex = 0;
+			mon->dronYMover = -1.0f;
 			mon->HP = mon->MaxHP;
 			mon->isDead = false;
 			mon->respawntimer = 0.0f;
+			z->Sending_ChangeGameObjectMember<matrix>(z->CommonSDS, oi, mon, GameObjectType::_Monster, &mon->worldMat);
 			z->Sending_ChangeGameObjectMember<float>(z->CommonSDS, oi, mon, GameObjectType::_Monster, &mon->HP);
 			z->Sending_ChangeGameObjectMember<bool>(z->CommonSDS, oi, mon, GameObjectType::_Monster, &mon->isDead);
 		}

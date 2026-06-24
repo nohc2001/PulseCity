@@ -1192,24 +1192,93 @@ void Zone::SpawnObjects() {
         return;
     }
 
-    // [dungeon 1F] three Walkers in a row (z-1 / z / z+1), 2 units along +X from the player spawn (zone center).
-    // Keyed on floor index, so it applies identically to every instance's 1F (zones 100 and 103).
-    if (World::DungeonFloorOf(zoneId) == 0) {
-        float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
-        float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
-        float my = map.AABB[0].y + 2.0f;   // a bit above the floor; gravity settles it
-        const float dz[3] = { 0.0f, -1.0f, 1.0f };
-        for (int k = 0; k < 3; ++k) {
-            Monster* walker = new Monster();
-            walker->zone = this;
-            walker->ApplyMonsterData(MonsterType::Walker);
-            walker->Init(XMMatrixTranslation(cx + 3.0f, my, cz + 1.5f * dz[k]));
-            NewObject(walker, GameObjectType::_Monster);
-            PushGameObject(walker);
-        }
+    // Authored dungeon encounters. Floor-relative lookup applies the same layout to every instance
+    // (1F: zones 100/103, 2F: zones 101/104).
+    struct DungeonMonsterSpawn {
+        float x;
+        float y;
+        float z;
+        MonsterType type;
+    };
+
+    static const DungeonMonsterSpawn floor1Spawns[] = {
+        {  9.778060f, 0.000519663f, -5.159610f, MonsterType::Walker },
+        { 18.905900f, 0.000519663f,  4.714100f, MonsterType::Dron },
+        { 21.857500f, 0.000519663f,  4.453740f, MonsterType::Walker },
+        { 26.433600f, 0.000519663f,  4.545720f, MonsterType::Walker },
+        { 29.714100f, 0.000519663f,  4.632470f, MonsterType::Dron },
+        { 35.985600f, 0.000519663f,  5.395670f, MonsterType::Walker },
+        { 48.372700f, 0.000519663f, -4.088730f, MonsterType::Walker },
+        { 49.024700f, 0.000519812f,  3.972830f, MonsterType::Walker },
+        { 87.600500f, 0.001535480f, -1.743190f, MonsterType::Tower },
+        { 87.242800f, 0.001535480f,  5.829840f, MonsterType::Tower },
+        { 82.627200f, 0.001535480f,  2.086210f, MonsterType::Dron },
+        { 76.703100f, 0.001535480f, -8.439830f, MonsterType::Dron },
+        { 79.607900f, 0.001535480f,  8.405950f, MonsterType::Dron },
+        { 70.321000f, 0.001535480f, -4.651460f, MonsterType::Walker },
+        { 68.871700f, 0.001535480f,  5.623430f, MonsterType::Walker },
+    };
+
+    static const DungeonMonsterSpawn floor2Spawns[] = {
+        {  4.240287f, 0.000003f,  16.918861f, MonsterType::Walker },
+        {  3.684668f, 0.000003f,  21.824299f, MonsterType::Walker },
+        { 11.966350f, 0.000003f,  36.025875f, MonsterType::Walker },
+        {  8.017022f, 0.000003f,  36.429222f, MonsterType::Walker },
+        {  3.462176f, 0.000003f,  36.585659f, MonsterType::Walker },
+        {  6.092047f, 0.000003f,  34.628666f, MonsterType::Dron },
+        { 12.511595f, 0.000003f,  25.252321f, MonsterType::Walker },
+        { 24.116798f, 0.000003f,  25.271654f, MonsterType::Walker },
+        { 33.501431f, 0.000003f,  42.163155f, MonsterType::Tower },
+        { 30.040163f, 0.000003f,  36.180153f, MonsterType::Walker },
+        { 33.316177f, 0.000003f,  35.929935f, MonsterType::Walker },
+        { 34.942810f, 0.000003f,  11.285800f, MonsterType::Walker },
+        { 35.100456f, 0.000003f,  -3.967926f, MonsterType::Walker },
+        { 35.392277f, 0.000003f, -14.959900f, MonsterType::Walker },
+        { 26.877350f, 0.000003f, -37.526867f, MonsterType::Tower },
+        { 33.936455f, 0.000003f, -37.600906f, MonsterType::Tower },
+        { 25.923662f, 0.000003f, -25.432598f, MonsterType::Walker },
+        {  3.964708f, 0.000003f, -18.774250f, MonsterType::Walker },
+        {  3.112073f, 0.000003f, -36.245464f, MonsterType::Walker },
+        {  5.419881f, 0.000003f, -37.298618f, MonsterType::Dron },
+        {  8.035828f, 0.000003f, -37.527870f, MonsterType::Walker },
+        { 24.503082f, 0.000103f,  -8.579535f, MonsterType::Tower },
+        { 25.782061f, 0.000103f,   1.242378f, MonsterType::Tower },
+        { 25.313511f, 0.000103f,   7.457912f, MonsterType::Tower },
+        { 21.344788f, 0.000103f,   9.800833f, MonsterType::Dron },
+        { 20.967888f, 0.000103f,   4.658516f, MonsterType::Dron },
+        { 21.737417f, 0.000103f,  -0.209088f, MonsterType::Dron },
+        { 22.498026f, 0.000103f,  -8.474378f, MonsterType::Dron },
+        { 16.379841f, 0.000103f,  -5.014564f, MonsterType::Walker },
+        { 15.956636f, 0.000103f,   7.480042f, MonsterType::Walker },
+    };
+
+    const int dungeonFloor = World::DungeonFloorOf(zoneId);
+    const DungeonMonsterSpawn* dungeonSpawns = nullptr;
+    size_t dungeonSpawnCount = 0;
+    if (dungeonFloor == 0) {
+        dungeonSpawns = floor1Spawns;
+        dungeonSpawnCount = _countof(floor1Spawns);
+    }
+    else if (dungeonFloor == 1) {
+        dungeonSpawns = floor2Spawns;
+        dungeonSpawnCount = _countof(floor2Spawns);
     }
 
-    // 1F/2F (any instance) intentionally contain no random open-world monsters.
+    for (size_t i = 0; i < dungeonSpawnCount; ++i) {
+        const DungeonMonsterSpawn& spawn = dungeonSpawns[i];
+        Monster* monster = new Monster();
+        monster->zone = this;
+        monster->ApplyMonsterData(spawn.type);
+        monster->Init(XMMatrixTranslation(spawn.x, spawn.y, spawn.z));
+        NewObject(monster, GameObjectType::_Monster);
+        PushGameObject(monster);
+    }
+    if (dungeonSpawnCount > 0) {
+        cout << "[DungeonSpawn] zone=" << zoneId << " floor=" << (dungeonFloor + 1)
+             << " monsters=" << dungeonSpawnCount << endl;
+    }
+
+    // Dungeon floors intentionally contain no random open-world monsters.
     if (World::IsDungeonZone(zoneId)) return;
 
     // [monsters] populate the player's spawn zone (73) with monsters at the ZONE CENTER (not origin),
@@ -1307,6 +1376,39 @@ void Zone::GridCollisionCheck() {
         //}
         node->cango = !blocked;
     }
+}
+
+bool Zone::HasStaticLineOfSight(vec4 rayStart, vec4 rayEnd) {
+    vec4 rayDirection = rayEnd - rayStart;
+    rayDirection.w = 0.0f;
+    const float targetDistance = rayDirection.len3;
+    if (targetDistance <= 0.0001f) return true;
+    rayDirection.len3 = 1.0f;
+
+    // Ignore contact at the actor and target endpoints. Only geometry strictly between them blocks sight.
+    constexpr float originEpsilon = 0.05f;
+    constexpr float targetEpsilon = 0.10f;
+    for (int i = 0; i < Static_gameObjects.size; ++i) {
+        if (Static_gameObjects.isnull(i)) continue;
+        StaticGameObject* obj = Static_gameObjects[i];
+        if (obj == nullptr) continue;
+
+        auto BlocksSight = [&](const BoundingOrientedBox& obb) {
+            float hitDistance = 0.0f;
+            return obb.Intersects(rayStart, rayDirection, hitDistance) &&
+                hitDistance > originEpsilon && hitDistance < targetDistance - targetEpsilon;
+        };
+
+        if (!obj->obbArr.empty()) {
+            for (const BoundingOrientedBox& obb : obj->obbArr) {
+                if (BlocksSight(obb)) return false;
+            }
+        }
+        else if (BlocksSight(obj->GetOBB())) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage) {

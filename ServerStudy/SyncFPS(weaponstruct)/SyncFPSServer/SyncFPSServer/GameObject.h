@@ -991,6 +991,8 @@ struct Player : public SkinMeshGameObject {
 	// Independent safety point for invalid coordinates / falling below the map. Only Zone::AddPlayer
 	// updates it, so changing the death respawn destination never redirects error recovery.
 	vec4 RecoveryPosition = vec4(0, 0, 0, 1);
+	// Debug aid for authoring dungeon monster spawn positions.
+	float m_dungeonPositionLogFlow = 0.0f;
 	bool m_frostPassiveUsed = false;
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
@@ -1341,14 +1343,15 @@ struct MonsterData {
 	float Defense;
 	float MoveSpeed;
 	float FireDelay;
+	float DetectionRange;
 	float ChaseRange;
 	int ExpReward;
 };
 
 static MonsterData GMonsterTable[] = {
-	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f, 8.0f, 50 },
-	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f, 14.0f, 70 },
-	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f, 22.0f, 100 },
+	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f, 40.0f, 8.0f, 50 },
+	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f, 40.0f, 14.0f, 70 },
+	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f, 40.0f, 22.0f, 100 },
 };
 
 inline const MonsterData& GetMonsterData(MonsterType type) {
@@ -1385,6 +1388,7 @@ struct Monster : public SkinMeshGameObject {
 	// OBB.Center
 	float m_patrolRange = 20.0f;
 	// OBB.Center
+	float m_detectionRange = 12.0f;
 	float m_chaseRange = 10.0f;
 	float handoffCooldown = 0.0f;
 	// ServerOnly 상태
@@ -2135,6 +2139,7 @@ struct Zone {
 
 	// OBB.Center
 
+	bool HasStaticLineOfSight(vec4 rayStart, vec4 rayEnd);
 	void FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage);
 	void FirePiercingRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, float rayDistance, float damage);
 	int ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 position, vec4 direction, float range, float radius, float damage, std::vector<GameObject*>* hitTargets = nullptr);
