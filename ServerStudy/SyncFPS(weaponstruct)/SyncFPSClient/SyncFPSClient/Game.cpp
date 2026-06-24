@@ -4713,6 +4713,11 @@ void Game::Init()
 		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"저 큰 사거리 옆 파란색 큰 건물단지 안에 그들의 건물이 있어.")); // 25
 		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"겁 먹지 말고, 어서 가봐.", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 27))); // 26
 		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 27
+
+		// 엔딩 : 마지막 퀘스트 완료 후 사일러스 대화 (마지막 줄 '닫는다' 클릭 시 서버가 스탯포인트 10 지급)
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"결국 해냈군.")); // 28
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"아무리 실력이 좋아도 단번에 하이브 타워를 격파할 줄이야.")); // 29
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"대단하군. 이걸주지.", false, TalkSelection(L"닫기", false, 0))); // 30
 	}
 
 	StaticGameObjects.reserve(Zone::MaxStaticObjectCount * 9); // 1MB
@@ -6537,6 +6542,7 @@ void Game::Render() {
 		RenderQuestCompleteShow();
 		RenderQuestPrograssShow();
 	}
+	RenderDungeonDeathHUD();
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
 	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
@@ -7056,6 +7062,7 @@ void Game::Render_RayTracing()
 		RenderQuestCompleteShow();
 		RenderQuestPrograssShow();
 	}
+	RenderDungeonDeathHUD();
 	
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
@@ -8582,12 +8589,18 @@ READ_START:
 		game.UITourID += 1;
 		for (int i = 0; i < game.QuestArr.size(); ++i) {
 			if (game.QuestArr[i] == header.QuestID) {
+				const int completedQuestId = game.QuestArr[i];
+				if (i < game.QuestPrograss.size()) {
+					delete game.QuestPrograss[i];
+					game.QuestPrograss.erase(game.QuestPrograss.begin() + i);
+				}
 				game.QuestArr.erase(game.QuestArr.begin() + i);
-				game.QuestPrograss.erase(game.QuestPrograss.begin() + i);
 				// 퀘스트 완수 처리
 				QuestCompleteShowFlow = 4.0f;
-				CurrentCompleteQuest = game.QuestTable[game.QuestArr[i]];
+				CurrentCompleteQuest = (completedQuestId >= 0 && completedQuestId < game.QuestTable.size())
+					? game.QuestTable[completedQuestId] : nullptr;
 				game.mainPageStack.clear();
+				break;
 			}
 		}
 		currentPivot += header.size;

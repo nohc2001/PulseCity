@@ -4114,6 +4114,19 @@ void Player::GrantLevel(int count)
 	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatPoint);
 }
 
+void Player::GrantStatPoint(int count)
+{
+	if (count <= 0) return;
+	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (zones == nullptr) zones = zone;
+	if (zones == nullptr || clientIndex < 0 || clientIndex >= gameworld.clients.size || gameworld.clients.isnull(clientIndex)) return;
+	SendDataSaver& ownerSDS = gameworld.clients[clientIndex].PersonalSDS;
+	int objindex = gameworld.clients[clientIndex].objindex;
+
+	StatPoint += count;
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatPoint);
+}
+
 bool Player::TrySpendStatPoint(PlayerStatType stat)
 {
 	if (StatPoint <= 0 || stat < PlayerStatType::HP || stat >= PlayerStatType::Max) return false;
@@ -5778,6 +5791,10 @@ void PeacefulNPC::Update(float deltaTime) {
 
 					bool PressE = pgo->InputBuffer[InputID::KeyboardTab];
 					if ((PressE && distance.len3 < TalkRange) && pgo->PresentTalkID == -1) {
+						// [silas] Spawn the dungeon-entry portal the moment the player starts talking to Silas (NPCID 1).
+						if (this->NPCID == 1 && zone != nullptr) {
+							zone->SpawnPortal(true);
+						}
 
 						// 만약 NPC와의 대화가 퀘스트의 요구사항이면 완료시킨다.
 						for (int pi = 0; pi < pgo->QuestPrograss.size(); ++pi) {
@@ -5993,6 +6010,15 @@ void World::InitCommonMap() {
 		<< " MapObjectCount=" << commonMap.MapObjects.size() << endl;
 }
 
+// [silas] Ending reward: invoked when the player closes Silas's final dialogue (talk 28, mod 'f').
+// Grants 10 stat points exactly once, guarded by CompleteQuestBitArr[10].
+static void SilasEndingReward(Player* p) {
+	if (p == nullptr) return;
+	if (p->CompleteQuestBitArr[10] == true) return; // already rewarded
+	p->CompleteQuestBitArr[10] = true;
+	p->GrantStatPoint(10);
+}
+
 void World::Init() {
 	gameworld.TIMER_STATICINIT();
 
@@ -6083,6 +6109,11 @@ void World::Init() {
 		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"저 큰 사거리 옆 파란색 큰 건물단지 안에 그들의 건물이 있어.")); // 25
 		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"겁 먹지 말고, 어서 가봐.")); // 26
 		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 27
+
+		// 엔딩 : 마지막 퀘스트(하이브 타워 격파) 완료 후 사일러스 대화 -> 스탯포인트 10 지급
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"결국 해냈군.", false, TalkSelection(L"닫기", 'f', reinterpret_cast<ui64>(&SilasEndingReward)))); // 28
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"아무리 실력이 좋아도 단번에 하이브 타워를 격파할 줄이야.")); // 29
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"대단하군. 이걸주지.", true)); // 30
 	}
 
 	{
@@ -6287,7 +6318,7 @@ void World::Init() {
 		z->GridCollisionCheck();
 		z->SpawnObjects();
 		z->Spawnboundary();
-		z->SpawnPortal();   // [party/dungeon] dungeon-entry portal (open-world zones only; skips dungeon)
+		z->SpawnPortal(true);   // [TEST] unconditionally spawn the dungeon-entry portal at startup (no Silas/quest condition)
 	}
 }
 
@@ -7478,6 +7509,15 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->RecalculateStatsFromJob(true);
 	p->dungeonReturnZoneId = data.dungeonReturnZoneId;
 	p->dungeonReturnPosition = data.dungeonReturnPosition;
+	p->CompleteQuestBitArr[3] = data.finalQuestComplete;
+	p->CompleteQuestBitArr[10] = data.endingRewardClaimed;
+	p->PrograssQuestBitArr[3] = data.finalQuestActive;
+	if (data.finalQuestActive && QuestTable.size() > 3 && QuestTable[3] != nullptr) {
+		Quest* finalQuestProgress = new Quest();
+		QuestTable[3]->Copy(finalQuestProgress);
+		p->QuestArr.push_back(3);
+		p->QuestPrograss.push_back(finalQuestProgress);
+	}
 
 	p->m_yaw = data.yaw;
 	p->m_pitch = data.pitch;
@@ -7587,6 +7627,7 @@ int World::GetStartTalk(Player* p, PeacefulNPC* npc)
 		//사일러스
 		if (p->CompleteQuestBitArr[2] == false) return -1;
 		if (p->PrograssQuestBitArr[3] == false && p->CompleteQuestBitArr[3] == false) return 18;
+		if (p->CompleteQuestBitArr[3] == true) return 28; // 엔딩 대화 (스탯포인트 10 지급)
 	}
 	return -1;
 }
@@ -7815,7 +7856,25 @@ void World::ProcessDungeonExits() {
 			Player* player = clients[ci].pObjData;
 			if (player == nullptr) continue;
 
-			int returnZoneId = player->dungeonReturnZoneId;
+			// [silas] On dungeon success (boss killed -> CompleteDungeonForZone), close out the last
+				// quest (id 3 "하이브 타워 격파" / DungeonClear): reward + remove + mark complete.
+				if (instance.result == DungeonResultCode::Success) {
+					int q3idx = -1;
+					for (int qi = 0; qi < (int)player->QuestArr.size(); ++qi) {
+						if (player->QuestArr[qi] == 3) { q3idx = qi; break; }
+					}
+					if (q3idx >= 0) {
+						player->RewardQuest(player->QuestPrograss[q3idx]);
+						Zone* dz = GetClientZone(ci);
+						if (dz != nullptr) dz->Sending_DeleteQuest(clients[ci].PersonalSDS, 3);
+						player->EraseQuest(q3idx);
+						player->PrograssQuestBitArr[3] = false;
+						player->CompleteQuestBitArr[3] = true;
+						cout << "[DungeonQuest] completed quest 3 for party member client=" << ci << endl;
+					}
+				}
+
+				int returnZoneId = player->dungeonReturnZoneId;
 			vec4 returnPosition = player->dungeonReturnPosition;
 			bool validReturn = returnZoneId >= 0 && returnZoneId < (int)ZoneTable.size() &&
 				!IsDungeonZone(returnZoneId) && ZoneTable[returnZoneId] != nullptr;
@@ -7910,6 +7969,14 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		data.StatAttack = player->StatAttack;
 		data.dungeonReturnZoneId = player->dungeonReturnZoneId;
 		data.dungeonReturnPosition = player->dungeonReturnPosition;
+		data.finalQuestComplete = player->CompleteQuestBitArr[3];
+		data.endingRewardClaimed = player->CompleteQuestBitArr[10];
+		for (int qi = 0; qi < (int)player->QuestArr.size(); ++qi) {
+			if (player->QuestArr[qi] == 3) {
+				data.finalQuestActive = true;
+				break;
+			}
+		}
 
 		if (SendPlayerTransferToServer(data) == false) {
 			cout << "[ZoneMove] remote transfer send failed. dstZone=" << dstZoneId << endl;

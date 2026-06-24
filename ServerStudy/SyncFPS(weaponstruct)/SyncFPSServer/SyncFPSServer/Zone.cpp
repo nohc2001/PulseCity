@@ -720,8 +720,10 @@ void Zone::SpawnPortal(bool notifyClients) {
 	}
     if (isEntry) {
         // [silas] Fixed dungeon-entry portal location in zone 83 (absolute world coords).
+        // [TEST] yaw the portal 90 degrees so it faces the perpendicular direction.
         portal->worldMat =
             XMMatrixScaling(2.0f, 3.0f, 2.0f) *
+            XMMatrixRotationY(XM_PIDIV2) *
             XMMatrixTranslation(-613.496094f, 1.000471f, 1099.427979f);
     }
     else {
@@ -1238,18 +1240,18 @@ void Zone::SpawnObjects() {
 
     static const DungeonMonsterSpawn floor1Spawns[] = {
         {  9.778060f, 0.000519663f, -5.159610f, MonsterType::Walker },
-        { 18.905900f, 0.000519663f,  4.714100f, MonsterType::Dron },
+        { 18.905900f, 0.000519663f,  4.714100f, MonsterType::Walker },
         { 21.857500f, 0.000519663f,  4.453740f, MonsterType::Walker },
         { 26.433600f, 0.000519663f,  4.545720f, MonsterType::Walker },
-        { 29.714100f, 0.000519663f,  4.632470f, MonsterType::Dron },
+        { 29.714100f, 0.000519663f,  4.632470f, MonsterType::Walker },
         { 35.985600f, 0.000519663f,  5.395670f, MonsterType::Walker },
         { 48.372700f, 0.000519663f, -4.088730f, MonsterType::Walker },
         { 49.024700f, 0.000519812f,  3.972830f, MonsterType::Walker },
         { 87.600500f, 0.001535480f, -1.743190f, MonsterType::Tower },
         { 87.242800f, 0.001535480f,  5.829840f, MonsterType::Tower },
-        { 82.627200f, 0.001535480f,  2.086210f, MonsterType::Dron },
-        { 76.703100f, 0.001535480f, -8.439830f, MonsterType::Dron },
-        { 79.607900f, 0.001535480f,  8.405950f, MonsterType::Dron },
+        { 82.627200f, 0.001535480f,  2.086210f, MonsterType::Tower },
+        { 76.703100f, 0.001535480f, -8.439830f, MonsterType::Tower },
+        { 79.607900f, 0.001535480f,  8.405950f, MonsterType::Walker },
         { 70.321000f, 0.001535480f, -4.651460f, MonsterType::Walker },
         { 68.871700f, 0.001535480f,  5.623430f, MonsterType::Walker },
     };
@@ -1260,7 +1262,7 @@ void Zone::SpawnObjects() {
         { 11.966350f, 0.000003f,  36.025875f, MonsterType::Walker },
         {  8.017022f, 0.000003f,  36.429222f, MonsterType::Walker },
         {  3.462176f, 0.000003f,  36.585659f, MonsterType::Walker },
-        {  6.092047f, 0.000003f,  34.628666f, MonsterType::Dron },
+        {  6.092047f, 0.000003f,  34.628666f, MonsterType::Tower },
         { 12.511595f, 0.000003f,  25.252321f, MonsterType::Walker },
         { 24.116798f, 0.000003f,  25.271654f, MonsterType::Walker },
         { 33.501431f, 0.000003f,  42.163155f, MonsterType::Tower },
@@ -1274,15 +1276,15 @@ void Zone::SpawnObjects() {
         { 25.923662f, 0.000003f, -25.432598f, MonsterType::Walker },
         {  3.964708f, 0.000003f, -18.774250f, MonsterType::Walker },
         {  3.112073f, 0.000003f, -36.245464f, MonsterType::Walker },
-        {  5.419881f, 0.000003f, -37.298618f, MonsterType::Dron },
+        {  5.419881f, 0.000003f, -37.298618f, MonsterType::Tower },
         {  8.035828f, 0.000003f, -37.527870f, MonsterType::Walker },
         { 24.503082f, 0.000103f,  -8.579535f, MonsterType::Tower },
         { 25.782061f, 0.000103f,   1.242378f, MonsterType::Tower },
         { 25.313511f, 0.000103f,   7.457912f, MonsterType::Tower },
-        { 21.344788f, 0.000103f,   9.800833f, MonsterType::Dron },
-        { 20.967888f, 0.000103f,   4.658516f, MonsterType::Dron },
-        { 21.737417f, 0.000103f,  -0.209088f, MonsterType::Dron },
-        { 22.498026f, 0.000103f,  -8.474378f, MonsterType::Dron },
+        { 21.344788f, 0.000103f,   9.800833f, MonsterType::Walker },
+        { 20.967888f, 0.000103f,   4.658516f, MonsterType::Walker },
+        { 21.737417f, 0.000103f,  -0.209088f, MonsterType::Walker },
+        { 22.498026f, 0.000103f,  -8.474378f, MonsterType::Walker },
         { 16.379841f, 0.000103f,  -5.014564f, MonsterType::Walker },
         { 15.956636f, 0.000103f,   7.480042f, MonsterType::Walker },
     };

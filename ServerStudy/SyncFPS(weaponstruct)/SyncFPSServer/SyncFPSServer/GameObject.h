@@ -838,6 +838,7 @@ struct Quest {
 		dest->QuestName = QuestName;
 		dest->QuestDesc = QuestDesc;
 		dest->requp = requp;
+		dest->rewardUp = rewardUp;
 		for (int i = 0; i < dest->requp; ++i) {
 			ReqArr[i].Copy(&dest->ReqArr[i]);
 		}
@@ -1225,6 +1226,7 @@ struct Player : public SkinMeshGameObject {
 
 	void AddExp(int delta);
 	void GrantLevel(int count = 1);
+	void GrantStatPoint(int count); // [silas] grant stat points only (no level change)
 	bool TrySpendStatPoint(PlayerStatType stat);
 	void RecalculateStatsFromJob(bool preserveHpRate = true);
 	float GetAttackDamageMultiplier() const;

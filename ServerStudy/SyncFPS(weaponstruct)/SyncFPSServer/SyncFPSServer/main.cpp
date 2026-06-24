@@ -560,7 +560,9 @@ READ_START:
 				p->QuestArr.push_back(ts.AddQuest);
 				zone->Sending_AddQuest(gameworld.clients[p->clientIndex].PersonalSDS, ts.AddQuest);
 				p->PrograssQuestBitArr[ts.AddQuest] = true;
-				p->QuestPrograss.push_back(gameworld.QuestTable[ts.AddQuest]);
+				Quest* progress = new Quest();
+				gameworld.QuestTable[ts.AddQuest]->Copy(progress);
+				p->QuestPrograss.push_back(progress);
 				p->PresentTalkID = -1;
 				// [silas] Accepting Silas's quest (id 3) unlocks the dungeon-entry portal in this open-world zone.
 				if (ts.AddQuest == 3 && zone != nullptr) {

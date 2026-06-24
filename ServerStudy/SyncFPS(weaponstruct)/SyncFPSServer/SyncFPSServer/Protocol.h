@@ -702,6 +702,11 @@ struct PlayerTransferData {
 	int originZoneId = -1;
 	int dungeonReturnZoneId = -1;
 	vec4 dungeonReturnPosition = vec4(0, 0, 0, 1);
+	// Quest 3 must survive the open-world <-> dungeon server handoff. Without these fields,
+	// non-killing party members arrive with an empty quest list and cannot receive completion.
+	bool finalQuestActive = false;
+	bool finalQuestComplete = false;
+	bool endingRewardClaimed = false;
 };
 
 struct CTS_ServerPlayerTransfer_Header {
