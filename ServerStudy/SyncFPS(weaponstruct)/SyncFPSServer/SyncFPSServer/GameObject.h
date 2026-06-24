@@ -2086,7 +2086,8 @@ struct Zone {
 
 	// OBB.Center
 
-	void SpawnPortal();
+	void SpawnPortal(bool notifyClients = false);
+	void UpdateDungeonPortalUnlock();
 	void Spawnboundary();
 	void CheckPortalCollision(Player* p);
 	void CheckBoundaryCrossing(Player* p, float deltaTime);

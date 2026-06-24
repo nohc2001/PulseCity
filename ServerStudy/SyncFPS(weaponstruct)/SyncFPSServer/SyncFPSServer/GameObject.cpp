@@ -13,7 +13,7 @@ namespace {
 	// MAIN-MAP RESPAWN CONFIG ---------------------------------------------------------------
 	// Change this one position to move the shared open-world respawn point. The server resolves
 	// the destination zone automatically from X/Z. Current value is the center of zone 73.
-	const vec4 MainMapRespawnPosition(-525.0f, 10.0f, 875.0f, 1.0f);
+	const vec4 MainMapRespawnPosition(-485.945465f, 2.599983f, 875.068848f, 1.0f);
 	const int MainMapRespawnZoneIds[] = { 73, 74, 83, 84 };
 }
 
@@ -3435,22 +3435,18 @@ void Player::Update(float deltaTime)
 		collideCount = 0;
 	}
 
-	if (World::IsDungeonZone(zoneId)) {
-		m_dungeonPositionLogFlow += deltaTime;
-		if (m_dungeonPositionLogFlow >= 10.0f) {
-			m_dungeonPositionLogFlow -= 10.0f;
-			printf("[DungeonPlayerPosition] zone=%d floor=%d client=%d object=%d pos=(%.6f, %.6f, %.6f)\n",
-				zoneId,
-				World::DungeonFloorOf(zoneId) + 1,
-				clientIndex,
-				gameworld.clients[clientIndex].objindex,
-				worldMat.pos.x,
-				worldMat.pos.y,
-				worldMat.pos.z);
-		}
-	}
-	else {
-		m_dungeonPositionLogFlow = 0.0f;
+	// [debug] print this player's exact position to the server console every 10s in ANY zone (placement aid).
+	m_dungeonPositionLogFlow += deltaTime;
+	if (m_dungeonPositionLogFlow >= 10.0f) {
+		m_dungeonPositionLogFlow -= 10.0f;
+		printf("[PlayerPosition] zone=%d floor=%d client=%d object=%d pos=(%.6f, %.6f, %.6f)\n",
+			zoneId,
+			World::DungeonFloorOf(zoneId) + 1,
+			clientIndex,
+			gameworld.clients[clientIndex].objindex,
+			worldMat.pos.x,
+			worldMat.pos.y,
+			worldMat.pos.z);
 	}
 
 	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
@@ -5824,7 +5820,9 @@ void PeacefulNPC::Update(float deltaTime) {
 							}
 						}
 
-						if (QuestCompleteExist == false) {
+						// [quest gate] Only offer a NEW quest when the player is holding none, so quests can't be
+						// stacked (stacking froze the UI). Turn-in + TalkNPC progress above still run; first quest is allowed.
+						if (QuestCompleteExist == false && pgo->QuestArr.size() == 0) {
 							// 특정 함수를 통해 StartID를 반환해야 함.
 							// 만약 StartID를 반환하지 않으면 
 							int StartID = gameworld.GetStartTalk(pgo, this);
@@ -6670,6 +6668,11 @@ void World::ResetDungeonInstance(int instanceIndex) {
 		if (!IsZoneOwned(zid)) continue;
 		Zone* z = ZoneTable[zid];
 		if (z == nullptr) continue;
+
+		// A cleared floor's portal belongs only to the completed run. The instance is empty here,
+		// so remove it before reviving monsters; the next party must clear the floor again.
+		for (Portal* portal : z->portals) delete portal;
+		z->portals.clear();
 
 		// revive every monster on this floor.
 		for (int oi = 0; oi < z->Dynamic_gameObjects.size; ++oi) {
@@ -7559,7 +7562,7 @@ void World::PrintOffset() {
 	ofs << "Monster" << endl;
 	ofs << GameObject::g_member.size() + DynamicGameObject::g_member.size() + SkinMeshGameObject::g_member.size() + Monster::g_member.size() << endl;
 	Monster::PrintOffset(ofs);
-	
+
 	ofs << "Portal" << endl;
 	ofs << GameObject::g_member.size() + Portal::g_member.size() << endl;
 	Portal::PrintOffset(ofs);

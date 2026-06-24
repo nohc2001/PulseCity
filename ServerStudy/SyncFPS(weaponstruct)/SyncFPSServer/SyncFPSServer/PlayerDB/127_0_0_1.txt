@@ -1,21 +1,21 @@
 Version 1
 Gold 1000
-Exp 144
-Level 19
-StatPoint 0
-StatHP 2
+Exp 712
+Level 50
+StatPoint 4
+StatHP 29
 StatDefense 0
 StatMoveSpeed 0
 StatAttack 17
-KillCount 55
-DeathCount 14
-CurrentJob 2
-Inventory 0 1 3
-Inventory 1 6 8
-Inventory 2 0 0
-Inventory 3 0 0
-Inventory 4 0 0
-Inventory 5 0 0
+KillCount 347
+DeathCount 41
+CurrentJob 1
+Inventory 0 1 10
+Inventory 1 6 21
+Inventory 2 7 7
+Inventory 3 3 6
+Inventory 4 4 5
+Inventory 5 2 5
 Inventory 6 0 0
 Inventory 7 0 0
 Inventory 8 0 0

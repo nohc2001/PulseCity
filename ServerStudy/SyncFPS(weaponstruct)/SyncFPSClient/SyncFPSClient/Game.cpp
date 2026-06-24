@@ -9308,7 +9308,7 @@ void Game::RenderDungeonDeathHUD()
 	if (m_dungeonResultFlash > 0.0f && m_dungeonResult != DungeonResultCode::None) {
 		const wchar_t* resultText = L"던전 실패";
 		vec4 color(1.0f, 0.25f, 0.20f, 1.0f);
-		if (m_dungeonResult == DungeonResultCode::Aborted) resultText = L"던전 종료";
+		if (m_dungeonResult == DungeonResultCode::Aborted) resultText = L"던전 실패";
 		else if (m_dungeonResult == DungeonResultCode::Success) {
 			resultText = L"던전 클리어";
 			color = vec4(0.35f, 1.0f, 0.55f, 1.0f);

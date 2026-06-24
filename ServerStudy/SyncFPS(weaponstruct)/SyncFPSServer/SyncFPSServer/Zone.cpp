@@ -129,6 +129,7 @@ void Zone::Update(float deltaTime) {
     }
 
     UpdateBossPrototype(deltaTime);
+	UpdateDungeonPortalUnlock();
 
     // �浹 ó�� (Dynamic ������Ʈ ��)
     {
@@ -666,7 +667,7 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
 }
 
 //��Ż ����
-void Zone::SpawnPortal() {
+void Zone::SpawnPortal(bool notifyClients) {
     // Decide what this zone's portal does:
     //  - Boss floor (last)      : no onward portal (exit added later).
     //  - dungeon floor (1F/2F)  : floor portal -> next floor (same-server zone move).
@@ -678,6 +679,15 @@ void Zone::SpawnPortal() {
         return; // Boss floor: no next-floor portal
     }
     else if (dungeonFloor >= 0) {
+		// Dungeon floor portals are created only after every monster on this floor is dead.
+		// The regular startup call therefore leaves the floor locked.
+		for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+			if (Dynamic_gameObjects.isnull(i)) continue;
+			DynamicGameObject* object = Dynamic_gameObjects[i];
+			if (object == nullptr) continue;
+			if (GameObjectType::VptrToTypeTable[*(void**)object] != GameObjectType::_Monster) continue;
+			if (!((Monster*)object)->isDead) return;
+		}
         dstZone = zoneId + 1;   // dungeon floor -> next floor (same instance, consecutive zone ids)
         isEntry = false;
     }
@@ -685,6 +695,12 @@ void Zone::SpawnPortal() {
         dstZone = World::DungeonZoneId;   // open world -> dungeon entry marker (client opens the party menu)
         isEntry = true;
     }
+
+	// [silas] The open-world dungeon-entry portal is NOT created at startup; it is unlocked only when a
+	// player accepts Silas's quest, via an explicit SpawnPortal(true) call.
+	if (isEntry && !notifyClients) return;
+
+	if (!portals.empty()) return;
 
     Portal* portal = new Portal();
     auto it = Shape::StrToShapeIndex.find("Portal");
@@ -702,9 +718,17 @@ void Zone::SpawnPortal() {
 	if (!isEntry && dungeonFloor == 1) {
 		forwardX -= 35.0f;
 	}
-    portal->worldMat =
-        XMMatrixScaling(2.0f, 3.0f, 2.0f) *
-        XMMatrixTranslation(cx + forwardX, gy, cz + forwardZ);
+    if (isEntry) {
+        // [silas] Fixed dungeon-entry portal location in zone 83 (absolute world coords).
+        portal->worldMat =
+            XMMatrixScaling(2.0f, 3.0f, 2.0f) *
+            XMMatrixTranslation(-613.496094f, 1.000471f, 1099.427979f);
+    }
+    else {
+        portal->worldMat =
+            XMMatrixScaling(2.0f, 3.0f, 2.0f) *
+            XMMatrixTranslation(cx + forwardX, gy, cz + forwardZ);
+    }
     portal->dstzoneId = dstZone;
     portal->radius = 2.0f;
 
@@ -728,8 +752,19 @@ void Zone::SpawnPortal() {
 
     portal->tag[Tag_Enable] = true;
     portals.push_back(portal);
+	if (notifyClients) {
+		portal->SendGameObject((int)portals.size() - 1, CommonSDS);
+		cout << "[DungeonPortal] zone=" << zoneId << " unlocked" << endl;
+	}
     //cout << "[Zone " << zoneId << "] Portal -> zone " << dstZone << (isEntry ? " (entry/queue)" : " (floor)")
         //<< " at (" << cx << ", " << gy << ", " << (cz + forward) << ")" << endl;
+}
+
+void Zone::UpdateDungeonPortalUnlock() {
+	const int dungeonFloor = World::DungeonFloorOf(zoneId);
+	if (dungeonFloor < 0 || dungeonFloor >= World::DungeonFloorCount - 1) return;
+	if (!portals.empty()) return;
+	SpawnPortal(true);
 }
 
 void Zone::Spawnboundary()
@@ -1172,7 +1207,7 @@ void Zone::SpawnObjects() {
     if (World::DungeonFloorOf(zoneId) == World::DungeonFloorCount - 1) {
         const float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
         const float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
-        const vec4 bossSpawn(cx + 20.0f, map.AABB[0].y, cz - 80.0f, 1.0f);
+        const vec4 bossSpawn(cx + 20.0f, map.AABB[0].y - 1.0f, cz - 70.0f, 1.0f);
 
         Monster* boss = new Monster();
         boss->zone = this;
@@ -2637,92 +2672,4 @@ void Zone::UpdateBossPrototype(float deltaTime)
             if (targetGroup != BossPrototypeRotatingLaserStep) {
                 BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
                     [](const BossPrototypeWarning& warning) { return warning.Shape == 1 && warning.Length >= 38.0f; }),
-                    BossPrototypeWarnings.end());
-                BossPrototypeRotatingLaserStep = targetGroup;
-                for (int i = 0; i < 3; ++i) {
-                    float angle = BossPrototypeRotatingLaserBaseAngle + BossPrototypeRotatingLaserDirectionSign *
-                        XMConvertToRadians(30.0f * (float)targetGroup + 10.0f * (float)i);
-                    pushLaserWarning(angle, phaseIndex == 2 ? 0.30f : 0.35f);
-                }
-            }
-        }
-        else if (elapsed >= 0.0f && BossPrototypeRotatingLaserMode == 1 && BossPrototypeRotatingLaserStep < 0) {
-            bool used[36] = {};
-            int randomCount = 8 + (int)(ServerRandomUnit() * 11.0f);
-            randomCount = min(randomCount, BossSyncWarningCapacity);
-            int spawned = 0;
-            int attempts = 0;
-            while (spawned < randomCount && attempts < 144) {
-                attempts += 1;
-                int dirIndex = (int)(ServerRandomUnit() * 36.0f);
-                dirIndex = min(max(dirIndex, 0), 35);
-                if (used[dirIndex]) continue;
-                used[dirIndex] = true;
-                float angle = BossPrototypeRotatingLaserBaseAngle + XMConvertToRadians(10.0f * (float)dirIndex);
-                pushLaserWarning(angle, 0.85f);
-                spawned += 1;
-            }
-            BossPrototypeRotatingLaserStep = 0;
-        }
-
-        if (elapsed >= 0.0f && BossPrototypeRotatingLaserStep >= 0) {
-            BossPrototypeRotatingLaserHitFlow += dt;
-            if (BossPrototypeRotatingLaserHitFlow >= 0.45f) {
-                BossPrototypeRotatingLaserHitFlow = 0.0f;
-                for (int i = 0; i < gameworld.clients.size; ++i) {
-                    if (gameworld.clients.isnull(i) || gameworld.clients[i].pObjData == nullptr) continue;
-                    Player* p = (Player*)gameworld.clients[i].pObjData;
-                    if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
-                    for (const BossPrototypeWarning& warning : BossPrototypeWarnings) {
-                        if (!warning.Active || warning.Shape != 1 || warning.Length < 38.0f) continue;
-                        if (warning.Age < warning.WarningTime) continue;
-                        if (PointInBossRectWarning(warning, p->worldMat.pos)) {
-                            p->TakeDamage(24.0f);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if (BossPrototypePhaseTime >= duration) {
-            BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
-                [](const BossPrototypeWarning& warning) { return (warning.Shape == 1 && warning.Length >= 38.0f) || warning.Shape == 2; }),
-                BossPrototypeWarnings.end());
-            BossPrototypeRotatingLaserCooldown = rotatingLaserPeriods[phaseIndex];
-            finishPattern();
-        }
-        break;
-    }
-    case BossPrototypePhase::Rest:
-        if (BossPrototypePhaseTime >= BossPrototypePatternCooldown && target != nullptr && BossPrototypeGroggyTime <= 0.0f) {
-            if (BossPrototypeMissileCooldown <= 0.0f) {
-                BossPrototypePhaseState = BossPrototypePhase::MissileLock;
-            }
-            else if (BossPrototypeRailgunCooldown <= 0.0f) {
-                BossPrototypePhaseState = BossPrototypePhase::RailgunCharge;
-            }
-            else if (BossPrototypeSummonCooldown <= 0.0f) {
-                BossPrototypePhaseState = BossPrototypePhase::SummonTurret;
-            }
-            else if (BossPrototypeBombardmentCooldown <= 0.0f) {
-                BossPrototypePhaseState = BossPrototypePhase::Bombardment;
-            }
-            else if (BossPrototypeRotatingLaserCooldown <= 0.0f) {
-                BossPrototypePhaseState = BossPrototypePhase::RotatingLaser;
-                BossPrototypeRotatingLaserBaseAngle = ServerRandomRange(0.0f, XM_2PI);
-                BossPrototypeRotatingLaserDirectionSign = ServerRandomUnit() < 0.5f ? -1.0f : 1.0f;
-                BossPrototypeRotatingLaserMode = ServerRandomUnit() < 0.5f ? 0 : 1;
-                BossPrototypeRotatingLaserHitFlow = 0.45f;
-                BossPrototypeRotatingLaserStep = -1;
-            }
-            if (BossPrototypePhaseState != BossPrototypePhase::Rest) {
-                BossPrototypePatternStep += 1;
-                BossPrototypePhaseTime = 0.0f;
-            }
-        }
-        break;
-    }
-
-    updateShieldState();
-    Sending_BossState(CommonSDS);
-}
+                    
