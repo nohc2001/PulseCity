@@ -230,6 +230,8 @@ struct GameObject {
 
 	void RaytracingUpdateTransform();
 	void RaytracingUpdateTransform(Model* model, ModelNode* node, matrix parent);
+	virtual float GetRaytracingHitFlashRate() const;
+	void SetRaytracingHitFlashRate(float flashRate);
 
 	void DbgHieraky();
 
@@ -520,6 +522,10 @@ struct SkinMeshGameObject : public DynamicGameObject {
 		if (rate < 0.0f) return 0.0f;
 		if (rate > 1.0f) return 1.0f;
 		return rate;
+	}
+
+	virtual float GetRaytracingHitFlashRate() const override {
+		return GetHitFlashRate();
 	}
 
 	__forceinline void SetStatusTint(vec4 tint) {
@@ -1355,6 +1361,7 @@ public:
 	void ClearThirdPersonWeaponVisuals();
 	void UpdateRaytracingWeaponVisibility();
 	void SetRaytracingVisualsEnabled(bool enabled);
+	void SyncRaytracingWeaponNodeTransforms(GameObject* weaponObj);
 
 	virtual void Release();
 
@@ -1404,7 +1411,7 @@ public:
 		float ShieldDurability = 0;
 		float MaxShieldDurability = 100;
 		//STC player job
-		int m_currentJob = (int)PlayerJob::Healer;
+		int m_currentJob = (int)PlayerJob::Sniper;
 		//STC skill cooldown duration by slot
 		float SkillCooldown[(int)SkillSlot::Max] = {};
 		//STC skill cooldown remaining by slot

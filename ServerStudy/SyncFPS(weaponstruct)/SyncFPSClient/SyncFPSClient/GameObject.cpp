@@ -298,6 +298,14 @@ namespace {
 		return &game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[index];
 	}
 
+	void SetRaytracingHitFlashFromTransform(float* transformPtr, float flashRate)
+	{
+		D3D12_RAYTRACING_INSTANCE_DESC* desc = GetRaytracingInstanceDescFromTransform(transformPtr);
+		if (desc == nullptr) return;
+		UINT encodedFlash = (UINT)(min(1.0f, max(0.0f, flashRate)) * 255.0f + 0.5f);
+		desc->InstanceID = encodedFlash;
+	}
+
 	bool IsValidRaytracingLODMesh(Mesh* sourceMesh, Mesh* lodMesh)
 	{
 		if (sourceMesh == nullptr || lodMesh == nullptr || sourceMesh == lodMesh) return false;
@@ -1358,6 +1366,28 @@ void GameObject::OnRayHit(GameObject* rayFrom) {
 
 }
 
+float GameObject::GetRaytracingHitFlashRate() const
+{
+	return 0.0f;
+}
+
+void GameObject::SetRaytracingHitFlashRate(float flashRate)
+{
+	Mesh* mesh = nullptr;
+	Model* model = nullptr;
+	shape.GetRealShape(mesh, model);
+	if (mesh != nullptr && RaytracingWorldMatInput != nullptr) {
+		SetRaytracingHitFlashFromTransform(RaytracingWorldMatInput, flashRate);
+	}
+	else if (model != nullptr && RaytracingWorldMatInput_Model != nullptr) {
+		for (int i = 0; i < model->nodeCount; ++i) {
+			if (RaytracingWorldMatInput_Model[i] != nullptr) {
+				SetRaytracingHitFlashFromTransform(RaytracingWorldMatInput_Model[i], flashRate);
+			}
+		}
+	}
+}
+
 void GameObject::RaytracingUpdateTransform()
 {
 	Mesh* mesh = nullptr;
@@ -1370,6 +1400,7 @@ void GameObject::RaytracingUpdateTransform()
 			memcpy(RaytracingWorldMatInput[i], &mat, sizeof(float) * 12);
 		}*/
 		memcpy(RaytracingWorldMatInput, &mat, sizeof(float) * 12);
+		SetRaytracingHitFlashFromTransform(RaytracingWorldMatInput, GetRaytracingHitFlashRate());
 		UpdateRaytracingMeshLOD(this, mesh, RaytracingWorldMatInput);
 	}
 	else if (model != nullptr && model->RootNode != nullptr && RaytracingWorldMatInput_Model != nullptr) {
@@ -1398,6 +1429,7 @@ void GameObject::RaytracingUpdateTransform(Model* model, ModelNode* node, matrix
 			memcpy(RaytracingWorldMatInput_Model[nodeIndex][i], &mat, sizeof(float) * 12);
 		}*/
 		memcpy(RaytracingWorldMatInput_Model[nodeIndex], &mat, sizeof(float) * 12);
+		SetRaytracingHitFlashFromTransform(RaytracingWorldMatInput_Model[nodeIndex], GetRaytracingHitFlashRate());
 		UpdateRaytracingModelNodeLOD(this, model, node, nodeIndex, RaytracingWorldMatInput_Model[nodeIndex], nodeWorld);
 	}
 }
@@ -2731,6 +2763,7 @@ void SkinMeshGameObject::RaytracingUpdateTransform() {
 			for (int i = 0; i < model->nodeCount; ++i) {
 				if (RaytracingWorldMatInput_Model[i]) {
 					memcpy(RaytracingWorldMatInput_Model[i], &Id, sizeof(float) * 12);
+					SetRaytracingHitFlashFromTransform(RaytracingWorldMatInput_Model[i], GetHitFlashRate());
 				}
 			}
 		}
@@ -3480,6 +3513,9 @@ void Monster::Update(float deltaTime)
 		HitFlashTimer -= deltaTime;
 		if (HitFlashTimer < 0.0f) HitFlashTimer = 0.0f;
 	}
+	if (gd.isRaytracingRender) {
+		RaytracingUpdateTransform();
+	}
 
 	if (isDead)
 	{
@@ -3743,7 +3779,7 @@ Player::Player() : HP{ 100 } {
 
 	ShieldDurability = 0;
 	MaxShieldDurability = 0;
-	m_currentJob = (int)PlayerJob::Healer;
+	m_currentJob = (int)PlayerJob::Sniper;
 	Level = 0;
 	Exp = 0;
 	StatPoint = 0;
@@ -3827,6 +3863,52 @@ static float GetPlayerReloadTime(const Player* player)
 	return player->weapon[player->SelectedWeapon].m_info.reloadTime;
 }
 
+static void ApplyRaytracingFirstPersonReloadPose(matrix& gunmat, WeaponType weaponType, float reloadArc)
+{
+	if (reloadArc <= 0.0f) return;
+
+	switch (weaponType) {
+	case WeaponType::Pistol:
+	case WeaponType::DronePistol:
+		gunmat *= XMMatrixRotationX(XMConvertToRadians(-6.0f * reloadArc));
+		gunmat *= XMMatrixRotationZ(XMConvertToRadians(-9.0f * reloadArc));
+		gunmat.pos.x += 0.10f * reloadArc;
+		gunmat.pos.y -= 0.30f * reloadArc;
+		gunmat.pos.z -= 0.08f * reloadArc;
+		break;
+	case WeaponType::Rifle:
+		gunmat *= XMMatrixRotationX(XMConvertToRadians(-5.0f * reloadArc));
+		gunmat *= XMMatrixRotationZ(XMConvertToRadians(-7.0f * reloadArc));
+		gunmat.pos.x += 0.12f * reloadArc;
+		gunmat.pos.y -= 0.36f * reloadArc;
+		gunmat.pos.z -= 0.10f * reloadArc;
+		break;
+	case WeaponType::Sniper:
+		gunmat *= XMMatrixRotationX(XMConvertToRadians(-7.0f * reloadArc));
+		gunmat *= XMMatrixRotationZ(XMConvertToRadians(-5.0f * reloadArc));
+		gunmat.pos.x += 0.08f * reloadArc;
+		gunmat.pos.y -= 0.42f * reloadArc;
+		gunmat.pos.z -= 0.12f * reloadArc;
+		break;
+	case WeaponType::MachineGun:
+		gunmat *= XMMatrixRotationX(XMConvertToRadians(-4.0f * reloadArc));
+		gunmat *= XMMatrixRotationZ(XMConvertToRadians(-6.0f * reloadArc));
+		gunmat.pos.x += 0.10f * reloadArc;
+		gunmat.pos.y -= 0.32f * reloadArc;
+		gunmat.pos.z -= 0.08f * reloadArc;
+		break;
+	case WeaponType::Shotgun:
+		gunmat *= XMMatrixRotationX(XMConvertToRadians(-8.0f * reloadArc));
+		gunmat *= XMMatrixRotationZ(XMConvertToRadians(-8.0f * reloadArc));
+		gunmat.pos.x += 0.09f * reloadArc;
+		gunmat.pos.y -= 0.38f * reloadArc;
+		gunmat.pos.z -= 0.10f * reloadArc;
+		break;
+	default:
+		break;
+	}
+}
+
 Player::~Player() {
 }
 
@@ -3852,6 +3934,9 @@ void Player::Update(float deltaTime)
 	if (HitFlashTimer > 0.0f) {
 		HitFlashTimer -= max(0.0f, deltaTime);
 		if (HitFlashTimer < 0.0f) HitFlashTimer = 0.0f;
+	}
+	if (gd.isRaytracingRender) {
+		RaytracingUpdateTransform();
 	}
 
 	float velSpeed = sqrt(LVelocity.x * LVelocity.x + LVelocity.z * LVelocity.z);
@@ -4432,6 +4517,60 @@ void Player::UpdateRaytracingWeaponVisibility()
 	}
 }
 
+void Player::SyncRaytracingWeaponNodeTransforms(GameObject* weaponObj)
+{
+	if (weaponObj == nullptr || weaponObj->transforms_innerModel == nullptr) return;
+
+	WeaponType weaponType = (WeaponType)m_currentWeaponType;
+	if (SelectedWeapon >= 0 && SelectedWeapon < 3) {
+		Weapon& currentWeapon = weapon[SelectedWeapon];
+		switch (weaponType)
+		{
+		case WeaponType::Pistol:
+		case WeaponType::DualPistol:
+		case WeaponType::DronePistol:
+		case WeaponType::SMG:
+			if (game.PistolModel && !game.Pistol_SlideIndices.empty()) {
+				float recoilT = currentWeapon.GetRecoilAlpha();
+				float slideMove = -0.3f * powf(recoilT, 2.0f);
+				XMMATRIX slideTrans = XMMatrixTranslation(0.0f, 0.0f, slideMove);
+				for (int idx : game.Pistol_SlideIndices) {
+					game.PistolModel->Nodes[idx].transform = game.PistolModel->BindPose[idx] * slideTrans;
+				}
+			}
+			break;
+		case WeaponType::Shotgun:
+			if (game.ShotGunModel && !game.SG_PumpIndices.empty()) {
+				float currentFlow = currentWeapon.m_shootFlow;
+				float pumpMove = 0.0f;
+				float pumpStart = 0.3f;
+				float pumpEnd = 0.7f;
+				if (currentFlow > pumpStart && currentFlow < pumpEnd) {
+					float t = (currentFlow - pumpStart) / (pumpEnd - pumpStart);
+					pumpMove = 0.35f * sinf(t * XM_PI);
+				}
+				XMMATRIX pumpTrans = XMMatrixTranslation(pumpMove, 0.0f, 0.0f);
+				for (int idx : game.SG_PumpIndices) {
+					game.ShotGunModel->Nodes[idx].transform = game.ShotGunModel->BindPose[idx] * pumpTrans;
+				}
+			}
+			break;
+		case WeaponType::MachineGun:
+			UpdateGunBarrelNodes();
+			break;
+		default:
+			break;
+		}
+	}
+
+	Model* model = weaponObj->shape.GetModel();
+	if (model == nullptr || model->nodeCount <= 0) return;
+
+	for (int i = 0; i < model->nodeCount; ++i) {
+		weaponObj->transforms_innerModel[i] = model->Nodes[i].transform;
+	}
+}
+
 void Player::SetRaytracingVisualsEnabled(bool enabled)
 {
 	SetRaytracingInstanceEnabled(enabled);
@@ -4515,16 +4654,21 @@ void Player::Render_ThirdPersonWeapon()
 						}
 					}
 				}
+				SyncRaytracingWeaponNodeTransforms(PlayerWeaponObj[i]);
+				SyncRaytracingWeaponNodeTransforms(Knife[0]);
+				SyncRaytracingWeaponNodeTransforms(Knife[1]);
 				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 				Knife[0]->RaytracingUpdateTransform();
 				Knife[1]->RaytracingUpdateTransform();
 				if (LeftHand != nullptr) {
+					SyncRaytracingWeaponNodeTransforms(LeftHand);
 					LeftHand->RaytracingUpdateTransform();
 				}
 			}
 			else {
 				if ((WeaponType)m_currentWeaponType != WeaponType::DualPistol && LeftHand != nullptr) {
 					LeftHand->worldMat = 0;
+					SyncRaytracingWeaponNodeTransforms(LeftHand);
 					LeftHand->RaytracingUpdateTransform();
 				}
 				if (m_currentWeaponType != i) {
@@ -4533,6 +4677,7 @@ void Player::Render_ThirdPersonWeapon()
 				else {
 					PlayerWeaponObj[i]->worldMat = gunmat;
 				}
+				SyncRaytracingWeaponNodeTransforms(PlayerWeaponObj[i]);
 				PlayerWeaponObj[i]->RaytracingUpdateTransform();
 			}
 		}
@@ -4779,6 +4924,7 @@ void Player::Render_AfterDepthClear()
 				//}
 				}
 
+			ApplyRaytracingFirstPersonReloadPose(gunmat, weaponType, firstPersonReloadArc);
 			gunmat *= viewmat;
 			leftGunMat *= viewmat;
 			for (int i = 0; i < Game::MaxWeapon; ++i) {
@@ -4795,6 +4941,9 @@ void Player::Render_AfterDepthClear()
 						Knife[1]->worldMat = 0;
 						PlayerWeaponObj[i]->worldMat = gunmat;
 					}
+					SyncRaytracingWeaponNodeTransforms(Knife[0]);
+					SyncRaytracingWeaponNodeTransforms(Knife[1]);
+					SyncRaytracingWeaponNodeTransforms(PlayerWeaponObj[i]);
 					Knife[0]->RaytracingUpdateTransform();
 					Knife[1]->RaytracingUpdateTransform();
 					PlayerWeaponObj[i]->RaytracingUpdateTransform();
@@ -4806,12 +4955,14 @@ void Player::Render_AfterDepthClear()
 					else {
 						PlayerWeaponObj[i]->worldMat = gunmat;
 					}
+					SyncRaytracingWeaponNodeTransforms(PlayerWeaponObj[i]);
 					PlayerWeaponObj[i]->RaytracingUpdateTransform();
 				}
 			}
 
 			if (isdrawLeft) {
 				LeftHand->worldMat = leftGunMat;
+				SyncRaytracingWeaponNodeTransforms(LeftHand);
 				LeftHand->RaytracingUpdateTransform();
 			}
 		}

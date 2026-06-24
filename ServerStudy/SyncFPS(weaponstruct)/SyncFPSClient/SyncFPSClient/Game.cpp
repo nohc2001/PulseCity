@@ -3718,6 +3718,7 @@ void Game::RenderBossPrototypeObjects()
 			//BossPrototypeCoreModel->Render<false>(gd.gpucmd, world, nullptr);
 			core.BossProtoTypeCoreObj->worldMat = world;
 			core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
+			core.BossProtoTypeCoreObj->SetRaytracingHitFlashRate(hitRate);
 			ModelRenderTintOverrideActive = false;
 		}
 	}
@@ -4449,6 +4450,11 @@ void Game::RenderBossPrototypeMissiles()
 
 	if (canRenderBossMissiles) {
 		MyWorldTextureShader->SetTextureCommand(bossMissileTexture);
+		if (gd.isRaytracingRender) {
+			vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+			depthInfo.w = 1.0f;
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_DepthInfo, 4, &depthInfo, 0);
+		}
 		for (const BossMissileVisual& visual : BossMissileVisuals) {
 			if (!visual.Active) continue;
 
@@ -4487,6 +4493,11 @@ void Game::RenderBossPrototypeMissiles()
 
 	if (canRenderSkillMissiles) {
 		MyWorldTextureShader->SetTextureCommand(skillMissileTexture);
+		if (gd.isRaytracingRender) {
+			vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+			depthInfo.w = 1.0f;
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_DepthInfo, 4, &depthInfo, 0);
+		}
 		for (const SkillMissileVisual& visual : gSkillMissileVisuals) {
 			if (!visual.Active) continue;
 
@@ -4846,14 +4857,14 @@ void Game::Init()
 		gLoadingTex.CreateTexture_fromFile(L"Resources/Loading.png", game.basicTexFormat, game.basicTexMip);          // [loading] loading screen image
 		gStartScreenTex.CreateTexture_fromFile(L"Resources/StartScreen.png", game.basicTexFormat, game.basicTexMip);  // [loading] start screen image
 		// [jobselect] job-selection screen textures. Card index MUST match the PlayerJob enum order
-		// (Juggernaut, Frost, Aegis, Mage, Healer, Gunner, DroneOperator, Hacker, Bomber); mapped by weapon.
+		// (Juggernaut, Frost, Aegis, Mage, Sniper, Gunner, DroneOperator, Hacker, Bomber); mapped by weapon.
 		gSelectJobBgTex.CreateTexture_fromFile(L"Resources/selectJop.png", game.basicTexFormat, game.basicTexMip);
 		gConfirmTex.CreateTexture_fromFile(L"Resources/Confirm.png", game.basicTexFormat, game.basicTexMip);
 		gJobCardTex[0].CreateTexture_fromFile(L"Resources/jug.png", game.basicTexFormat, game.basicTexMip);  // 0 Juggernaut  (JUGGERNAUT)
 		gJobCardTex[1].CreateTexture_fromFile(L"Resources/Fro.png", game.basicTexFormat, game.basicTexMip);  // 1 Frost       (FROST)
 		gJobCardTex[2].CreateTexture_fromFile(L"Resources/Shi.png", game.basicTexFormat, game.basicTexMip);  // 2 Aegis       (SHIELDER)
 		gJobCardTex[3].CreateTexture_fromFile(L"Resources/Sol.png", game.basicTexFormat, game.basicTexMip);  // 3 Mage        (SOLDIER, rifle)
-		gJobCardTex[4].CreateTexture_fromFile(L"Resources/Sni.png", game.basicTexFormat, game.basicTexMip);  // 4 Healer      (SNIPER)
+		gJobCardTex[4].CreateTexture_fromFile(L"Resources/Sni.png", game.basicTexFormat, game.basicTexMip);  // 4 Sniper
 		gJobCardTex[5].CreateTexture_fromFile(L"Resources/Gun.png", game.basicTexFormat, game.basicTexMip);  // 5 Gunner      (GUNNER)
 		gJobCardTex[6].CreateTexture_fromFile(L"Resources/Mec.png", game.basicTexFormat, game.basicTexMip);  // 6 DroneOperator (MECHANIC)
 		gJobCardTex[7].CreateTexture_fromFile(L"Resources/Hak.png", game.basicTexFormat, game.basicTexMip);  // 7 Hacker      (HACKER)
@@ -9277,7 +9288,7 @@ void Game::RenderStatWindowHUD()
 
 	const wchar_t* names[4] = { L"HP", L"DEF", L"MOVE", L"ATK" };
 	int values[4] = { player->StatHP, player->StatDefense, player->StatMoveSpeed, player->StatAttack };
-	const wchar_t* effects[4] = { L"+5% Max HP", L"+5 DEF", L"+0.1% Speed", L"+5% Damage" };
+	const wchar_t* effects[4] = { L"+10 Max HP", L"+3 DEF", L"+0.2% Speed", L"+0.5 ATK / +0.5% Skill" };
 	for (int i = 0; i < 4; ++i) {
 		float top = panel.w - (82.0f + i * 78.0f) * scale;
 		vec4 row = vec4(panel.x + 22.0f * scale, top - 56.0f * scale, panel.z - 22.0f * scale, top);

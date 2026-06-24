@@ -2130,7 +2130,7 @@ Player::Player() {
 	worldMat.Id();
 	shapeindex = -1;
 
-	ApplyJob(PlayerJob::Healer);
+	ApplyJob(PlayerJob::Sniper);
 	// Keep the extra loadout slots valid without treating the Max sentinel as a weapon.
 	weapon[1] = weapon[0];
 	weapon[2] = weapon[0];
@@ -2176,8 +2176,8 @@ void Player::RecalculateStatsFromJob(bool preserveHpRate)
 	float hpRate = preserveHpRate ? max(0.0f, min(1.0f, HP / previousMaxHP)) : 1.0f;
 	float tempBonus = m_tempMaxHpBonus;
 
-	MaxHP = jobData.MaxHP * (1.0f + StatHP * StatHpPercentPerPoint) + tempBonus;
-	Attack = jobData.Attack * (1.0f + StatAttack * StatAttackPercentPerPoint);
+	MaxHP = jobData.MaxHP + StatHP * StatHPPerPoint + tempBonus;
+	Attack = jobData.Attack + StatAttack * StatAttackPerPoint;
 	Defense = jobData.Defense + StatDefense * StatDefensePerPoint;
 	if (MaxHP < 1.0f) MaxHP = 1.0f;
 	HP = preserveHpRate ? MaxHP * hpRate : MaxHP;
@@ -2186,7 +2186,7 @@ void Player::RecalculateStatsFromJob(bool preserveHpRate)
 
 float Player::GetAttackDamageMultiplier() const
 {
-	return 1.0f + StatAttack * StatAttackPercentPerPoint;
+	return 1.0f + StatAttack * StatSkillDamagePercentPerPoint;
 }
 
 float Player::GetMoveSpeedMultiplier() const
@@ -3670,21 +3670,26 @@ void Player::Update(float deltaTime)
 		float effectiveShootDelay = currentWeapon.m_info.shootDelay;
 		float effectiveDamage = currentWeapon.m_info.damage;
 		float effectiveRayDistance = 50.0f;
+		const WeaponType currentWeaponType = (WeaponType)m_currentWeaponType;
 		if (m_rifleStimTimer > 0.0f) effectiveShootDelay *= 0.70f;
 		if (m_dualAwakenTimer > 0.0f) effectiveShootDelay *= 0.50f;
-		if ((WeaponType)m_currentWeaponType == WeaponType::Sniper && m_sniperDmrMode) {
+		if (currentWeaponType == WeaponType::Sniper && m_sniperDmrMode) {
 			effectiveShootDelay = min(effectiveShootDelay, 0.35f);
 			effectiveDamage = 35.0f;
 			effectiveRayDistance = 100.0f;
 		}
 		if (isRailgunAttack) {
 			effectiveShootDelay = 1.0f;
-			effectiveDamage = 120.0f;
+			effectiveDamage = 60.0f;
 			effectiveRayDistance = 145.0f;
 		}
 		else if ((WeaponType)m_currentWeaponType == WeaponType::Sniper && m_sniperNextShotDamageMultiplier > 1.0f) {
 			effectiveDamage *= m_sniperNextShotDamageMultiplier;
 		}
+		if (!isRailgunAttack) {
+			effectiveRayDistance *= (currentWeaponType == WeaponType::Sniper) ? 3.0f : 1.5f;
+		}
+		effectiveDamage += StatAttack * StatAttackPerPoint;
 
 		const float meleeAttackDelay = (m_dualAwakenTimer > 0.0f) ? 0.25f : 0.50f;
 		if (isBladeAttack && currentWeapon.m_shootFlow >= meleeAttackDelay) {
@@ -3742,7 +3747,7 @@ void Player::Update(float deltaTime)
 			vec4 aimDirection = clook;
 			if ((WeaponType)m_currentWeaponType == WeaponType::Shotgun) {
 				constexpr int shotgunPelletCount = 9;
-				constexpr float shotgunRayDistance = 35.0f;
+				constexpr float shotgunRayDistance = 35.0f * 1.5f;
 				const float yawOffsets[shotgunPelletCount] = { 0.0f, -3.5f, 3.5f, -7.0f, 7.0f, -2.0f, 2.0f, -5.5f, 5.5f };
 				const float pitchOffsets[shotgunPelletCount] = { 0.0f, 2.0f, 2.0f, -1.5f, -1.5f, -4.0f, -4.0f, 4.5f, 4.5f };
 
@@ -4183,7 +4188,7 @@ namespace {
 		int StatAttack = 0;
 		int KillCount = 0;
 		int DeathCount = 0;
-		int CurrentJob = (int)PlayerJob::Healer;
+		int CurrentJob = (int)PlayerJob::Sniper;
 		ItemStack Inventory[Player::maxItem] = {};
 	};
 
@@ -4200,7 +4205,7 @@ namespace {
 		int StatAttack = 0;
 		int KillCount = 0;
 		int DeathCount = 0;
-		int CurrentJob = (int)PlayerJob::Healer;
+		int CurrentJob = (int)PlayerJob::Sniper;
 		float HP = 0.0f;
 		float MaxHP = 0.0f;
 		ItemStack Inventory[Player::maxItem] = {};
@@ -4305,7 +4310,7 @@ bool Player::LoadPersistentData(const char* key)
 	KillCount = max(0, data.KillCount);
 	DeathCount = max(0, data.DeathCount);
 	PlayerJob savedJob = (data.CurrentJob >= 0 && data.CurrentJob < (int)PlayerJob::Max) ?
-		(PlayerJob)data.CurrentJob : PlayerJob::Healer;
+		(PlayerJob)data.CurrentJob : PlayerJob::Sniper;
 	ApplyJob(savedJob);
 	for (int i = 0; i < maxItem; ++i) {
 		Inventory[i] = data.Inventory[i];
@@ -5196,14 +5201,6 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	Zone* zone = gameworld.GetZone(zoneId);
 	bool isBossPrototype = zone != nullptr && zone->BossPrototypeEnabled && zone->BossPrototypeIndex == zone->currentIndex;
 	
-	// Monster take damage with player's Attack
-	void* vptr = *(void**)shooter;
-	if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
-		Player* p = (Player*)shooter;
-		damage += p->Attack * 0.25f;
-		cout << "Player Weapon Damage: " << damage << endl;
-	}
-
 	if (isBossPrototype) {
 		if (zone->BossPrototypeShieldActive) return;
 		if (zone->BossPrototypeGroggyTime > 0.0f) damage *= 1.3f;
