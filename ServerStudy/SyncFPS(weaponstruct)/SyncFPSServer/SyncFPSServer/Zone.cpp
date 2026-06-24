@@ -657,6 +657,17 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
 		Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
     }
 
+	for (int i = 0; i < (int)player->QuestArr.size(); ++i) {
+		int questId = player->QuestArr[i];
+		if (questId < 0 || questId >= (int)gameworld.QuestTable.size()) continue;
+		if (gameworld.QuestTable[questId] == nullptr) continue;
+
+		Sending_AddQuest(personalSDS, questId);
+		if (i < (int)player->QuestPrograss.size() && player->QuestPrograss[i] != nullptr) {
+			Sending_SyncQuestPrograss(personalSDS, questId, player->QuestPrograss[i]);
+		}
+	}
+
 	// This must remain the final packet in the zone-entry personal snapshot. TCP ordering means
 	// the client can keep its loading screen up until every player/object/inventory packet above
 	// has arrived and been parsed.
@@ -1795,7 +1806,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 	Player* casterPlayer = dynamic_cast<Player*>(caster);
 	Monster* casterMonster = dynamic_cast<Monster*>(caster);
 	if (casterPlayer != nullptr) {
-		damage *= casterPlayer->GetAttackDamageMultiplier();
+		damage *= 0.5f * casterPlayer->GetAttackDamageMultiplier();
 	}
 
     for (int zi = 0; zi < 9; ++zi) {
@@ -1839,6 +1850,48 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 				targetPlayer->ApplyDamage(caster, damage);
 			}
 			++hitCount;
+		}
+
+		if (testZone->BossPrototypeEnabled && testZone->BossPrototypeShieldActive && casterMonster == nullptr) {
+			bool bossCoreChanged = false;
+			for (BossPrototypeCore& core : testZone->BossPrototypeCores) {
+				if (!core.Active) continue;
+				BoundingSphere coreSphere;
+				coreSphere.Center = XMFLOAT3(core.Position.x, core.Position.y + 1.65f, core.Position.z);
+				coreSphere.Radius = 2.75f;
+				bool hit = directional ? skillBox.Intersects(coreSphere) : skillSphere.Intersects(coreSphere);
+				if (!hit) continue;
+
+				core.HP -= damage;
+				if (core.HP <= 0.0f) {
+					core.HP = 0.0f;
+					core.Active = false;
+				}
+				bossCoreChanged = true;
+				++hitCount;
+			}
+
+			if (bossCoreChanged) {
+				bool allDead = !testZone->BossPrototypeCores.empty();
+				for (const BossPrototypeCore& core : testZone->BossPrototypeCores) {
+					if (core.Active) {
+						allDead = false;
+						break;
+					}
+				}
+				if (allDead) {
+					testZone->BossPrototypeShieldActive = false;
+					testZone->BossPrototypeShieldDownTime = 25.0f;
+					testZone->BossPrototypeGroggyTime = 12.0f;
+					testZone->BossPrototypeWarnings.clear();
+					testZone->BossPrototypePhaseState = BossPrototypePhase::Rest;
+					testZone->BossPrototypePhaseTime = 0.0f;
+					testZone->BossPrototypePatternCooldown = 0.6f;
+					testZone->BossPrototypeRotatingLaserHitFlow = 0.0f;
+					testZone->BossPrototypeRotatingLaserStep = -1;
+				}
+				testZone->Sending_BossState(testZone->CommonSDS);
+			}
 		}
 	}
 

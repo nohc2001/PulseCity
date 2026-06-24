@@ -14,6 +14,7 @@ void BoxLOD_DebugUpdate(float deltaTime);
 
 extern int dbgc[128];
 extern bool g_playGunSound;
+void UIRenderDefaultEdit(DXUI* ui);
 void dbgbreak(bool condition) {
 	if (condition) __debugbreak();
 }
@@ -3717,6 +3718,7 @@ void Game::RenderBossPrototypeObjects()
 			//BossPrototypeCoreModel->Render<false>(gd.gpucmd, world, nullptr);
 			core.BossProtoTypeCoreObj->worldMat = world;
 			core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
+			core.BossProtoTypeCoreObj->SetRaytracingHitFlashRate(hitRate);
 			ModelRenderTintOverrideActive = false;
 		}
 	}
@@ -4448,6 +4450,11 @@ void Game::RenderBossPrototypeMissiles()
 
 	if (canRenderBossMissiles) {
 		MyWorldTextureShader->SetTextureCommand(bossMissileTexture);
+		if (gd.isRaytracingRender) {
+			vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+			depthInfo.w = 1.0f;
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_DepthInfo, 4, &depthInfo, 0);
+		}
 		for (const BossMissileVisual& visual : BossMissileVisuals) {
 			if (!visual.Active) continue;
 
@@ -4486,6 +4493,11 @@ void Game::RenderBossPrototypeMissiles()
 
 	if (canRenderSkillMissiles) {
 		MyWorldTextureShader->SetTextureCommand(skillMissileTexture);
+		if (gd.isRaytracingRender) {
+			vec4 depthInfo = gd.viewportArr[0].Camera_Pos;
+			depthInfo.w = 1.0f;
+			gd.gpucmd->SetGraphicsRoot32BitConstants(WTSRP::Const_DepthInfo, 4, &depthInfo, 0);
+		}
 		for (const SkillMissileVisual& visual : gSkillMissileVisuals) {
 			if (!visual.Active) continue;
 
@@ -4785,7 +4797,6 @@ void Game::Init()
 		Zone* Zone_OfficeDungeon_1floor = new Zone(1, "OfficeDungeon_1floor", 1, 0);
 		game.ZoneTable.push_back(Zone_OfficeDungeon_1floor);*/
 		//Zone_ThePort->nearZones[1] = Zone_OfficeDungeon_1floor;
-//>>>>>>> Stashed changes
 	}
 	Current_Zone = game.GetZoneByPosition(4, 8);
 
@@ -4851,14 +4862,14 @@ void Game::Init()
 		gLoadingTex.CreateTexture_fromFile(L"Resources/Loading.png", game.basicTexFormat, game.basicTexMip);          // [loading] loading screen image
 		gStartScreenTex.CreateTexture_fromFile(L"Resources/StartScreen.png", game.basicTexFormat, game.basicTexMip);  // [loading] start screen image
 		// [jobselect] job-selection screen textures. Card index MUST match the PlayerJob enum order
-		// (Juggernaut, Frost, Aegis, Mage, Healer, Gunner, DroneOperator, Hacker, Bomber); mapped by weapon.
+		// (Juggernaut, Frost, Aegis, Mage, Sniper, Gunner, DroneOperator, Hacker, Bomber); mapped by weapon.
 		gSelectJobBgTex.CreateTexture_fromFile(L"Resources/selectJop.png", game.basicTexFormat, game.basicTexMip);
 		gConfirmTex.CreateTexture_fromFile(L"Resources/Confirm.png", game.basicTexFormat, game.basicTexMip);
 		gJobCardTex[0].CreateTexture_fromFile(L"Resources/jug.png", game.basicTexFormat, game.basicTexMip);  // 0 Juggernaut  (JUGGERNAUT)
 		gJobCardTex[1].CreateTexture_fromFile(L"Resources/Fro.png", game.basicTexFormat, game.basicTexMip);  // 1 Frost       (FROST)
 		gJobCardTex[2].CreateTexture_fromFile(L"Resources/Shi.png", game.basicTexFormat, game.basicTexMip);  // 2 Aegis       (SHIELDER)
 		gJobCardTex[3].CreateTexture_fromFile(L"Resources/Sol.png", game.basicTexFormat, game.basicTexMip);  // 3 Mage        (SOLDIER, rifle)
-		gJobCardTex[4].CreateTexture_fromFile(L"Resources/Sni.png", game.basicTexFormat, game.basicTexMip);  // 4 Healer      (SNIPER)
+		gJobCardTex[4].CreateTexture_fromFile(L"Resources/Sni.png", game.basicTexFormat, game.basicTexMip);  // 4 Sniper
 		gJobCardTex[5].CreateTexture_fromFile(L"Resources/Gun.png", game.basicTexFormat, game.basicTexMip);  // 5 Gunner      (GUNNER)
 		gJobCardTex[6].CreateTexture_fromFile(L"Resources/Mec.png", game.basicTexFormat, game.basicTexMip);  // 6 DroneOperator (MECHANIC)
 		gJobCardTex[7].CreateTexture_fromFile(L"Resources/Hak.png", game.basicTexFormat, game.basicTexMip);  // 7 Hacker      (HACKER)
@@ -5531,6 +5542,7 @@ void Game::BeginPortalEnter(const char* ip, unsigned short port, int dstZoneId)
 	CTS_ClientHello_Header hello;
 	hello.size = sizeof(CTS_ClientHello_Header);
 	hello.st = CTS_Protocol::ClientHello;
+	strcpy_s(hello.playerId, sizeof(hello.playerId), PlayerId);
 	client.send((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
 
 	MoveZone(dstZoneId);
@@ -5779,6 +5791,7 @@ void Game::DrawLoadingScreen(GPUResource* tex) {
 	if (gd.gpucmd.isClose) {
 		gd.gpucmd.Reset();
 	}
+	gd.ShaderVisibleDescPool.DynamicReset();
 
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -5816,6 +5829,113 @@ void Game::DrawLoadingScreen(GPUResource* tex) {
 }
 
 void Game::DrawStartScreen() { DrawLoadingScreen(gStartScreenTex.resource ? &gStartScreenTex : &gLoadingTex); }   // [loading] start screen image
+
+void Game::DrawStartScreen(const char* playerId, bool idInvalid, bool idTooLong) {
+	GPUResource* img = gStartScreenTex.resource ? &gStartScreenTex : &gLoadingTex;
+	if (img == nullptr || img->resource == nullptr) return;
+
+	if (gd.gpucmd.isClose) {
+		gd.gpucmd.Reset();
+	}
+	gd.ShaderVisibleDescPool.DynamicReset();
+
+	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+	gd.gpucmd->RSSetViewports(1, &gd.viewportArr[0].Viewport);
+	gd.gpucmd->RSSetScissorRects(1, &gd.viewportArr[0].ScissorRect);
+	game.renderViewPort = &gd.viewportArr[0];
+
+	D3D12_CPU_DESCRIPTOR_HANDLE dsv = gd.pDsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	gd.gpucmd->OMSetRenderTargets(1, &gd.SubRenderTarget.rtvHandle.hcpu, TRUE, &dsv);
+
+	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	gd.gpucmd->ClearRenderTargetView(gd.SubRenderTarget.rtvHandle.hcpu, clearColor, 0, NULL);
+	gd.gpucmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+
+	for (int i = 0; i < gd.addSDFTextureStack.size(); ++i) {
+		gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
+	}
+	gd.addSDFTextureStack.clear();
+
+	for (int i = gd.SDFTextureArr_immortalSize; i < gd.SDFTextureArr.size(); ++i) {
+		SDFTextPageTextureBuffer* page = gd.SDFTextureArr[i];
+		if (page != nullptr) {
+			page->BakeSDF();
+		}
+	}
+
+	game.MyScreenShader->ClearSDFInstance();
+	if (game.MyScreenShader->SDFMappedCnt == 0 && game.MyScreenShader->SDFInstance_StructuredBuffer.resource != nullptr) {
+		game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+		game.MyScreenShader->SDFMappedCnt += 1;
+	}
+
+	const float halfW = (float)gd.ClientFrameWidth * 0.5f;
+	const float halfH = (float)gd.ClientFrameHeight * 0.5f;
+
+	const float panelW = min(620.0f, (float)gd.ClientFrameWidth * 0.72f);
+	const float panelH = 178.0f;
+	const float panelY = -halfH * 0.42f;
+	const vec4 panel = vec4(-panelW * 0.5f, panelY, panelW * 0.5f, panelY + panelH);
+	const bool hasText = playerId != nullptr && playerId[0] != '\0';
+
+	const vec4 inputRect = vec4(panel.x + 36.0f, panel.y + 72.0f, panel.z - 36.0f, panel.y + 118.0f);
+	const vec4 inputColor = (idInvalid || idTooLong) ? vec4(0.23f, 0.035f, 0.035f, 0.96f) : vec4(0.02f, 0.075f, 0.10f, 0.96f);
+
+	game.UIDraw_TextureRect(vec4(-halfW, -halfH, halfW, halfH), vec4(1, 1, 1, 1), 0.900f, img);
+	game.UIDraw_SolidRect(panel + vec4(6.0f, -6.0f, 6.0f, -6.0f), vec4(0, 0, 0, 0.48f), 0.24f);
+	game.UIDraw_SolidRect(panel, vec4(0.015f, 0.035f, 0.048f, 0.92f), 0.23f);
+	game.UIDraw_SolidRect(vec4(panel.x, panel.w - 3.0f, panel.z, panel.w), vec4(0.10f, 0.70f, 1.0f, 0.95f), 0.22f);
+
+	game.UIDraw_SolidRect(inputRect + vec4(3.0f, -3.0f, 3.0f, -3.0f), vec4(0, 0, 0, 0.40f), 0.19f);
+	game.UIDraw_SolidRect(inputRect, inputColor, 0.18f);
+	game.UIDraw_SolidRect(vec4(inputRect.x, inputRect.y, inputRect.z, inputRect.y + 2.0f), vec4(0.10f, 0.78f, 0.96f, 0.95f), 0.17f);
+	game.UIDraw_SolidRect(vec4(inputRect.x, inputRect.w - 2.0f, inputRect.z, inputRect.w), vec4(0.10f, 0.78f, 0.96f, 0.95f), 0.17f);
+	game.UIDraw_SolidRect(vec4(inputRect.x, inputRect.y, inputRect.x + 2.0f, inputRect.w), vec4(0.10f, 0.78f, 0.96f, 0.95f), 0.17f);
+	game.UIDraw_SolidRect(vec4(inputRect.z - 2.0f, inputRect.y, inputRect.z, inputRect.w), vec4(0.10f, 0.78f, 0.96f, 0.95f), 0.17f);
+
+	char idText[CTS_ClientHello_Header::MaxPlayerIdLength + 2] = {};
+	if (playerId != nullptr && playerId[0] != '\0') {
+		strcpy_s(idText, playerId);
+		strcat_s(idText, "_");
+	}
+	else {
+		strcpy_s(idText, "TYPE ID");
+	}
+	wchar_t idWide[CTS_ClientHello_Header::MaxPlayerIdLength + 2] = {};
+	for (int i = 0; i < CTS_ClientHello_Header::MaxPlayerIdLength + 1 && idText[i] != '\0'; ++i) {
+		idWide[i] = (wchar_t)idText[i];
+	}
+
+	RenderSDFText(L"PLAYER ID", 9, vec4(panel.x + 38.0f, panel.w - 44.0f, panel.z - 38.0f, panel.w - 14.0f),
+		24.0f, vec4(0.52f, 0.92f, 1.0f, 1.0f), nullptr, nullptr, 0.15f);
+	RenderSDFText(idWide, (int)wcslen(idWide), vec4(inputRect.x + 24.0f, inputRect.y + 8.0f, inputRect.z - 12.0f, inputRect.w - 4.0f),
+		28.0f, hasText ? vec4(0.95f, 1.0f, 1.0f, 1.0f) : vec4(0.38f, 0.68f, 0.78f, 1.0f), nullptr, nullptr, 0.14f);
+
+	RenderSDFText(L"A Z 0 9 ONLY", 12, vec4(panel.x + 38.0f, panel.y + 34.0f, panel.z - 38.0f, panel.y + 60.0f),
+		18.0f, vec4(0.76f, 0.86f, 0.92f, 1.0f), nullptr, nullptr, 0.15f);
+
+	if (hasText) {
+		RenderSDFText(L"PRESS ENTER", 11, vec4(panel.x + 38.0f, panel.y + 8.0f, panel.z - 38.0f, panel.y + 32.0f),
+			19.0f, vec4(0.96f, 0.82f, 0.34f, 1.0f), nullptr, nullptr, 0.15f);
+	}
+	MyScreenShader->RenderAllSDFTexts();
+
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+	gd.gpucmd->CopyResource(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], gd.SubRenderTarget.resource);
+	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+
+	gd.gpucmd.Close();
+	gd.gpucmd.Execute();
+	gd.gpucmd.WaitGPUComplete();
+	gd.pSwapChain->Present(1, 0);
+	gd.CurrentSwapChainBufferIndex = gd.pSwapChain->GetCurrentBackBufferIndex();
+}
 
 // [jobselect] Computes the 9 job-card rects (3x3 grid) and the two confirm/cancel button rects, in the
 // same center-origin, y-up pixel space that UIDraw_TextureRect and game.CurrentCursorPos use.
@@ -5865,6 +5985,7 @@ void Game::DrawJobSelectScreen(int hovered, int selected, bool confirmHover, boo
 	if (gSelectJobBgTex.resource == nullptr) { DrawStartScreen(); return; }
 
 	gd.gpucmd.Reset();
+	gd.ShaderVisibleDescPool.DynamicReset();
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	/*gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);*/
@@ -5881,6 +6002,22 @@ void Game::DrawJobSelectScreen(int hovered, int selected, bool confirmHover, boo
 	gd.gpucmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
 	gd.gpucmd.SetShader(game.MyScreenShader, ShaderType::RenderNormal);
+
+	for (int i = 0; i < gd.addSDFTextureStack.size(); ++i) {
+		gd.AddTextSDFTexture(gd.addSDFTextureStack[i]);
+	}
+	gd.addSDFTextureStack.clear();
+
+	for (int i = gd.SDFTextureArr_immortalSize; i < gd.SDFTextureArr.size(); ++i) {
+		SDFTextPageTextureBuffer* page = gd.SDFTextureArr[i];
+		page->BakeSDF();
+	}
+
+	game.MyScreenShader->ClearSDFInstance();
+	if (game.MyScreenShader->SDFMappedCnt == 0) {
+		game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Map(0, nullptr, (void**)&game.MyScreenShader->MappedSDFInstance);
+		game.MyScreenShader->SDFMappedCnt += 1;
+	}
 
 	const float _lw = (float)gd.ClientFrameWidth * 0.5f;
 	const float _lh = (float)gd.ClientFrameHeight * 0.5f;
@@ -5909,6 +6046,7 @@ void Game::DrawJobSelectScreen(int hovered, int selected, bool confirmHover, boo
 	const vec4 barRect = vec4(barL, confirmR.y, barL + barW, confirmR.w);
 	const vec4 barTint = (selected >= 0) ? vec4(1.0f, 1.0f, 1.0f, 1.0f) : vec4(0.62f, 0.62f, 0.68f, 1.0f);
 	game.UIDraw_TextureRect(barRect, barTint, 0.25f, &gConfirmTex);
+	MyScreenShader->RenderAllSDFTexts();
 
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	gd.gpucmd.ResBarrierTr(gd.ppRenderTargetBuffers[gd.CurrentSwapChainBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -8575,26 +8713,39 @@ READ_START:
 	{
 		STC_AddQuest_Header& header = *(STC_AddQuest_Header*)currentPivot;
 		game.UITourID += 1;
-		game.QuestArr.push_back(header.QuestID);
-		Quest* prograss = new Quest();
-		game.QuestTable[header.QuestID]->Copy(prograss);
-		game.QuestPrograss.push_back(prograss);
+		if (0 <= header.QuestID && header.QuestID < (int)game.QuestTable.size() && game.QuestTable[header.QuestID] != nullptr) {
+			int questSlot = -1;
+			for (int i = 0; i < (int)game.QuestArr.size(); ++i) {
+				if (game.QuestArr[i] == header.QuestID) {
+					questSlot = i;
+					break;
+				}
+			}
+			if (questSlot < 0) {
+				game.QuestArr.push_back(header.QuestID);
+				Quest* prograss = new Quest();
+				game.QuestTable[header.QuestID]->Copy(prograss);
+				game.QuestPrograss.push_back(prograss);
+			}
+		}
 		currentPivot += header.size;
 		offset += header.size;
 	}
 		break;
 	case STC_Protocol::DeleteQuest:
 	{
-		STC_AddQuest_Header& header = *(STC_AddQuest_Header*)currentPivot;
+		STC_DeleteQuest_Header& header = *(STC_DeleteQuest_Header*)currentPivot;
 		game.UITourID += 1;
 		for (int i = 0; i < game.QuestArr.size(); ++i) {
 			if (game.QuestArr[i] == header.QuestID) {
 				const int completedQuestId = game.QuestArr[i];
-				if (i < game.QuestPrograss.size()) {
+				if (i < (int)game.QuestPrograss.size() && game.QuestPrograss[i] != nullptr) {
 					delete game.QuestPrograss[i];
-					game.QuestPrograss.erase(game.QuestPrograss.begin() + i);
 				}
 				game.QuestArr.erase(game.QuestArr.begin() + i);
+				if (i < (int)game.QuestPrograss.size()) {
+					game.QuestPrograss.erase(game.QuestPrograss.begin() + i);
+				}
 				// 퀘스트 완수 처리
 				QuestCompleteShowFlow = 4.0f;
 				CurrentCompleteQuest = (completedQuestId >= 0 && completedQuestId < game.QuestTable.size())
@@ -8612,15 +8763,30 @@ READ_START:
 		STC_SyncQuestPrograss_Header& header = *(STC_SyncQuestPrograss_Header*)currentPivot;
 		game.UITourID += 1;
 		char* ptr = currentPivot + sizeof(STC_SyncQuestPrograss_Header);
-		for (int i = 0; i < game.QuestArr.size(); ++i) {
+		int questSlot = -1;
+		for (int i = 0; i < (int)game.QuestArr.size(); ++i) {
 			if (game.QuestArr[i] == header.questID) {
-				Quest* prograss = game.QuestPrograss[i];
-				for (int k = 0; k < prograss->requp; ++k) {
+				questSlot = i;
+				break;
+			}
+		}
+		if (questSlot < 0 && 0 <= header.questID && header.questID < (int)game.QuestTable.size() && game.QuestTable[header.questID] != nullptr) {
+			game.QuestArr.push_back(header.questID);
+			Quest* prograss = new Quest();
+			game.QuestTable[header.questID]->Copy(prograss);
+			game.QuestPrograss.push_back(prograss);
+			questSlot = (int)game.QuestArr.size() - 1;
+		}
+		if (0 <= questSlot && questSlot < (int)game.QuestPrograss.size()) {
+			Quest* prograss = game.QuestPrograss[questSlot];
+			if (prograss != nullptr) {
+				int reqCount = min(prograss->requp, header.questReqSiz);
+				for (int k = 0; k < reqCount; ++k) {
 					prograss->ReqArr[k].PresentCnt = *(int*)ptr;
 					ptr += sizeof(int);
-					QuestPrograssShowFlow = 3;
-					CurrentPrograssQuest = prograss;
 				}
+				QuestPrograssShowFlow = 3;
+				CurrentPrograssQuest = prograss;
 			}
 		}
 
@@ -8845,6 +9011,11 @@ bool Game::RectContainRect(vec4 rt, vec4 rt2)
 
 void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid)
 {
+	if (uitextureid < 0 || uitextureid >= (int)game.UITextureTable.size()) return;
+	GPUResource* uiTex = game.UITextureTable[uitextureid];
+	if (uiTex == nullptr || uiTex->resource == nullptr) return;
+	if (uiTex->descindex.hCreation.hcpu.ptr == 0) return;
+
 	vec4 line = vec4(loc.x, (loc.y + loc.w) * 0.5f, loc.z, (loc.y + loc.w) * 0.5f);
 	float wid = gd.ClientFrameWidth;
 	float hei = gd.ClientFrameHeight;
@@ -8858,13 +9029,15 @@ void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, int uitextureid
 
 	DescHandle di;
 	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
-	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	if (di.hcpu.ptr == 0 || di.hgpu.ptr == 0) return;
+	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, uiTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
 	game.TextMesh->Render(gd.gpucmd, 1);
 }
 
 void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, GPUResource* tex) {
-	if (tex == nullptr) return;
+	if (tex == nullptr || tex->resource == nullptr) return;
+	if (tex->descindex.hCreation.hcpu.ptr == 0) return;
 	vec4 line = vec4(loc.x, (loc.y + loc.w) * 0.5f, loc.z, (loc.y + loc.w) * 0.5f);
 	float wid = gd.ClientFrameWidth;
 	float hei = gd.ClientFrameHeight;
@@ -8878,6 +9051,7 @@ void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, GPUResource* te
 
 	DescHandle di;
 	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
+	if (di.hcpu.ptr == 0 || di.hgpu.ptr == 0) return;
 	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, tex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
 	game.TextMesh->Render(gd.gpucmd, 1);
@@ -8885,6 +9059,11 @@ void Game::UIDraw_TextureRect(vec4 loc, vec4 color, float depth, GPUResource* te
 
 void Game::UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float LineWidth, int uitextureid)
 {
+	if (uitextureid < 0 || uitextureid >= (int)game.UITextureTable.size()) return;
+	GPUResource* uiTex = game.UITextureTable[uitextureid];
+	if (uiTex == nullptr || uiTex->resource == nullptr) return;
+	if (uiTex->descindex.hCreation.hcpu.ptr == 0) return;
+
 	float wid = gd.ClientFrameWidth;
 	float hei = gd.ClientFrameHeight;
 	gd.gpucmd->SetGraphicsRoot32BitConstants(0, 1, &wid, 0);
@@ -8896,7 +9075,8 @@ void Game::UIDraw_TextureLine(vec4 startToEnd, vec4 color, float depth, float Li
 
 	DescHandle di;
 	gd.ShaderVisibleDescPool.DynamicAlloc(&di, 1);
-	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, game.UITextureTable[uitextureid]->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	if (di.hcpu.ptr == 0 || di.hgpu.ptr == 0) return;
+	gd.pDevice->CopyDescriptorsSimple(1, di.hcpu, uiTex->descindex.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gd.gpucmd->SetGraphicsRootDescriptorTable(1, di.hgpu);
 	game.TextMesh->Render(gd.gpucmd, 1);
 }
@@ -9117,7 +9297,7 @@ void Game::RenderStatWindowHUD()
 
 	const wchar_t* names[4] = { L"HP", L"DEF", L"MOVE", L"ATK" };
 	int values[4] = { player->StatHP, player->StatDefense, player->StatMoveSpeed, player->StatAttack };
-	const wchar_t* effects[4] = { L"+5% Max HP", L"+5 DEF", L"+0.1% Speed", L"+5% Damage" };
+	const wchar_t* effects[4] = { L"+10 Max HP", L"+3 DEF", L"+0.2% Speed", L"+0.5 ATK / +0.5% Skill" };
 	for (int i = 0; i < 4; ++i) {
 		float top = panel.w - (82.0f + i * 78.0f) * scale;
 		vec4 row = vec4(panel.x + 22.0f * scale, top - 56.0f * scale, panel.z - 22.0f * scale, top);

@@ -166,29 +166,84 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	const bool automatedE2E = dungeonReturnE2E || openWorldZoneE2E;
 
 	// [start screen] show StartScreen.png at launch; begin loading only after any key/click is pressed.
+	int chosenJob = automatedE2E ? 0 : -1;   // PlayerJob enum index, or -1 if none chosen
+	string chosenPlayerId = automatedE2E ? "Player1" : "";
 	if (!automatedE2E) {
+		g_inJobSelect = true;
+		ShowCursor(TRUE);
 		MSG dm;
 		while (::PeekMessage(&dm, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {}
 		while (::PeekMessage(&dm, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {}
 
 		ULONGLONG _startScreenT0 = GetTickCount64();
+		bool idInvalid = false;
+		bool idTooLong = false;
 		bool started = false;
+
+		auto HandlePlayerIdChar = [&](char ch) {
+			const bool isDigit = ch >= '0' && ch <= '9';
+			const bool isUpper = ch >= 'A' && ch <= 'Z';
+			const bool isLower = ch >= 'a' && ch <= 'z';
+			if (ch == '\b') {
+				if (!chosenPlayerId.empty()) {
+					chosenPlayerId.pop_back();
+				}
+				idInvalid = false;
+				idTooLong = false;
+			}
+			else if (ch == '\r' || ch == '\n') {
+				if (!chosenPlayerId.empty()) {
+					started = true;
+				}
+				else {
+					idInvalid = true;
+					idTooLong = false;
+				}
+			}
+			else if (isDigit || isUpper || isLower) {
+				if (chosenPlayerId.size() < CTS_ClientHello_Header::MaxPlayerIdLength) {
+					chosenPlayerId.push_back(ch);
+					idInvalid = false;
+					idTooLong = false;
+				}
+				else {
+					idInvalid = false;
+					idTooLong = false;
+				}
+			}
+			else if ((unsigned char)ch >= 32) {
+				idInvalid = false;
+				idTooLong = false;
+			}
+		};
+
 		while (!started) {
 			MSG sm;
 			while (::PeekMessage(&sm, NULL, 0, 0, PM_REMOVE)) {
 				if (sm.message == WM_QUIT) { WSACleanup(); return 0; }
-				if ((GetTickCount64() - _startScreenT0) > 500 && (sm.message == WM_KEYDOWN || sm.message == WM_LBUTTONDOWN)) started = true;
+				if (sm.message == WM_CHAR) {
+					HandlePlayerIdChar((char)sm.wParam);
+					continue;
+				}
+				if (sm.message == WM_KEYDOWN && sm.wParam == VK_BACK) {
+					HandlePlayerIdChar('\b');
+					continue;
+				}
+				if (sm.message == WM_KEYDOWN && sm.wParam == VK_RETURN) {
+					HandlePlayerIdChar('\r');
+					continue;
+				}
 				::TranslateMessage(&sm);
 				::DispatchMessage(&sm);
 			}
-			game.DrawStartScreen();
+
+			game.DrawStartScreen(chosenPlayerId.c_str(), idInvalid, idTooLong);
 		}
 	}
 
 	// [jobselect] Job-selection screen: shown after the start screen, before connecting. Hover a card in
 	// the 3x3 grid, left-click to select, then click CONFIRM to lock it in (CANCEL clears). The chosen job
 	// is sent to the server with CTS_ChangeJob once the connection is confirmed (in the main loop below).
-	int chosenJob = automatedE2E ? 0 : -1;   // PlayerJob enum index, or -1 if none chosen
 	if (!automatedE2E) {
 		g_inJobSelect = true;
 		ShowCursor(TRUE);   // [jobselect] reveal the OS cursor for clicking (it was hidden at launch)
@@ -207,6 +262,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 			MSG sm;
 			while (::PeekMessage(&sm, NULL, 0, 0, PM_REMOVE)) {
 				if (sm.message == WM_QUIT) { WSACleanup(); return 0; }
+				if (sm.message == WM_KEYDOWN && sm.wParam == VK_RETURN) {
+					if (selected >= 0) { chosenJob = selected; done = true; }
+					continue;
+				}
 				::TranslateMessage(&sm);
 				::DispatchMessage(&sm);
 			}
@@ -226,7 +285,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 			if (click) {
 				if (hovered >= 0)                       selected = hovered;
 				else if (overCancel)                    selected = -1;
-				else if (overConfirm && selected >= 0) { chosenJob = selected; done = true; }
+				else if (overConfirm) {
+					if (selected >= 0) { chosenJob = selected; done = true; }
+				}
 			}
 
 			game.DrawJobSelectScreen(hovered, selected, overConfirm, overCancel);
@@ -252,10 +313,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	game.expectedInitialJob = chosenJob;
 	game.isInitialJobConfirmed = (chosenJob < 0);
 	game.isServerSyncComplete = false;
+	strcpy_s(game.PlayerId, sizeof(game.PlayerId), chosenPlayerId.c_str());
 
 	CTS_ClientHello_Header hello;
 	hello.size = sizeof(CTS_ClientHello_Header);
 	hello.st = CTS_Protocol::ClientHello;
+	strcpy_s(hello.playerId, sizeof(hello.playerId), chosenPlayerId.c_str());
 	client.send_all((char*)&hello, sizeof(CTS_ClientHello_Header), 0);
 
 	// [jobselect] Chosen job is sent from the main loop once the connection is confirmed (the server

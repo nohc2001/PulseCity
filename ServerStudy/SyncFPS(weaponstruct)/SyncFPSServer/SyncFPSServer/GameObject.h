@@ -842,6 +842,7 @@ struct Quest {
 		for (int i = 0; i < dest->requp; ++i) {
 			ReqArr[i].Copy(&dest->ReqArr[i]);
 		}
+		dest->rewardUp = rewardUp;
 		for (int i = 0; i < dest->rewardUp; ++i) {
 			RewardArr[i].Copy(&dest->RewardArr[i]);
 		}
@@ -909,7 +910,7 @@ static JobData GJobTable[] = {
 		{ SkillEffectType::Rifle_StimPack, 14.0f, 0.0f, 0.0f, 1.0f, 10.0f, 7.0f },
 		{ SkillEffectType::Rifle_MissileBarrage, 32.0f, 0.0f, 25.0f, 8.0f, 45.0f, 3.0f },
 	} },
-	{ PlayerJob::Healer, 90.0f, 24.0f, 5.0f, WeaponType::Sniper, {
+	{ PlayerJob::Sniper, 90.0f, 24.0f, 5.0f, WeaponType::Sniper, {
 		{ SkillEffectType::Sniper_GrappleHook, 7.0f, 0.0f, 18.0f, 1.0f, 0.0f, 0.35f },
 		{ SkillEffectType::Sniper_ModeSwitch, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
 		{ SkillEffectType::Sniper_Railgun, 32.0f, 0.0f, 70.0f, 0.8f, 120.0f, 14.0f },
@@ -938,7 +939,7 @@ static JobData GJobTable[] = {
 
 inline const JobData& GetJobData(PlayerJob job) {
 	int index = (int)job;
-	if (index < 0 || index >= (int)PlayerJob::Max) index = (int)PlayerJob::Healer;
+	if (index < 0 || index >= (int)PlayerJob::Max) index = (int)PlayerJob::Sniper;
 	return GJobTable[index];
 }
 /*
@@ -1118,10 +1119,11 @@ struct Player : public SkinMeshGameObject {
 		100, 105, 110, 116, 122, 128, 134, 141, 148, 155, 163, 171, 180, 189, 198, 208, 218, 229, 241, 253, 265, 279, 293, 307, 323, 339, 356, 373, 392, 412, 432, 454, 476, 500, 525, 552, 579, 608, 639, 670, 704, 739, 776, 815, 856, 899, 943, 991, 1040, 1092, 1147, 1204, 1264, 1327, 1394, 1464, 1537, 1614, 1694, 1779, 1868, 1961, 2059, 2162, 2270, 2384, 2503, 2628, 2760, 2898, 3043, 3195, 3355, 3522, 3698, 3883, 4077, 4281, 4495, 4720, 4956, 5204, 5464, 5737, 6024, 6325, 6642, 6974, 7322, 7689, 8073, 8477, 8901, 9346, 9813, 10303, 10819, 11360, 11928, 12524
 	};
 
-	static constexpr float StatHpPercentPerPoint = 0.05f;
-	static constexpr float StatDefensePerPoint = 5.0f;
-	static constexpr float StatMoveSpeedPercentPerPoint = 0.001f;
-	static constexpr float StatAttackPercentPerPoint = 0.05f;
+	static constexpr float StatHPPerPoint = 10.0f;
+	static constexpr float StatDefensePerPoint = 3.0f;
+	static constexpr float StatMoveSpeedPercentPerPoint = 0.002f;
+	static constexpr float StatAttackPerPoint = 0.5f;
+	static constexpr float StatSkillDamagePercentPerPoint = 0.005f;
 
 	//STC �÷��̾ Ư�� ����Ʈ�� �ϼ��ߴ��� ��Ÿ���� ��Ʈ�迭 (�ִ� 4096���� ����Ʈ ���밡��.)
 	BitBoolArr<64> CompleteQuestBitArr;
@@ -1269,7 +1271,7 @@ struct Player : public SkinMeshGameObject {
 		float ShieldDurability = 0;
 		float MaxShieldDurability = 100;
 		//STC player job
-		int m_currentJob = (int)PlayerJob::Healer;
+		int m_currentJob = (int)PlayerJob::Sniper;
 		//STC skill cooldown duration by slot
 		float SkillCooldown[(int)SkillSlot::Max] = {};
 		//STC skill cooldown remaining by slot
@@ -1639,6 +1641,7 @@ struct ClientData {
 	int zoneId = 0;
 
 	int pendingTransferToken = 0;
+	char playerId[CTS_ClientHello_Header::MaxPlayerIdLength + 1] = {};
 
 	// [4단계-STEP1] 이 소켓이 게임 클라이언트가 아니라 '이웃 서버와의 상시 복제 링크'인지 표시.
 	// true면 플레이어 로직(이동/전송/게임데이터 송신)에서 제외하고, 서버 간 메시지만 주고받는다.
@@ -2594,7 +2597,7 @@ struct World {
 		return (int)((issuer << 24) | (sequence == 0 ? 1u : sequence));
 	}
 	bool SendPlayerTransferToServer(const PlayerTransferData& data);
-	void AcceptClientHello(int clientIndex);
+	void AcceptClientHello(int clientIndex, const char* playerId);
 	bool AcceptTransferConnect(int clientIndex, int transferToken);
 	void StoreIncomingPlayerTransfer(const PlayerTransferData& data);
 

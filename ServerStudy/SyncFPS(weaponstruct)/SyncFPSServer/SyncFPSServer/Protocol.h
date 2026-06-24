@@ -329,7 +329,7 @@ enum class PlayerJob : int {
 	Frost,
 	Aegis,
 	Mage,
-	Healer,
+	Sniper,
 	Gunner,
 	DroneOperator,
 	Hacker,
@@ -411,7 +411,7 @@ struct STC_SkillCast_Header {
 	STC_Protocol st = STC_Protocol::SkillCast;
 	int zoneId = 0;
 	int ownerObjIndex = -1;
-	PlayerJob job = PlayerJob::Healer;
+	PlayerJob job = PlayerJob::Sniper;
 	SkillSlot slot = SkillSlot::Skill1;
 	SkillEffectType effectType = SkillEffectType::Healer_HealAura;
 	vec4 position = vec4(0, 0, 0, 1);
@@ -626,7 +626,7 @@ struct CTS_UseSkill_Header {
 struct CTS_ChangeJob_Header {
 	unsigned int size = sizeof(CTS_ChangeJob_Header);
 	CTS_Protocol st = CTS_Protocol::ChangeJob;
-	PlayerJob job = PlayerJob::Healer;
+	PlayerJob job = PlayerJob::Sniper;
 };
 
 enum class PlayerStatType : int {
@@ -644,8 +644,10 @@ struct CTS_StatUp_Header {
 };
 
 struct CTS_ClientHello_Header {
-	unsigned int size = 6;
+	static constexpr int MaxPlayerIdLength = 16;
+	unsigned int size = sizeof(CTS_ClientHello_Header);
 	CTS_Protocol st = CTS_Protocol::ClientHello;
+	char playerId[MaxPlayerIdLength + 1] = {};
 };
 
 struct CTS_TransferConnect_Header {
@@ -655,6 +657,8 @@ struct CTS_TransferConnect_Header {
 };
 
 struct PlayerTransferData {
+	static constexpr int MaxPlayerIdLength = 16;
+	char playerId[MaxPlayerIdLength + 1] = {};
 	int transferToken = 0;
 	int srcZoneId = -1;
 	int srcObjIndex = -1;
@@ -676,7 +680,7 @@ struct PlayerTransferData {
 	float zoneMoveCooldownRemain = 0.0f;
 	int lastBoundaryIndex = -1;
 	bool wasInsideBoundary = false;
-	int m_currentJob = (int)PlayerJob::Healer;
+	int m_currentJob = (int)PlayerJob::Sniper;
 	float SkillCooldown[(int)SkillSlot::Max] = {};
 	float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 	int m_currentWeaponType = 0;

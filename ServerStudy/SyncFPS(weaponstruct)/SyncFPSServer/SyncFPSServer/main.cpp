@@ -301,7 +301,7 @@ READ_START:
 	case CTS_Protocol::ClientHello: {
 		//cout << "[Receiving] ClientHello" << endl;
 		CTS_ClientHello_Header& header = *(CTS_ClientHello_Header*)currentPivot;
-		AcceptClientHello(clientIndex);
+		AcceptClientHello(clientIndex, header.playerId);
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -557,15 +557,23 @@ READ_START:
 				p->PresentTalkID = -1;
 			}
 			else if (ts.mod == 'q') {
-				p->QuestArr.push_back(ts.AddQuest);
-				zone->Sending_AddQuest(gameworld.clients[p->clientIndex].PersonalSDS, ts.AddQuest);
-				p->PrograssQuestBitArr[ts.AddQuest] = true;
-				Quest* progress = new Quest();
-				gameworld.QuestTable[ts.AddQuest]->Copy(progress);
-				p->QuestPrograss.push_back(progress);
+				bool questAccepted = false;
+				if (0 <= ts.AddQuest && ts.AddQuest < (int)gameworld.QuestTable.size()
+					&& gameworld.QuestTable[ts.AddQuest] != nullptr
+					&& !p->PrograssQuestBitArr[ts.AddQuest]
+					&& !p->CompleteQuestBitArr[ts.AddQuest]) {
+					p->QuestArr.push_back(ts.AddQuest);
+					zone->Sending_AddQuest(gameworld.clients[p->clientIndex].PersonalSDS, ts.AddQuest);
+					p->PrograssQuestBitArr[ts.AddQuest] = true;
+					Quest* prograss = new Quest();
+					gameworld.QuestTable[ts.AddQuest]->Copy(prograss);
+					p->QuestPrograss.push_back(prograss);
+					zone->Sending_SyncQuestPrograss(gameworld.clients[p->clientIndex].PersonalSDS, ts.AddQuest, prograss);
+					questAccepted = true;
+				}
 				p->PresentTalkID = -1;
 				// [silas] Accepting Silas's quest (id 3) unlocks the dungeon-entry portal in this open-world zone.
-				if (ts.AddQuest == 3 && zone != nullptr) {
+				if (questAccepted && ts.AddQuest == 3 && zone != nullptr) {
 					zone->SpawnPortal(true);
 				}
 			}
