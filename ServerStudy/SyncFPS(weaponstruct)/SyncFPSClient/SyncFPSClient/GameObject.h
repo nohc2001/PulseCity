@@ -1150,6 +1150,7 @@ struct Quest {
 		for (int i = 0; i < dest->requp; ++i) {
 			ReqArr[i].Copy(&dest->ReqArr[i]);
 		}
+		dest->rewardUp = rewardUp;
 		for (int i = 0; i < dest->rewardUp; ++i) {
 			RewardArr[i].Copy(&dest->RewardArr[i]);
 		}

@@ -644,8 +644,10 @@ struct CTS_StatUp_Header {
 };
 
 struct CTS_ClientHello_Header {
-	unsigned int size = 6;
+	static constexpr int MaxPlayerIdLength = 16;
+	unsigned int size = sizeof(CTS_ClientHello_Header);
 	CTS_Protocol st = CTS_Protocol::ClientHello;
+	char playerId[MaxPlayerIdLength + 1] = {};
 };
 
 struct CTS_TransferConnect_Header {
@@ -655,6 +657,8 @@ struct CTS_TransferConnect_Header {
 };
 
 struct PlayerTransferData {
+	static constexpr int MaxPlayerIdLength = 16;
+	char playerId[MaxPlayerIdLength + 1] = {};
 	int transferToken = 0;
 	int srcZoneId = -1;
 	int srcObjIndex = -1;

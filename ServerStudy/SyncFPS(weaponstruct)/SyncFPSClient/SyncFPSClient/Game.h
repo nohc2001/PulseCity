@@ -331,6 +331,7 @@ public:
 	bool isServerSyncComplete = false;
 	bool isInitialJobConfirmed = true;
 	int expectedInitialJob = -1;
+	char PlayerId[CTS_ClientHello_Header::MaxPlayerIdLength + 1] = {};
 	bool IsPresentationReady() const {
 		if (player == nullptr) return false;
 		bool localPlayerVisualReady = true;
@@ -709,6 +710,7 @@ public:
 
 	void DrawLoadingScreen(GPUResource* tex = nullptr);   // [loading] standalone present that draws a fullscreen image (default Loading.png)
 	void DrawStartScreen();                               // [loading] draws the StartScreen image at launch
+	void DrawStartScreen(const char* playerId, bool idInvalid, bool idTooLong); // [login] start screen with player-id input
 	void ComputeJobSelectLayout(vec4 cardRects[9], vec4& confirmRect, vec4& cancelRect);   // [jobselect] grid + button rects
 	void DrawJobSelectScreen(int hovered, int selected, bool confirmHover, bool cancelHover); // [jobselect] one frame of the job-select screen
 

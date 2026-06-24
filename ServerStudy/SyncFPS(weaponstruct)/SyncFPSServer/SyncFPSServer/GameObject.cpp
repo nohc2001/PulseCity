@@ -4152,9 +4152,41 @@ void Player::SyncStatState(Zone* zones)
 
 namespace {
 	constexpr unsigned int PlayerSaveMagic = 0x50435346; // PCSF
-	constexpr unsigned int PlayerSaveVersion = 1;
+	constexpr unsigned int PlayerSaveVersion = 2;
+	constexpr unsigned int PlayerSaveLegacyVersion = 1;
+	constexpr int PlayerSaveMaxQuestProgress = 128;
+
+	struct PlayerSaveQuestRequirement {
+		int type = 0;
+		int ObjID = -1;
+		int Cnt = 0;
+		int PresentCnt = 0;
+	};
+
+	struct PlayerSaveQuestProgress {
+		int questId = -1;
+		int requp = 0;
+		PlayerSaveQuestRequirement ReqArr[Quest::MaxRequire] = {};
+	};
 
 #pragma pack(push, 1)
+	struct PlayerSaveDataV1 {
+		unsigned int magic = PlayerSaveMagic;
+		unsigned int version = PlayerSaveLegacyVersion;
+		int Gold = 0;
+		int Exp = 0;
+		int Level = 0;
+		int StatPoint = 0;
+		int StatHP = 0;
+		int StatDefense = 0;
+		int StatMoveSpeed = 0;
+		int StatAttack = 0;
+		int KillCount = 0;
+		int DeathCount = 0;
+		int CurrentJob = (int)PlayerJob::Healer;
+		ItemStack Inventory[Player::maxItem] = {};
+	};
+
 	struct PlayerSaveData {
 		unsigned int magic = PlayerSaveMagic;
 		unsigned int version = PlayerSaveVersion;
@@ -4169,7 +4201,13 @@ namespace {
 		int KillCount = 0;
 		int DeathCount = 0;
 		int CurrentJob = (int)PlayerJob::Healer;
+		float HP = 0.0f;
+		float MaxHP = 0.0f;
 		ItemStack Inventory[Player::maxItem] = {};
+		ui64 CompleteQuestBits[64] = {};
+		ui64 PrograssQuestBits[64] = {};
+		int QuestProgressCount = 0;
+		PlayerSaveQuestProgress QuestProgress[PlayerSaveMaxQuestProgress] = {};
 	};
 #pragma pack(pop)
 
@@ -4182,9 +4220,23 @@ namespace {
 		return "PlayerDB/" + safe;
 	}
 
-	string MakePlayerSaveTextPath(const char* key)
+	bool IsValidPlayerId(const char* id)
 	{
-		return MakePlayerSaveBaseName(key) + ".txt";
+		if (id == nullptr || id[0] == '\0') return false;
+		for (int i = 0; i < CTS_ClientHello_Header::MaxPlayerIdLength; ++i) {
+			char c = id[i];
+			if (c == '\0') return true;
+			const bool digit = c >= '0' && c <= '9';
+			const bool upper = c >= 'A' && c <= 'Z';
+			const bool lower = c >= 'a' && c <= 'z';
+			if (!digit && !upper && !lower) return false;
+		}
+		return id[CTS_ClientHello_Header::MaxPlayerIdLength] == '\0';
+	}
+
+	const char* GetClientSaveKey(const ClientData& client)
+	{
+		return IsValidPlayerId(client.playerId) ? client.playerId : client.addr.IPString;
 	}
 
 	string MakePlayerSaveBinaryPath(const char* key)
@@ -4192,63 +4244,21 @@ namespace {
 		return MakePlayerSaveBaseName(key) + ".bin";
 	}
 
-	bool LoadPlayerSaveText(const char* key, PlayerSaveData& data)
+	void CopyLegacySaveData(const PlayerSaveDataV1& src, PlayerSaveData& dst)
 	{
-		ifstream ifs(MakePlayerSaveTextPath(key));
-		if (!ifs.is_open()) return false;
-
-		data = PlayerSaveData{};
-		string name;
-		while (ifs >> name) {
-			if (name == "Version") {
-				ifs >> data.version;
-			}
-			else if (name == "Gold") {
-				ifs >> data.Gold;
-			}
-			else if (name == "Exp") {
-				ifs >> data.Exp;
-			}
-			else if (name == "Level") {
-				ifs >> data.Level;
-			}
-			else if (name == "StatPoint") {
-				ifs >> data.StatPoint;
-			}
-			else if (name == "StatHP") {
-				ifs >> data.StatHP;
-			}
-			else if (name == "StatDefense") {
-				ifs >> data.StatDefense;
-			}
-			else if (name == "StatMoveSpeed") {
-				ifs >> data.StatMoveSpeed;
-			}
-			else if (name == "StatAttack") {
-				ifs >> data.StatAttack;
-			}
-			else if (name == "KillCount") {
-				ifs >> data.KillCount;
-			}
-			else if (name == "DeathCount") {
-				ifs >> data.DeathCount;
-			}
-			else if (name == "CurrentJob") {
-				ifs >> data.CurrentJob;
-			}
-			else if (name == "Inventory") {
-				int slot = -1;
-				ItemStack item = {};
-				ifs >> slot >> item.id >> item.ItemCount;
-				if (slot >= 0 && slot < Player::maxItem) data.Inventory[slot] = item;
-			}
-			else {
-				string rest;
-				getline(ifs, rest);
-			}
-		}
-
-		return ifs.eof() || ifs.good();
+		dst = PlayerSaveData{};
+		dst.Gold = src.Gold;
+		dst.Exp = src.Exp;
+		dst.Level = src.Level;
+		dst.StatPoint = src.StatPoint;
+		dst.StatHP = src.StatHP;
+		dst.StatDefense = src.StatDefense;
+		dst.StatMoveSpeed = src.StatMoveSpeed;
+		dst.StatAttack = src.StatAttack;
+		dst.KillCount = src.KillCount;
+		dst.DeathCount = src.DeathCount;
+		dst.CurrentJob = src.CurrentJob;
+		for (int i = 0; i < Player::maxItem; ++i) dst.Inventory[i] = src.Inventory[i];
 	}
 
 	bool LoadPlayerSaveBinary(const char* key, PlayerSaveData& data)
@@ -4256,17 +4266,33 @@ namespace {
 		ifstream ifs(MakePlayerSaveBinaryPath(key), ios::binary);
 		if (!ifs.is_open()) return false;
 
-		data = PlayerSaveData{};
-		ifs.read((char*)&data, sizeof(data));
-		return ifs && data.magic == PlayerSaveMagic && data.version == PlayerSaveVersion;
+		unsigned int magic = 0;
+		unsigned int version = 0;
+		ifs.read((char*)&magic, sizeof(magic));
+		ifs.read((char*)&version, sizeof(version));
+		if (!ifs || magic != PlayerSaveMagic) return false;
+		ifs.seekg(0, ios::beg);
+
+		if (version == PlayerSaveVersion) {
+			data = PlayerSaveData{};
+			ifs.read((char*)&data, sizeof(data));
+			return ifs && data.magic == PlayerSaveMagic && data.version == PlayerSaveVersion;
+		}
+		if (version == PlayerSaveLegacyVersion) {
+			PlayerSaveDataV1 legacy = {};
+			ifs.read((char*)&legacy, sizeof(legacy));
+			if (!ifs || legacy.magic != PlayerSaveMagic || legacy.version != PlayerSaveLegacyVersion) return false;
+			CopyLegacySaveData(legacy, data);
+			return true;
+		}
+		return false;
 	}
 }
 
 bool Player::LoadPersistentData(const char* key)
 {
 	PlayerSaveData data = {};
-	bool loadedFromText = LoadPlayerSaveText(key, data);
-	if (!loadedFromText && !LoadPlayerSaveBinary(key, data)) return false;
+	if (!LoadPlayerSaveBinary(key, data)) return false;
 
 	Gold = data.Gold;
 	Exp = max(0, data.Exp);
@@ -4284,32 +4310,76 @@ bool Player::LoadPersistentData(const char* key)
 	for (int i = 0; i < maxItem; ++i) {
 		Inventory[i] = data.Inventory[i];
 	}
+	memcpy(CompleteQuestBitArr.buffer, data.CompleteQuestBits, sizeof(data.CompleteQuestBits));
+	memcpy(PrograssQuestBitArr.buffer, data.PrograssQuestBits, sizeof(data.PrograssQuestBits));
+	QuestArr.clear();
+	QuestPrograss.clear();
+	int questCount = max(0, min(PlayerSaveMaxQuestProgress, data.QuestProgressCount));
+	for (int i = 0; i < questCount; ++i) {
+		PlayerSaveQuestProgress& savedQuest = data.QuestProgress[i];
+		int questId = savedQuest.questId;
+		if (questId < 0 || questId >= (int)gameworld.QuestTable.size()) continue;
+		Quest* baseQuest = gameworld.QuestTable[questId];
+		if (baseQuest == nullptr) continue;
+
+		Quest* prograss = new Quest(*baseQuest);
+		int reqCount = max(0, min(min(savedQuest.requp, Quest::MaxRequire), prograss->requp));
+		for (int k = 0; k < reqCount; ++k) {
+			prograss->ReqArr[k].type = (QuestType)savedQuest.ReqArr[k].type;
+			prograss->ReqArr[k].ObjID = savedQuest.ReqArr[k].ObjID;
+			prograss->ReqArr[k].Cnt = savedQuest.ReqArr[k].Cnt;
+			prograss->ReqArr[k].PresentCnt = savedQuest.ReqArr[k].PresentCnt;
+		}
+		QuestArr.push_back(questId);
+		QuestPrograss.push_back(prograss);
+		PrograssQuestBitArr[questId] = true;
+	}
 	RecalculateStatsFromJob(false);
-	if (!loadedFromText) SavePersistentData(key);
+	if (data.HP > 0.0f) HP = min(data.HP, MaxHP);
 	return true;
 }
 
 void Player::SavePersistentData(const char* key) const
 {
 	CreateDirectoryA("PlayerDB", nullptr);
-	ofstream ofs(MakePlayerSaveTextPath(key), ios::trunc);
+	ofstream ofs(MakePlayerSaveBinaryPath(key), ios::binary | ios::trunc);
 	if (!ofs.is_open()) return;
 
-	ofs << "Version " << PlayerSaveVersion << "\n";
-	ofs << "Gold " << Gold << "\n";
-	ofs << "Exp " << Exp << "\n";
-	ofs << "Level " << Level << "\n";
-	ofs << "StatPoint " << StatPoint << "\n";
-	ofs << "StatHP " << StatHP << "\n";
-	ofs << "StatDefense " << StatDefense << "\n";
-	ofs << "StatMoveSpeed " << StatMoveSpeed << "\n";
-	ofs << "StatAttack " << StatAttack << "\n";
-	ofs << "KillCount " << KillCount << "\n";
-	ofs << "DeathCount " << DeathCount << "\n";
-	ofs << "CurrentJob " << m_currentJob << "\n";
+	PlayerSaveData data = {};
+	data.Gold = Gold;
+	data.Exp = Exp;
+	data.Level = Level;
+	data.StatPoint = StatPoint;
+	data.StatHP = StatHP;
+	data.StatDefense = StatDefense;
+	data.StatMoveSpeed = StatMoveSpeed;
+	data.StatAttack = StatAttack;
+	data.KillCount = KillCount;
+	data.DeathCount = DeathCount;
+	data.CurrentJob = m_currentJob;
+	data.HP = HP;
+	data.MaxHP = MaxHP;
 	for (int i = 0; i < maxItem; ++i) {
-		ofs << "Inventory " << i << " " << Inventory[i].id << " " << Inventory[i].ItemCount << "\n";
+		data.Inventory[i] = Inventory[i];
 	}
+	memcpy(data.CompleteQuestBits, CompleteQuestBitArr.buffer, sizeof(data.CompleteQuestBits));
+	memcpy(data.PrograssQuestBits, PrograssQuestBitArr.buffer, sizeof(data.PrograssQuestBits));
+	int questCount = min((int)QuestArr.size(), PlayerSaveMaxQuestProgress);
+	for (int i = 0; i < questCount; ++i) {
+		if (i >= (int)QuestPrograss.size() || QuestPrograss[i] == nullptr) continue;
+		PlayerSaveQuestProgress& dst = data.QuestProgress[data.QuestProgressCount];
+		Quest* src = QuestPrograss[i];
+		dst.questId = QuestArr[i];
+		dst.requp = min(src->requp, Quest::MaxRequire);
+		for (int k = 0; k < dst.requp; ++k) {
+			dst.ReqArr[k].type = (int)src->ReqArr[k].type;
+			dst.ReqArr[k].ObjID = src->ReqArr[k].ObjID;
+			dst.ReqArr[k].Cnt = src->ReqArr[k].Cnt;
+			dst.ReqArr[k].PresentCnt = src->ReqArr[k].PresentCnt;
+		}
+		data.QuestProgressCount += 1;
+	}
+	ofs.write((const char*)&data, sizeof(data));
 }
 
 void Player::RewardQuest(Quest* completeQuest)
@@ -7326,10 +7396,14 @@ void World::SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp
 	z->PushGameObject(mon);
 }
 
-void World::AcceptClientHello(int clientIndex) {
+void World::AcceptClientHello(int clientIndex, const char* playerId) {
 	if (clientIndex < 0 || clientIndex >= clients.size) return;
 	if (clients.isnull(clientIndex)) return;
 	if (clients[clientIndex].pObjData != nullptr) return;
+	memset(clients[clientIndex].playerId, 0, sizeof(clients[clientIndex].playerId));
+	if (IsValidPlayerId(playerId)) {
+		strcpy_s(clients[clientIndex].playerId, sizeof(clients[clientIndex].playerId), playerId);
+	}
 
 	int StartzoneId = ownedZoneId;
 	clients[clientIndex].PersonalSDS.Init(4096);
@@ -7362,7 +7436,7 @@ void World::AcceptClientHello(int clientIndex) {
 		p->Inventory[i].id = 0;
 		p->Inventory[i].ItemCount = 0;
 	}
-	p->LoadPersistentData(clients[clientIndex].addr.IPString);
+	p->LoadPersistentData(GetClientSaveKey(clients[clientIndex]));
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = StartzoneId;
@@ -7412,6 +7486,10 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	clients[clientIndex].PersonalSDS.Init(4096);
 	clients[clientIndex].pendingTransferToken = 0;
+	memset(clients[clientIndex].playerId, 0, sizeof(clients[clientIndex].playerId));
+	if (IsValidPlayerId(data.playerId)) {
+		strcpy_s(clients[clientIndex].playerId, sizeof(clients[clientIndex].playerId), data.playerId);
+	}
 
 	// This player was visible on the destination server as a peer ghost before transfer.
 	// Remove that stale ghost immediately so the real transferred Player does not coexist
@@ -7484,6 +7562,7 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	for (int i = 0; i < 36; ++i) {
 		p->Inventory[i] = data.Inventory[i];
 	}
+	p->LoadPersistentData(GetClientSaveKey(clients[clientIndex]));
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = data.dstZoneId;
@@ -7622,6 +7701,7 @@ void ClientData::DisconnectToServer(int index) {
 		}
 		client.isServerPeer = false;
 		client.peerServerId = -1;
+		memset(client.playerId, 0, sizeof(client.playerId));
 		client.rbufoffset = 0;
 		gameworld.clients.Free(index);
 		cout << "[Peer] link to server " << lostServerId << " lost.\n";
@@ -7637,7 +7717,7 @@ void ClientData::DisconnectToServer(int index) {
 	}
 
 	if (player != nullptr) {
-		player->SavePersistentData(client.addr.IPString);
+		player->SavePersistentData(GetClientSaveKey(client));
 		Zone* zone = gameworld.GetClientZone(index);
 		if (zone != nullptr && gameworld.IsZoneOwned(client.zoneId)) {
 			zone->RemovePlayer(index);
@@ -7648,6 +7728,7 @@ void ClientData::DisconnectToServer(int index) {
 	client.pObjData = nullptr;
 	client.objindex = -1;
 	client.pendingTransferToken = 0;
+	memset(client.playerId, 0, sizeof(client.playerId));
 	client.rbufoffset = 0;
 	memset(client.rbuf, 0, sizeof(client.rbuf));
 	client.PersonalSDS.Clear();
@@ -7854,6 +7935,7 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 
 	Player* player = clients[clientIndex].pObjData;
 	if (player == nullptr) return false;
+	player->SavePersistentData(GetClientSaveKey(clients[clientIndex]));
 
 	cout << "[ZoneMove] client=" << clientIndex
 		<< " from=" << srcZoneId
@@ -7861,6 +7943,7 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 
 	if (IsZoneOwned(dstZoneId) == false) {
 		PlayerTransferData data = {};
+		strcpy_s(data.playerId, sizeof(data.playerId), GetClientSaveKey(clients[clientIndex]));
 		data.transferToken = IssueTransferToken();
 		data.srcZoneId = srcZoneId;
 		data.srcObjIndex = clients[clientIndex].objindex;
@@ -7925,6 +8008,7 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 	}
 
 	gameworld.ZoneTable[srcZoneId]->RemovePlayer(clientIndex);
+	player->LoadPersistentData(GetClientSaveKey(clients[clientIndex]));
 	// [PERF/FIX ②] 심리스 로컬 이동: fullWorldSnapshot=false 로 동적객체 버스트 생략.
 	// 클라는 인접 존 객체를 이미 보유 중이며, 가시성 기반 cleanup 이 그걸 유지한다.
 	// SyncPlayerMoveZone uses the client's full reload path, so the destination snapshot must include

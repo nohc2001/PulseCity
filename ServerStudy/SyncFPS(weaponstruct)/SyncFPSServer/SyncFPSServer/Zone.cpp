@@ -657,6 +657,17 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
 		Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
     }
 
+	for (int i = 0; i < (int)player->QuestArr.size(); ++i) {
+		int questId = player->QuestArr[i];
+		if (questId < 0 || questId >= (int)gameworld.QuestTable.size()) continue;
+		if (gameworld.QuestTable[questId] == nullptr) continue;
+
+		Sending_AddQuest(personalSDS, questId);
+		if (i < (int)player->QuestPrograss.size() && player->QuestPrograss[i] != nullptr) {
+			Sending_SyncQuestPrograss(personalSDS, questId, player->QuestPrograss[i]);
+		}
+	}
+
 	// This must remain the final packet in the zone-entry personal snapshot. TCP ordering means
 	// the client can keep its loading screen up until every player/object/inventory packet above
 	// has arrived and been parsed.

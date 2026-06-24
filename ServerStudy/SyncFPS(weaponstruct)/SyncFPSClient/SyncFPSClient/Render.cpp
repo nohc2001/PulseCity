@@ -7587,9 +7587,44 @@ void ScreenShader::Add_RegisterShaderCommand(GPUCmd& cmd, ShaderType reg) {
 }
 
 void ScreenShader::RenderAllSDFTexts() {
+	int localPageIds[16] = {};
+	int localPageCount = 0;
+	if (SDFMappedCnt > 0 && MappedSDFInstance != nullptr) {
+		for (int i = 0; i < SDFInstanceCount; ++i) {
+			const int globalPageId = (int)MappedSDFInstance[i].pageId;
+			int localPageId = -1;
+			for (int p = 0; p < localPageCount; ++p) {
+				if (localPageIds[p] == globalPageId) {
+					localPageId = p;
+					break;
+				}
+			}
+			if (localPageId < 0) {
+				if (localPageCount < 16) {
+					localPageId = localPageCount;
+					localPageIds[localPageCount++] = globalPageId;
+				}
+				else {
+					localPageId = 0;
+				}
+			}
+			MappedSDFInstance[i].pageId = (unsigned int)localPageId;
+		}
+	}
 	if (SDFMappedCnt > 0) {
 		game.MyScreenShader->SDFInstance_StructuredBuffer.resource->Unmap(0, nullptr);
 		game.MyScreenShader->SDFMappedCnt -= 1;
+	}
+	if (SDFInstanceCount <= 0) {
+		return;
+	}
+	if (gd.SDFTextureArr.empty() || gd.SDFTextureArr[0] == nullptr) {
+		SDFInstanceCount = 0;
+		return;
+	}
+	if (gd.SDFTextureArr[0]->SDFTextureSRV.hCreation.hcpu.ptr == 0) {
+		SDFInstanceCount = 0;
+		return;
 	}
 	
 	using SCSRP = ScreenShader::RootParamId;
@@ -7597,23 +7632,48 @@ void ScreenShader::RenderAllSDFTexts() {
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	vec4 wh = vec4(gd.ClientFrameWidth, gd.ClientFrameHeight, 0, 0);
 	gd.gpucmd->SetGraphicsRoot32BitConstants(SCSRP::Const_BasicInfo, 2, &wh, 0);
-	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_SDFInstance, SDFInstance_SRV.hRender.hgpu);
+
+	DescHandle sdfInstanceDescH;
+	gd.ShaderVisibleDescPool.DynamicAlloc(&sdfInstanceDescH, 1);
+	if (sdfInstanceDescH.hcpu.ptr == 0 || sdfInstanceDescH.hgpu.ptr == 0 || SDFInstance_SRV.hCreation.hcpu.ptr == 0) {
+		SDFInstanceCount = 0;
+		return;
+	}
+	gd.pDevice->CopyDescriptorsSimple(1, sdfInstanceDescH.hcpu, SDFInstance_SRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_SDFInstance, sdfInstanceDescH.hgpu);
 
 	DescHandle descH;
 
-	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 16);
-	for (int i = 0; i < gd.SDFTextureArr.size(); ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, gd.SDFTextureArr[i]->SDFTextureSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	if (localPageCount <= 0) {
+		localPageCount = (int)min<size_t>(gd.SDFTextureArr.size(), 16);
+		for (int i = 0; i < localPageCount; ++i) {
+			localPageIds[i] = i;
+		}
 	}
-	for (int i = gd.SDFTextureArr.size(); i < 16; ++i) {
-		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, gd.SDFTextureArr[0]->SDFTextureSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gd.ShaderVisibleDescPool.DynamicAlloc(&descH, 16);
+	if (descH.hcpu.ptr == 0 || descH.hgpu.ptr == 0) {
+		SDFInstanceCount = 0;
+		return;
+	}
+	auto fallbackPage = gd.SDFTextureArr[0];
+	for (int i = 0; i < localPageCount; ++i) {
+		SDFTextPageTextureBuffer* page = fallbackPage;
+		const int globalPageId = localPageIds[i];
+		if (0 <= globalPageId && globalPageId < (int)gd.SDFTextureArr.size()) {
+			page = gd.SDFTextureArr[globalPageId];
+		}
+		if (page == nullptr || page->SDFTextureSRV.hCreation.hcpu.ptr == 0) {
+			page = fallbackPage;
+		}
+		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, page->SDFTextureSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+	for (int i = localPageCount; i < 16; ++i) {
+		gd.pDevice->CopyDescriptorsSimple(1, descH[i].hcpu, fallbackPage->SDFTextureSRV.hCreation.hcpu, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
 	gd.gpucmd->SetGraphicsRootDescriptorTable(SRVTable_Texture, descH.hgpu);
 
-	if (SDFInstanceCount > 0) {
-		game.TextMesh->Render(gd.gpucmd, SDFInstanceCount);
-	}
+	game.TextMesh->Render(gd.gpucmd, SDFInstanceCount);
 }
 
 #pragma endregion

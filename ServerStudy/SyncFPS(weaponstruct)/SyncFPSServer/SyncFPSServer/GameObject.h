@@ -841,6 +841,7 @@ struct Quest {
 		for (int i = 0; i < dest->requp; ++i) {
 			ReqArr[i].Copy(&dest->ReqArr[i]);
 		}
+		dest->rewardUp = rewardUp;
 		for (int i = 0; i < dest->rewardUp; ++i) {
 			RewardArr[i].Copy(&dest->RewardArr[i]);
 		}
@@ -1637,6 +1638,7 @@ struct ClientData {
 	int zoneId = 0;
 
 	int pendingTransferToken = 0;
+	char playerId[CTS_ClientHello_Header::MaxPlayerIdLength + 1] = {};
 
 	// [4단계-STEP1] 이 소켓이 게임 클라이언트가 아니라 '이웃 서버와의 상시 복제 링크'인지 표시.
 	// true면 플레이어 로직(이동/전송/게임데이터 송신)에서 제외하고, 서버 간 메시지만 주고받는다.
@@ -2592,7 +2594,7 @@ struct World {
 		return (int)((issuer << 24) | (sequence == 0 ? 1u : sequence));
 	}
 	bool SendPlayerTransferToServer(const PlayerTransferData& data);
-	void AcceptClientHello(int clientIndex);
+	void AcceptClientHello(int clientIndex, const char* playerId);
 	bool AcceptTransferConnect(int clientIndex, int transferToken);
 	void StoreIncomingPlayerTransfer(const PlayerTransferData& data);
 
