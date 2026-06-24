@@ -5814,6 +5814,11 @@ void PeacefulNPC::Update(float deltaTime) {
 										QuestCompleteExist = true;
 										pgo->EraseQuest(selectedQI);
 										pgo->CompleteQuestBitArr[questId] = true;
+										// [silas] Spawn the dungeon-entry portal as soon as quest 2 (사일러스와 접신) is completed,
+										// so the player doesn't need a second conversation to accept quest 3 first.
+										if (questId == 2 && zone != nullptr) {
+											zone->SpawnPortal(true);
+										}
 										break;
 									}
 								}

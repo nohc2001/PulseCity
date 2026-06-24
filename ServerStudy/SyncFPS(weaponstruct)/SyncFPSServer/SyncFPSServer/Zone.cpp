@@ -2672,4 +2672,93 @@ void Zone::UpdateBossPrototype(float deltaTime)
             if (targetGroup != BossPrototypeRotatingLaserStep) {
                 BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
                     [](const BossPrototypeWarning& warning) { return warning.Shape == 1 && warning.Length >= 38.0f; }),
+                    BossPrototypeWarnings.end());
+                BossPrototypeRotatingLaserStep = targetGroup;
+                for (int i = 0; i < 3; ++i) {
+                    float angle = BossPrototypeRotatingLaserBaseAngle + BossPrototypeRotatingLaserDirectionSign *
+                        XMConvertToRadians(30.0f * (float)targetGroup + 10.0f * (float)i);
+                    pushLaserWarning(angle, phaseIndex == 2 ? 0.30f : 0.35f);
+                }
+            }
+        }
+        else if (elapsed >= 0.0f && BossPrototypeRotatingLaserMode == 1 && BossPrototypeRotatingLaserStep < 0) {
+            bool used[36] = {};
+            int randomCount = 8 + (int)(ServerRandomUnit() * 11.0f);
+            randomCount = min(randomCount, BossSyncWarningCapacity);
+            int spawned = 0;
+            int attempts = 0;
+            while (spawned < randomCount && attempts < 144) {
+                attempts += 1;
+                int dirIndex = (int)(ServerRandomUnit() * 36.0f);
+                dirIndex = min(max(dirIndex, 0), 35);
+                if (used[dirIndex]) continue;
+                used[dirIndex] = true;
+                float angle = BossPrototypeRotatingLaserBaseAngle + XMConvertToRadians(10.0f * (float)dirIndex);
+                pushLaserWarning(angle, 0.85f);
+                spawned += 1;
+            }
+            BossPrototypeRotatingLaserStep = 0;
+        }
+
+        if (elapsed >= 0.0f && BossPrototypeRotatingLaserStep >= 0) {
+            BossPrototypeRotatingLaserHitFlow += dt;
+            if (BossPrototypeRotatingLaserHitFlow >= 0.45f) {
+                BossPrototypeRotatingLaserHitFlow = 0.0f;
+                for (int i = 0; i < gameworld.clients.size; ++i) {
+                    if (gameworld.clients.isnull(i) || gameworld.clients[i].pObjData == nullptr) continue;
+                    Player* p = (Player*)gameworld.clients[i].pObjData;
+                    if (p == nullptr || p->tag[GameObjectTag::Tag_Enable] == false || p->HP <= 0.0f) continue;
+                    for (const BossPrototypeWarning& warning : BossPrototypeWarnings) {
+                        if (!warning.Active || warning.Shape != 1 || warning.Length < 38.0f) continue;
+                        if (warning.Age < warning.WarningTime) continue;
+                        if (PointInBossRectWarning(warning, p->worldMat.pos)) {
+                            p->TakeDamage(24.0f);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (BossPrototypePhaseTime >= duration) {
+            BossPrototypeWarnings.erase(std::remove_if(BossPrototypeWarnings.begin(), BossPrototypeWarnings.end(),
+                [](const BossPrototypeWarning& warning) { return (warning.Shape == 1 && warning.Length >= 38.0f) || warning.Shape == 2; }),
+                BossPrototypeWarnings.end());
+            BossPrototypeRotatingLaserCooldown = rotatingLaserPeriods[phaseIndex];
+            finishPattern();
+        }
+        break;
+    }
+    case BossPrototypePhase::Rest:
+        if (BossPrototypePhaseTime >= BossPrototypePatternCooldown && target != nullptr && BossPrototypeGroggyTime <= 0.0f) {
+            if (BossPrototypeMissileCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::MissileLock;
+            }
+            else if (BossPrototypeRailgunCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::RailgunCharge;
+            }
+            else if (BossPrototypeSummonCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::SummonTurret;
+            }
+            else if (BossPrototypeBombardmentCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::Bombardment;
+            }
+            else if (BossPrototypeRotatingLaserCooldown <= 0.0f) {
+                BossPrototypePhaseState = BossPrototypePhase::RotatingLaser;
+                BossPrototypeRotatingLaserBaseAngle = ServerRandomRange(0.0f, XM_2PI);
+                BossPrototypeRotatingLaserDirectionSign = ServerRandomUnit() < 0.5f ? -1.0f : 1.0f;
+                BossPrototypeRotatingLaserMode = ServerRandomUnit() < 0.5f ? 0 : 1;
+                BossPrototypeRotatingLaserHitFlow = 0.45f;
+                BossPrototypeRotatingLaserStep = -1;
+            }
+            if (BossPrototypePhaseState != BossPrototypePhase::Rest) {
+                BossPrototypePatternStep += 1;
+                BossPrototypePhaseTime = 0.0f;
+            }
+        }
+        break;
+    }
+
+    updateShieldState();
+    Sending_BossState(CommonSDS);
+}
                     
