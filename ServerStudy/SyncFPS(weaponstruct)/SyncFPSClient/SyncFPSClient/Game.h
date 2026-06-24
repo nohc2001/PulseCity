@@ -997,7 +997,7 @@ public:
 	int presentShowQuestOffset; // ���� ����?����Ʈ�� �����ְ� �ִ���
 	vector<Quest*> QuestPrograss;
 
-	
+	int PresentPer_SkinMeshRender = 0;
 };
 
 extern Game game;

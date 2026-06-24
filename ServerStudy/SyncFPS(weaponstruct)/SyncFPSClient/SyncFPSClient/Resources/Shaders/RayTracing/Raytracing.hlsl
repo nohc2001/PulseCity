@@ -369,7 +369,7 @@ float CalculateMipFromDistance(float3 worldPos, float3 cameraPos, float3 normal,
 
     // 3. 밉 레벨 공식: log2(거리 기반 스케일)
     // 실제 구현 시에는 텍스처 해상도와 정규화된 UV 단위를 고려한 상수가 필요함
-    float lod = log2(pixelSizeAtDist * 1024 / cosTheta) - 4;
+    float lod = log2(pixelSizeAtDist * 1024 / cosTheta) - 5;
 
     return max(0.0, lod);
 }
@@ -477,13 +477,13 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float3 ViewDir = (hitPosition - g_sceneCB.cameraPosition.xyz);
     float Distance = length(ViewDir);
     ViewDir = normalize(ViewDir);
-    bool useRayLOD = g_sceneCB.autoLODEnabled > 0.5f;
-    bool useCheapReflection = useRayLOD && Distance >= 35.0f;
-    bool useFarMip = useRayLOD && Distance >= 80.0f;
+    //bool useRayLOD = g_sceneCB.autoLODEnabled > 0.5f;
+    //bool useCheapReflection = useRayLOD && Distance >= 35.0f;
+    //bool useFarMip = useRayLOD && Distance >= 80.0f;
     float3 invViewDir = -ViewDir;
     float depth = min(Distance / 1000.0f, 1.0f);
     float SampleLevel = CalculateMipFromDistance(hitPosition, g_sceneCB.cameraPosition.xyz, Normal, 3.141592 / 3.0);
-    SampleLevel += useFarMip ? 1.5f : (useCheapReflection ? 0.75f : 0.0f);
+    //SampleLevel += useFarMip ? 1.5f : (useCheapReflection ? 0.75f : 0.0f);
     
      //Get Material & Tiling
     stMaterial material;
@@ -595,7 +595,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
         
         float Reflectrate = min(length(Lo), 1);
         // Reflection
-        if (!useCheapReflection && MAX_TraceRayCount > payload.CalculationCount)
+        if (/*!useCheapReflection && */MAX_TraceRayCount > payload.CalculationCount)
         {
             wi = reflect(ViewDir, realNormal);
             ray.Origin = hitPosition;

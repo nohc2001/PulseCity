@@ -2286,6 +2286,9 @@ SkinMeshGameObject::~SkinMeshGameObject()
 
 void SkinMeshGameObject::InitRootBoneMatrixs()
 {
+	SkinMeshRenderID = SkinMeshUpdate;
+	SkinMeshUpdate += 1;
+
 	bool initialState = gd.gpucmd.isClose;
 
 	if (BoneToWorldMatrixCB_Default.size() > 0) {
@@ -3233,7 +3236,15 @@ void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
 }
 
 void SkinMeshGameObject::CollectSkinMeshObject(matrix parent) {
-	collection.push_back(this);
+	vec4 Dist = game.player->worldMat.pos - worldMat.pos;
+	if (Dist.len3 < 50) {
+		collection.push_back(this);
+	}
+	else {
+		if (game.PresentPer_SkinMeshRender == (SkinMeshRenderID & 7)) {
+			collection.push_back(this);
+		}
+	}
 }
 
 void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncludeChunks& beforeChunckInc, const GameObjectIncludeChunks& afterChunkInc) {

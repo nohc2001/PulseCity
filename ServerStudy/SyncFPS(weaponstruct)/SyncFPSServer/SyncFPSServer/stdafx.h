@@ -251,6 +251,7 @@ static inline ui64 GetTicks()
 * Sentinal Value :
 * NULL = (data == nullptr)
 */
+#pragma optimize ("x", off)
 struct BitBoolArr_ui64 {
 	ui64* data;
 	int bitindex;
@@ -276,6 +277,7 @@ struct BitBoolArr_ui64 {
 	}
 };
 
+
 /*
 * 설명 : bool 값 하나가 1 비트인 bool 배열.
 */
@@ -287,7 +289,7 @@ template <int n> struct BitBoolArr {
 	* 매개변수 : 
 	* int index : 불 비트의 인덱스
 	*/
-	BitBoolArr_ui64& operator[](int index) {
+	BitBoolArr_ui64 operator[](int index) {
 		BitBoolArr_ui64 d;
 		d.data = &buffer[index >> 6];
 		d.bitindex = index & 63;
@@ -299,6 +301,7 @@ template <int n> struct BitBoolArr {
 		memcpy_s(buffer, sizeof(ui64) * n, other.buffer, sizeof(ui64) * n);
 	}
 };
+#pragma optimize ("x", on)
 
 /*
 * 설명 : 어떤 서버의 클래스에서 해당 클래스의 어떤 맴버변수가 어떤 오프셋을 가지는지에 대한 정보
@@ -622,6 +625,7 @@ enum InputID {
 	MouseRbutton = 6,
 	RotationSync = 7,
 	KeyboardE = 'E',
+	KeyboardTab = VK_TAB,
 };
 
 /*

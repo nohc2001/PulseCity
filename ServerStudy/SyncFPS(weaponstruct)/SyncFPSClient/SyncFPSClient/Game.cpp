@@ -3168,7 +3168,9 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 		core.Active = header.cores[i].active;
 		core.BossProtoTypeCoreObj = new GameObject();
 		core.BossProtoTypeCoreObj->SetShape(BossPrototypeCoreModel);
+		core.BossProtoTypeCoreObj->worldMat = 0;
 		core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
+		core.BossProtoTypeCoreObj->SetRaytracingInstanceEnabled(true);
 
 		if (i < (int)previousCores.size()) {
 			const BossPrototypeCore& prev = previousCores[i];
@@ -3587,7 +3589,12 @@ void Game::RenderBossPrototypeObjects()
 
 	if (gd.isRaytracingRender) {
 		for (const BossPrototypeCore& core : BossPrototypeCores) {
-			if (!core.Active) continue;
+			if (!core.Active) {
+				core.BossProtoTypeCoreObj->worldMat = 0;
+				core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
+				continue;
+			}
+
 			matrix world;
 			world.Id();
 			world.right *= 1.65f;
@@ -4475,7 +4482,7 @@ void Game::Init()
 
 	//Quest Table
 	{
-		Quest* q = new Quest(L"ù��° ����Ʈ", L"������ 7���� ��ƿ���! �׷� 1000��带 �ٰ�!");
+		Quest* q = new Quest(L"첫번째 퀘스트", L"드론 1마리를 잡아줘. 그럼 1000골드를 줄게!");
 		q->PushReq(QuestType::CollectItem, 1, 7);
 		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
 
@@ -4484,10 +4491,10 @@ void Game::Init()
 
 	//NPC Talk Table
 	{
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"�ȳ�? �ݰ���!"));
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"���� �ſ� ����� ���¾�."));
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"��Ź�� �ִµ� ����� �� ������?", false, TalkSelection(L"�翬����! ����ٰ�!", false, 0), TalkSelection(L"������ �ٺ�. ���߿�.", true, 3)));
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"�׷�����. �ƽ���.", true));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"안녕! 이 세상에 온 것을 환영해!"));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"여기 비개발지에 드론이 날라다녀서 사람들을 힘들게 하고 있어."));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"니가 드론을 1마리만 잡아 주었으면 좋겠어. 사례는 1000골드야.", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 3)));
+		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"음 그래 니가 그렇다면 어쩔 수 없지.", true));
 	}
 
 	StaticGameObjects.reserve(Zone::MaxStaticObjectCount * 9); // 1MB
@@ -4500,16 +4507,6 @@ void Game::Init()
 	game.RenderTextureTable.resize(Zone::MaxTextureZoneMargin * 10);
 	
 	{
-//<<<<<<< Updated upstream
-//		Zone* Zone_ThePort = new Zone(0, "The_Port", 0, 0);
-//		game.ZoneTable.push_back(Zone_ThePort);
-//
-//		Zone* Zone_ThePort_Zone1 = new Zone(1, "The_Port", 1, 0);
-//		game.ZoneTable.push_back(Zone_ThePort_Zone1);
-//
-//		Zone_ThePort->nearZones[1] = Zone_ThePort_Zone1;
-//		Zone_ThePort_Zone1->nearZones[1] = Zone_ThePort;
-//=======
 		char ZoneName[128] = "Zone_0_0";
 		for (int iz = 0; iz < 10; ++iz) {
 			for (int ix = 0; ix < 10; ++ix) {
@@ -4830,7 +4827,7 @@ void Game::Init()
 		BossPrototypeMiniTurretShapeIndex = Shape::AddModel("TurretBossMini", BossPrototypeMiniTurretModel);
 
 		BossPrototypeCoreModel = new Model();
-		BossPrototypeCoreModel->LoadModelFile2("Resources/Model/turret_core.model");
+		BossPrototypeCoreModel->LoadModelFile2("Resources/Model/turret_core.model", -1, true);
 		BossPrototypeCoreShapeIndex = Shape::AddModel("TurretCore", BossPrototypeCoreModel);
 
 		Mesh* portalMesh = new Mesh();
@@ -5556,7 +5553,10 @@ void Game::DrawLoadingScreen(GPUResource* tex) {
 	GPUResource* img = tex ? tex : &gLoadingTex;
 	if (img == nullptr || img->resource == nullptr) return;
 
-	gd.gpucmd.Reset();
+	if (gd.gpucmd.isClose) {
+		gd.gpucmd.Reset();
+	}
+
 	gd.gpucmd->SetDescriptorHeaps(1, &gd.ShaderVisibleDescPool.pSVDescHeapForRender);
 	gd.gpucmd.ResBarrierTr(gd.SubRenderTarget.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	/*gd.gpucmd.ResBarrierTr(gd.pDepthStencilBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);*/
@@ -6264,6 +6264,7 @@ void Game::Render() {
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
 	// 25. 플레이어를 DepthStencil 클리어 후 추가 렌더링한다.
+
 	float hhpp = 0;
 	float Attack = 0;
 	float Defense = 0;
@@ -6304,16 +6305,18 @@ void Game::Render() {
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
-	RenderGameplayStatusHUD();
-	RenderDungeonPartyHUD();
-	RenderDungeonDeathHUD();
-	RenderPartyLobbyUI();
-	RenderBossPrototypeHUD();
-	RenderBossPrototypeCoreHealthPlates();
-	RenderMonsterHealthPlates();
-	RenderFloatingDamageTexts();
-	RenderGameplaySkillHUD();
-	RenderAmmoHUD();
+
+	if (game.mainPageStack.size() == 0) {
+		RenderGameplayStatusHUD();
+		RenderDungeonPartyHUD();
+		RenderPartyLobbyUI();
+		RenderBossPrototypeHUD();
+		RenderBossPrototypeCoreHealthPlates();
+		RenderMonsterHealthPlates();
+		RenderFloatingDamageTexts();
+		RenderGameplaySkillHUD();
+		RenderAmmoHUD();
+	}
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
 	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
@@ -6397,6 +6400,7 @@ void Game::Render_RayTracing()
 	PerfRaytracingLODAppliedMeshes = 0;
 
 	RenderSupportDrones();
+	RenderBossPrototypeObjects();
 	game.player->Render_ThirdPersonWeapon();
 	game.player->Render_AfterDepthClear();
 
@@ -6606,17 +6610,17 @@ void Game::Render_RayTracing()
 			}
 		}
 
-		//23. NPC ���� HP �ٸ� ����� ���
-		for (int i = 0; i < game.NpcHPBars.size; ++i)
-		{
-			if (game.NpcHPBars.isAlloc(i))
-			{
-				matrix& hpBarWorldMat = game.NpcHPBars[i];
-				hpBarWorldMat.transpose();
-				gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
-				game.HPBarMesh->Render(gd.gpucmd, 1);
-			}
-		}
+		////23. NPC ���� HP �ٸ� ����� ���
+		//for (int i = 0; i < game.NpcHPBars.size; ++i)
+		//{
+		//	if (game.NpcHPBars.isAlloc(i))
+		//	{
+		//		matrix& hpBarWorldMat = game.NpcHPBars[i];
+		//		hpBarWorldMat.transpose();
+		//		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpBarWorldMat, 0);
+		//		game.HPBarMesh->Render(gd.gpucmd, 1);
+		//	}
+		//}
 
 		matrix vmat = gd.viewportArr[0].ViewMatrix;
 		vmat *= gd.viewportArr[0].ProjectMatrix;
@@ -6629,30 +6633,6 @@ void Game::Render_RayTracing()
 		spmat.transpose();
 		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &spmat, 0);
 		ShootPointMesh->Render(gd.gpucmd, 1);
-
-		//HP = (ShootFlow / ShootDelay) * MaxHP;
-		matrix hpmat;
-		hpmat.pos.x = -6;
-		hpmat.pos.y = 2;
-		hpmat.pos.z = 6;
-		hpmat.LookAt(vec4(1, 0, 0));
-		hpmat.look *= 2 * game.player->HP / game.player->MaxHP;
-		hpmat *= viewmat;
-		hpmat.transpose();
-		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &hpmat, 0);
-		HPBarMesh->Render(gd.gpucmd, 1);
-
-		//Heat Bar
-		matrix heatmat;
-		heatmat.pos.x = -5;
-		heatmat.pos.y = 1.5f;
-		heatmat.pos.z = 5;
-		heatmat.LookAt(vec4(1, 0, 0));
-		heatmat.look *= 2 * game.player->HeatGauge / 200;
-		heatmat *= viewmat;
-		heatmat.transpose();
-		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &heatmat, 0);
-		HeatBarMesh->Render(gd.gpucmd, 1);
 	}
 	gd.gpucmd.Close(true);
 	gd.gpucmd.Execute(true);
@@ -6791,7 +6771,6 @@ void Game::Render_RayTracing()
 		ParticleDraw->FireTexture = GetParticleSpriteResource(ParticleSpriteSlot::Heal);
 		ParticleDraw->Render(gd.gpucmd, &gStatusHealPool.Buffer, gStatusHealPool.Count);
 
-		RenderBossPrototypeObjects();
 		RenderBossPrototypeShield();
 		RenderAegisShieldVisuals();
 		RenderFrostBlizzardSnowWaves();
@@ -6810,6 +6789,7 @@ void Game::Render_RayTracing()
 	// 24. UI ????? ???? DepthStencil?? Clear???. (??? UI?? ?????? ???? ??? ?? ???? ??????? ??? ????)
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
 
 	float hhpp = 0;
 	float HeatGauge = 0;
@@ -6833,6 +6813,7 @@ void Game::Render_RayTracing()
 	// Composite the full-screen damage feedback first. Screen UI currently uses
 	// a depth-writing pipeline, so clear only its depth afterward and draw every
 	// HUD element and SDF label cleanly on top of the retained color overlay.
+
 	RenderDamageFeedbackHUD();
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
@@ -6842,23 +6823,25 @@ void Game::Render_RayTracing()
 	gd.gpucmd->ClearDepthStencilView(d3dDsvCPUDescriptorHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
 
-	RenderGameplayStatusHUD();
-	RenderDungeonPartyHUD();
-	RenderDungeonDeathHUD();
-	RenderPartyLobbyUI();
-	RenderBossPrototypeHUD();
-	RenderBossPrototypeCoreHealthPlates();
-	RenderMonsterHealthPlates();
-	RenderFloatingDamageTexts();
-	RenderGameplaySkillHUD();
-	RenderAmmoHUD();
-
+	if (game.mainPageStack.size() == 0) {
+		RenderGameplayStatusHUD();
+		RenderDungeonPartyHUD();
+		RenderPartyLobbyUI();
+		RenderBossPrototypeHUD();
+		RenderBossPrototypeCoreHealthPlates();
+		RenderMonsterHealthPlates();
+		RenderFloatingDamageTexts();
+		RenderGameplaySkillHUD();
+		RenderAmmoHUD();
+	}
+	
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
 	for (int i = 0; i < game.CurrentPageStack->size(); ++i) {
 		DXPage* page = game.CurrentPageStack->at(i);
 		page->Render();
 	}
+
 	//render Current Grab Slot
 	if (game.CurrentPageStack->size() > 0 && CurrentGrabSlotData.itemCnt > 0 && CurrentGrabSlotData.objid > 0)
 	{
@@ -9849,6 +9832,16 @@ void UIEventCloseBtn(DXUI* ui) {
 	}
 }
 
+void UIEventGameEscapeBtn(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 evtloc = ui->location + game.CurrentUICenter;
+	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
+		pbtn->flow = 0;
+
+		PostQuitMessage(0);
+	}
+}
+
 void UIEventOpen_Inventory(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	vec4 evtloc = ui->location + game.CurrentUICenter;
@@ -11459,7 +11452,13 @@ void UIInitShopWindow(DXUI* ui) {
 void UIRender_QuestItemObject(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	vec4& slotShowRt = *(vec4*)pbtn->addtionalPtr[2];
-	if (game.RectContainRect(slotShowRt, ui->location)) {
+	DXWindowParam* thisWindow = (DXWindowParam*)pbtn->addtionalPtr[3];
+	DXPage* descPage = (DXPage*)pbtn->addtionalPtr[4];
+	bool bRenderd = true;
+	for (int i = 0; i < thisWindow->page_stack.size(); ++i) {
+		if (descPage == thisWindow->page_stack[i]) bRenderd = false;
+	}
+	if (bRenderd && game.RectContainRect(slotShowRt, ui->location)) {
 		vec4 color = vec4(1, 1, 1, 1);
 		float depth = ui->depth - game.ui_depth_epsilon;
 		float rate = 1.0f - AnimOperUtil::EaseOut(pbtn->flow / pbtn->maxtime, 5);
@@ -11659,8 +11658,6 @@ void UIInitQuestWindow(DXUI* ui) {
 		}
 	}
 
-	
-
 	pWindow->page_stack.push_back(sample_page);
 }
 
@@ -11836,6 +11833,7 @@ void UIInitSocialWindow(DXUI* ui) {
 
 #pragma region UIDesign_NPCTalk
 void UIRender_NPCTalkDummyBtn(DXUI* ui) {
+	if (game.PresentShowedTalkID < 0) return;
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	vec4 color = vec4(1, 1, 1, 1);
 	float depth = ui->depth - game.ui_depth_epsilon;
@@ -11849,6 +11847,7 @@ void UIRender_NPCTalkDummyBtn(DXUI* ui) {
 }
 
 void UIUpdate_NPCTalkDummyBtn(DXUI* ui, float deltaTime) {
+	if (game.PresentShowedTalkID < 0) return;
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	static int TourId = 0;
 	if (game.UITourID != TourId) {
@@ -11860,6 +11859,7 @@ void UIUpdate_NPCTalkDummyBtn(DXUI* ui, float deltaTime) {
 }
 
 void UIUpdate_NPCNameDummyBtn(DXUI* ui, float deltaTime) {
+	if (game.PresentShowedTalkID < 0) return;
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	static int TourId = 0;
 	if (game.UITourID != TourId) {
@@ -11893,6 +11893,7 @@ void UIUpdate_TalkLeftBtn(DXUI* ui, float deltaTime) {
 
 void UIEvent_TalkLeftBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (game.PresentShowedTalkID < 0) return;
 	vec4 evtloc = ui->location + game.CurrentUICenter;
 	if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
 		pbtn->flow = 0;
@@ -11903,6 +11904,7 @@ void UIEvent_TalkLeftBtn(DXUI* ui) {
 
 void UIRender_TalkNextBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (game.PresentShowedTalkID < 0) return;
 	if (pbtn->addtionalParams_int[0]) {
 		vec4 color = vec4(1, 1, 1, 1);
 		float depth = ui->depth - game.ui_depth_epsilon;
@@ -11918,6 +11920,7 @@ void UIRender_TalkNextBtn(DXUI* ui) {
 
 void UIUpdate_TalkNextBtn(DXUI* ui, float deltaTime) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (game.PresentShowedTalkID < 0) return;
 	if (game.NPCTalkTable[game.PresentShowedTalkID].selectCnt > 0) {
 		pbtn->addtionalParams_int[0] = 0;
 	}
@@ -11928,20 +11931,28 @@ void UIUpdate_TalkNextBtn(DXUI* ui, float deltaTime) {
 
 void UIEvent_TalkNextBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (game.PresentShowedTalkID < 0) return;
 	if (pbtn->addtionalParams_int[0]) {
 		vec4 evtloc = ui->location + game.CurrentUICenter;
 		if (game.evt.uMsg == WM_LBUTTONDOWN && game.RectContainPos(evtloc, game.CurrentCursorPos)) {
 			pbtn->flow = 0;
 
 			//talk next
-			game.PresentShowedTalkID += 1;
-			game.UITourID += 1;
+			if (game.NPCTalkTable[game.PresentShowedTalkID].NextEscape) {
+				game.PresentShowedTalkID = -1;
+				game.mainPageStack.pop_back();
+			}
+			else {
+				game.PresentShowedTalkID += 1;
+				game.UITourID += 1;
+			}
 		}
 	}
 }
 
 void UIRender_TalkSelectionBtn(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	if (game.PresentShowedTalkID < 0) return;
 	if (pbtn->addtionalParams_int[1]) {
 		vec4 color = vec4(1, 1, 1, 1);
 		float depth = ui->depth - game.ui_depth_epsilon;
@@ -11956,6 +11967,7 @@ void UIRender_TalkSelectionBtn(DXUI* ui) {
 }
 
 void UIUpdate_TalkSelectionBtn(DXUI* ui, float deltaTime) {
+	if (game.PresentShowedTalkID < 0) return;
 	static int TourID = 0;
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	int selindex = pbtn->addtionalParams_int[0];
@@ -11975,6 +11987,7 @@ void UIUpdate_TalkSelectionBtn(DXUI* ui, float deltaTime) {
 }
 
 void UIEvent_TalkSelectionBtn(DXUI* ui) {
+	if (game.PresentShowedTalkID < 0) return;
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	if (pbtn->addtionalParams_int[1]) {
 		vec4 evtloc = ui->location + game.CurrentUICenter;
@@ -12000,6 +12013,13 @@ void UIEvent_TalkSelectionBtn(DXUI* ui) {
 			if (isExistNext == false) {
 				game.PresentShowedTalkID = -1;
 				game.mainPageStack.pop_back();
+
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = VK_TAB;
+				header.isdown = false;
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 
 			game.UITourID += 1;
@@ -12118,7 +12138,7 @@ void Game::UI_Init()
 		rateloc.y -= 54;
 		DXUI* InventoryWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_openInven = (DXBtnParam*)InventoryWindowOpenBtn->pParamterData;
-		pbtn_openInven->Set(0, 1, 6, L"인벤토리");
+		pbtn_openInven->Set(0, 1, 6, L"Inventory");
 		InventoryWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
 		sample_page->uiArr.push_back(InventoryWindowOpenBtn);
 
@@ -12126,7 +12146,7 @@ void Game::UI_Init()
 		rateloc.z += 140;
 		DXUI* EquipWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_openequip = (DXBtnParam*)EquipWindowOpenBtn->pParamterData;
-		pbtn_openequip->Set(0, 1, 6, L"???a");
+		pbtn_openequip->Set(0, 1, 6, L"Equip");
 		EquipWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
 		sample_page->uiArr.push_back(EquipWindowOpenBtn);
 
@@ -12135,16 +12155,18 @@ void Game::UI_Init()
 		rateloc.z += 140;
 		DXUI* ShopWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_openShop = (DXBtnParam*)ShopWindowOpenBtn->pParamterData;
-		pbtn_openShop->Set(0, 1, 6, L"����");
+		pbtn_openShop->Set(0, 1, 6, L"상점");
 		ShopWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
-		sample_page->uiArr.push_back(ShopWindowOpenBtn);
+		if (false) {
+			sample_page->uiArr.push_back(ShopWindowOpenBtn);
+		}
 
 		// ����Ʈ â�� ���� �� ��ư. 6:(134x54)
 		rateloc.x += 140;
 		rateloc.z += 140;
 		DXUI* QuestWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_openQuest = (DXBtnParam*)QuestWindowOpenBtn->pParamterData;
-		pbtn_openQuest->Set(0, 1, 6, L"����Ʈ");
+		pbtn_openQuest->Set(0, 1, 6, L"Quest");
 		QuestWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
 		sample_page->uiArr.push_back(QuestWindowOpenBtn);
 
@@ -12153,18 +12175,33 @@ void Game::UI_Init()
 		rateloc.z += 140;
 		DXUI* KeyBindingWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_KeyBinding = (DXBtnParam*)KeyBindingWindowOpenBtn->pParamterData;
-		pbtn_KeyBinding->Set(0, 1, 6, L"Ű ���ε�");
-		KeyBindingWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
-		sample_page->uiArr.push_back(KeyBindingWindowOpenBtn);
+		pbtn_KeyBinding->Set(0, 1, 6, L"키 바인딩");
+			KeyBindingWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
+		if (false) {
+			sample_page->uiArr.push_back(KeyBindingWindowOpenBtn);
+		}
 
 		// �Ҽ� â�� ���� �� ��ư. 6:(886x783)
 		rateloc.x += 886;
 		rateloc.z += 783;
 		DXUI* SocialWindowOpenBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_SocialWindowOpenBtn = (DXBtnParam*)SocialWindowOpenBtn->pParamterData;
-		pbtn_SocialWindowOpenBtn->Set(0, 1, 6, L"�Ҽ�");
+		pbtn_SocialWindowOpenBtn->Set(0, 1, 6, L"소셜");
 		SocialWindowOpenBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventOpen_Inventory);
-		sample_page->uiArr.push_back(SocialWindowOpenBtn);
+		if (false) {
+			sample_page->uiArr.push_back(SocialWindowOpenBtn);
+		}
+
+		// �Ҽ� â�� ���� �� ��ư. 6:(886x783)
+		rateloc = vec4(0.99f, 0.99f, 0.99f, 0.99f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+		rateloc.x -= 134;
+		rateloc.w += 54;
+		DXUI* GameEscapeBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
+		DXBtnParam* pbtn_GameEscapeBtn = (DXBtnParam*)GameEscapeBtn->pParamterData;
+		pbtn_GameEscapeBtn->Set(0, 1, 6, L"게임종료");
+		GameEscapeBtn->SetFunctions(UIRender_CyberBtn001, UIUpdateDefaultBtn, UIEventGameEscapeBtn);
+		sample_page->uiArr.push_back(GameEscapeBtn);
 
 		//�κ��丮 ������ 2:(605x710)
 		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
@@ -12198,23 +12235,26 @@ void Game::UI_Init()
 		sample_page->uiArr.push_back(EquipWindow);
 		pbtn_openequip->addtionalPtr[0] = EquipWindow;
 
-		//����â ������ 12 : (602, 737)
-		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		rateloc.z += 602;
-		rateloc.y -= 737;
-		DXUI* ShopWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
-		ShopWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
-		DXWindowParam* pShopWindow = (DXWindowParam*)ShopWindow->pParamterData;
-		pShopWindow->Set(ShopWindow, 12);
-		pShopWindow->LastFocusedTime = chrono::system_clock::now();
-		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
-		pShopWindow->addtionalPtr[1] = new vec4(); // ���� ���� �������� ������ ����
-		UIInitShopWindow(ShopWindow);
-		ShopWindow->enable = false;
-		sample_page->uiArr.push_back(ShopWindow);
-		// ��ư�� �������x �����찡 �������� ����
-		pbtn_openShop->addtionalPtr[0] = ShopWindow;
+		if (false) {
+			//����â ������ 12 : (602, 737)
+			rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+			WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+			rateloc.z += 602;
+			rateloc.y -= 737;
+			DXUI* ShopWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+			ShopWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+			DXWindowParam* pShopWindow = (DXWindowParam*)ShopWindow->pParamterData;
+			pShopWindow->Set(ShopWindow, 12);
+			pShopWindow->LastFocusedTime = chrono::system_clock::now();
+			// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+			pShopWindow->addtionalPtr[1] = new vec4(); // ���� ���� �������� ������ ����
+			UIInitShopWindow(ShopWindow);
+			ShopWindow->enable = false;
+			sample_page->uiArr.push_back(ShopWindow);
+			// ��ư�� �������x �����찡 �������� ����
+			pbtn_openShop->addtionalPtr[0] = ShopWindow;
+		}
+		
 
 		//����Ʈ â ������ 12 : (602, 737)
 		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
@@ -12234,39 +12274,44 @@ void Game::UI_Init()
 		// ��ư�� �������x �����찡 �������� ����
 		pbtn_openQuest->addtionalPtr[0] = QuestWindow;
 
-		//Ű ���ε� â ������ 12 : (372, 505)
-		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		rateloc.z += 372;
-		rateloc.y -= 505;
-		DXUI* KeyBindWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
-		KeyBindWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
-		DXWindowParam* pKeyBindWindow = (DXWindowParam*)KeyBindWindow->pParamterData;
-		pKeyBindWindow->Set(KeyBindWindow, 28);
-		pKeyBindWindow->LastFocusedTime = chrono::system_clock::now();
-		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
-		UIInitKeyBindingWindow(KeyBindWindow);
-		KeyBindWindow->enable = false;
-		sample_page->uiArr.push_back(KeyBindWindow);
-		// ��ư�� �������x �����찡 �������� ����
-		pbtn_KeyBinding->addtionalPtr[0] = KeyBindWindow;
+		if (false) {
+			//Ű ���ε� â ������ 12 : (372, 505)
+			rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+			WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+			rateloc.z += 372;
+			rateloc.y -= 505;
+			DXUI* KeyBindWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+			KeyBindWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+			DXWindowParam* pKeyBindWindow = (DXWindowParam*)KeyBindWindow->pParamterData;
+			pKeyBindWindow->Set(KeyBindWindow, 28);
+			pKeyBindWindow->LastFocusedTime = chrono::system_clock::now();
+			// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+			UIInitKeyBindingWindow(KeyBindWindow);
+			KeyBindWindow->enable = false;
+			sample_page->uiArr.push_back(KeyBindWindow);
+			// ��ư�� �������x �����찡 �������� ����
+			pbtn_KeyBinding->addtionalPtr[0] = KeyBindWindow;
+		}
+		
 
-		// �Ҽ� ������
-		rateloc = vec4(0.1, 0.1, 0.1, 0.1);
-		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
-		rateloc.z += 886;
-		rateloc.y -= 783;
-		DXUI* SocialWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
-		SocialWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
-		DXWindowParam* pSocialWindow = (DXWindowParam*)SocialWindow->pParamterData;
-		pSocialWindow->Set(SocialWindow, 30);
-		pSocialWindow->LastFocusedTime = chrono::system_clock::now();
-		// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
-		UIInitSocialWindow(SocialWindow);
-		KeyBindWindow->enable = false;
-		sample_page->uiArr.push_back(SocialWindow);
-		// ��ư�� �������x �����찡 �������� ����
-		pbtn_SocialWindowOpenBtn->addtionalPtr[0] = SocialWindow;
+		if (false) {
+			// �Ҽ� ������
+			rateloc = vec4(0.1, 0.1, 0.1, 0.1);
+			WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
+			rateloc.z += 886;
+			rateloc.y -= 783;
+			DXUI* SocialWindow = new DXUI(DXUI_TYPE::DXUI_Window, sizeof(DXWindowParam), rateloc, 0, new DXWindowParam());
+			SocialWindow->SetFunctions(UIRenderCyberWindow, UIUpdateDefaultWindow, UIEventDefaultWindow);
+			DXWindowParam* pSocialWindow = (DXWindowParam*)SocialWindow->pParamterData;
+			pSocialWindow->Set(SocialWindow, 30);
+			pSocialWindow->LastFocusedTime = chrono::system_clock::now();
+			// param 0 �� �����̴��� �����ϰ� �־ 0��°�� �ȵ�.
+			UIInitSocialWindow(SocialWindow);
+			SocialWindow->enable = false;
+			sample_page->uiArr.push_back(SocialWindow);
+			// ��ư�� �������x �����찡 �������� ����
+			pbtn_SocialWindowOpenBtn->addtionalPtr[0] = SocialWindow;
+		}
 	}
 
 	DXPage* NPCTalkPage = new DXPage();

@@ -3429,16 +3429,13 @@ void Player::Update(float deltaTime)
 			QuestPrograss.push_back(new Quest());
 		}
 
-		// 퀘스트가 삭제되면 프로그래스도 삭제됨.
-		while (QuestPrograss.size() > QuestArr.size()) {
-			QuestPrograss.pop_back();
-		}
-
 		for (int i = 0; i < QuestArr.size(); ++i) {
 			int n = QuestArr[i];
 			Quest* q = gameworld.QuestTable[n];
 			if (q->isSameQuest(QuestPrograss[i]) == false) {
-				q->Copy(QuestPrograss[i]);
+				QuestPrograss.erase(QuestPrograss.begin() + i);
+				i -= 1;
+				continue;
 			}
 
 			Quest* prograss = QuestPrograss[i];
@@ -3450,13 +3447,10 @@ void Player::Update(float deltaTime)
 					for (int u = 0; u < maxItem; ++u) {
 						if (Inventory[u].id == req.ObjID) PresentCnt += Inventory[u].ItemCount;
 					}
-				}
-				else if (req.type == QuestType::KillMonster) {
-					PresentCnt = req.PastCnt;
-				}
-				if (PresentCnt != req.PresentCnt) {
-					req.PresentCnt = PresentCnt;
-					QuestUpdate = true;
+					if (PresentCnt != req.PresentCnt) {
+						req.PresentCnt = PresentCnt;
+						QuestUpdate = true;
+					}
 				}
 			}
 
@@ -4827,8 +4821,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 				Quest* prograss = p->QuestPrograss[i];
 				for (int k = 0; k < prograss->requp; ++k) {
 					QuestRequirement& req = prograss->ReqArr[k];
-					constexpr int monsterId = 0; // fix : here write monsterID
-					if (req.type == QuestType::KillMonster && req.ObjID == monsterId) {
+					if (req.type == QuestType::KillMonster && req.ObjID == (int)m_monsterType) {
 						req.PresentCnt += 1;
 					}
 				}
@@ -5425,7 +5418,7 @@ void PeacefulNPC::Update(float deltaTime) {
 					Player* pgo = (Player*)skgo;
 					vec4 distance = worldMat.pos - pgo->worldMat.pos;
 
-					bool PressE = pgo->InputBuffer[InputID::KeyboardE];
+					bool PressE = pgo->InputBuffer[InputID::KeyboardTab];
 					if ((PressE && distance.len3 < TalkRange) && pgo->PresentTalkID == -1) {
 
 						bool QuestCompleteExist = false;
@@ -5647,7 +5640,7 @@ void World::Init() {
 	//Quest Table
 	{
 		Quest* q = new Quest(L"First Quest", L"Collect 7 items for 1000 gold!");
-		q->PushReq(QuestType::CollectItem, 1, 7);
+		q->PushReq(QuestType::KillMonster, (int)MonsterType::Dron, 1);
 		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
 
 		QuestTable.push_back(q);
@@ -7128,7 +7121,7 @@ void World::PrintOffset() {
 int World::GetStartTalk(Player* p, PeacefulNPC* npc)
 {
 	if (npc->NPCID == 0) {
-		if (p->CompleteQuestBitArr[0] == false) return 0;
+		if (p->PrograssQuestBitArr[0] == false && p->CompleteQuestBitArr[0] == false) return 0;
 	}
 	return -1;
 }

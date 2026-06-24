@@ -10609,6 +10609,8 @@ void RayTracingShader::SkinMeshModify()
 
 	game.renderViewPort = &gd.viewportArr[0];
 	SkinMeshGameObject::collection.clear();
+	game.PresentPer_SkinMeshRender += 1;
+	game.PresentPer_SkinMeshRender &= 7;
 	SkinMeshGameObject::CurrentRenderFunc = &SkinMeshGameObject::CollectSkinMeshObject;
 	game.RenderTour<true>();
 	gd.CScmd.SetShader(game.MyAnimationBlendingShader);

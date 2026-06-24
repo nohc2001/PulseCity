@@ -1222,7 +1222,7 @@ void Zone::SpawnObjects() {
         float py = map.AABB[1].y - 4.0f;   // drop from the ceiling like the player -> falls to the real walkable floor
         cout << "[ZoneMonster] zone73 spawn center=(" << cx << "," << cz << ") py=" << py
              << " AABB.min.y=" << map.AABB[0].y << " AABB.max.y=" << map.AABB[1].y << endl;
-        for (int i = 0; i < 40; ++i) {
+        for (int i = 0; i < 100; ++i) {
             Monster* mon = new Monster();
             mon->zone = this;
             MonsterType mtype = (MonsterType)(rand() % 2);
@@ -1232,20 +1232,27 @@ void Zone::SpawnObjects() {
             // Drones hover and never fall, so spawn them in the hover band (~y10) instead of dropping from the ceiling.
             float my = (mtype == MonsterType::Dron) ? (10.0f + (float)(rand() % 3 - 1)) : py;
             mon->Init(XMMatrixTranslation(mx, my, mz));
+            while (map.isStaticCollision(mon->GetOBB())) {
+                mx = cx + (float)(rand() % 300 - 150);
+                mz = cz + (float)(rand() % 300 - 150);
+                // Drones hover and never fall, so spawn them in the hover band (~y10) instead of dropping from the ceiling.
+                my = (mtype == MonsterType::Dron) ? (10.0f + (float)(rand() % 3 - 1)) : py;
+                mon->Init(XMMatrixTranslation(mx, my, mz));
+            }
             NewObject(mon, GameObjectType::_Monster);
             PushGameObject(mon);
         }
-    }
 
-    //Spawn NPC
-    PeacefulNPC* npc = new PeacefulNPC();
-    npc->worldMat.Id();
-    npc->worldMat.pos = vec4(-248.0f, 14, 1180.0f, 1);
-    npc->NPCType = PeacefulNPCType::PNT_Quest;
-    npc->NPCQuestList.push_back(0);
-    npc->SetShape(Shape::StrToShapeIndex["Monster001"]);
-    NewObject(npc, GameObjectType::_PeacefulNPC);
-    PushGameObject(npc);
+        //Spawn NPC
+        PeacefulNPC* npc = new PeacefulNPC();
+        npc->worldMat.Id();
+        npc->worldMat.pos = vec4(cx+30, 10, cz, 1);
+        npc->NPCType = PeacefulNPCType::PNT_Quest;
+        npc->NPCQuestList.push_back(0);
+        npc->SetShape(Shape::StrToShapeIndex["Player"]);
+        NewObject(npc, GameObjectType::_PeacefulNPC);
+        PushGameObject(npc);
+    }
 }
 
 void Zone::GridCollisionCheck() {

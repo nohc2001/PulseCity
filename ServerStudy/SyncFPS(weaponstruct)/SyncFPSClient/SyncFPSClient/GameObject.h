@@ -506,6 +506,8 @@ struct SkinMeshGameObject : public DynamicGameObject {
 	float HitFlashTimer = 0.0f;
 	float HitFlashDuration = 0.18f;
 	vec4 StatusTint = vec4(0.0f, 1.0f, 1.0f, 1.0f);
+	int SkinMeshRenderID = 0;
+	static inline int SkinMeshUpdate = 0;
 
 	__forceinline void TriggerHitFlash(float duration = 0.18f) {
 		HitFlashDuration = duration;

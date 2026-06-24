@@ -880,6 +880,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 			break;
+			case VK_TAB:
+			{
+				if ((game.pKeyBuffer[VK_TAB] & 0xF0) == false) {
+					CTS_KeyInput_Header header;
+					header.size = sizeof(CTS_KeyInput_Header);
+					header.st = CTS_Protocol::KeyInput;
+					header.Key = VK_TAB;
+					header.isdown = true;
+					client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+				}
+			}
+			break;
 			case 'E':
 			{
 				if ((game.pKeyBuffer['E'] & 0xF0) == false) {
@@ -952,13 +964,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 			case VK_ESCAPE:
 			{
-				PostQuitMessage(0);
+				if (game.mainPageStack.size() == 0) {
+					game.mainPageStack.push_back(game.UIPageTable[0]);
+				}
+				else if(game.mainPageStack[0] == game.UIPageTable[0]) {
+					game.mainPageStack.pop_back();
+				}
+				//PostQuitMessage(0);
 				break;
 			}
 			break;
 			case 'O':
 			{
-				game.mainPageStack.push_back(game.UIPageTable[0]);
+				
 			}
 			break;
 			}
@@ -1056,6 +1074,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
 			}
 			break;
+			case VK_TAB:
+			{
+				CTS_KeyInput_Header header;
+				header.size = sizeof(CTS_KeyInput_Header);
+				header.st = CTS_Protocol::KeyInput;
+				header.Key = VK_TAB;
+				header.isdown = false;
+				client.send_all((char*)&header, sizeof(CTS_KeyInput_Header), 0);
+			}
+			break;
 			}
 			GetKeyboardState(game.pKeyBuffer);
 			break;
@@ -1118,9 +1146,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		case WM_KEYDOWN:
 		{
 			switch (wParam) {
-			case 'P':
+			case VK_ESCAPE:
 			{
-				if (game.mainPageStack.size() >= 1) {
+				if (game.mainPageStack.size() >= 1 && game.mainPageStack[0] == game.UIPageTable[0]) {
 					game.mainPageStack.pop_back();
 				}
 			}
