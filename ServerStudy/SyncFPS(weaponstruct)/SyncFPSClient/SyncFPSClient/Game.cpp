@@ -217,14 +217,91 @@ namespace {
 		if (boss == nullptr || game.BossPrototypeBossModel == nullptr) return;
 		if (game.BossPrototypeBossShapeIndex < 0 || game.BossPrototypeBossShapeIndex >= static_cast<int>(Shape::ShapeTable.size())) return;
 
-		bool needsNodeRefresh = boss->shape.GetModel() != game.BossPrototypeBossModel;
+		Model* currentModel = boss->shape.GetModel();
+		const bool modelChanged = currentModel != game.BossPrototypeBossModel;
+		bool needsShapeInit = modelChanged;
 		if (boss->transforms_innerModel == nullptr) {
-			needsNodeRefresh = true;
+			needsShapeInit = true;
+		}
+		if (game.BossPrototypeBossModel->mNumSkinMesh > 0 && boss->BoneToWorldMatrixCB.empty()) {
+			needsShapeInit = true;
+		}
+		if (gd.isSupportRaytracing && boss->RaytracingWorldMatInput_Model == nullptr) {
+			needsShapeInit = true;
+		}
+
+		if (needsShapeInit) {
+			if (modelChanged) {
+				boss->SetRaytracingInstanceEnabled(false);
+			}
+			if (boss->transforms_innerModel != nullptr) {
+				delete[] boss->transforms_innerModel;
+				boss->transforms_innerModel = nullptr;
+			}
+			const int renderZoneId = boss->zoneId >= 0 ? boss->zoneId :
+				(boss->zoneid >= 0 ? boss->zoneid : game.currentZoneId);
+			boss->SetShape(Shape::ShapeTable[game.BossPrototypeBossShapeIndex], renderZoneId);
+			boss->zoneId = renderZoneId;
+			boss->zoneid = renderZoneId;
+
+			char dbg[256] = {};
+			sprintf_s(dbg, "[BossProto] boss model SetShape zone=%d modelChanged=%d skin=%d rt=%d\n",
+				renderZoneId, modelChanged ? 1 : 0,
+				game.BossPrototypeBossModel->mNumSkinMesh,
+				boss->RaytracingWorldMatInput_Model != nullptr ? 1 : 0);
+			OutputDebugStringA(dbg);
+			printf("%s", dbg);
+			fflush(stdout);
+			return;
 		}
 
 		boss->shape = Shape::ShapeTable[game.BossPrototypeBossShapeIndex];
-		if (needsNodeRefresh) {
-			ApplyModelNodeTransforms(boss, game.BossPrototypeBossModel);
+		ApplyModelNodeTransforms(boss, game.BossPrototypeBossModel);
+	}
+
+	void ReleaseBossPrototypeCoreObject(Game::BossPrototypeCore& core)
+	{
+		if (core.BossProtoTypeCoreObj == nullptr) return;
+		core.BossProtoTypeCoreObj->Release();
+		delete core.BossProtoTypeCoreObj;
+		core.BossProtoTypeCoreObj = nullptr;
+	}
+
+	void ApplyBossWorldAndRefreshChunks(Monster* boss, const matrix& bossWorld)
+	{
+		if (boss == nullptr) return;
+
+		boss->tag[GameObjectTag::Tag_Enable] = true;
+		const int renderZoneId = boss->zoneId >= 0 ? boss->zoneId :
+			(boss->zoneid >= 0 ? boss->zoneid : game.currentZoneId);
+		Zone* renderZone = (renderZoneId >= 0 && renderZoneId < static_cast<int>(game.ZoneTable.size()))
+			? game.ZoneTable[renderZoneId]
+			: game.Current_Zone;
+
+		if (renderZone == nullptr) {
+			boss->worldMat = bossWorld;
+			return;
+		}
+
+		boss->zoneId = renderZone->zoneid;
+		boss->zoneid = renderZone->zoneid;
+
+		if (boss->chunkAllocIndexs == nullptr) {
+			boss->worldMat = bossWorld;
+			renderZone->PushGameObject(boss);
+			return;
+		}
+
+		matrix previousWorld = boss->worldMat;
+		GameObjectIncludeChunks beforeChunks = boss->IncludeChunks;
+		boss->worldMat = bossWorld;
+		GameObjectIncludeChunks afterChunks = renderZone->GetChunks_Include_OBB(boss->GetOBB());
+		if (beforeChunks != afterChunks && renderZone == game.Current_Zone) {
+			boss->worldMat = previousWorld;
+			boss->MoveChunck(bossWorld, beforeChunks, afterChunks);
+		}
+		else {
+			boss->worldMat = bossWorld;
 		}
 	}
 
@@ -3121,10 +3198,7 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 				boss->TriggerHitFlash(1.0f);
 			}
 			boss->SetStatusTint(vec4(0.0f, 1.0f, 1.0f, 1.0f));
-			if (BossPrototypeBossShapeIndex >= 0 && BossPrototypeBossShapeIndex < (int)Shape::ShapeTable.size()) {
-				boss->shape = Shape::ShapeTable[BossPrototypeBossShapeIndex];
-				ApplyModelNodeTransforms(boss, BossPrototypeBossModel);
-			}
+			EnsureBossObjectUsesBossModel(boss);
 
 			vec4 bossDirection = BossPrototypeVisualLookDirection;
 			if (BossPrototypeShouldAimBody(BossPrototypePhaseState)) {
@@ -3151,10 +3225,40 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 				bossWorld.pos.y += 1.45f + kBossPrototypeHeightOffset;
 			}
 			bossWorld.pos.w = 1.0f;
-			boss->worldMat = bossWorld;
+			ApplyBossWorldAndRefreshChunks(boss, bossWorld);
 			XMMatrixDecompose((XMVECTOR*)&boss->DestScale, (XMVECTOR*)&boss->DestRot, (XMVECTOR*)&boss->DestPos, bossWorld);
 			boss->LVelocity = vec4(0, 0, 0, 0);
 			ApplyBossPrototypeTurretPose(boss);
+			if (gd.isRaytracingRender && boss->RaytracingWorldMatInput_Model != nullptr) {
+				boss->RaytracingUpdateTransform();
+				boss->SetRaytracingInstanceEnabled(true);
+			}
+		}
+		else {
+			static int s_lastBossNonMonsterIndex = -1;
+			if (s_lastBossNonMonsterIndex != BossPrototypeIndex) {
+				s_lastBossNonMonsterIndex = BossPrototypeIndex;
+				char dbg[256] = {};
+				sprintf_s(dbg, "[BossProto] boss object is not Monster zone=%d serverIdx=%d clientIdx=%d dynSize=%zu\n",
+					header.zoneId, header.bossObjIndex, BossPrototypeIndex, DynmaicGameObjects.size());
+				OutputDebugStringA(dbg);
+				printf("%s", dbg);
+				fflush(stdout);
+			}
+		}
+	}
+	else {
+		static int s_lastMissingBossServerIndex = -1;
+		static int s_lastMissingBossZone = -1;
+		if (s_lastMissingBossServerIndex != header.bossObjIndex || s_lastMissingBossZone != header.zoneId) {
+			s_lastMissingBossServerIndex = header.bossObjIndex;
+			s_lastMissingBossZone = header.zoneId;
+			char dbg[256] = {};
+			sprintf_s(dbg, "[BossProto] boss sync missing zone=%d serverIdx=%d clientIdx=%d dynSize=%zu\n",
+				header.zoneId, header.bossObjIndex, BossPrototypeIndex, DynmaicGameObjects.size());
+			OutputDebugStringA(dbg);
+			printf("%s", dbg);
+			fflush(stdout);
 		}
 	}
 
@@ -3166,14 +3270,19 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 		core.HP = header.cores[i].hp;
 		core.MaxHP = header.cores[i].maxHP;
 		core.Active = header.cores[i].active;
-		core.BossProtoTypeCoreObj = new GameObject();
-		core.BossProtoTypeCoreObj->SetShape(BossPrototypeCoreModel);
-		core.BossProtoTypeCoreObj->worldMat = 0;
-		core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
-		core.BossProtoTypeCoreObj->SetRaytracingInstanceEnabled(true);
+//<<<<<<< HEAD
+//		core.BossProtoTypeCoreObj = new GameObject();
+//		core.BossProtoTypeCoreObj->SetShape(BossPrototypeCoreModel);
+//		core.BossProtoTypeCoreObj->worldMat = 0;
+//		core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
+//		core.BossProtoTypeCoreObj->SetRaytracingInstanceEnabled(true);
+//=======
+//>>>>>>> b66c0a2d3cb8344ad344660d71a2d831d9a5a9d8
 
 		if (i < (int)previousCores.size()) {
-			const BossPrototypeCore& prev = previousCores[i];
+			BossPrototypeCore& prev = previousCores[i];
+			core.BossProtoTypeCoreObj = prev.BossProtoTypeCoreObj;
+			prev.BossProtoTypeCoreObj = nullptr;
 			core.HitFlashTimer = prev.HitFlashTimer;
 			core.HitFlashDuration = prev.HitFlashDuration;
 			if (core.HP < prev.HP) {
@@ -3189,7 +3298,15 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 				SpawnBossExplosionParticles(core.Position, 2.0f, 32.0f);
 			}
 		}
+		if (core.BossProtoTypeCoreObj == nullptr) {
+			core.BossProtoTypeCoreObj = new GameObject();
+			core.BossProtoTypeCoreObj->SetShape(BossPrototypeCoreModel, header.zoneId);
+		}
+		core.BossProtoTypeCoreObj->SetRaytracingInstanceEnabled(core.Active);
 		BossPrototypeCores.push_back(core);
+	}
+	for (BossPrototypeCore& oldCore : previousCores) {
+		ReleaseBossPrototypeCoreObject(oldCore);
 	}
 
 	if (wasShieldActive && !BossPrototypeShieldActive) {
@@ -3408,14 +3525,14 @@ void Game::UpdateBossPrototype(float deltaTime)
 		BossPrototypeCenter.w = 1.0f;
 		boss->MaxHP = 7500.0f;
 		boss->HP = 7500.0f;
-		if (BossPrototypeBossShapeIndex >= 0 && BossPrototypeBossShapeIndex < (int)Shape::ShapeTable.size()) {
-			boss->shape = Shape::ShapeTable[BossPrototypeBossShapeIndex];
-			ApplyModelNodeTransforms(boss, BossPrototypeBossModel);
-		}
+		EnsureBossObjectUsesBossModel(boss);
 		BossPrototypeConfigured = true;
 	}
 
 	if (!BossPrototypeCoresInitialized || (!BossPrototypeShieldActive && BossPrototypeShieldDownTime <= 0.0f)) {
+		for (BossPrototypeCore& oldCore : BossPrototypeCores) {
+			ReleaseBossPrototypeCoreObject(oldCore);
+		}
 		BossPrototypeCores.clear();
 		BossAoEWarnings.clear();
 		const float coreRadius = 20.0f;
@@ -3589,12 +3706,8 @@ void Game::RenderBossPrototypeObjects()
 
 	if (gd.isRaytracingRender) {
 		for (const BossPrototypeCore& core : BossPrototypeCores) {
-			if (!core.Active) {
-				core.BossProtoTypeCoreObj->worldMat = 0;
-				core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
-				continue;
-			}
-
+			if (!core.Active) continue;
+			if (core.BossProtoTypeCoreObj == nullptr) continue;
 			matrix world;
 			world.Id();
 			world.right *= 1.65f;

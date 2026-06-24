@@ -1373,7 +1373,7 @@ void GameObject::RaytracingUpdateTransform()
 		UpdateRaytracingMeshLOD(this, mesh, RaytracingWorldMatInput);
 	}
 	else if (model != nullptr && model->RootNode != nullptr && RaytracingWorldMatInput_Model != nullptr) {
-		RaytracingUpdateTransform(model, model->RootNode, worldMat);
+		RaytracingUpdateTransform(model, model->RootNode, GetModelRenderWorld(model, worldMat));
 	}
 	else if (gd.isRaytracingRender && AutoLOD_IsModelLODRenderActive() &&
 		dynamic_cast<StaticGameObject*>(this) != nullptr && (mesh != nullptr || model != nullptr)) {
@@ -2720,6 +2720,10 @@ void SkinMeshGameObject::RaytracingUpdateTransform() {
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	shape.GetRealShape(mesh, model);
+	if (model != nullptr && model->mNumSkinMesh == 0) {
+		GameObject::RaytracingUpdateTransform();
+		return;
+	}
 	if (model && gd.isSupportRaytracing) {
 		if (RaytracingWorldMatInput_Model != nullptr) {
 			matrix Id;
@@ -3178,7 +3182,7 @@ void SkinMeshGameObject::RecvSTC_SyncObj(char* data) {
 		}
 	}
 
-	SetShape(shape);
+	SetShape(shape, zoneId >= 0 ? zoneId : zoneid);
 }
 
 void SkinMeshGameObject::AnimationUpdate(float deltaTime) {
@@ -3554,6 +3558,13 @@ void Monster::Update(float deltaTime)
 	//}
 	//gd.AverageSecPer60End(Update_Monster_Animation);
 
+	if (gd.isRaytracingRender && RaytracingWorldMatInput_Model != nullptr) {
+		Model* model = shape.GetModel();
+		if (model != nullptr && model->mNumSkinMesh == 0) {
+			RaytracingUpdateTransform();
+		}
+	}
+
 }
 
 void Monster::Render(matrix parent)
@@ -3627,7 +3638,7 @@ void Monster::RecvSTC_SyncObj(char* data) {
 		}
 	}
 
-	SetShape(shape);
+	SetShape(shape, zoneId >= 0 ? zoneId : zoneid);
 }
 
 void Monster::SyncHP(GameObject* go, char* data, int len)
