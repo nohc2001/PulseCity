@@ -10,6 +10,8 @@ void BoxLOD_DebugUpdate(float deltaTime);
 #include "GameObject.h"
 #include "NetworkDefs.h"
 
+#include <unordered_set>
+
 extern int dbgc[128];
 extern bool g_playGunSound;
 void dbgbreak(bool condition) {
@@ -36,6 +38,10 @@ namespace {
 	constexpr int kAutoLODMidSubMeshLimit = 6;
 	constexpr float kAutoLODFarSubMeshDistance = 80.0f;
 	constexpr int kAutoLODFarSubMeshLimit = 3;
+	constexpr float kAutoLODVeryFarSubMeshDistance = 130.0f;
+	constexpr int kAutoLODVeryFarSubMeshLimit = 2;
+	constexpr float kAutoLODExtremeSubMeshDistance = 200.0f;
+	constexpr int kAutoLODExtremeSubMeshLimit = 1;
 	constexpr float kBossPrototypeNormalScale = 4.20f;
 	constexpr float kBossPrototypeGroggyScale = 4.20f;
 	constexpr float kBossPrototypeHeightOffset = -1.50f;
@@ -67,9 +73,8 @@ namespace {
 	{
 		AutoLOD_ResetPreloadQueue();
 
-		for (int i = 0; i < game.StaticGameObjects.size(); ++i) {
-			StaticGameObject* obj = game.StaticGameObjects[i];
-			if (obj == nullptr) continue;
+		auto queueObject = [](StaticGameObject* obj) {
+			if (obj == nullptr) return;
 
 			Mesh* mesh = nullptr;
 			Model* model = nullptr;
@@ -80,6 +85,27 @@ namespace {
 			}
 			else if (model != nullptr) {
 				AutoLOD_QueueModelForPreload(model);
+			}
+		};
+
+		for (int i = 0; i < game.StaticGameObjects.size(); ++i) {
+			queueObject(game.StaticGameObjects[i]);
+		}
+
+		if (game.Current_Zone != nullptr) {
+			for (int zi = 0; zi < 9; ++zi) {
+				Zone* zone = game.Current_Zone->nearZones[zi];
+				if (zone == nullptr || !zone->isMapLoaded) continue;
+
+				for (auto& chunkEntry : zone->chunck) {
+					GameChunk* chunk = chunkEntry.second;
+					if (chunk == nullptr) continue;
+
+					for (int i = 0; i < chunk->Static_gameobjects.size; ++i) {
+						if (chunk->Static_gameobjects.isnull(i)) continue;
+						queueObject(chunk->Static_gameobjects[i]);
+					}
+				}
 			}
 		}
 
@@ -5612,6 +5638,17 @@ void Game::Render() {
 	PerfAutoLODShadowRenderedSubMeshes = 0;
 	PerfAutoLODShadowCulledObjects = 0;
 	PerfAutoLODShadowCulledSubMeshes = 0;
+	PerfRaytracingLODVisitedObjects = 0;
+	PerfRaytracingLODDescMisses = 0;
+	PerfRaytracingLODTypeRejects = 0;
+	PerfRaytracingLODDistanceRejects = 0;
+	PerfRaytracingLODMeshMisses = 0;
+	PerfRaytracingLODNoMeshMisses = 0;
+	PerfRaytracingLODReductionRejects = 0;
+	PerfRaytracingLODBLASMisses = 0;
+	PerfRaytracingLODHitGroupMisses = 0;
+	PerfRaytracingLODCheckedMeshes = 0;
+	PerfRaytracingLODAppliedMeshes = 0;
 	// 1. DRED 활성화
 	D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr);
 
@@ -6268,6 +6305,17 @@ void Game::Render_RayTracing()
 	PerfGPUComputeWaitMs = 0.0;
 	PerfGPUFinalWaitMs = 0.0;
 	PerfPresentMs = 0.0;
+	PerfRaytracingLODVisitedObjects = 0;
+	PerfRaytracingLODDescMisses = 0;
+	PerfRaytracingLODTypeRejects = 0;
+	PerfRaytracingLODDistanceRejects = 0;
+	PerfRaytracingLODMeshMisses = 0;
+	PerfRaytracingLODNoMeshMisses = 0;
+	PerfRaytracingLODReductionRejects = 0;
+	PerfRaytracingLODBLASMisses = 0;
+	PerfRaytracingLODHitGroupMisses = 0;
+	PerfRaytracingLODCheckedMeshes = 0;
+	PerfRaytracingLODAppliedMeshes = 0;
 
 	RenderSupportDrones();
 	game.player->Render_ThirdPersonWeapon();
@@ -6318,6 +6366,71 @@ void Game::Render_RayTracing()
 	}
 	gd.ShaderVisibleDescPool.BakeImmortalDesc();
 	gd.ShaderVisibleDescPool.DynamicReset();
+
+	static bool hadRaytracingMeshLOD = false;
+	static const Zone* previousRaytracingMeshLODZone = nullptr;
+	static uint64_t raytracingMeshLODRefreshFrame = 0;
+	const bool raytracingMeshLODActive = AutoLOD_IsModelLODRenderActive();
+	const bool raytracingMeshLODZoneChanged = previousRaytracingMeshLODZone != game.Current_Zone;
+	const bool raytracingMeshLODPeriodicRefresh =
+		raytracingMeshLODActive && ((raytracingMeshLODRefreshFrame++ % 120) == 0);
+	const bool refreshRaytracingMeshLOD =
+		(raytracingMeshLODActive != hadRaytracingMeshLOD) ||
+		raytracingMeshLODZoneChanged ||
+		raytracingMeshLODPeriodicRefresh;
+	if (refreshRaytracingMeshLOD) {
+		std::unordered_set<StaticGameObject*> visitedRaytracingLODObjects;
+		visitedRaytracingLODObjects.reserve(16384);
+
+		auto updateRaytracingLODObject = [&](StaticGameObject* obj) {
+			if (obj == nullptr) return;
+			if (!visitedRaytracingLODObjects.insert(obj).second) return;
+
+			Mesh* mesh = nullptr;
+			Model* model = nullptr;
+			obj->shape.GetRealShape(mesh, model);
+			if (mesh == nullptr && model == nullptr) return;
+
+			++PerfRaytracingLODVisitedObjects;
+			obj->RaytracingUpdateTransform();
+		};
+
+		for (StaticGameObject* obj : StaticGameObjects) {
+			updateRaytracingLODObject(obj);
+		}
+
+		gd.viewportArr[0].UpdateFrustum();
+		if (game.Current_Zone != nullptr) {
+			for (auto& chunkEntry : game.Current_Zone->chunck) {
+				GameChunk* chunk = chunkEntry.second;
+				if (chunk == nullptr) continue;
+
+				for (int i = 0; i < chunk->Static_gameobjects.size; ++i) {
+					if (chunk->Static_gameobjects.isnull(i)) continue;
+					updateRaytracingLODObject(chunk->Static_gameobjects[i]);
+				}
+			}
+
+			for (int zi = 0; zi < 9; ++zi) {
+				Zone* nearZone = game.Current_Zone->nearZones[zi];
+				if (nearZone == nullptr || nearZone == game.Current_Zone) continue;
+				if (!nearZone->isMapLoaded) continue;
+
+				for (auto& chunkEntry : nearZone->chunck) {
+					GameChunk* chunk = chunkEntry.second;
+					if (chunk == nullptr) continue;
+					if (!gd.viewportArr[0].m_xmFrustumWorld.Intersects(chunk->AABB)) continue;
+
+					for (int i = 0; i < chunk->Static_gameobjects.size; ++i) {
+						if (chunk->Static_gameobjects.isnull(i)) continue;
+						updateRaytracingLODObject(chunk->Static_gameobjects[i]);
+					}
+				}
+			}
+		}
+	}
+	hadRaytracingMeshLOD = raytracingMeshLODActive;
+	previousRaytracingMeshLODZone = game.Current_Zone;
 
 	//rebuild AS
 	if (true) {
@@ -6969,15 +7082,19 @@ void Game::SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
 	const float distance = cameraDelta.getlen3();
 	const uint64_t sourceSubMeshCount = static_cast<uint64_t>(selectedSubMeshes.size());
 
+	if (PresentShaderType == ShaderType::RenderShadowMap) {
+		PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
+		PerfAutoLODShadowRenderedSubMeshes += sourceSubMeshCount;
+		return;
+	}
+
 	int subMeshLimit = static_cast<int>(selectedSubMeshes.size());
-	if (distance >= kAutoLODFarSubMeshDistance) subMeshLimit = kAutoLODFarSubMeshLimit;
+	if (distance >= kAutoLODExtremeSubMeshDistance) subMeshLimit = kAutoLODExtremeSubMeshLimit;
+	else if (distance >= kAutoLODVeryFarSubMeshDistance) subMeshLimit = kAutoLODVeryFarSubMeshLimit;
+	else if (distance >= kAutoLODFarSubMeshDistance) subMeshLimit = kAutoLODFarSubMeshLimit;
 	else if (distance >= kAutoLODMidSubMeshDistance) subMeshLimit = kAutoLODMidSubMeshLimit;
 
 	if (static_cast<int>(selectedSubMeshes.size()) <= subMeshLimit) {
-		if (PresentShaderType == ShaderType::RenderShadowMap) {
-			PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
-			PerfAutoLODShadowRenderedSubMeshes += sourceSubMeshCount;
-		}
 		return;
 	}
 	std::sort(selectedSubMeshes.begin(), selectedSubMeshes.end(),
@@ -6987,10 +7104,6 @@ void Game::SelectAutoLODSubMeshes(BumpMesh* mesh, const matrix& transposedWorld,
 			return lhsIndexCount > rhsIndexCount;
 		});
 	selectedSubMeshes.resize(subMeshLimit);
-	if (PresentShaderType == ShaderType::RenderShadowMap) {
-		PerfAutoLODShadowSourceSubMeshes += sourceSubMeshCount;
-		PerfAutoLODShadowRenderedSubMeshes += static_cast<uint64_t>(selectedSubMeshes.size());
-	}
 }
 
 bool Game::QueueAutoLODInstance(Mesh* mesh, const matrix& world, const int* materialIndices, int materialCount)

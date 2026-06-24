@@ -709,6 +709,17 @@ public:
 	uint64_t PerfAutoLODShadowRenderedSubMeshes = 0;
 	uint64_t PerfAutoLODShadowCulledObjects = 0;
 	uint64_t PerfAutoLODShadowCulledSubMeshes = 0;
+	uint64_t PerfRaytracingLODVisitedObjects = 0;
+	uint64_t PerfRaytracingLODDescMisses = 0;
+	uint64_t PerfRaytracingLODTypeRejects = 0;
+	uint64_t PerfRaytracingLODDistanceRejects = 0;
+	uint64_t PerfRaytracingLODMeshMisses = 0;
+	uint64_t PerfRaytracingLODNoMeshMisses = 0;
+	uint64_t PerfRaytracingLODReductionRejects = 0;
+	uint64_t PerfRaytracingLODBLASMisses = 0;
+	uint64_t PerfRaytracingLODHitGroupMisses = 0;
+	uint64_t PerfRaytracingLODCheckedMeshes = 0;
+	uint64_t PerfRaytracingLODAppliedMeshes = 0;
 	int AutoLODShadowStabilityLevel = 0;
 
 	UINT TourID = 0;

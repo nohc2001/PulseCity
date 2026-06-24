@@ -959,7 +959,12 @@ namespace {
 
 		std::vector<BumpMesh::Vertex> vertices = data.vertices;
 		std::vector<TriangleIndex> indices = data.indices;
-		lodMesh->CreateMesh_FromVertexAndIndexData(vertices, indices, static_cast<int>(data.subMeshIndexStart.size() - 1), subMeshStarts, false);
+		lodMesh->sourceZoneID = sourceMesh->sourceZoneID;
+		lodMesh->CreateMesh_FromVertexAndIndexData(vertices, indices,
+			static_cast<int>(data.subMeshIndexStart.size() - 1),
+			subMeshStarts,
+			gd.isSupportRaytracing,
+			sourceMesh->sourceZoneID);
 		lodMesh->sourceVertexData = vertices;
 		lodMesh->sourceIndexData = indices;
 		lodMesh->sourceSubMeshIndexStart = data.subMeshIndexStart;

@@ -271,6 +271,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	double perfAutoLODShadowRenderedSubMeshes = 0.0;
 	double perfAutoLODShadowCulledObjects = 0.0;
 	double perfAutoLODShadowCulledSubMeshes = 0.0;
+	double perfRaytracingLODVisitedObjects = 0.0;
+	double perfRaytracingLODDescMisses = 0.0;
+	double perfRaytracingLODTypeRejects = 0.0;
+	double perfRaytracingLODDistanceRejects = 0.0;
+	double perfRaytracingLODMeshMisses = 0.0;
+	double perfRaytracingLODNoMeshMisses = 0.0;
+	double perfRaytracingLODReductionRejects = 0.0;
+	double perfRaytracingLODBLASMisses = 0.0;
+	double perfRaytracingLODHitGroupMisses = 0.0;
+	double perfRaytracingLODCheckedMeshes = 0.0;
+	double perfRaytracingLODAppliedMeshes = 0.0;
 	double perfMaxFrameMs = 0.0;
 	int perfFrameCount = 0;
 	bool perfLODState = AutoLOD_IsModelLODRenderActive();
@@ -295,6 +306,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		perfAutoLODShadowRenderedSubMeshes = 0.0;
 		perfAutoLODShadowCulledObjects = 0.0;
 		perfAutoLODShadowCulledSubMeshes = 0.0;
+		perfRaytracingLODVisitedObjects = 0.0;
+		perfRaytracingLODDescMisses = 0.0;
+		perfRaytracingLODTypeRejects = 0.0;
+		perfRaytracingLODDistanceRejects = 0.0;
+		perfRaytracingLODMeshMisses = 0.0;
+		perfRaytracingLODNoMeshMisses = 0.0;
+		perfRaytracingLODReductionRejects = 0.0;
+		perfRaytracingLODBLASMisses = 0.0;
+		perfRaytracingLODHitGroupMisses = 0.0;
+		perfRaytracingLODCheckedMeshes = 0.0;
+		perfRaytracingLODAppliedMeshes = 0.0;
 		perfMaxFrameMs = 0.0;
 		perfFrameCount = 0;
 	};
@@ -362,6 +384,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 					perfAutoLODShadowRenderedSubMeshes += double(game.PerfAutoLODShadowRenderedSubMeshes);
 					perfAutoLODShadowCulledObjects += double(game.PerfAutoLODShadowCulledObjects);
 					perfAutoLODShadowCulledSubMeshes += double(game.PerfAutoLODShadowCulledSubMeshes);
+					perfRaytracingLODVisitedObjects += double(game.PerfRaytracingLODVisitedObjects);
+					perfRaytracingLODDescMisses += double(game.PerfRaytracingLODDescMisses);
+					perfRaytracingLODTypeRejects += double(game.PerfRaytracingLODTypeRejects);
+					perfRaytracingLODDistanceRejects += double(game.PerfRaytracingLODDistanceRejects);
+					perfRaytracingLODMeshMisses += double(game.PerfRaytracingLODMeshMisses);
+					perfRaytracingLODNoMeshMisses += double(game.PerfRaytracingLODNoMeshMisses);
+					perfRaytracingLODReductionRejects += double(game.PerfRaytracingLODReductionRejects);
+					perfRaytracingLODBLASMisses += double(game.PerfRaytracingLODBLASMisses);
+					perfRaytracingLODHitGroupMisses += double(game.PerfRaytracingLODHitGroupMisses);
+					perfRaytracingLODCheckedMeshes += double(game.PerfRaytracingLODCheckedMeshes);
+					perfRaytracingLODAppliedMeshes += double(game.PerfRaytracingLODAppliedMeshes);
 					didRender = true;
 					g_suppressLoadingScreen = false;   // back to normal -> loading screen allowed again
 					//gd.AverageSecPer60End(0);
@@ -427,6 +460,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 							const double avgAutoLODShadowRenderedSubMeshes = perfAutoLODShadowRenderedSubMeshes * invFrameCount;
 							const double avgAutoLODShadowCulledObjects = perfAutoLODShadowCulledObjects * invFrameCount;
 							const double avgAutoLODShadowCulledSubMeshes = perfAutoLODShadowCulledSubMeshes * invFrameCount;
+							const double avgRaytracingLODVisitedObjects = perfRaytracingLODVisitedObjects * invFrameCount;
+							const double avgRaytracingLODDescMisses = perfRaytracingLODDescMisses * invFrameCount;
+							const double avgRaytracingLODTypeRejects = perfRaytracingLODTypeRejects * invFrameCount;
+							const double avgRaytracingLODDistanceRejects = perfRaytracingLODDistanceRejects * invFrameCount;
+							const double avgRaytracingLODMeshMisses = perfRaytracingLODMeshMisses * invFrameCount;
+							const double avgRaytracingLODNoMeshMisses = perfRaytracingLODNoMeshMisses * invFrameCount;
+							const double avgRaytracingLODReductionRejects = perfRaytracingLODReductionRejects * invFrameCount;
+							const double avgRaytracingLODBLASMisses = perfRaytracingLODBLASMisses * invFrameCount;
+							const double avgRaytracingLODHitGroupMisses = perfRaytracingLODHitGroupMisses * invFrameCount;
+							const double avgRaytracingLODCheckedMeshes = perfRaytracingLODCheckedMeshes * invFrameCount;
+							const double avgRaytracingLODAppliedMeshes = perfRaytracingLODAppliedMeshes * invFrameCount;
 							const double avgCPURecordMs = (std::max)(0.0, avgRenderMs - avgGPUWaitMs - avgPresentMs);
 							if (perfLODState) {
 								const bool heavyFrame =
@@ -449,9 +493,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 							else {
 								SetShadowStabilityLevel(0);
 							}
-							char perfDbg[1024];
+							char perfDbg[1792];
 							sprintf_s(perfDbg,
-								"[Perf] lod=%s shadowQ=%d fps=%.1f frame=%.2fms workFps=%.1f work=%.2fms maxWork=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms lodInst=%.1f->%.1f lodTrim=%.1f shLOD=%.1f->%.1f shCull=%.1f/%.1f samples=%d\n",
+								"[Perf] lod=%s shadowQ=%d fps=%.1f frame=%.2fms workFps=%.1f work=%.2fms maxWork=%.2fms render=%.2fms update=%.2fms gpuWait=%.2fms gpuPre=%.2fms gpuShadow=%.2fms gpuMain=%.2fms gpuCompute=%.2fms gpuFinal=%.2fms present=%.2fms cpuRecord=%.2fms lodInst=%.1f->%.1f lodTrim=%.1f shLOD=%.1f->%.1f shCull=%.1f/%.1f rtLOD=%.1f/%.1f rtVisit=%.1f rtMiss=%.1f/%.1f/%.1f/%.1f rtMesh=%.1f/%.1f/%.1f/%.1f samples=%d\n",
 								perfLODState ? "ON" : "OFF",
 								game.AutoLODShadowStabilityLevel,
 								avgPacedFrameMs > 0.0 ? 1000.0 / avgPacedFrameMs : 0.0,
@@ -476,6 +520,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 								avgAutoLODShadowRenderedSubMeshes,
 								avgAutoLODShadowCulledObjects,
 								avgAutoLODShadowCulledSubMeshes,
+								avgRaytracingLODAppliedMeshes,
+								avgRaytracingLODCheckedMeshes,
+								avgRaytracingLODVisitedObjects,
+								avgRaytracingLODDescMisses,
+								avgRaytracingLODTypeRejects,
+								avgRaytracingLODDistanceRejects,
+								avgRaytracingLODMeshMisses,
+								avgRaytracingLODNoMeshMisses,
+								avgRaytracingLODReductionRejects,
+								avgRaytracingLODBLASMisses,
+								avgRaytracingLODHitGroupMisses,
 								perfFrameCount);
 							OutputDebugStringA(perfDbg);
 							ResetPerfAccum();

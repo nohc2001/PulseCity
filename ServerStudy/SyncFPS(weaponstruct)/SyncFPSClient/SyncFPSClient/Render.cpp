@@ -25,6 +25,7 @@ LocalRootSigData::LocalRootSigData(unsigned int VBOff, unsigned int IBOff, unsig
 		off = zone->Asset_OffsetMul + 1;
 	}
 	MaterialStart = off * Zone::MAXZoneMaterialCount + MaterialSt;
+	ZeroMemory(padding, sizeof(padding));
 }
 
 void GPUCmd::Execute(bool dxr) {
@@ -61,7 +62,7 @@ void GPUCmd::WaitGPUComplete() {
 		::WaitForSingleObject(hFenceEvent, INFINITE);
 	}
 
-	// Ŀ�ǵ尡 �����?���� �ε��?�ؽ��İ� ������, �ش� ���ε� ���۸� �����Ѵ�.
+	// Ŀ�ǵ尡 �����?���� �ε��?�ؽ��İ� ������, �ش� ���ε� ���۸� �����Ѵ�.
 	for (int i = 0; i < GPUResource::TextureLoadedUploadBuffers.size(); ++i) {
 		if (GPUResource::TextureLoadedUploadBuffers[i] != nullptr) {
 			GPUResource::TextureLoadedUploadBuffers[i]->Release();
@@ -179,10 +180,10 @@ bool SDFTextPageTextureBuffer::PushSDFText(wchar_t c, ui16 width, ui16 height, c
 		SDFSectionMap.insert(pair<wchar_t, SDFTextSection*>(c, sdftextSec));
 		return true;
 	}
-	return true; // �̹� �ؽ��� ������ ���� ���?
+	return true; // �̹� �ؽ��� ������ ���� ���?
 
 SDFPAGEDATA_RELEASE:
-	// ���̻� �����Ͱ� ���� �� ���� ���? ���Ҵ��� �����Ѵ�.
+	// ���̻� �����Ͱ� ���� �� ���� ���? ���Ҵ��� �����Ѵ�.
 	if (UploadTextureBuffer.resource != nullptr) {
 		UploadTextureBuffer.Release();
 		UploadTextureBuffer.resource = nullptr;
@@ -899,7 +900,7 @@ void SVDescPool2::ExpendDescStructure(ui32 newInitDescArrCap, ui32 newTextureSRV
 	DestSizeArr[0] = ImmortalSize;
 	gd.pDevice->CopyDescriptors(1, DestHandleArr, DestSizeArr, 1, SourceHandleArr, SourceSizeArr, descheaptype);
 
-	// �� �ڵ��� ���� = �� ������ Desc���� ���̷� ä���?
+	// �� �ڵ��� ���� = �� ������ Desc���� ���̷� ä���?
 	DescIndex dummyTexSRV = DescIndex(true, TextureSRVStart + TextureSRVSiz);
 	if (game.RenderTextureTable.size() > 0 && game.RenderTextureTable[0] != nullptr) {
 		for (int i = 0; i < TextureSRVCap - TextureSRVSiz; ++i) {
@@ -1027,7 +1028,7 @@ void GlobalDevice::Factory_Adaptor_Output_Init()
 	{
 		pd3dDebugController->EnableDebugLayer();
 
-		// GPU Validation ���� - Device�� ���� �����?�ٷ� �����ϵ��� �Ѵ�?
+		// GPU Validation ���� - Device�� ���� �����?�ٷ� �����ϵ��� �Ѵ�?
 		ComPtr<ID3D12Debug1> debug1;
 		if (SUCCEEDED(pd3dDebugController->QueryInterface<ID3D12Debug1>(&debug1)))
 		{
@@ -1127,8 +1128,8 @@ DXGI_FACTORY_INIT_END:
 
 DXGI_ADAPTER_VERSION_CHECK:
 
-	//���� ����̽�?������ ����.
-	// ������ �����Ǵ��� �׽�Ʈ & �����?����
+	//���� ����̽�?������ ����.
+	// ������ �����Ǵ��� �׽�Ʈ & �����?����
 	for (int i = 0; i < 11; ++i) {
 		minFeatureLevel = FeatureLevelPriority[i];
 		bool keepLoop = true;
@@ -1189,7 +1190,7 @@ DXGI_ADAPTER_VERSION_CHECK:
 
 DXGI_FINISH_SELECT_ADAPTER:
 
-	// ��üȭ�� ���� ��ȯ ������ �ػ󵵸� ���?���� �۾�
+	// ��üȭ�� ���� ��ȯ ������ �ػ󵵸� ���?���� �۾�
 
 	//AI Code Start <Microsoft Copilot>
 	if (output != nullptr) {
@@ -1229,7 +1230,7 @@ DXGI_FINISH_SELECT_ADAPTER:
 		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
 		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 
-		//// ����̽�?������ ���� �޽������� �극��ũ�� �ɰ� �ʹٸ�
+		//// ����̽�?������ ���� �޽������� �극��ũ�� �ɰ� �ʹٸ�
 		infoQueue->SetBreakOnID(D3D12_MESSAGE_ID_DEVICE_REMOVAL_PROCESS_AT_FAULT, TRUE);
 	}
 
@@ -1729,7 +1730,7 @@ int GlobalDevice::PixelFormatToPixelSize(DXGI_FORMAT format)
 	case DXGI_FORMAT_BC5_UNORM:
 	case DXGI_FORMAT_BC6H_UF16:
 	case DXGI_FORMAT_BC7_UNORM:
-		return -1; // ���� ���?����: ���� ���?�ʿ�
+		return -1; // ���� ���?����: ���� ���?�ʿ�
 	}
 }
 
@@ -2126,10 +2127,10 @@ void GlobalDevice::AddTextSDFTexture(wchar_t key)
 
 		vector<uint8_t> sdfbuffer = makeSDF((char*)mipTex, realW, realH, 0.25f, -1.0f * realH * 0.5f);
 
-		//�ؽ��Ŀ����� ���� ���ڰ� ����Ҷ�?
+		//�ؽ��Ŀ����� ���� ���ڰ� ����Ҷ�?
 		PushSDFText(key, realW, realH, (char*)sdfbuffer.data());
 
-		//�ؽ��İ� ������ �������������?������ϱ�?����.
+		//�ؽ��İ� ������ �������������?������ϱ�?����.
 		//imgform::PixelImageObject pio;
 		//pio.width = realW;
 		//pio.height = realH;
@@ -2370,7 +2371,7 @@ void RayTracingDevice::SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGN
 	if (FAILED(hr)) {
 		if (error)
 		{
-			// ���� �޽��� ���?
+			// ���� �޽��� ���?
 			OutputDebugStringA((char*)error->GetBufferPointer());
 			error->Release();
 		}
@@ -2490,7 +2491,7 @@ lb_exit:
 	return pNewShaderHandle;
 }
 
-// �ݵ��?������ gd.SubRenderTarget �� �ʱ�ȭ �Ǿ��?�Ѵ�.
+// �ݵ��?������ gd.SubRenderTarget �� �ʱ�ȭ �Ǿ��?�Ѵ�.
 void RayTracingDevice::CreateSubRenderTarget()
 {
 	ID3D12Device5* device = dxrDevice;
@@ -2860,10 +2861,10 @@ void RayTracingMesh::AllocateRaytracingMesh(vector<Vertex> vbarr, vector<Triangl
 		gd.WaitGPUComplete();
 
 		////Geometry
-		////������ �����?�ڵ�.
+		////������ �����?�ڵ�.
 		///*
 		//* �׷� �� ������? �پ��� Geometry�� �ϳ��� BLAS�� ��ġ�ϸ�, BLAS�� Geometry���� ���� �ٸ� AABB�� �Ҵ��Ѵ�.
-		//* ������ AABB�� ��ġ�� �Ǹ�(��κ���?����޽���?AABB�� ������ ��ĥ �� �ۿ� ����.), �ᱹ Ray�� ���������?�� AABB�� ���� �����?�ﰢ���� �׻� �����?AABB�� �ִٰ� ������ ���� ���ϱ� ������, �ᱹ �� Geometry�� ���� AABB�� �˻��ϰ� �ǰ�, �װ��� �������� �����?
+		//* ������ AABB�� ��ġ�� �Ǹ�(��κ���?����޽���?AABB�� ������ ��ĥ �� �ۿ� ����.), �ᱹ Ray�� ���������?�� AABB�� ���� �����?�ﰢ���� �׻� �����?AABB�� �ִٰ� ������ ���� ���ϱ� ������, �ᱹ �� Geometry�� ���� AABB�� �˻��ϰ� �ǰ�, �װ��� �������� �����?
 		//*/
 		//GeometryDescs = new D3D12_RAYTRACING_GEOMETRY_DESC[subMeshCount];
 		//for (int i = 0; i < subMeshCount; ++i) {
@@ -3115,8 +3116,8 @@ void RayTracingMesh::AllocateRaytracingUAVMesh(vector<Vertex> vbarr, UINT64* inI
 		commandQueue->ExecuteCommandLists(1, ppd3dCommandLists);
 		gd.WaitGPUComplete();*/
 		// �� �ּ��� ���ʿ� Reset ���¿��� �� �Լ��� ȣ���ϱ� ������ �ּ��� ó����.
-		// ���� Reset�� �ƴ϶��?�̰� ���ִ� ���� �´�.
-		// fix : �� �Լ��� � Ŀ�ǵ� ���·ε� �����?�� �ֵ��� �����?��.
+		// ���� Reset�� �ƴ϶��?�̰� ���ִ� ���� �´�.
+		// fix : �� �Լ��� � Ŀ�ǵ� ���·ε� �����?�� �ֵ��� �����?��.
 
 		MeshDefaultInstanceData.Transform[0][0] = MeshDefaultInstanceData.Transform[1][1] = MeshDefaultInstanceData.Transform[2][2] = 1;
 		MeshDefaultInstanceData.InstanceMask = 1;
@@ -3280,7 +3281,7 @@ void RayTracingMesh::UAV_BLAS_Refit()
 		throw "bottomLevelPrebuildInfo Create Failed.";
 	}
 	if (gd.raytracing.UsingScratchSize + bottomLevelPrebuildInfo.ScratchDataSizeInBytes > gd.raytracing.ASBuild_ScratchResource_Maxsiz) {
-		// ������ Scratched Buffer �����?���?������.
+		// ������ Scratched Buffer �����?���?������.
 		gd.gpucmd.Close(true);
 		gd.gpucmd.Execute(true);
 		gd.gpucmd.WaitGPUComplete();
@@ -3392,7 +3393,7 @@ void Mesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering) {
 			temp_uv.push_back(XMFLOAT2(uv.x, uv.y));
 		}
 		else if (strcmp(rstr, "vn") == 0) {
-			// ���?
+			// ���?
 			XMFLOAT3 normal;
 			in >> normal.x;
 			in >> normal.y;
@@ -3791,7 +3792,7 @@ int Mesh::InstancingStruct::PushInstance(RenderInstanceData instance)
 
 		gd.ShaderVisibleDescPool.isImmortalChange = true;
 
-		// ���� ����� �ϴ� ������ ����. �׳� ������ ���� ���� ���?���� ��Ȱ���ϰ� ��Ƴ���?�ڳ�.
+		// ���� ����� �ϴ� ������ ����. �׳� ������ ���� ���� ���?���� ��Ȱ���ϰ� ��Ƴ���?�ڳ�.
 		prevRes.resource->Unmap(0, NULL);
 		prevRes.Release();
 	}
@@ -4563,6 +4564,7 @@ void BumpMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vector<Tr
 	if (!IsAutoLODGenerated) {
 		sourceVertexData = vert;
 		sourceIndexData = inds;
+		sourceZoneID = ZoneID;
 		sourceSubMeshIndexStart.clear();
 		if (SubMeshIndexArr != nullptr && SubMeshNum > 0) {
 			sourceSubMeshIndexStart.assign(SubMeshIndexArr, SubMeshIndexArr + SubMeshNum + 1);
@@ -4660,7 +4662,7 @@ void BumpMesh::ReadMeshFromFile_OBJ(const char* path, vec4 color, bool centering
 			temp_uv.push_back(XMFLOAT2(uv.x, uv.y));
 		}
 		else if (strcmp(rstr, "vn") == 0) {
-			// ���?
+			// ���?
 			XMFLOAT3 normal;
 			in >> normal.x;
 			in >> normal.y;
@@ -4822,7 +4824,7 @@ void BumpMesh::MakeMeshFromWChar(ID3D12Device* pd3dDevice, ID3D12GraphicsCommand
 					}
 				}
 
-				// ���� ���� poly�� ������ poly���� ���ο� ���� ���?
+				// ���� ���� poly�� ������ poly���� ���ο� ���� ���?
 				// ���찳ó��.
 				bool isEraserGeometry = false;
 				for (int k = polys.size() - i; k < polys.size(); ++k) {
@@ -4957,6 +4959,7 @@ void BumpMesh::Release()
 	sourceVertexData.clear();
 	sourceIndexData.clear();
 	sourceSubMeshIndexStart.clear();
+	sourceZoneID = -1;
 	sourceAutoLODReady = false;
 	Mesh::Release();
 }
@@ -5036,7 +5039,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 		vector<Vertex> dumy;
 		dumy.reserve(0);
 		dumy.resize(0);
-		// ���ý� �κ��� ������Ʈ SetShape�Ҷ� �ؾ� ��. (�ν��Ͻ����� ���� �־��?�ϴϱ�.)
+		// ���ý� �κ��� ������Ʈ SetShape�Ҷ� �ؾ� ��. (�ν��Ͻ����� ���� �־��?�ϴϱ�.)
 		rmesh.AllocateRaytracingUAVMesh_OnlyIndex(inds, SubMeshNum, SubMeshIndexStart);
 
 		// Origin SRV VertexBuffer (non transform)
@@ -5132,7 +5135,7 @@ void BumpSkinMesh::CreateMesh_FromVertexAndIndexData(vector<Vertex>& vert, vecto
 	}
 
 	MatrixCount = matrixCount;
-	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256�� ���?
+	UINT ncbElementBytes = (((sizeof(matrix) * MatrixCount) + 255) & ~255); //256�� ���?
 	GPUResource ToOffsetMatrixsCB_Upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 	//ToOffsetMatrixsCB_Upload.resource->Map(0, NULL, (void**)&OffsetMatrixs);
 	////make DefaultToWorldArr, ToLocalArr
@@ -5249,7 +5252,7 @@ void ModelNode::SkinMeshShadowRender(void* model, GPUCmd& cmd, const matrix& par
 					//copying
 					int skindex = Mesh_SkinMeshindex[i];
 					int boneNum = pModel->mBumpSkinMeshs[skindex]->MatrixCount;
-					UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256�� ���?
+					UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256�� ���?
 					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB_Default[skindex], D3D12_RESOURCE_STATE_COPY_DEST);
 					gd.gpucmd.ResBarrierTr(&smgo->BoneToWorldMatrixCB[skindex], D3D12_RESOURCE_STATE_COPY_SOURCE);
 					gd.gpucmd->CopyBufferRegion(smgo->BoneToWorldMatrixCB_Default[skindex].resource, 0, smgo->BoneToWorldMatrixCB[skindex].resource, 0, ncbElementBytes);
@@ -6131,7 +6134,7 @@ void Model::LoadModelFile2(string filename, int ZoneId, bool NoBone)
 	for (int i = 0; i < nodeCount; ++i) {
 		if (NodeOffsetMatrixArr[i].pos == IdMat.pos && NodeOffsetMatrixArr[i].look == IdMat.look
 			&& NodeOffsetMatrixArr[i].right == IdMat.right && NodeOffsetMatrixArr[i].up == IdMat.up) {
-			// offset �����?��������϶�?
+			// offset �����?��������϶�?
 			ModelNode* node = Nodes[i].parent;
 			if (node == nullptr) {
 				continue;
@@ -6438,7 +6441,7 @@ void Material::SetDescTable(int zoneid)
 		}
 	}
 
-	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256�� ���?
+	UINT ncbElementBytes = ((sizeof(MaterialCB_Data) + 255) & ~255); //256�� ���?
 	if (CBData == nullptr) {
 		CB_Resource = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		CB_Resource.resource->Map(0, NULL, (void**)&CBData);
@@ -6453,7 +6456,7 @@ void Material::SetDescTable(int zoneid)
 		cbv_desc.BufferLocation = CB_Resource.resource->GetGPUVirtualAddress();
 		cbv_desc.SizeInBytes = ncbElementBytes;
 		gd.pDevice->CreateConstantBufferView(&cbv_desc, CB_Resource.descindex.hCreation.hcpu);
-	}//else �� �Ű� �Ƚᵵ �ȴ�. - ���� ShaderVisible�� ���?�� ���� ������.
+	}//else �� �Ű� �Ƚᵵ �ȴ�. - ���� ShaderVisible�� ���?�� ���� ������.
 }
 
 MaterialCB_Data Material::GetMatCB()
@@ -6524,7 +6527,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		if (reset) {
 			MaterialStructuredBuffer.Release();
 			MaterialStructuredBuffer.resource = nullptr;
-			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256�� ���?
+			UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256�� ���?
 			MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 			MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 			for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
@@ -6569,7 +6572,7 @@ void Material::InitMaterialStructuredBuffer(bool reset)
 		}
 	}
 	else {
-		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256�� ���?
+		UINT ncbElementBytes = ((sizeof(MaterialST_Data) * gd.ShaderVisibleDescPool.MaterialCBVCap + 255) & ~255); //256�� ���?
 		MaterialStructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		MaterialStructuredBuffer.resource->Map(0, NULL, (void**)&MappedMaterialStructuredBuffer);
 		for (int i = 0; i < game.RenderMaterialTable.size(); ++i) {
@@ -7143,7 +7146,7 @@ void ScreenShader::InitShader()
 	CreateRootSignature_SDF();
 	CreatePipelineState_SDF();
 
-	UINT ncbElementBytes = (((sizeof(SDFInstance) * MaxInstance) + 255) & ~255); //256�� ���?
+	UINT ncbElementBytes = (((sizeof(SDFInstance) * MaxInstance) + 255) & ~255); //256�� ���?
 	SDFInstance_StructuredBuffer = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1); // 1MB
 	
 	gd.ShaderVisibleDescPool.ImmortalAlloc(&SDFInstance_SRV, 1);
@@ -9886,8 +9889,8 @@ float** RayTracingShader::push_rins_immortal(RayTracingMesh* mesh, matrix mat, L
 	//dbgbreak(dbgc[1] == 6167);
 	std::unordered_map<ShaderRecord, int>::iterator f;
 	
-	// �����?LRS�� 1�� �����س��� �ᱹ ���� ShaderRecord�� �����?�۾��� �� ����. ������ 
-	// ������ �ϳ��� �޽��� �������� Record�� �������?�ϴ� ���� ����ٸ�?LRSCount�� �����ϸ� �ǰڴ�.
+	// �����?LRS�� 1�� �����س��� �ᱹ ���� ShaderRecord�� �����?�۾��� �� ����. ������ 
+	// ������ �ϳ��� �޽��� �������� Record�� �������?�ϴ� ���� ����ٸ�?LRSCount�� �����ϸ� �ǰڴ�.
 	int LRSCount = 1; // mesh->subMeshCount;
 	static float* RaytracingInputWorldMatptr[1024] = {};
 	int curindex[1024] = {};
@@ -9951,7 +9954,7 @@ PUSH_INSTACEDESC:
 	return RaytracingInputWorldMatptr;
 }
 
-// �Ⱦ���.
+// �Ⱦ���.
 void RayTracingShader::clear_rins()
 {
 	hitGroupShaderTable.m_shaderRecords.resize(HitGroupShaderTableImmortalSize);
@@ -9959,7 +9962,7 @@ void RayTracingShader::clear_rins()
 	TLAS_InstanceDescs_Size = TLAS_InstanceDescs_ImmortalSize;
 }
 
-//�� ����.
+//�� ����.
 float** RayTracingShader::push_rins(RayTracingMesh* mesh, matrix mat, LocalRootSigData* LRSdata, int hitGroupShaderIdentifyerIndex)
 {
 	std::unordered_map<ShaderRecord, int>::iterator f;
@@ -10021,6 +10024,33 @@ PUSH_INSTACEDESC:
 	return RaytracingInputWorldMatptr;
 }
 
+int RayTracingShader::GetOrCreateHitGroupShaderRecord(const LocalRootSigData& LRSdata, int hitGroupShaderIdentifyerIndex, bool immortal)
+{
+	if (hitGroupShaderIdentifier == nullptr || hitGroupShaderIdentifyerIndex < 0) return -1;
+	if (hitGroupShaderIdentifyerIndex >= 128 || hitGroupShaderIdentifier[hitGroupShaderIdentifyerIndex] == nullptr) return -1;
+	if (hitGroupShaderTable.m_shaderRecords.size() >= HitGroupShaderTableCapavity) return -1;
+
+	LocalRootSigData* lrs = new LocalRootSigData(LRSdata);
+	void* HGSI = hitGroupShaderIdentifier[hitGroupShaderIdentifyerIndex];
+	ShaderRecord sr = ShaderRecord(HGSI, shaderIdentifierSize, lrs, sizeof(LocalRootSigData));
+	auto found = HitGroupShaderTableToIndex.find(sr);
+	if (found != HitGroupShaderTableToIndex.end()) {
+		delete lrs;
+		return found->second;
+	}
+
+	const int index = static_cast<int>(hitGroupShaderTable.m_shaderRecords.size());
+	hitGroupShaderTable.push_back(sr);
+	InsertShaderRecord(sr, index);
+	if (immortal) {
+		HitGroupShaderTableImmortalSize = (std::max)(HitGroupShaderTableImmortalSize, index + 1);
+		HitGroupShaderTableSize = HitGroupShaderTableImmortalSize;
+	}
+	else {
+		HitGroupShaderTableSize = (std::max)(HitGroupShaderTableSize, index + 1);
+	}
+	return index;
+}
 void RayTracingShader::InsertShaderRecord(ShaderRecord sr, int index)
 {
 	LocalRootSigData* newLRS = new LocalRootSigData();
@@ -10493,7 +10523,7 @@ void RayTracingShader::InitShaderTable()
 	}
 
 	// Hit group shader table
-	// RayTracing Shader�� Reinit �Ǹ� �ٽ� ���̴� ���̺��� ���?�͵��� ������ Shader Identifyer�� �����ؾ� ��. 
+	// RayTracing Shader�� Reinit �Ǹ� �ٽ� ���̴� ���̺��� ���?�͵��� ������ Shader Identifyer�� �����ؾ� ��. 
 	// �ƿ� �ٸ� ���̴��� �Ǿ����ϱ�.
 	if(shaderTableInit == false)
 	{
@@ -10545,7 +10575,7 @@ void RayTracingShader::InitShaderTable()
 		}
 		lrsvec.clear();
 
-		//������ ���?ShaderTable�� COM���� �̷����?�־ �Ƹ� �ڵ����� ������ ����.
+		//������ ���?ShaderTable�� COM���� �̷����?�־ �Ƹ� �ڵ����� ������ ����.
 	}
 }
 
@@ -11038,7 +11068,7 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename)
 		int fr = frameRate * Duration;
 
 		UINT datasiz = fr * 64 * sizeof(AnimGPUKey);
-		UINT ncbElementBytes = ((datasiz + 255) & ~255); //256�� ���?
+		UINT ncbElementBytes = ((datasiz + 255) & ~255); //256�� ���?
 		AnimationRes = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 		GPUResource AnimationRes_Upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_NONE);
 		AnimGPUKey* animMapped = nullptr;
@@ -11213,7 +11243,7 @@ void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
 		dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
 		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
 		dsvDesc.Texture2DArray.MipSlice = 0;
-		dsvDesc.Texture2DArray.FirstArraySlice = i; // ť�����?Ư�� ��
+		dsvDesc.Texture2DArray.FirstArraySlice = i; // ť�����?Ư�� ��
 		dsvDesc.Texture2DArray.ArraySize = 1;
 
 		gd.pDevice->CreateDepthStencilView(StaticShadowCubeMap.resource, &dsvDesc, StaticCubeShadowMapHandleDSV[i]);
@@ -11245,7 +11275,7 @@ void PointLight::CreatePointLight(PointLightCBData init, UINT resolution) {
 	//	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
 	//	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
 	//	dsvDesc.Texture2DArray.MipSlice = 0;
-	//	dsvDesc.Texture2DArray.FirstArraySlice = i; // ť�����?Ư�� ��
+	//	dsvDesc.Texture2DArray.FirstArraySlice = i; // ť�����?Ư�� ��
 	//	dsvDesc.Texture2DArray.ArraySize = 1;
 
 	//	gd.pDevice->CreateDepthStencilView(DynamicShadowCubeMap.resource, &dsvDesc, DynamicCubeShadowMapHandleDSV[i]);

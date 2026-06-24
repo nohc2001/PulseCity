@@ -262,6 +262,246 @@ namespace {
 		return lodMesh;
 	}
 
+	bool ShouldUseMeshLODByKey(const void* key, const BoundingOrientedBox& obb);
+	int GetMeshLODLevelForOBB(const BoundingOrientedBox& obb);
+
+	struct RaytracingMeshLODState {
+		bool hasOriginal = false;
+		bool usingLOD = false;
+		D3D12_GPU_VIRTUAL_ADDRESS originalAccelerationStructure = 0;
+		UINT originalHitGroupIndex = 0;
+		GameObject* owner = nullptr;
+		float* transformPtr = nullptr;
+		Mesh* sourceMesh = nullptr;
+		Mesh* lodMesh = nullptr;
+		int materialIndex = -1;
+		int zoneId = -1;
+		int lodHitGroupIndex = -1;
+	};
+
+	std::unordered_map<const void*, RaytracingMeshLODState> gRaytracingMeshLODStates;
+
+	D3D12_RAYTRACING_INSTANCE_DESC* GetRaytracingInstanceDescFromTransform(float* transformPtr)
+	{
+		if (transformPtr == nullptr || game.MyRayTracingShader == nullptr ||
+			game.MyRayTracingShader->TLAS_InstanceDescs_MappedData == nullptr) return nullptr;
+
+		const uintptr_t base = reinterpret_cast<uintptr_t>(game.MyRayTracingShader->TLAS_InstanceDescs_MappedData);
+		const uintptr_t ptr = reinterpret_cast<uintptr_t>(transformPtr);
+		if (ptr < base) return nullptr;
+
+		const uintptr_t byteOffset = ptr - base;
+		if (byteOffset % sizeof(D3D12_RAYTRACING_INSTANCE_DESC) != offsetof(D3D12_RAYTRACING_INSTANCE_DESC, Transform)) return nullptr;
+
+		const uintptr_t index = byteOffset / sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
+		if (index >= static_cast<uintptr_t>(game.MyRayTracingShader->TLASAlloter.size)) return nullptr;
+		return &game.MyRayTracingShader->TLAS_InstanceDescs_MappedData[index];
+	}
+
+	bool IsValidRaytracingLODMesh(Mesh* sourceMesh, Mesh* lodMesh)
+	{
+		if (sourceMesh == nullptr || lodMesh == nullptr || sourceMesh == lodMesh) return false;
+		if (sourceMesh->type != Mesh::MeshType::_BumpMesh || lodMesh->type != Mesh::MeshType::_BumpMesh) return false;
+		BumpMesh* sourceBump = static_cast<BumpMesh*>(sourceMesh);
+		BumpMesh* lodBump = static_cast<BumpMesh*>(lodMesh);
+		if (lodBump->subMeshNum <= 0 || lodBump->subMeshNum > sourceBump->subMeshNum) return false;
+		if (lodBump->rmesh.BLAS == nullptr || lodBump->rmesh.IBStartOffset == nullptr) return false;
+		if (lodBump->rmesh.MeshDefaultInstanceData.AccelerationStructure == 0) return false;
+		return true;
+	}
+
+	enum class RaytracingLODResolveFailure {
+		None,
+		NoLODMesh,
+		ReductionRejected,
+		InvalidBLAS
+	};
+
+	Mesh* GetRaytracingEffectiveLODMesh(Mesh* sourceMesh, int lodLevel,
+		RaytracingLODResolveFailure* failure = nullptr)
+	{
+		if (failure != nullptr) *failure = RaytracingLODResolveFailure::None;
+		if (sourceMesh == nullptr || sourceMesh->type != Mesh::MeshType::_BumpMesh) {
+			if (failure != nullptr) *failure = RaytracingLODResolveFailure::NoLODMesh;
+			return nullptr;
+		}
+
+		Mesh* lodMesh = AutoLOD_GetLODMesh(sourceMesh, lodLevel);
+		if (lodMesh == nullptr && lodLevel > 0) lodMesh = AutoLOD_GetLODMesh(sourceMesh, 0);
+		if (lodMesh == nullptr || lodMesh == sourceMesh) {
+			if (failure != nullptr) *failure = RaytracingLODResolveFailure::NoLODMesh;
+			return nullptr;
+		}
+
+		const size_t sourceTriangles = GetMeshTriangleCount(sourceMesh);
+		const size_t lodTriangles = GetMeshTriangleCount(lodMesh);
+		if (sourceTriangles == 0 || lodTriangles == 0 ||
+			float(lodTriangles) > float(sourceTriangles) * kMeshLODMaxRenderedTriangleRatio) {
+			if (failure != nullptr) *failure = RaytracingLODResolveFailure::ReductionRejected;
+			return nullptr;
+		}
+		if (!IsValidRaytracingLODMesh(sourceMesh, lodMesh)) {
+			if (failure != nullptr) *failure = RaytracingLODResolveFailure::InvalidBLAS;
+			return nullptr;
+		}
+		return lodMesh;
+	}
+
+	int GetRaytracingLODHitGroupIndex(BumpMesh* lodMesh, int materialIndex, int zoneId)
+	{
+		if (lodMesh == nullptr || game.MyRayTracingShader == nullptr || materialIndex < 0) return -1;
+		if (lodMesh->rmesh.IBStartOffset == nullptr) return -1;
+		LocalRootSigData lrs(
+			static_cast<unsigned int>(lodMesh->rmesh.VBStartOffset / sizeof(RayTracingMesh::Vertex)),
+			static_cast<unsigned int>(lodMesh->rmesh.IBStartOffset[0] / sizeof(unsigned int)),
+			static_cast<unsigned int>(materialIndex),
+			zoneId
+		);
+		return game.MyRayTracingShader->GetOrCreateHitGroupShaderRecord(lrs, 0, true);
+	}
+
+	void RestoreRaytracingMeshLODByKey(const void* stateKey, D3D12_RAYTRACING_INSTANCE_DESC* desc)
+	{
+		auto it = gRaytracingMeshLODStates.find(stateKey);
+		if (it == gRaytracingMeshLODStates.end()) return;
+		RaytracingMeshLODState& state = it->second;
+		if (desc != nullptr && state.hasOriginal) {
+			desc->AccelerationStructure = state.originalAccelerationStructure;
+			desc->InstanceContributionToHitGroupIndex = state.originalHitGroupIndex;
+		}
+		state.usingLOD = false;
+	}
+
+	void RestoreRaytracingMeshLOD(GameObject* obj, D3D12_RAYTRACING_INSTANCE_DESC* desc)
+	{
+		RestoreRaytracingMeshLODByKey(obj, desc);
+	}
+
+	void ClearRaytracingMeshLODState(GameObject* obj)
+	{
+		if (obj == nullptr) return;
+		for (auto it = gRaytracingMeshLODStates.begin(); it != gRaytracingMeshLODStates.end();) {
+			if (it->first == obj || it->second.owner == obj) {
+				D3D12_RAYTRACING_INSTANCE_DESC* desc = GetRaytracingInstanceDescFromTransform(it->second.transformPtr);
+				if (desc == nullptr && it->first == obj) {
+					desc = GetRaytracingInstanceDescFromTransform(obj->RaytracingWorldMatInput);
+				}
+				RestoreRaytracingMeshLODByKey(it->first, desc);
+				it = gRaytracingMeshLODStates.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+	}
+
+	void UpdateRaytracingMeshLODForKey(const void* stateKey, GameObject* obj, Mesh* sourceMesh,
+		int materialIndex, int zoneId, float* transformPtr, const matrix& worldForOBB)
+	{
+		D3D12_RAYTRACING_INSTANCE_DESC* desc = GetRaytracingInstanceDescFromTransform(transformPtr);
+		if (stateKey == nullptr || obj == nullptr || sourceMesh == nullptr || desc == nullptr) {
+			++game.PerfRaytracingLODDescMisses;
+			return;
+		}
+
+		const bool canUseRaytracingLOD = gd.isRaytracingRender &&
+			dynamic_cast<StaticGameObject*>(obj) != nullptr &&
+			sourceMesh->type == Mesh::MeshType::_BumpMesh && materialIndex >= 0;
+		if (!canUseRaytracingLOD) {
+			++game.PerfRaytracingLODTypeRejects;
+			RestoreRaytracingMeshLODByKey(stateKey, desc);
+			return;
+		}
+
+		RaytracingMeshLODState& state = gRaytracingMeshLODStates[stateKey];
+		if (!state.hasOriginal || state.sourceMesh != sourceMesh) {
+			state = RaytracingMeshLODState{};
+			state.hasOriginal = true;
+			state.owner = obj;
+			state.transformPtr = transformPtr;
+			state.sourceMesh = sourceMesh;
+			state.originalAccelerationStructure = desc->AccelerationStructure;
+			state.originalHitGroupIndex = desc->InstanceContributionToHitGroupIndex;
+		}
+
+		if (!AutoLOD_IsModelLODRenderActive()) {
+			RestoreRaytracingMeshLODByKey(stateKey, desc);
+			return;
+		}
+		++game.PerfRaytracingLODCheckedMeshes;
+
+		BoundingOrientedBox obbLocal = sourceMesh->GetOBB();
+		BoundingOrientedBox obbWorld;
+		obbLocal.Transform(obbWorld, worldForOBB);
+		if (!ShouldUseMeshLODByKey(stateKey, obbWorld)) {
+			++game.PerfRaytracingLODDistanceRejects;
+			RestoreRaytracingMeshLODByKey(stateKey, desc);
+			return;
+		}
+
+		RaytracingLODResolveFailure resolveFailure = RaytracingLODResolveFailure::None;
+		Mesh* lodMesh = GetRaytracingEffectiveLODMesh(sourceMesh, GetMeshLODLevelForOBB(obbWorld), &resolveFailure);
+		if (lodMesh == nullptr) {
+			++game.PerfRaytracingLODMeshMisses;
+			if (resolveFailure == RaytracingLODResolveFailure::NoLODMesh) {
+				++game.PerfRaytracingLODNoMeshMisses;
+			}
+			else if (resolveFailure == RaytracingLODResolveFailure::ReductionRejected) {
+				++game.PerfRaytracingLODReductionRejects;
+			}
+			else if (resolveFailure == RaytracingLODResolveFailure::InvalidBLAS) {
+				++game.PerfRaytracingLODBLASMisses;
+			}
+			RestoreRaytracingMeshLODByKey(stateKey, desc);
+			return;
+		}
+
+		BumpMesh* lodBump = static_cast<BumpMesh*>(lodMesh);
+		if (state.lodMesh != lodMesh || state.materialIndex != materialIndex || state.zoneId != zoneId || state.lodHitGroupIndex < 0) {
+			const int hitGroupIndex = GetRaytracingLODHitGroupIndex(lodBump, materialIndex, zoneId);
+			if (hitGroupIndex < 0) {
+				++game.PerfRaytracingLODMeshMisses;
+				++game.PerfRaytracingLODHitGroupMisses;
+				RestoreRaytracingMeshLODByKey(stateKey, desc);
+				return;
+			}
+			state.lodMesh = lodMesh;
+			state.materialIndex = materialIndex;
+			state.zoneId = zoneId;
+			state.lodHitGroupIndex = hitGroupIndex;
+		}
+
+		desc->AccelerationStructure = lodBump->rmesh.MeshDefaultInstanceData.AccelerationStructure;
+		desc->InstanceContributionToHitGroupIndex = static_cast<UINT>(state.lodHitGroupIndex);
+		state.usingLOD = true;
+		++game.PerfRaytracingLODAppliedMeshes;
+	}
+
+	void UpdateRaytracingMeshLOD(GameObject* obj, Mesh* sourceMesh, float* transformPtr)
+	{
+		if (obj == nullptr || sourceMesh == nullptr || obj->material == nullptr) return;
+		UpdateRaytracingMeshLODForKey(obj, obj, sourceMesh, obj->material[0], obj->zoneId, transformPtr, obj->worldMat);
+	}
+
+	void UpdateRaytracingModelNodeLOD(GameObject* obj, Model* model, ModelNode* node,
+		int nodeIndex, float* transformPtr, const matrix& nodeWorld)
+	{
+		if (obj == nullptr || model == nullptr || node == nullptr || transformPtr == nullptr) return;
+		if (nodeIndex < 0 || nodeIndex >= model->nodeCount) return;
+		if (node->numMesh == 0 || node->Meshes == nullptr || node->materialIndex == nullptr) {
+			RestoreRaytracingMeshLODByKey(transformPtr, GetRaytracingInstanceDescFromTransform(transformPtr));
+			return;
+		}
+
+		const unsigned int meshIndex = node->Meshes[0];
+		if (meshIndex >= model->mNumMeshes) {
+			RestoreRaytracingMeshLODByKey(transformPtr, GetRaytracingInstanceDescFromTransform(transformPtr));
+			return;
+		}
+
+		Mesh* sourceMesh = model->mMeshes[meshIndex];
+		UpdateRaytracingMeshLODForKey(transformPtr, obj, sourceMesh, node->materialIndex[0], obj->zoneId, transformPtr, nodeWorld);
+	}
 	void AccumulateLODStatsForMesh(Mesh* sourceMesh, size_t& sourceTriangles, size_t& renderedTriangles)
 	{
 		Mesh* lodMesh = GetEffectiveLODMesh(sourceMesh, 0);
@@ -750,7 +990,15 @@ void GameObject::Render(matrix parent)
 			return;
 		}
 		gd.gpucmd->SetGraphicsRoot32BitConstants(1, 16, &rootWorld, 0);
-		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
+		std::vector<int> selectedSubMeshes;
+		if (Bmesh->IsAutoLODGenerated) {
+			game.SelectAutoLODSubMeshes(Bmesh, rootWorld, selectedSubMeshes);
+		}
+		else {
+			selectedSubMeshes.reserve(Bmesh->subMeshNum);
+			for (int i = 0; i < Bmesh->subMeshNum; ++i) selectedSubMeshes.push_back(i);
+		}
+		for (int i : selectedSubMeshes) {
 			if (material[i] < 0 || material[i] >= game.RenderMaterialTable.size()) continue;
 			Material* Mat = game.GetMaterialFromRenderMaterialIndex(material[i]);
 			if (Mat == nullptr || Mat->CB_Resource.resource == nullptr || Mat->TextureSRVTableIndex.hRender.hgpu.ptr == 0) continue;
@@ -900,7 +1148,15 @@ void GameObject::PushRenderBatch(matrix parent)
 		matrix rootWorld = world;
 		rootWorld.transpose();
 		BumpMesh* Bmesh = (BumpMesh*)drawMesh;
-		for (int i = 0; i < Bmesh->subMeshNum; ++i) {
+		std::vector<int> selectedSubMeshes;
+		if (Bmesh->IsAutoLODGenerated) {
+			game.SelectAutoLODSubMeshes(Bmesh, rootWorld, selectedSubMeshes);
+		}
+		else {
+			selectedSubMeshes.reserve(Bmesh->subMeshNum);
+			for (int i = 0; i < Bmesh->subMeshNum; ++i) selectedSubMeshes.push_back(i);
+		}
+		for (int i : selectedSubMeshes) {
 			if (material[i] < 0 || material[i] >= static_cast<int>(game.RenderMaterialTable.size())) continue;
 			if (Bmesh->InstanceData == nullptr) continue;
 			Bmesh->InstanceData[i].PushInstance(RenderInstanceData(rootWorld, material[i]));
@@ -933,6 +1189,7 @@ void GameObject::PushRenderBatch(matrix parent)
 }
 void GameObject::Release()
 {
+	ClearRaytracingMeshLODState(this);
 	//Raytracing Release
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
@@ -1017,6 +1274,7 @@ BoundingOrientedBox GameObject::GetOBB()
 
 void GameObject::SetShape(Shape _shape, int ZoneID)
 {
+	ClearRaytracingMeshLODState(this);
 	static LocalRootSigData tempLRSSaver[1024] = {};
 	shape = _shape;
 	Mesh* mesh = nullptr;
@@ -1103,18 +1361,21 @@ void GameObject::RaytracingUpdateTransform()
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	shape.GetRealShape(mesh, model);
-	if (RaytracingWorldMatInput) {
-		if (mesh != nullptr) {
-			matrix mat = worldMat;
-			mat.transpose();
-			/*for (int i = 0; i < mesh->subMeshNum; ++i) {
-				memcpy(RaytracingWorldMatInput[i], &mat, sizeof(float) * 12);
-			}*/
-			memcpy(RaytracingWorldMatInput, &mat, sizeof(float) * 12);
-		}
-		else {
-			RaytracingUpdateTransform(model, model->RootNode, worldMat);
-		}
+	if (mesh != nullptr && RaytracingWorldMatInput != nullptr) {
+		matrix mat = worldMat;
+		mat.transpose();
+		/*for (int i = 0; i < mesh->subMeshNum; ++i) {
+			memcpy(RaytracingWorldMatInput[i], &mat, sizeof(float) * 12);
+		}*/
+		memcpy(RaytracingWorldMatInput, &mat, sizeof(float) * 12);
+		UpdateRaytracingMeshLOD(this, mesh, RaytracingWorldMatInput);
+	}
+	else if (model != nullptr && model->RootNode != nullptr && RaytracingWorldMatInput_Model != nullptr) {
+		RaytracingUpdateTransform(model, model->RootNode, worldMat);
+	}
+	else if (gd.isRaytracingRender && AutoLOD_IsModelLODRenderActive() &&
+		dynamic_cast<StaticGameObject*>(this) != nullptr && (mesh != nullptr || model != nullptr)) {
+		++game.PerfRaytracingLODDescMisses;
 	}
 }
 
@@ -1129,11 +1390,13 @@ void GameObject::RaytracingUpdateTransform(Model* model, ModelNode* node, matrix
 	}
 
 	if (RaytracingWorldMatInput_Model[nodeIndex] != nullptr) {
+		matrix nodeWorld = mat;
 		mat.transpose();
 		/*for (int i = 0; i < model->mMeshes[node->Meshes[0]]->subMeshNum; ++i) {
 			memcpy(RaytracingWorldMatInput_Model[nodeIndex][i], &mat, sizeof(float) * 12);
 		}*/
 		memcpy(RaytracingWorldMatInput_Model[nodeIndex], &mat, sizeof(float) * 12);
+		UpdateRaytracingModelNodeLOD(this, model, node, nodeIndex, RaytracingWorldMatInput_Model[nodeIndex], nodeWorld);
 	}
 }
 
