@@ -3469,9 +3469,14 @@ void Monster::Update(float deltaTime)
 	if (isDead)
 	{
 		//ChangeState(State::DEATH);
+		// Hide the dead monster's mesh: InstanceMask=0 makes rays skip it. Persists because
+		// RaytracingUpdateTransform only writes the transform, never the mask. Revived (mask back on)
+		// when the monster is alive again (e.g. dungeon instance reset sets isDead=false).
+		SetRaytracingInstanceEnabled(false);
 	}
 	else
 	{
+		SetRaytracingInstanceEnabled(true);
 		float velSpeed = sqrt(LVelocity.x * LVelocity.x + LVelocity.z * LVelocity.z);
 		float dx = DestPos.x - worldMat.pos.x;
 		float dz = DestPos.z - worldMat.pos.z;

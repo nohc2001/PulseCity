@@ -1203,7 +1203,7 @@ void Zone::SpawnObjects() {
             Monster* walker = new Monster();
             walker->zone = this;
             walker->ApplyMonsterData(MonsterType::Walker);
-            walker->Init(XMMatrixTranslation(cx + 2.0f, my, cz + dz[k]));
+            walker->Init(XMMatrixTranslation(cx + 3.0f, my, cz + 1.5f * dz[k]));
             NewObject(walker, GameObjectType::_Monster);
             PushGameObject(walker);
         }
@@ -1333,6 +1333,9 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
         for (int i = 0; i < testZone->Dynamic_gameObjects.size; ++i) {
             if (testZone->Dynamic_gameObjects.isnull(i)) continue;
             if (shooter == (GameObject*)testZone->Dynamic_gameObjects[i]) continue;
+            // [dungeon] dead monsters have no collision body -> rays/bullets pass through them.
+            if ((short)GameObjectType::VptrToTypeTable[*(void**)testZone->Dynamic_gameObjects[i]] == GameObjectType::_Monster
+                && ((Monster*)testZone->Dynamic_gameObjects[i])->isDead) continue;
 
             testZone->currentIndex = i;
             BoundingOrientedBox obb = testZone->Dynamic_gameObjects[i]->GetOBB();

@@ -685,6 +685,9 @@ void DynamicGameObject::LookAt(vec4 look, vec4 up)
 
 void DynamicGameObject::CollisionMove(DynamicGameObject* gbj1, DynamicGameObject* gbj2)
 {
+	// [dungeon] a dead monster has no collision body -> skip the response so players/objects pass through it.
+	if (gbj1 != nullptr && (short)GameObjectType::VptrToTypeTable[*(void**)gbj1] == GameObjectType::_Monster && ((Monster*)gbj1)->isDead) return;
+	if (gbj2 != nullptr && (short)GameObjectType::VptrToTypeTable[*(void**)gbj2] == GameObjectType::_Monster && ((Monster*)gbj2)->isDead) return;
 	constexpr float epsillon = 0.01f;
 
 	bool bi = XMColorEqual(gbj1->tickLVelocity, XMVectorZero());
@@ -4279,13 +4282,21 @@ void Monster::Update(float deltaTime)
 	}
 
 	if (isDead) {
-		// [dungeon] dungeon monsters stay dead (no respawn). Open-world monsters respawn after 1s.
-		if (!World::IsDungeonZone(zoneId)) {
-			respawntimer += deltaTime;
-			if (respawntimer > 1.0f) {
-				Respawn();
-				respawntimer = 0;
-			}
+		// A dead dungeon monster remains dead for the rest of the current run.
+		// ResetDungeonInstance() is the only place allowed to revive it, after every
+		// player has left and the instance is being prepared for the next party.
+		if (World::IsDungeonZone(zoneId)) {
+			respawntimer = 0.0f;
+			LVelocity = 0;
+			tickLVelocity = 0;
+			return;
+		}
+
+		// Open-world monsters keep the existing one-second respawn behavior.
+		respawntimer += deltaTime;
+		if (respawntimer > 1.0f) {
+			Respawn();
+			respawntimer = 0;
 		}
 	}
 	else {
@@ -4314,7 +4325,7 @@ void Monster::Update(float deltaTime)
 		if (MoveByTail) {
 			bool b = CurrentTarget != nullptr;
 			if (b) {
-				if (vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 40) 
+				if (vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 40)
 					CurrentTarget = nullptr;
 
 				if (CurrentTarget != nullptr && vec4(CurrentTarget->worldMat.pos - worldMat.pos).len3 > 3) {
@@ -4972,7 +4983,15 @@ void Monster::Init(const XMMATRIX& initialWorldMatrix)
 
 void Monster::Respawn()
 {
+	// Defense in depth: even if a future caller invokes Respawn() directly,
+	// a monster in an active dungeon run must never be revived here.
+	if (World::IsDungeonZone(zoneId)) {
+		respawntimer = 0.0f;
+		return;
+	}
+
 	Zone* zone = gameworld.GetZone(zoneId);
+	if (zone == nullptr) return;
 	Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
 	while (zone->map.isStaticCollision(GetOBB())) {
 		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
