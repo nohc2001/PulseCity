@@ -3416,6 +3416,8 @@ void Player::StartReload(Zone* zones)
 
 void Player::Update(float deltaTime)
 {
+	TalkStartFlow += deltaTime;
+
 	Zone* zones = gameworld.GetClientZone(clientIndex);
 	if (zones == nullptr) return;
 
@@ -5104,11 +5106,16 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 			// monster kill quest prograss update
 			for (int i = 0; i < p->QuestPrograss.size(); ++i) {
 				Quest* prograss = p->QuestPrograss[i];
+				bool QuestUpdate = false;
 				for (int k = 0; k < prograss->requp; ++k) {
 					QuestRequirement& req = prograss->ReqArr[k];
 					if (req.type == QuestType::KillMonster && req.ObjID == (int)m_monsterType) {
 						req.PresentCnt += 1;
+						QuestUpdate += 1;
 					}
+				}
+				if (QuestUpdate) {
+					zone->Sending_SyncQuestPrograss(gameworld.clients[p->clientIndex].PersonalSDS, p->QuestArr[i], prograss);
 				}
 			}
 		}
@@ -5705,10 +5712,23 @@ void PeacefulNPC::Update(float deltaTime) {
 
 				if (skgo->tag[GameObjectTag::Tag_Player] == true) {
 					Player* pgo = (Player*)skgo;
+					if (pgo->TalkStartFlow < Player::TalkDelay) {
+						pgo->InputBuffer[InputID::KeyboardTab] = false;
+						continue;
+					}
 					vec4 distance = worldMat.pos - pgo->worldMat.pos;
 
 					bool PressE = pgo->InputBuffer[InputID::KeyboardTab];
 					if ((PressE && distance.len3 < TalkRange) && pgo->PresentTalkID == -1) {
+
+						// 만약 NPC와의 대화가 퀘스트의 요구사항이면 완료시킨다.
+						for (int pi = 0; pi < pgo->QuestPrograss.size(); ++pi) {
+							for (int ri = 0; ri < pgo->QuestPrograss[pi]->requp; ++ri) {
+								if (pgo->QuestPrograss[pi]->ReqArr[ri].type == QuestType::TalkNPC && pgo->QuestPrograss[pi]->ReqArr[ri].ObjID == this->NPCID) {
+									pgo->QuestPrograss[pi]->ReqArr[ri].PresentCnt += 1;
+								}
+							}
+						}
 
 						bool QuestCompleteExist = false;
 						// 완료처리하기
@@ -5724,6 +5744,8 @@ void PeacefulNPC::Update(float deltaTime) {
 								}
 
 								if (selectedQI >= 0) {
+									
+
 									if (pgo->QuestPrograss[selectedQI]->isComplete()) {
 										// 플레이어가 보상을 얻게 한다.
 										pgo->RewardQuest(pgo->QuestPrograss[selectedQI]);
@@ -5733,6 +5755,7 @@ void PeacefulNPC::Update(float deltaTime) {
 
 										QuestCompleteExist = true;
 										pgo->EraseQuest(selectedQI);
+										pgo->CompleteQuestBitArr[questId] = true;
 										break;
 									}
 								}
@@ -5744,10 +5767,10 @@ void PeacefulNPC::Update(float deltaTime) {
 							// 만약 StartID를 반환하지 않으면 
 							int StartID = gameworld.GetStartTalk(pgo, this);
 
-							zone->Sending_NPCStartTalk(gameworld.clients[pgo->clientIndex].PersonalSDS, NPCType, StartID);
-
-							if (gameworld.NPCTalkTable[StartID].selectCnt > 0) {
+							if (StartID >= 0 
+								&& gameworld.NPCTalkTable[StartID].selectCnt > 0) {
 								pgo->PresentTalkID = StartID;
+								zone->Sending_NPCStartTalk(gameworld.clients[pgo->clientIndex].PersonalSDS, NPCType, StartID);
 							}
 							else {
 								pgo->PresentTalkID = -1;
@@ -5928,21 +5951,74 @@ void World::Init() {
 
 	//Quest Table
 	{
-		Quest* q = new Quest(L"First Quest", L"Collect 7 items for 1000 gold!");
-		q->PushReq(QuestType::KillMonster, (int)MonsterType::Dron, 1);
-		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
+		Quest* q = new Quest(L"불법 개조 드론 20개 파괴", L"저 빌어먹을 [네온 하이브] 놈들이 드디어 미쳐 날뛰고 있어.\n놈들이 시장 외곽 폐기물 처리장에 불법 개조한 드론들을 풀어놨거든?\n방금 전에도 물건을 떼러 가던 내 조카가 다리를 뜯길 뻔했어.\n구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.\n네가 가서 그 쇳덩어리 개새끼들 20마리만 고철로 만들어 주면, \n 내 창고에 있는 최고급 방수 사이버웨어를 넘겨주지.어때?\n - 요구사항 : 불법 개조 드론 20개 파괴.");
+		q->PushReq(QuestType::KillMonster, 1, 1); // 1번째 몬스터 20마리 처치
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 100);
+		constexpr int RewardItemID = 1;
+		q->PushReward(QuestRewardType::QRT_Item, RewardItemID, 1);
+		QuestTable.push_back(q);
 
+		q = new Quest(L"네온 하이브 조직원 30명 소탕", L"어이, 용병. 네가 개새끼들을 고철로 만든 게 네온 하이브 놈들 귀에 들어갔나 봐.\n방금 전 놈들이 내 진료소 문 앞에 '경고장'이랍시고 잘린 사람 손목을 던져두고 갔어.\n내 조카 녀석은 겁에 질려 울고 있고... 더는 못 참겠다.\n이 구역 놈들을 소탕해야 끝날 일이야.\n구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.\n그 녀석들을 닥치는 대로 소탕해줘. 한 30명쯤은 필요해.\n - 요구사항 : 네온 하이브 조직원 30명 소탕");
+		q->PushReq(QuestType::KillMonster, 0, 1); // 0번째 몬스터 30마리 처치
+		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 200);
+		QuestTable.push_back(q);
+
+		q = new Quest(L"사일러스와 접신", L"결국 그들의 보스를 잡으면 끝나지 않을거야.\n내 정보 브로커 친구인 사일러스에게 연락해 뒀으니, 이 앞쪽에 있는 버스 정류장으로 가봐.\n그가 놈들의 아지트 좌표를 넘겨줄 거야. 보스를 잡으러 갈거지?\n - 요구사항 : 버스정류장에 있는 사일러스와 접신.");
+		q->PushReq(QuestType::TalkNPC, 1, 1); // 첫번째 NPC와 대화하기
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 100);
+		QuestTable.push_back(q);
+
+		q = new Quest(L"하이브 타워 격파", L"용병, 내가 데이터 패드에서 대어를 낚았어.\n네온 하이브는 단순한 갱단이 아니야.\n상층 구역의 '하이브 타워' 전체가 놈들의 거대 실험실이자 본거지였어.\n그리고 그 정점에는 '마더 하이브' 엘리시아가 있지.\n놈은 하층 구역 인간들을 납치해 거대 연산 장치의 '생체 부품'으로 쓰고 있었어.\n이제 꼬리를 잘랐으니 몸통을 부술 차례야.\n내가 타워의 메인 프레임을 해킹해 엘리터 스카이 리프트(엘리베이터)를 열어줄 테니, 펜트하우스로 직행해.\n저 거대한 벽 너머, 유일하게 노란색 건물이 그들의 펜트하우스야.\n겁 먹지 말고, 어서 가봐. 넌 할 수 있을 거야.\n - 요구사항 : 네온 하이브 본거지 박살내기");
+		q->PushReq(QuestType::DungeonClear, 0, 0); // 첫번째 던전 클리어
+		q->PushReward(QuestRewardType::QRT_Money, 0, 10000);
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 1000);
 		QuestTable.push_back(q);
 	}
 
 	//NPC Talk Table
 	{
-		NPCTalkTable.push_back(NPCTalkData(L"안녕? 반가워!", false, TalkSelection(L"당연하지! 들어줄게!", 'q', 0), TalkSelection(L"지금은 바빠. 나중에.", true, 3)));
-		NPCTalkTable.push_back(NPCTalkData());
-		NPCTalkTable.push_back(NPCTalkData());
-		NPCTalkTable.push_back(NPCTalkData());
-	}
+		//NPCTalkTable.push_back(NPCTalkData(L"안녕? 반가워!", false, TalkSelection(L"수락한다", 'q', 0), TalkSelection(L"거절한다", true, 3)));
+		//NPCTalkTable.push_back(NPCTalkData());
+		//NPCTalkTable.push_back(NPCTalkData());
+		//NPCTalkTable.push_back(NPCTalkData());
 
+		// 첫번째 퀘스트 : 불법 개조 드론 20개 파괴
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"어이, 용병. 돈 되는 일 하나 할래?", false, TalkSelection(L"수락한다", 'q', 0), TalkSelection(L"거절한다.", true, 6))); // 0
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"저 빌어먹을 [네온 하이브] 놈들이 드디어 미쳐 날뛰고 있어.")); // 1
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"놈들이 시장 외곽 폐기물 처리장에 불법 개조한 드론들을 풀어놨거든?")); // 2
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"방금 전에도 물건을 떼러 가던 내 조카가 다리를 뜯길 뻔했어.")); // 3
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.")); // 4
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"네가 가서 그 쇳덩어리 개새끼들 20마리만 고철로 만들어 주면, \n 내 창고에 있는 최고급 방수 사이버웨어를 넘겨주지.어때?")); // 5
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 6
+
+		// 두번째 퀘스트 : 네온 하이브 조직원들을 30명 소탕
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"어이, 용병. 네가 개새끼들을 고철로 만든 게 네온 하이브 놈들 귀에 들어갔나 봐.", false, TalkSelection(L"수락한다", 'q', 1), TalkSelection(L"거절한다.", true, 13))); // 7
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"방금 전 놈들이 내 진료소 문 앞에 '경고장'이랍시고 잘린 사람 손목을 던져두고 갔어.")); // 8
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"내 조카 녀석은 겁에 질려 울고 있고... 더는 못 참겠다.")); // 9
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"이 구역 놈들을 소탕해야 끝날 일이야.")); // 10
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.")); // 11
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"그 녀석들을 닥치는 대로 소탕해줘. 한 30명쯤은 필요해.")); // 12
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 13
+
+		// 세번째 퀘스트 : 사일러스와 접신
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"젠장. 수가 너무 많아. 결국 그들의 보스를 잡으면 끝나지 않을거야.", false, TalkSelection(L"수락한다", 'q', 2), TalkSelection(L"거절한다.", true, 13))); // 14
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"내 정보 브로커 친구인 사일러스에게 연락해 뒀으니, 이 앞쪽에 있는 버스 정류장으로 가봐.")); // 15
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"그가 놈들의 아지트 좌표를 넘겨줄 거야. 보스를 잡으러 갈거지?")); // 16
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 17
+
+		// 네번째 퀘스트 : 하이브 타워 격파
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"용병, 내가 데이터 패드에서 대어를 낚았어.", false, TalkSelection(L"수락한다", 'q', 3), TalkSelection(L"거절한다.", true, 27))); // 18
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"네온 하이브는 단순한 갱단이 아니야.")); // 19
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"상층 구역의 '하이브 타워' 전체가 놈들의 거대 실험실이자 본거지였어.")); // 20
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"그리고 그 정점에는 '마더 하이브' 엘리시아가 있지.")); // 21
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"놈은 하층 구역 인간들을 납치해 거대 연산 장치의 '생체 부품'으로 쓰고 있었어.")); // 22
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"이제 꼬리를 잘랐으니 몸통을 부술 차례야.")); // 23
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"내가 타워의 메인 프레임을 해킹해 엘리터 스카이 리프트(엘리베이터)를 열어줄 테니, 펜트하우스로 직행해.")); // 24
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"저 거대한 벽 너머, 유일하게 노란색 건물이 그들의 펜트하우스야.")); // 25
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"겁 먹지 말고, 어서 가봐.")); // 26
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 27
+	}
 
 	{
 		HumanoidAnimation animIdle;
@@ -7417,7 +7493,15 @@ void World::PrintOffset() {
 int World::GetStartTalk(Player* p, PeacefulNPC* npc)
 {
 	if (npc->NPCID == 0) {
+		//맥스
 		if (p->PrograssQuestBitArr[0] == false && p->CompleteQuestBitArr[0] == false) return 0;
+		if (p->PrograssQuestBitArr[1] == false && p->CompleteQuestBitArr[1] == false) return 7;
+		if (p->PrograssQuestBitArr[2] == false && p->CompleteQuestBitArr[2] == false) return 14;
+	}
+	else if (npc->NPCID == 1) {
+		//사일러스
+		if (p->CompleteQuestBitArr[2] == false) return -1;
+		if (p->PrograssQuestBitArr[3] == false && p->CompleteQuestBitArr[3] == false) return 18;
 	}
 	return -1;
 }
@@ -7775,7 +7859,7 @@ NPCTalkData::NPCTalkData()
 	sel[3] = TalkSelection();
 }
 
-NPCTalkData::NPCTalkData(const wchar_t* txt, bool nxtEsc, TalkSelection sel1, TalkSelection sel2, TalkSelection sel3, TalkSelection sel4)
+NPCTalkData::NPCTalkData(const wchar_t* name, const wchar_t* txt, bool nxtEsc, TalkSelection sel1, TalkSelection sel2, TalkSelection sel3, TalkSelection sel4)
 {
 	text = txt;
 	NextEscape = nxtEsc;

@@ -743,8 +743,10 @@ struct SkinMeshGameObject : public DynamicGameObject {
 };
 
 enum QuestType {
-	CollectItem,
-	KillMonster
+	CollectItem = 0,
+	KillMonster = 1,
+	TalkNPC = 2,
+	DungeonClear = 3,
 };
 
 struct QuestRequirement {
@@ -1089,7 +1091,7 @@ struct Player : public SkinMeshGameObject {
 	float m_dualDashTimer = 0.0f;
 	float m_dualDashDamageFlow = 0.0f;
 	std::vector<GameObject*> m_dualDashHitTargets;
-	
+
 	// 플레이어가 지나온 경로 표시. NPC는 이 것들중 가장 가깝고, 갈 수 있는 방향으로 전진하도록 만든다.
 	vec4 PosTail[32] = {};
 	int tailOffset = 0;
@@ -1159,6 +1161,9 @@ struct Player : public SkinMeshGameObject {
 
 	float m_yaw;
 	float m_pitch;
+
+	static constexpr float TalkDelay = 1.0f;
+	float TalkStartFlow = 0;
 
 	Player();
 
@@ -1326,10 +1331,10 @@ struct AstarNode2 {
 AstarNode* FindClosestNode(float wx, float wz, const std::vector<AstarNode*>& allNodes);
 
 enum class MonsterType : int {
-	Walker,
-	Dron,
-	Tower,
-	Max
+	Walker = 0,
+	Dron = 1,
+	Tower = 2,
+	Max = 3,
 };
 
 struct MonsterData {
@@ -1736,7 +1741,7 @@ struct NPCTalkData {
 	bool NextEscape = false;
 	TalkSelection sel[4];
 	NPCTalkData();
-	NPCTalkData(const wchar_t* txt, bool nxtEsc = false, TalkSelection sel1 = TalkSelection(), TalkSelection sel2 = TalkSelection(), TalkSelection sel3 = TalkSelection(), TalkSelection sel4 = TalkSelection());
+	NPCTalkData(const wchar_t* name, const wchar_t* txt, bool nxtEsc = false, TalkSelection sel1 = TalkSelection(), TalkSelection sel2 = TalkSelection(), TalkSelection sel3 = TalkSelection(), TalkSelection sel4 = TalkSelection());
 };
 
 class PeacefulNPC : public SkinMeshGameObject {
