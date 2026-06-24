@@ -2546,7 +2546,7 @@ struct World {
 	}
 
 	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
-	string zoneServerIP = "192.168.35.73";
+	string zoneServerIP = "127.0.0.1";
 	const char* GetZoneIP(int zoneId) const { return zoneServerIP.c_str(); }
 	int IssueTransferToken() {
 		// A transfer token crosses server boundaries, so a per-process sequence alone can collide.
