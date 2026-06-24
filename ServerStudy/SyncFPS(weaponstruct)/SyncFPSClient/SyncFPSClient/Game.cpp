@@ -3270,14 +3270,6 @@ void Game::ApplyBossState(const STC_BossState_Header& header)
 		core.HP = header.cores[i].hp;
 		core.MaxHP = header.cores[i].maxHP;
 		core.Active = header.cores[i].active;
-//<<<<<<< HEAD
-//		core.BossProtoTypeCoreObj = new GameObject();
-//		core.BossProtoTypeCoreObj->SetShape(BossPrototypeCoreModel);
-//		core.BossProtoTypeCoreObj->worldMat = 0;
-//		core.BossProtoTypeCoreObj->RaytracingUpdateTransform();
-//		core.BossProtoTypeCoreObj->SetRaytracingInstanceEnabled(true);
-//=======
-//>>>>>>> b66c0a2d3cb8344ad344660d71a2d831d9a5a9d8
 
 		if (i < (int)previousCores.size()) {
 			BossPrototypeCore& prev = previousCores[i];

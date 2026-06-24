@@ -4983,11 +4983,14 @@ void Monster::Respawn()
 		return;
 	}
 
-	Zone* zone = gameworld.GetZone(zoneId);
+	Zone* zone = gameworld.GetZone(zoneId);	
 	if (zone == nullptr) return;
-	Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+	float cx = 0.5f * (zone->BasicAABB_onlyXZ.x + zone->BasicAABB_onlyXZ.z);
+	float cz = 0.5f * (zone->BasicAABB_onlyXZ.y + zone->BasicAABB_onlyXZ.w);
+	float cy = zone->map.AABB[0].y + 20;
+	Init(XMMatrixTranslation(cx + rand() % 300 - 150, cy, cz + rand() % 300 - 150));
 	while (zone->map.isStaticCollision(GetOBB())) {
-		Init(XMMatrixTranslation(rand() % 80 - 40, 10.0f, rand() % 80 - 40));
+		Init(XMMatrixTranslation(cx + rand() % 300 - 150, cy, cz + rand() % 300 - 150));
 	}
 	m_isMove = false;
 	for (int i = 0; i < (int)StatusEffectType::Max; ++i) {
