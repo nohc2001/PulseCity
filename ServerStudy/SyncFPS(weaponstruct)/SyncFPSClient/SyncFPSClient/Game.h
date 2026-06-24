@@ -325,6 +325,14 @@ public:
 	bool isPreparedClientIndex = false;
 	bool isMapInit = false;
 	bool isGlobalAssetInit = false;
+	bool isServerSyncComplete = false;
+	bool isInitialJobConfirmed = true;
+	int expectedInitialJob = -1;
+	bool IsPresentationReady() const {
+		return player != nullptr && isPreparedClientIndex && isMapInit && isGlobalAssetInit &&
+			isServerSyncComplete && isInitialJobConfirmed &&
+			m_pendingSkinBoneInit.empty() && m_pendingSkinRenderEnable.empty();
+	}
 
 	// [party/dungeon] latest party/queue snapshot received from STC_DungeonQueueUpdate.
 	// The teammate's party UI reads this to draw members' HP/job. -1 job/objindex = empty slot.

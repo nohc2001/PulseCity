@@ -9,6 +9,14 @@ vector<string> Shape::ShapeStrTable;
 extern World gameworld;
 extern float DeltaTime;
 
+namespace {
+	// MAIN-MAP RESPAWN CONFIG ---------------------------------------------------------------
+	// Change this one position to move the shared open-world respawn point. The server resolves
+	// the destination zone automatically from X/Z. Current value is the center of zone 73.
+	const vec4 MainMapRespawnPosition(-525.0f, 10.0f, 875.0f, 1.0f);
+	const int MainMapRespawnZoneIds[] = { 73, 74, 83, 84 };
+}
+
 unordered_map<type_offset_pair, short, hash<type_offset_pair>> GameObjectType::GetClientOffset;
 unordered_map<void*, GameObjectType> GameObjectType::VptrToTypeTable;
 
@@ -2263,38 +2271,53 @@ void Player::ApplyJob(PlayerJob job)
 void Player::SyncJobState(Zone* zones)
 {
 	if (zones == nullptr) return;
+	SendDataSaver& ownerSDS = gameworld.clients[clientIndex].PersonalSDS;
 
 	zones->Sending_ChangeGameObjectMember<int>(zones->CommonSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_currentJob);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_currentJob);
 	zones->Sending_ChangeGameObjectMember<int>(zones->CommonSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_currentWeaponType);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_currentWeaponType);
 	zones->Sending_ChangeGameObjectMember<int>(zones->CommonSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &SelectedWeapon);
-	zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &SelectedWeapon);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &bullets);
-	zones->Sending_ChangeGameObjectMember<Weapon>(zones->CommonSDS,
-		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &weapon);
+	zones->Sending_ChangeGameObjectMember<decltype(weapon)>(zones->CommonSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, weapon);
+	zones->Sending_ChangeGameObjectMember<decltype(weapon)>(ownerSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, weapon);
 	zones->Sending_ChangeGameObjectMember<float>(zones->CommonSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ReloadRemain);
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ReloadRemain);
 	zones->Sending_ChangeGameObjectMember<bool>(zones->CommonSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_sniperDmrMode);
+	zones->Sending_ChangeGameObjectMember<bool>(ownerSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_sniperDmrMode);
 	zones->Sending_ChangeGameObjectMember<bool>(zones->CommonSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_bomberHealAmmoMode);
-	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<bool>(ownerSDS,
+		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &m_bomberHealAmmoMode);
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &HP);
-	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxHP);
-	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Attack);
-	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Defense);
-	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &ShieldDurability);
-	zones->Sending_ChangeGameObjectMember<float>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &MaxShieldDurability);
-	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldown)>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldown)>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldown);
-	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(gameworld.clients[clientIndex].PersonalSDS,
+	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldownFlow);
 }
 
@@ -3364,11 +3387,12 @@ void Player::Update(float deltaTime)
 	if (zones == nullptr) return;
 
 	// A missed floor collision used to let a transferred player fall forever because only monsters
-	// had an out-of-world recovery. Respawn at the last validated zone-entry point once below the map.
+	// had an out-of-world recovery. Recover at the last validated zone-entry point once below the map.
+	// RecoveryPosition is intentionally separate from the death-only RespawnPosition.
 	const float recoveryY = zones->map.AABB[0].y - 5.0f;
 	if (!std::isfinite(worldMat.pos.x) || !std::isfinite(worldMat.pos.y) ||
 		!std::isfinite(worldMat.pos.z) || worldMat.pos.y < recoveryY) {
-		worldMat.pos = RespawnPosition;
+		worldMat.pos = RecoveryPosition;
 		worldMat.pos.w = 1.0f;
 		LVelocity = 0;
 		tickLVelocity = 0;
@@ -3915,7 +3939,14 @@ void Player::TakeDamage(float damage)
 		DeathCount += 1;
 		zones->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &DeathCount);
 
-		Respawn();
+		// Dungeon respawning stays floor-local. Open-world deaths all go to the single configured
+		// main-map point, including a cross-server transfer when that point belongs to another zone.
+		if (World::IsDungeonZone(zoneId)) {
+			Respawn();
+		}
+		else {
+			gameworld.RespawnPlayerAtMainMapPoint(clientIndex);
+		}
 	}
 
 	//cout << "player's defense" << defense << " final damage is " << damage << " remain hp: " << HP << endl;
@@ -6788,6 +6819,11 @@ void World::AcceptClientHello(int clientIndex) {
 	avgpos.w = 1;
 	p->worldMat.pos = avgpos;
 	p->worldMat.pos.f3.y = 10.0f;   // open-world initial spawn: drop from ~y10 instead of the ceiling
+	// Do not reveal the world at a temporary center point. When the configured shared respawn
+	// belongs to this entry server, initial login starts at that exact point.
+	if (!IsDungeonZone(StartzoneId) && ResolveMainMapRespawnZone(MainMapRespawnPosition) == StartzoneId) {
+		p->worldMat.pos = MainMapRespawnPosition;
+	}
 	// [party/dungeon] dungeon ceiling is too high -> player spawned at the ceiling. Spawn near the floor
 	// instead so they drop into the room. (Tune the +5 if needed.)
 	if (IsDungeonZone(StartzoneId)) {
@@ -7079,17 +7115,69 @@ void HumanoidAnimation::LoadHumanoidAnimation(string filename) {
 	}
 }
 
-void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId, int originZoneId) {
-	if (clientIndex < 0 || clientIndex >= clients.size) return;
-	if (clients.isnull(clientIndex)) return;
-	if (dstZoneId < 0 || dstZoneId >= ZoneTable.size()) return;
+int World::ResolveMainMapRespawnZone(const vec4& respawnPosition) const {
+	for (int zoneId : MainMapRespawnZoneIds) {
+		if (zoneId < 0 || zoneId >= (int)ZoneTable.size()) continue;
+		Zone* candidate = ZoneTable[zoneId];
+		if (candidate == nullptr) continue;
+		const vec4& bounds = candidate->BasicAABB_onlyXZ;
+		if (respawnPosition.x >= bounds.x && respawnPosition.x <= bounds.z &&
+			respawnPosition.z >= bounds.y && respawnPosition.z <= bounds.w) {
+			return zoneId;
+		}
+	}
+	return -1;
+}
 
-	int srcZoneId = clients[clientIndex].zoneId;
-	if (srcZoneId < 0 || srcZoneId >= ZoneTable.size()) return;
-	if (srcZoneId == dstZoneId) return;
-
+void World::RespawnPlayerAtMainMapPoint(int clientIndex) {
+	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return;
 	Player* player = clients[clientIndex].pObjData;
 	if (player == nullptr) return;
+
+	const int respawnZoneId = ResolveMainMapRespawnZone(MainMapRespawnPosition);
+	if (respawnZoneId < 0) {
+		cout << "[Respawn] configured main-map point is outside zones 73/74/83/84: ("
+			<< MainMapRespawnPosition.x << ", " << MainMapRespawnPosition.y << ", "
+			<< MainMapRespawnPosition.z << ")" << endl;
+		player->Respawn();
+		return;
+	}
+
+	const int currentZoneId = clients[clientIndex].zoneId;
+	const vec4 fallbackRespawnPosition = player->RespawnPosition;
+	player->RespawnPosition = MainMapRespawnPosition;
+	if (currentZoneId == respawnZoneId) {
+		player->Respawn();
+		return;
+	}
+
+	// MovePlayerToZone serializes the current player state for the destination server, so revive
+	// before transfer. AddPlayer will validate/project this requested point onto map collision.
+	player->HP = player->MaxHP;
+	player->tag[GameObjectTag::Tag_Enable] = true;
+	player->LVelocity = 0;
+	player->tickLVelocity = 0;
+	player->isGround = false;
+	player->collideCount = 0;
+	if (!MovePlayerToZone(clientIndex, respawnZoneId, MainMapRespawnPosition)) {
+		// Destination server may be offline. Keep the source player/client consistent and fall back
+		// to the last valid point in the current zone instead of leaving a revived server-only player.
+		player->RespawnPosition = fallbackRespawnPosition;
+		player->Respawn();
+	}
+}
+
+bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId, int originZoneId) {
+	if (clientIndex < 0 || clientIndex >= clients.size) return false;
+	if (clients.isnull(clientIndex)) return false;
+	if (dstZoneId < 0 || dstZoneId >= ZoneTable.size()) return false;
+
+	int srcZoneId = clients[clientIndex].zoneId;
+	if (srcZoneId < 0 || srcZoneId >= ZoneTable.size()) return false;
+	if (srcZoneId == dstZoneId) return true;
+
+	Player* player = clients[clientIndex].pObjData;
+	if (player == nullptr) return false;
 
 	cout << "[ZoneMove] client=" << clientIndex
 		<< " from=" << srcZoneId
@@ -7136,7 +7224,7 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 
 		if (SendPlayerTransferToServer(data) == false) {
 			cout << "[ZoneMove] remote transfer send failed. dstZone=" << dstZoneId << endl;
-			return;
+			return false;
 		}
 
 		Sending_ServerTransfer(clients[clientIndex].PersonalSDS, dstZoneId, GetZoneIP(dstZoneId), GetZonePort(dstZoneId), data.transferToken);
@@ -7144,13 +7232,14 @@ void World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		delete player;
 		clients[clientIndex].pObjData = nullptr;
 		clients[clientIndex].objindex = -1;
-		return;
+		return true;
 	}
 
 	gameworld.ZoneTable[srcZoneId]->RemovePlayer(clientIndex);
 	// [PERF/FIX ②] 심리스 로컬 이동: fullWorldSnapshot=false 로 동적객체 버스트 생략.
 	// 클라는 인접 존 객체를 이미 보유 중이며, 가시성 기반 cleanup 이 그걸 유지한다.
 	gameworld.ZoneTable[dstZoneId]->AddPlayer(clientIndex, player, spawnPos, true, false);
+	return true;
 }
 
 NPCTalkData::NPCTalkData()

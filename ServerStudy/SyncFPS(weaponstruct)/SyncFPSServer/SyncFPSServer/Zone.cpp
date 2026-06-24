@@ -596,6 +596,7 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // ��ġ ����
     player->worldMat.pos = resolvedSpawn;
 	player->RespawnPosition = resolvedSpawn;
+	player->RecoveryPosition = resolvedSpawn;
     player->LVelocity = 0;
     player->tickLVelocity = 0;
     player->isGround = false;
@@ -658,6 +659,11 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
         player->Inventory[i] = is;
         Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
     }
+
+	// This must remain the final packet in the zone-entry personal snapshot. TCP ordering means
+	// the client can keep its loading screen up until every player/object/inventory packet above
+	// has arrived and been parsed.
+	gameworld.Sending_InitialSyncComplete(personalSDS, zoneId, newIdx);
 
     PushGameObject(player);
     return newIdx;

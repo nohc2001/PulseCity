@@ -986,8 +986,11 @@ struct Player : public SkinMeshGameObject {
 
 	//STC �÷��̾��� �� �� �̵� ��ٿ�
 	STCDef(float, ZoneMoveCooldown);
-	// Server-authoritative respawn point for the zone the player most recently entered.
+	// Death respawn destination. Open-world deaths may replace this with the shared main-map point.
 	vec4 RespawnPosition = vec4(0, 0, 0, 1);
+	// Independent safety point for invalid coordinates / falling below the map. Only Zone::AddPlayer
+	// updates it, so changing the death respawn destination never redirects error recovery.
+	vec4 RecoveryPosition = vec4(0, 0, 0, 1);
 	bool m_frostPassiveUsed = false;
 	float m_tempMaxHpBonus = 0.0f;
 	float m_tempMaxHpTimer = 0.0f;
@@ -2282,6 +2285,30 @@ struct World {
 		sds.postpush_end();
 	}
 
+	__forceinline void Sending_InitialSyncComplete(SendDataSaver& sds, int zoneId, int objindex) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_InitialSyncComplete_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_InitialSyncComplete_Header& header = *(STC_InitialSyncComplete_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::InitialSyncComplete;
+		header.zoneId = zoneId;
+		header.playerObjIndex = objindex;
+		sds.postpush_end();
+	}
+
+	__forceinline void Sending_JobChangeAck(SendDataSaver& sds, PlayerJob job, int weaponType) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_JobChangeAck_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_JobChangeAck_Header& header = *(STC_JobChangeAck_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::JobChangeAck;
+		header.job = (int)job;
+		header.weaponType = weaponType;
+		sds.postpush_end();
+	}
+
 	__forceinline void Sending_PlayerMoveZone(SendDataSaver& sds, int clientindex, int zoneId){
 		sds.postpush_start();
 		constexpr int reqsiz = sizeof(STC_PlayerMoveZone_Header);
@@ -2393,7 +2420,11 @@ struct World {
 	*/
 	// partyId/originZoneId are only meaningful for dungeon-entry moves (carried into the transfer so the
 	// dungeon server can group party members into one instance and bounce them back if it is full).
-	void MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId = -1, int originZoneId = -1);
+	bool MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId = -1, int originZoneId = -1);
+	// Open-world deaths use one code-configured world position. The X/Z coordinate decides which
+	// of the four main-map zone servers owns the respawn point.
+	int ResolveMainMapRespawnZone(const vec4& respawnPosition) const;
+	void RespawnPlayerAtMainMapPoint(int clientIndex);
 
 	// [party/dungeon] portal waiting-queue. Up to DungeonPartyMax players gather here.
 	static constexpr int DungeonPartyMax = 3;
@@ -2483,7 +2514,7 @@ struct World {
 	}
 
 	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
-	const char* GetZoneIP(int zoneId) const { return "127.0.0.1"; }
+	const char* GetZoneIP(int zoneId) const { return "192.168.35.73"; }
 	int IssueTransferToken() { return nextTransferToken++; }
 	bool SendPlayerTransferToServer(const PlayerTransferData& data);
 	void AcceptClientHello(int clientIndex);

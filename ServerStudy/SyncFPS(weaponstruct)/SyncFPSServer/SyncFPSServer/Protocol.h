@@ -85,6 +85,13 @@ union STC_Protocol {
 
 		// [party] start was refused because every dungeon instance is busy.
 		DungeonReject = 23,
+
+		// Tail marker for the initial/personal snapshot. Receipt proves every earlier personal packet
+		// for this zone entry has reached and been parsed by the client.
+		InitialSyncComplete = 24,
+
+		// Server-authoritative confirmation that ChangeJob and its default weapon were applied.
+		JobChangeAck = 25,
 	};
 
 	short n;
@@ -144,6 +151,20 @@ struct STC_AllocPlayerIndexes_Header {
 	int clientindex;
 	// �� Ŭ���̾�Ʈ�� �����ϴ� ������Ʈ�� �������� ����?Dynamic������Ʈ����.
 	int server_obj_index;
+};
+
+struct STC_InitialSyncComplete_Header {
+	unsigned int size = sizeof(STC_InitialSyncComplete_Header);
+	STC_Protocol st = STC_Protocol::InitialSyncComplete;
+	int zoneId = -1;
+	int playerObjIndex = -1;
+};
+
+struct STC_JobChangeAck_Header {
+	unsigned int size = sizeof(STC_JobChangeAck_Header);
+	STC_Protocol st = STC_Protocol::JobChangeAck;
+	int job = 0;
+	int weaponType = 0;
 };
 
 /*

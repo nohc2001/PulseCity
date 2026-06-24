@@ -1254,8 +1254,11 @@ public:
 	//STCDefArr(ItemStack, Inventory, maxItem);
 
 	//STC ���� ��� �ִ� ����
-	Weapon weapon[3];
-	int SelectedWeapon = 0;
+	// These must participate in ChangeMemberOfGameObject offset mapping. Without STC registration,
+	// the server can update m_currentWeaponType while the actual local Weapon remains the old job's
+	// weapon, which also prevents the initial JobChangeAck readiness check from ever succeeding.
+	STCDefArr(Weapon, weapon, 3);
+	STCDef(int, SelectedWeapon);
 
 	//STC �÷��̾��� ��
 	STCDef(int, Gold);
@@ -1405,6 +1408,7 @@ public:
 #pragma pack(pop)
 
 	virtual void RecvSTC_SyncObj(char* data);
+	static void SyncWeapons(GameObject* go, char* data, int len);
 	static void STATICINIT(int typeindex = GameObjectType::_Player);
 #undef STC_CurrentStruct
 };

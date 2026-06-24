@@ -441,6 +441,8 @@ READ_START:
 		CTS_ChangeJob_Header& header = *(CTS_ChangeJob_Header*)currentPivot;
 		p->ApplyJob(header.job);
 		p->SyncJobState(gameworld.GetClientZone(clientIndex));
+		gameworld.Sending_JobChangeAck(gameworld.clients[clientIndex].PersonalSDS,
+			(PlayerJob)p->m_currentJob, p->m_currentWeaponType);
 		currentPivot += header.size;
 		offset += header.size;
 	}

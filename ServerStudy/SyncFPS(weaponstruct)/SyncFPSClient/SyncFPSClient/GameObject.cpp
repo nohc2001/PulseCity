@@ -3995,6 +3995,11 @@ void Player::ClientUpdate(float deltaTime)
 		ReloadRemain = max(0.0f, ReloadRemain - deltaTime);
 	}
 
+	// Network state must never be allowed to index outside the loadout or construct an invalid type.
+	if (SelectedWeapon < 0 || SelectedWeapon >= 3) SelectedWeapon = 0;
+	if (m_currentWeaponType < 0 || m_currentWeaponType >= (int)WeaponType::Max) {
+		m_currentWeaponType = (int)WeaponType::Pistol;
+	}
 	Weapon& currentWeapon = weapon[SelectedWeapon];
 	if ((int)currentWeapon.m_info.type != m_currentWeaponType)
 	{
@@ -5246,6 +5251,24 @@ static bool TryBuildThirdPersonWeaponMatrix(Player* player, bool leftHand, matri
 	// provides visible firing kick without inheriting discontinuous clip positions.
 	outWeaponWorld = weaponLocal * handWorld;
 	return true;
+}
+
+void Player::SyncWeapons(GameObject* go, char* data, int len) {
+	if (go == nullptr || data == nullptr || len < (int)(sizeof(Weapon) * 3)) return;
+	Player* player = static_cast<Player*>(go);
+	const Weapon* incoming = reinterpret_cast<const Weapon*>(data);
+	for (int i = 0; i < 3; ++i) {
+		// Preserve only gameplay data. Placement construction restores the client's own vtable even
+		// if an older raw sync already corrupted this Weapon instance.
+		const WeaponData info = incoming[i].m_info;
+		const float shootFlow = incoming[i].m_shootFlow;
+		const float recoilFlow = incoming[i].m_recoilFlow;
+		player->weapon[i].~Weapon();
+		new (&player->weapon[i]) Weapon();
+		player->weapon[i].m_info = info;
+		player->weapon[i].m_shootFlow = shootFlow;
+		player->weapon[i].m_recoilFlow = recoilFlow;
+	}
 }
 
 void Player::RecvSTC_SyncObj(char* data) {

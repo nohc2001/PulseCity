@@ -452,6 +452,8 @@ void GameObjectType::STATICINIT() {
 	LinkOffsetAsFunction(GameObjectType::_DynamicGameObject, "worldMat", DynamicGameObject::SyncDestWolrd);
 	LinkOffsetAsFunction(GameObjectType::_SkinMeshGameObject, "worldMat", DynamicGameObject::SyncDestWolrd);
 	LinkOffsetAsFunction(GameObjectType::_Player, "worldMat", DynamicGameObject::SyncDestWolrd);
+	// Weapon is polymorphic. Never memcpy the server's vtable pointer into the client object.
+	LinkOffsetAsFunction(GameObjectType::_Player, "weapon", Player::SyncWeapons);
 	LinkOffsetAsFunction(GameObjectType::_Monster, "worldMat", DynamicGameObject::SyncDestWolrd);
 	LinkOffsetAsFunction(GameObjectType::_Monster, "HP", Monster::SyncHP);
 }
@@ -5218,6 +5220,8 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	isPrepared = false;
 	isPreparedClientIndex = false;
 	isMapInit = false;
+	isServerSyncComplete = false;
+	isInitialJobConfirmed = true;
 	clientIndexInServer = -1;
 	playerGameObjectIndex = -1;
 	player = nullptr;
@@ -5256,7 +5260,7 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	MoveZone(dstZoneId);
 	// Receiving AllocPlayerIndexes is the authoritative completion signal. Marking this true here
 	// allowed a rotated camera with no bound player when transfer setup was delayed or failed.
-	isPrepared = (player != nullptr && isPreparedClientIndex && isMapInit);
+	isPrepared = IsPresentationReady();
 	return true;
 }
 
@@ -5270,6 +5274,8 @@ void Game::BeginPortalEnter(const char* ip, unsigned short port, int dstZoneId)
 	isPrepared = false;
 	isPreparedClientIndex = false;
 	isMapInit = false;
+	isServerSyncComplete = false;
+	isInitialJobConfirmed = true;
 	clientIndexInServer = -1;
 	playerGameObjectIndex = -1;
 	player = nullptr;
@@ -7379,9 +7385,7 @@ void Game::Update()
 			player->HeatBarMesh = game.HeatBarMesh;
 			player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
 			player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
-			if (isPreparedClientIndex && isMapInit) {
-				isPrepared = true;
-			}
+			isPrepared = IsPresentationReady();
 		}
 	}
 
@@ -7773,9 +7777,7 @@ READ_START:
 				game.player->HeatBarMesh = game.HeatBarMesh;
 				game.player->HeatBarMatrix.pos = vec4(-1, 1, 1, 1);
 				game.player->HeatBarMatrix.LookAt(vec4(-1, 0, 0));
-				if (game.isPreparedClientIndex && game.isMapInit) {
-					game.isPrepared = true;
-				}
+				game.isPrepared = game.IsPresentationReady();
 			}
 		}
 			break;
@@ -7924,10 +7926,8 @@ READ_START:
 			//	player->Inventory[i].ItemCount = 0;
 			//}
 		}
-			game.isPreparedClientIndex = true;
-		if (game.player != nullptr && game.isMapInit) {
-			game.isPrepared = true;
-		}
+		game.isPreparedClientIndex = true;
+		game.isPrepared = game.IsPresentationReady();
 
 		// [seamless] The new server just bound this player. If a movement key (W/A/S/D/Space) is
 		// being held, the new server never saw a key-down for it, so the player sits still until
@@ -8156,13 +8156,44 @@ READ_START:
 		game.BeginPortalEnter(header.ip, header.port, header.dstZoneId);
 		return totallen;
 	}
-	break;	case STC_Protocol::SyncGameState:
+	break;
+	case STC_Protocol::SyncGameState:
 	{
         //OutputDebugStringA("[ClientReceiving] SyncGameState\n");
 		STC_SyncGameState_Header& header = *(STC_SyncGameState_Header*)currentPivot;
 		game.DynamicGameObjectCapacityPerZone = header.DynamicGameObjectCapacityPerZone > 0 ? header.DynamicGameObjectCapacityPerZone : header.DynamicGameObjectCapacity;
 		game.DynmaicGameObjects.reserve(header.DynamicGameObjectCapacity);
 		game.DynmaicGameObjects.resize(header.DynamicGameObjectCapacity);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::InitialSyncComplete:
+	{
+		STC_InitialSyncComplete_Header& header = *(STC_InitialSyncComplete_Header*)currentPivot;
+		const int expectedNetIndex = game.GetDynamicObjectNetIndex(header.zoneId, header.playerObjIndex);
+		if (header.zoneId == game.currentZoneId && expectedNetIndex == game.playerGameObjectIndex &&
+			game.player != nullptr) {
+			game.isServerSyncComplete = true;
+		}
+		game.isPrepared = game.IsPresentationReady();
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::JobChangeAck:
+	{
+		STC_JobChangeAck_Header& header = *(STC_JobChangeAck_Header*)currentPivot;
+		if (!game.isInitialJobConfirmed && game.expectedInitialJob >= 0 && game.player != nullptr) {
+			const bool validSelectedWeapon = game.player->SelectedWeapon >= 0 && game.player->SelectedWeapon < 3;
+			const int localWeaponType = validSelectedWeapon
+				? (int)game.player->weapon[game.player->SelectedWeapon].m_info.type : -1;
+			if (header.job == game.expectedInitialJob && game.player->m_currentJob == game.expectedInitialJob &&
+				game.player->m_currentWeaponType == header.weaponType && localWeaponType == header.weaponType) {
+				game.isInitialJobConfirmed = true;
+			}
+		}
+		game.isPrepared = game.IsPresentationReady();
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -8175,6 +8206,7 @@ READ_START:
 		game.isPrepared = false;
 		game.isPreparedClientIndex = false;
 		game.isMapInit = false;
+		game.isServerSyncComplete = false;
 		game.MoveZone(header.zoneId);
 		currentPivot += header.size;
 		offset += header.size;

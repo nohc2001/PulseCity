@@ -231,12 +231,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	constexpr unsigned short InitServerPort = 9073;   // open world (zone 73 = the player's spawn zone). Use 9100 to test the dungeon directly.
 	const char* IP0 = "192.168.35.73";
 	const char* localhost = "127.0.0.1";
-	bool Connected = client.Init(localhost, InitServerPort);
+	bool Connected = client.Init(IP0, InitServerPort);
 
 	if (Connected == false) {
 		WSACleanup();
 		return 0;
 	}
+	game.expectedInitialJob = chosenJob;
+	game.isInitialJobConfirmed = (chosenJob < 0);
+	game.isServerSyncComplete = false;
 
 	CTS_ClientHello_Header hello;
 	hello.size = sizeof(CTS_ClientHello_Header);
@@ -330,22 +333,41 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 		OutputDebugStringA(dbg);
 	};
 	ui64 ft = GetTicks();
+	double loadingDiagnosticFlow = 0.0;
 	while (1) {
-		game.isPrepared = game.isPreparedClientIndex && game.isMapInit && game.isGlobalAssetInit;
+		game.isPrepared = game.IsPresentationReady();
 
 		// [jobselect] Send the picked job once, after the connection is confirmed (same path the in-game
 		// 1-9 keys use). The server's Player* is valid in a later recv buffer, so this is applied.
-		if (!jobSent && game.isPreparedClientIndex) {
+		if (!jobSent && game.isPreparedClientIndex && game.isServerSyncComplete && game.player != nullptr) {
 			CTS_ChangeJob_Header jobHeader;
 			jobHeader.size = sizeof(CTS_ChangeJob_Header);
 			jobHeader.st = CTS_Protocol::ChangeJob;
 			jobHeader.job = (PlayerJob)chosenJob;
-			client.send_all((char*)&jobHeader, sizeof(CTS_ChangeJob_Header), 0);
-			jobSent = true;
+			DWORD sent = client.send_all((char*)&jobHeader, sizeof(CTS_ChangeJob_Header), 0);
+			jobSent = (sent == sizeof(CTS_ChangeJob_Header));
 		}
 
 		ui64 et = GetTicks();
 		double f = (double)(et - ft) * InvHZ;
+		if (!game.isPrepared) {
+			loadingDiagnosticFlow += f;
+			if (loadingDiagnosticFlow >= 1.0) {
+				loadingDiagnosticFlow = 0.0;
+				int localJob = game.player ? game.player->m_currentJob : -1;
+				int localWeapon = game.player ? game.player->m_currentWeaponType : -1;
+				char readyDbg[320] = {};
+				sprintf_s(readyDbg,
+					"[LoadingReady] player=%d index=%d map=%d global=%d serverSync=%d jobAck=%d expectedJob=%d localJob=%d weapon=%d boneQ=%zu renderQ=%zu jobSent=%d\n",
+					game.player != nullptr, game.isPreparedClientIndex, game.isMapInit, game.isGlobalAssetInit,
+					game.isServerSyncComplete, game.isInitialJobConfirmed, game.expectedInitialJob,
+					localJob, localWeapon, game.m_pendingSkinBoneInit.size(),
+					game.m_pendingSkinRenderEnable.size(), jobSent);
+				OutputDebugStringA(readyDbg);
+				printf("%s", readyDbg);
+				fflush(stdout);
+			}
+		}
 		FPSflow += f;
 		DeltaFlow += f;
 		if (::PeekMessage(&Message, NULL, 0, 0, PM_REMOVE))
