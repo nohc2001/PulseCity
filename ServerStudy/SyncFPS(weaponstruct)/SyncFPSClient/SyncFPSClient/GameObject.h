@@ -961,6 +961,13 @@ struct SphereLODObject : public DynamicGameObject {
 * 설명 : 게임 맵 데이터
 */
 
+enum class MonsterType : int {
+	Walker = 0,
+	Dron = 1,
+	Tower = 2,
+	Max = 3,
+};
+
 /*
 * 설명 : 무기 타입 구조체
 */
@@ -1045,8 +1052,10 @@ public:
 };
 
 enum QuestType {
-	CollectItem,
-	KillMonster
+	CollectItem = 0,
+	KillMonster = 1,
+	TalkNPC = 2,
+	DungeonClear = 3,
 };
 
 struct QuestRequirement {

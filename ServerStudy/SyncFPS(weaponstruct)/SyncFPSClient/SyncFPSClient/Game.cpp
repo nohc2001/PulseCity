@@ -4523,6 +4523,60 @@ void Game::RenderBossPrototypeMissiles()
 	}
 }
 
+void Game::RenderQuestCompleteShow()
+{
+	if (game.QuestCompleteShowFlow > 0) {
+		vec4 rateloc = vec4(0.75f, 0.5f, 1.0f, 0.6f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, gd.ClientFrameWidth, gd.ClientFrameHeight);
+		game.UIDraw_TextureRect(rateloc, vec4(1, 1, 1, game.QuestCompleteShowFlow), 0.02f, 16);
+		game.RenderSDFText(L"임무 완수!", 7, rateloc, 20, vec4(0, 0, 0, game.QuestCompleteShowFlow), nullptr, nullptr, 0.01f);
+		rateloc.w -= 30;
+		rateloc.y -= 30;
+		if (game.CurrentCompleteQuest != nullptr)
+		{
+			game.RenderSDFText(game.CurrentCompleteQuest->QuestName, wcslen(game.CurrentCompleteQuest->QuestName), rateloc, 20, vec4(0, 0, 0, game.QuestCompleteShowFlow), nullptr, nullptr, 0.01f);
+		}
+		game.QuestCompleteShowFlow -= DeltaTime;
+	}
+}
+
+void Game::RenderQuestPrograssShow()
+{
+	if (game.QuestPrograssShowFlow > 0) {
+		vec4 rateloc = vec4(0.75f, 0.1f, 1.0f, 0.5f);
+		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, gd.ClientFrameWidth, gd.ClientFrameHeight);
+		game.UIDraw_TextureRect(rateloc, vec4(1, 1, 1, game.QuestPrograssShowFlow), 0.02f, 16);
+		game.RenderSDFText(L"임무 수행 현황", 8, rateloc, 20, vec4(0, 0, 0, game.QuestPrograssShowFlow), nullptr, nullptr, 0.01f);
+		rateloc.w -= 40;
+		rateloc.y -= 40;
+		if (game.CurrentPrograssQuest != nullptr)
+		{
+			game.RenderSDFText(game.CurrentPrograssQuest->QuestName, wcslen(game.CurrentPrograssQuest->QuestName), rateloc, 20, vec4(0, 0, 0, game.QuestPrograssShowFlow), nullptr, nullptr, 0.01f);
+			rateloc.w -= 40;
+			rateloc.y -= 40;
+
+			for (int i = 0; i < game.CurrentPrograssQuest->requp; ++i) {
+				wchar_t Text[256] = {};
+				if (game.CurrentPrograssQuest->ReqArr[i].type == QuestType::KillMonster) {
+					if (game.CurrentPrograssQuest->ReqArr[i].ObjID == (int)MonsterType::Walker) {
+						swprintf_s(Text, L"네온 하이브 조직원 : %d / %d", game.CurrentPrograssQuest->ReqArr[i].PresentCnt, game.CurrentPrograssQuest->ReqArr[i].Cnt);
+					}
+					else if (game.CurrentPrograssQuest->ReqArr[i].ObjID == (int)MonsterType::Dron) {
+						swprintf_s(Text, L"불법 개조 드론 : %d / %d", game.CurrentPrograssQuest->ReqArr[i].PresentCnt, game.CurrentPrograssQuest->ReqArr[i].Cnt);
+					}
+					else if (game.CurrentPrograssQuest->ReqArr[i].ObjID == (int)MonsterType::Tower) {
+						swprintf_s(Text, L"포탑 몬스터 : %d / %d", game.CurrentPrograssQuest->ReqArr[i].PresentCnt, game.CurrentPrograssQuest->ReqArr[i].Cnt);
+					}
+					game.RenderSDFText(Text, wcslen(Text), rateloc, 20, vec4(0, 0, 0, game.QuestPrograssShowFlow), nullptr, nullptr, 0.01f);
+					rateloc.w -= 40;
+					rateloc.y -= 40;
+				}
+			}
+		}
+		game.QuestPrograssShowFlow -= DeltaTime;
+	}
+}
+
 void Game::InitParticlePool(ParticlePool& pool, UINT count)
 {
 	pool.Count = count;
@@ -4597,19 +4651,68 @@ void Game::Init()
 
 	//Quest Table
 	{
-		Quest* q = new Quest(L"첫번째 퀘스트", L"드론 1마리를 잡아줘. 그럼 1000골드를 줄게!");
-		q->PushReq(QuestType::CollectItem, 1, 7);
-		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
+		Quest* q = new Quest(L"불법 개조 드론 20개 파괴", L"저 빌어먹을 [네온 하이브] 놈들이 드디어 미쳐 날뛰고 있어.\n놈들이 시장 외곽 폐기물 처리장에 불법 개조한 드론들을 풀어놨거든?\n방금 전에도 물건을 떼러 가던 내 조카가 다리를 뜯길 뻔했어.\n구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.\n네가 가서 그 쇳덩어리 개새끼들 20마리만 고철로 만들어 주면, \n 내 창고에 있는 최고급 방수 사이버웨어를 넘겨주지.어때?\n - 요구사항 : 불법 개조 드론 20개 파괴.");
+		q->PushReq(QuestType::KillMonster, (int)MonsterType::Dron, 20); // 1번째 몬스터 20마리 처치
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 100);
+		constexpr int RewardItemID = 1;
+		q->PushReward(QuestRewardType::QRT_Item, RewardItemID, 1);
+		QuestTable.push_back(q);
 
+		q = new Quest(L"네온 하이브 조직원 30명 소탕", L"어이, 용병. 네가 개새끼들을 고철로 만든 게 네온 하이브 놈들 귀에 들어갔나 봐.\n방금 전 놈들이 내 진료소 문 앞에 '경고장'이랍시고 잘린 사람 손목을 던져두고 갔어.\n내 조카 녀석은 겁에 질려 울고 있고... 더는 못 참겠다.\n이 구역 놈들을 소탕해야 끝날 일이야.\n구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.\n그 녀석들을 닥치는 대로 소탕해줘. 한 30명쯤은 필요해.\n - 요구사항 : 네온 하이브 조직원 30명 소탕");
+		q->PushReq(QuestType::KillMonster, (int)MonsterType::Walker, 30); // 0번째 몬스터 30마리 처치
+		q->PushReward(QuestRewardType::QRT_Money, 0, 1000);
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 200);
+		QuestTable.push_back(q);
+
+		q = new Quest(L"사일러스와 접신", L"결국 그들의 보스를 잡으면 끝나지 않을거야.\n내 정보 브로커 친구인 사일러스에게 연락해 뒀으니, 이 앞쪽에 있는 버스 정류장으로 가봐.\n그가 놈들의 아지트 좌표를 넘겨줄 거야. 보스를 잡으러 갈거지?\n - 요구사항 : 버스정류장에 있는 사일러스와 접신.");
+		q->PushReq(QuestType::TalkNPC, 1, 0); // 첫번째 NPC와 대화하기
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 100);
+		QuestTable.push_back(q);
+
+		q = new Quest(L"하이브 타워 격파", L"용병, 내가 데이터 패드에서 대어를 낚았어.\n네온 하이브는 단순한 갱단이 아니야.\n상층 구역의 '하이브 타워' 전체가 놈들의 거대 실험실이자 본거지였어.\n그리고 그 정점에는 '마더 하이브' 엘리시아가 있지.\n놈은 하층 구역 인간들을 납치해 거대 연산 장치의 '생체 부품'으로 쓰고 있었어.\n이제 꼬리를 잘랐으니 몸통을 부술 차례야.\n내가 타워의 메인 프레임을 해킹해 엘리터 스카이 리프트(엘리베이터)를 열어줄 테니, 펜트하우스로 직행해.\n저 거대한 벽 너머, 유일하게 노란색 건물이 그들의 펜트하우스야.\n겁 먹지 말고, 어서 가봐. 넌 할 수 있을 거야.\n - 요구사항 : 네온 하이브 본거지 박살내기");
+		q->PushReq(QuestType::DungeonClear, 0, 0); // 0번째 던전 클리어
+		q->PushReward(QuestRewardType::QRT_Money, 0, 10000);
+		q->PushReward(QuestRewardType::QRT_Exp, 0, 1000);
 		QuestTable.push_back(q);
 	}
 
 	//NPC Talk Table
 	{
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"안녕! 이 세상에 온 것을 환영해!"));
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"여기 비개발지에 드론이 날라다녀서 사람들을 힘들게 하고 있어."));
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"니가 드론을 1마리만 잡아 주었으면 좋겠어. 사례는 1000골드야.", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 3)));
-		NPCTalkTable.push_back(NPCTalkData(L"TESTNPC", L"음 그래 니가 그렇다면 어쩔 수 없지.", true));
+		// 첫번째 퀘스트 : 불법 개조 드론 20개 파괴
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"어이, 용병. 돈 되는 일 하나 할래?")); // 0
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"저 빌어먹을 [네온 하이브] 놈들이 드디어 미쳐 날뛰고 있어.")); // 1
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"놈들이 시장 외곽 폐기물 처리장에 불법 개조한 드론들을 풀어놨거든?")); // 2
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"방금 전에도 물건을 떼러 가던 내 조카가 다리를 뜯길 뻔했어.")); // 3
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.")); // 4
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"네가 가서 그 쇳덩어리 개새끼들 20마리만 고철로 만들어 주면, \n 내 창고에 있는 최고급 방수 사이버웨어를 넘겨주지.어때?", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 6))); // 5
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 6
+
+		// 두번째 퀘스트 : 네온 하이브 조직원들을 30명 소탕
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"어이, 용병. 네가 개새끼들을 고철로 만든 게 네온 하이브 놈들 귀에 들어갔나 봐.")); // 7
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"방금 전 놈들이 내 진료소 문 앞에 '경고장'이랍시고 잘린 사람 손목을 던져두고 갔어.")); // 8
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"내 조카 녀석은 겁에 질려 울고 있고... 더는 못 참겠다.")); // 9
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"이 구역 놈들을 소탕해야 끝날 일이야.")); // 10
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"구역 보안관 놈들은 뇌물을 처먹었는지 움직이지도 않아.")); // 11
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"그 녀석들을 닥치는 대로 소탕해줘. 한 30명쯤은 필요해.", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 13))); // 12
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 13
+
+		// 세번째 퀘스트 : 사일러스와 접신
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"젠장. 수가 너무 많아. 결국 그들의 보스를 잡으면 끝나지 않을거야.")); // 14
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"내 정보 브로커 친구인 사일러스에게 연락해 뒀으니, 이 앞쪽에 있는 버스 정류장으로 가봐.")); // 15
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"그가 놈들의 아지트 좌표를 넘겨줄 거야. 보스를 잡으러 갈거지?", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 13))); // 16
+		NPCTalkTable.push_back(NPCTalkData(L"맥스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 17
+
+		// 네번째 퀘스트 : 하이브 타워 격파
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"용병, 내가 데이터 패드에서 대어를 낚았어.")); // 18
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"네온 하이브는 단순한 갱단이 아니야.")); // 19
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"상층 구역의 '하이브 타워' 전체가 놈들의 거대 실험실이자 본거지였어.")); // 20
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"그리고 그 정점에는 '마더 하이브' 엘리시아가 있지.")); // 21
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"놈은 하층 구역 인간들을 납치해 거대 연산 장치의 '생체 부품'으로 쓰고 있었어.")); // 22
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"이제 꼬리를 잘랐으니 몸통을 부술 차례야.")); // 23
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"내가 타워의 메인 프레임을 해킹해 엘리터 스카이 리프트(엘리베이터)를 열어줄 테니, 펜트하우스로 직행해.")); // 24
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"저 거대한 벽 너머, 유일하게 노란색 건물이 그들의 펜트하우스야.")); // 25
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"겁 먹지 말고, 어서 가봐.", false, TalkSelection(L"수락한다", false, 0), TalkSelection(L"거절한다.", true, 27))); // 26
+		NPCTalkTable.push_back(NPCTalkData(L"사일러스", L"음 그래 니가 그렇다면 어쩔 수 없지.", true)); // 27
 	}
 
 	StaticGameObjects.reserve(Zone::MaxStaticObjectCount * 9); // 1MB
@@ -6431,6 +6534,8 @@ void Game::Render() {
 		RenderFloatingDamageTexts();
 		RenderGameplaySkillHUD();
 		RenderAmmoHUD();
+		RenderQuestCompleteShow();
+		RenderQuestPrograssShow();
 	}
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
 	game.CurrentPageStack = &game.mainPageStack;
@@ -6948,6 +7053,8 @@ void Game::Render_RayTracing()
 		RenderFloatingDamageTexts();
 		RenderGameplaySkillHUD();
 		RenderAmmoHUD();
+		RenderQuestCompleteShow();
+		RenderQuestPrograssShow();
 	}
 	
 	vector<DXPage*>* savePageStack = game.CurrentPageStack;
@@ -8477,6 +8584,10 @@ READ_START:
 			if (game.QuestArr[i] == header.QuestID) {
 				game.QuestArr.erase(game.QuestArr.begin() + i);
 				game.QuestPrograss.erase(game.QuestPrograss.begin() + i);
+				// 퀘스트 완수 처리
+				QuestCompleteShowFlow = 4.0f;
+				CurrentCompleteQuest = game.QuestTable[game.QuestArr[i]];
+				game.mainPageStack.clear();
 			}
 		}
 		currentPivot += header.size;
@@ -8494,9 +8605,12 @@ READ_START:
 				for (int k = 0; k < prograss->requp; ++k) {
 					prograss->ReqArr[k].PresentCnt = *(int*)ptr;
 					ptr += sizeof(int);
+					QuestPrograssShowFlow = 3;
+					CurrentPrograssQuest = prograss;
 				}
 			}
 		}
+
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -12535,7 +12649,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* NPCTalkDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_NPCTalkDumyBtn = (DXBtnParam*)NPCTalkDumyBtn->pParamterData;
-		pbtn_NPCTalkDumyBtn->Set(0, 1, 35, L"��ȭâ");
+		pbtn_NPCTalkDumyBtn->Set(0, 1, 35, L"대화창");
 		NPCTalkDumyBtn->SetFunctions(UIRender_NPCTalkDummyBtn, UIUpdate_NPCTalkDummyBtn, UIEvent_NPCTalkDummyBtn);
 		NPCTalkPage->uiArr.push_back(NPCTalkDumyBtn);
 
@@ -12543,7 +12657,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* NPCNameDumyBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_NPCNameDumyBtn = (DXBtnParam*)NPCNameDumyBtn->pParamterData;
-		pbtn_NPCNameDumyBtn->Set(0, 1, 6, L"�̸�");
+		pbtn_NPCNameDumyBtn->Set(0, 1, 6, L"이름");
 		NPCNameDumyBtn->SetFunctions(UIRender_NPCTalkDummyBtn, UIUpdate_NPCNameDummyBtn, UIEvent_NPCTalkDummyBtn);
 		NPCTalkPage->uiArr.push_back(NPCNameDumyBtn);
 
@@ -12559,7 +12673,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* TalkNextBtn = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_TalkNextBtn = (DXBtnParam*)TalkNextBtn->pParamterData;
-		pbtn_TalkNextBtn->Set(0, 1, 6, L"����");
+		pbtn_TalkNextBtn->Set(0, 1, 6, L"다음");
 		pbtn_TalkNextBtn->addtionalParams_int[0] = 1;
 		TalkNextBtn->SetFunctions(UIRender_TalkNextBtn, UIUpdate_TalkNextBtn, UIEvent_TalkNextBtn);
 		NPCTalkPage->uiArr.push_back(TalkNextBtn);
@@ -12569,7 +12683,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* TalkSelectionBtn1 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_TalkSelectionBtn1 = (DXBtnParam*)TalkSelectionBtn1->pParamterData;
-		pbtn_TalkSelectionBtn1->Set(0, 1, 6, L"������1");
+		pbtn_TalkSelectionBtn1->Set(0, 1, 6, L"선택지1");
 		pbtn_TalkSelectionBtn1->addtionalParams_int[0] = 0;
 		TalkSelectionBtn1->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
 		NPCTalkPage->uiArr.push_back(TalkSelectionBtn1);
@@ -12578,7 +12692,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* TalkSelectionBtn2 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_TalkSelectionBtn2 = (DXBtnParam*)TalkSelectionBtn2->pParamterData;
-		pbtn_TalkSelectionBtn2->Set(0, 1, 6, L"������2");
+		pbtn_TalkSelectionBtn2->Set(0, 1, 6, L"선택지2");
 		pbtn_TalkSelectionBtn2->addtionalParams_int[0] = 1;
 		TalkSelectionBtn2->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
 		NPCTalkPage->uiArr.push_back(TalkSelectionBtn2);
@@ -12587,7 +12701,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* TalkSelectionBtn3 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_TalkSelectionBtn3 = (DXBtnParam*)TalkSelectionBtn3->pParamterData;
-		pbtn_TalkSelectionBtn3->Set(0, 1, 6, L"������3");
+		pbtn_TalkSelectionBtn3->Set(0, 1, 6, L"선택지3");
 		pbtn_TalkSelectionBtn3->addtionalParams_int[0] = 2;
 		TalkSelectionBtn3->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
 		NPCTalkPage->uiArr.push_back(TalkSelectionBtn3);
@@ -12596,7 +12710,7 @@ void Game::UI_Init()
 		WindowNormalizeCoordToDirectXRenderCoord_vec4(rateloc, ScreenW, ScreenH);
 		DXUI* TalkSelectionBtn4 = new DXUI(DXUI_TYPE::DXUI_Btn, sizeof(DXBtnParam), rateloc, 0, new DXBtnParam());
 		DXBtnParam* pbtn_TalkSelectionBtn4 = (DXBtnParam*)TalkSelectionBtn4->pParamterData;
-		pbtn_TalkSelectionBtn4->Set(0, 1, 6, L"������4");
+		pbtn_TalkSelectionBtn4->Set(0, 1, 6, L"선택지4");
 		pbtn_TalkSelectionBtn4->addtionalParams_int[0] = 3;
 		TalkSelectionBtn4->SetFunctions(UIRender_TalkSelectionBtn, UIUpdate_TalkSelectionBtn, UIEvent_TalkSelectionBtn);
 		NPCTalkPage->uiArr.push_back(TalkSelectionBtn4);

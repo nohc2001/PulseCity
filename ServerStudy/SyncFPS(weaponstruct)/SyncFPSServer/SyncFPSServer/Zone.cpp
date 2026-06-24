@@ -1313,14 +1313,30 @@ void Zone::SpawnObjects() {
         }
 
         //Spawn NPC
+        
+        // 맥스
         PeacefulNPC* npc = new PeacefulNPC();
         npc->worldMat.Id();
-        npc->worldMat.pos = vec4(cx+30, 10, cz, 1);
+        npc->worldMat.pos = vec4(-485.78, 10, 867.4174, 1);
         npc->NPCType = PeacefulNPCType::PNT_Quest;
         npc->NPCQuestList.push_back(0);
+        npc->NPCQuestList.push_back(1);
+        npc->NPCQuestList.push_back(2);
         npc->SetShape(Shape::StrToShapeIndex["Player"]);
         NewObject(npc, GameObjectType::_PeacefulNPC);
         PushGameObject(npc);
+        npc->NPCID = 0;
+
+        // 사일러스
+        PeacefulNPC* npc2 = new PeacefulNPC();
+        npc2->worldMat.Id();
+        npc2->worldMat.pos = vec4(-426.35, 10, 991.62, 1);
+        npc2->NPCType = PeacefulNPCType::PNT_Quest;
+        npc2->NPCQuestList.push_back(2);
+        npc2->SetShape(Shape::StrToShapeIndex["Player"]);
+        NewObject(npc2, GameObjectType::_PeacefulNPC);
+        PushGameObject(npc2);
+        npc2->NPCID = 1;
     }
 }
 

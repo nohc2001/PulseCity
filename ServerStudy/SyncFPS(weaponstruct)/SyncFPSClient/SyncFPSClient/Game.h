@@ -564,6 +564,8 @@ public:
 	void RenderHackerEmpVisuals();
 	void RenderSupportDrones();
 	void RenderBossPrototypeMissiles();
+	void RenderQuestCompleteShow();
+	void RenderQuestPrograssShow();
 
 	Game() {}
 	~Game() {}
@@ -1003,6 +1005,12 @@ public:
 	vector<Quest*> QuestPrograss;
 
 	int PresentPer_SkinMeshRender = 0;
+	
+	float QuestCompleteShowFlow = 0.0f;
+	Quest* CurrentCompleteQuest = nullptr;
+
+	float QuestPrograssShowFlow = 0.0f;
+	Quest* CurrentPrograssQuest = nullptr;
 };
 
 extern Game game;
