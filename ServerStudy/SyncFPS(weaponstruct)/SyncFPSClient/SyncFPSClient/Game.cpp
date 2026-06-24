@@ -768,7 +768,11 @@ void Zone::ZoneAssetRelease()
 	// Static GameObject Release
 	ZeroMemory(&game.StaticGameObjects[MaxStaticObjectCount * Asset_OffsetMul], sizeof(StaticGameObject*) * MaxStaticObjectCount);
 
-	Map->Release();
+	if (Map != nullptr) {
+		Map->Release();
+		delete Map;
+		Map = nullptr;
+	}
 	for (auto f : chunck) {
 		GameChunk* gc = f.second;
 		gc->Release_Asset();
@@ -809,36 +813,51 @@ void Zone::ZoneAssetRelease()
 void Zone::LightBake() {
 	if (ZoneLightChuncks.resource) ZoneLightChuncks.Release();
 	if (ZoneLightChuncks_Mapped) ZoneLightChuncks_Mapped = nullptr;
+	if (Map == nullptr) return;
 
 	vec4 Counts = (Map->AABB[1] - Map->AABB[0]) / Zone::chunck_divide_Width;
 	ChunckCountX = floor(Counts.x + 1);
 	ChunckCountY = floor(Counts.y + 1);
 	ChunckCountZ = floor(Counts.z + 1);
+	const int64_t totalChunkCount64 = (int64_t)ChunckCountX * ChunckCountY * ChunckCountZ;
+	if (ChunckCountX <= 0 || ChunckCountY <= 0 || ChunckCountZ <= 0 ||
+		totalChunkCount64 <= 0 || totalChunkCount64 > 1024 * 1024) {
+		OutputDebugStringA("[LightBake] rejected invalid chunk dimensions\n");
+		return;
+	}
+	const int totalChunkCount = (int)totalChunkCount64;
 
 	int ix = floor(Map->AABB[0].x / Zone::chunck_divide_Width);
 	int iy = floor(Map->AABB[0].y / Zone::chunck_divide_Width);
 	int iz = floor(Map->AABB[0].z / Zone::chunck_divide_Width);
 	ChunkIndex startci = ChunkIndex(ix, iy, iz);
 
-	UINT ncbElementBytes = ((sizeof(ChunckLightData) * (ChunckCountX * ChunckCountY * ChunckCountZ) + 255) & ~255); // 256의 배수
+	UINT ncbElementBytes = ((sizeof(ChunckLightData) * totalChunkCount + 255) & ~255); // 256의 배수
 	ZoneLightChuncks = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
+	if (ZoneLightChuncks.resource == nullptr) return;
 	ZoneLightChuncks.resource->Map(0, NULL, (void**)&ZoneLightChuncks_Mapped);
+	if (ZoneLightChuncks_Mapped == nullptr) return;
 	ZeroMemory(ZoneLightChuncks_Mapped, ncbElementBytes);
 	for (auto f : chunck) {
 		GameChunk* gc = f.second;
+		if (gc == nullptr) continue;
 		ChunkIndex ci = f.first;
 		ChunkIndex rci;
 		rci.x = ci.x - startci.x;
 		rci.y = ci.y - startci.y;
 		rci.z = ci.z - startci.z;
 		int index = rci.z + rci.y * ChunckCountZ + rci.x * ChunckCountZ * ChunckCountY;
-		if (index > ChunckCountX * ChunckCountY * ChunckCountZ) continue;
+		// Reloaded zones retain their chunk containers. Dynamic objects may have created chunks just
+		// outside the static map bounds, so both the negative and one-past-end cases must be rejected.
+		if (index < 0 || index >= totalChunkCount) continue;
 		ChunckLightData& LightChunck = ZoneLightChuncks_Mapped[index];
-		int maxSiz = min(gc->Lights.size(), 32);
-		for (int i = 0; i < maxSiz; ++i) {
-			LightChunck.lights[i] = *gc->Lights[i];
+		int validLightCount = 0;
+		const int lightCount = min((int)gc->Lights.size(), 32);
+		for (int i = 0; i < lightCount; ++i) {
+			if (gc->Lights[i] == nullptr) continue;
+			LightChunck.lights[validLightCount++] = *gc->Lights[i];
 		}
-		LightChunck.lights[0].MaxLightCount = maxSiz;
+		LightChunck.lights[0].MaxLightCount = validLightCount;
 	}
 	ZoneLightChuncks.resource->Unmap(0, nullptr);
 
@@ -847,7 +866,7 @@ void Zone::LightBake() {
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Buffer.FirstElement = 0;
-	srvDesc.Buffer.NumElements = ChunckCountX * ChunckCountY * ChunckCountZ;
+	srvDesc.Buffer.NumElements = totalChunkCount;
 	srvDesc.Buffer.StructureByteStride = sizeof(ChunckLightData);
 	srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 	gd.pDevice->CreateShaderResourceView(ZoneLightChuncks.resource, &srvDesc, Immortal_ZoneLightBuffer_SRV.hCreation.hcpu);
@@ -5157,14 +5176,13 @@ void Game::LoadLinkedZoneMaps()
 	for (int i = 0; i < 9; ++i) {
 		Zone* nearzone = game.Current_Zone->nearZones[i];
 		if (nearzone == nullptr) continue;
-		if (nearzone->Map != nullptr) continue;
-
-		if (nearzone->isMapLoaded == false) {
+		if (nearzone->isMapLoaded) continue;
 
 			loadingMap = true;
-			nearzone->Map = new GameMap();
+			if (nearzone->Map == nullptr) nearzone->Map = new GameMap();
 			bool isLoadSuccess = nearzone->Map->LoadMap(nearzone->Load_MapName, nearzone->zoneid);
 			if (isLoadSuccess == false) {
+				nearzone->Map->Release();
 				continue;
 			}
 
@@ -5196,7 +5214,6 @@ void Game::LoadLinkedZoneMaps()
 			nearzone->isMapLoaded = true;
 			nearzone->bReqireBakeLight_Raster = true;
 			nearzone->bReqireBakeLight_Raytracing = true;
-		}
 	}
 
 	if (loadingMap == false) return;
@@ -5226,8 +5243,13 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 	playerGameObjectIndex = -1;
 	player = nullptr;
 
-	// [loading] open-world zone move = seamless (suppress loading screen); dungeon entry (dst>=100) = show loading.
-	{ extern bool g_suppressLoadingScreen; g_suppressLoadingScreen = (dstZoneId < 100); }
+	// Only open-world -> open-world transfers may suppress loading. Dungeon exits switch to a
+	// fundamentally different map and must wait for map/global/server snapshot readiness.
+	{
+		extern bool g_suppressLoadingScreen;
+		const bool sourceWasDungeon = currentZoneId >= 100 && currentZoneId < 106;
+		g_suppressLoadingScreen = !sourceWasDungeon && dstZoneId < 100;
+	}
 
 	client.Disconnect();
 	bool connected = client.Init(ipLocal, port);
@@ -5257,7 +5279,9 @@ bool Game::BeginServerTransfer(const char* ip, unsigned short port, int dstZoneI
 		return false;
 	}
 
-	MoveZone(dstZoneId);
+	// A server transfer creates a new authoritative player object. Retaining the source-zone
+	// dynamics here resurrects the old local player/ghost beside the destination player.
+	MoveZone(dstZoneId, false);
 	// Receiving AllocPlayerIndexes is the authoritative completion signal. Marking this true here
 	// allowed a rotated camera with no bound player when transfer setup was delayed or failed.
 	isPrepared = IsPresentationReady();
@@ -5316,8 +5340,25 @@ void Game::ResendHeldMovementKeys()
 
 void Game::MoveZone(int zoneid, bool keepObjects) {
 	if (zoneid < 0 || zoneid >= (int)ZoneTable.size()) return;
+	double globalRoughnessBefore = 0.0;
+	for (int i = 0; i < GlobalMaterialCount; ++i) {
+		if (MaterialTable[i] != nullptr) globalRoughnessBefore += MaterialTable[i]->roughnessFactor;
+	}
 	Zone* prevZone = Current_Zone;
 	Zone* nextZone = ZoneTable[zoneid];
+	if (prevZone == nullptr || nextZone == nullptr) {
+		OutputDebugStringA("[MoveZone] rejected null source/destination zone\n");
+		isMapInit = false;
+		return;
+	}
+	{
+		char dbg[128] = {};
+		sprintf_s(dbg, "[MoveZone] src=%d dst=%d mode=%s\n", currentZoneId, zoneid,
+			keepObjects ? "seamless" : "full");
+		OutputDebugStringA(dbg);
+		printf("%s", dbg);
+		fflush(stdout);
+	}
 
 	// 다음 존의 nearZone에 들어오지 않는 존을 Release
 	for (int i = 0; i < 9; ++i) {
@@ -5347,9 +5388,14 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 		Current_Zone = nextZone;
 		currentZoneId = zoneid;
 		LoadLinkedZoneMaps();
-		isMapInit = true;
+		isMapInit = nextZone->isMapLoaded && nextZone->Map != nullptr;
 		return;
 	}
+
+	// The previous frame may still reference dungeon textures, BLAS/TLAS resources, descriptors,
+	// and dynamic objects. A dungeon -> open-world transfer replaces all of them, so releasing first
+	// can turn the next GPU access into a device removal / client process exit.
+	gd.gpucmd.WaitGPUComplete();
 
 	bool CmdInitStateIsClose = gd.gpucmd.isClose;
 	if (CmdInitStateIsClose) {
@@ -5433,15 +5479,33 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 	//	game.PushLight(game.LightTable[i]);
 	//}
 
-	for (int i = 0; i < GlobalMaterialCount; ++i) {
-		Material* mat = MaterialTable[i];
-		if (isAssetAddingInGlobal == false) {
+	// Preserve the committed renderer's first-load ordering: global materials are finalized only
+	// after the destination map has populated and stabilized the descriptor heap. The old code did
+	// this on every MoveZone, which reallocated descriptors and repeatedly changed roughness.
+	// Finalize once, then only refresh the shared structured buffer on later transfers.
+	if (!GlobalMaterialDescriptorsInitialized) {
+		for (int i = 0; i < GlobalMaterialCount; ++i) {
+			Material* mat = MaterialTable[i];
+			if (mat == nullptr) continue;
 			mat->SetDescTable(-1);
 			RenderMaterialTable[i] = mat;
 		}
+		GlobalMaterialDescriptorsInitialized = true;
 	}
-
 	Material::InitMaterialStructuredBuffer(false);
+	double globalRoughnessAfter = 0.0;
+	for (int i = 0; i < GlobalMaterialCount; ++i) {
+		if (MaterialTable[i] != nullptr) globalRoughnessAfter += MaterialTable[i]->roughnessFactor;
+	}
+	{
+		char dbg[160] = {};
+		sprintf_s(dbg, "[GlobalMaterialInvariant] roughness %.6f -> %.6f changed=%d\n",
+			globalRoughnessBefore, globalRoughnessAfter,
+			fabs(globalRoughnessAfter - globalRoughnessBefore) > 0.000001 ? 1 : 0);
+		OutputDebugStringA(dbg);
+		printf("%s", dbg);
+		fflush(stdout);
+	}
 
 	gd.gpucmd.Close();
 	gd.gpucmd.Execute();
@@ -5460,7 +5524,15 @@ void Game::MoveZone(int zoneid, bool keepObjects) {
 	//}
 	//RebuildStaticChunks();
 
-	isMapInit = true;
+	isMapInit = nextZone->isMapLoaded && nextZone->Map != nullptr;
+	if (!isMapInit) {
+		char dbg[128] = {};
+		sprintf_s(dbg, "[MoveZone] destination map is not ready. zone=%d loaded=%d map=%p\n",
+			zoneid, (int)nextZone->isMapLoaded, nextZone->Map);
+		OutputDebugStringA(dbg);
+		printf("%s", dbg);
+		fflush(stdout);
+	}
 	isAssetAddingInGlobal = true;
 	//ResendHeldMovementKeys();
 }
@@ -6234,6 +6306,7 @@ void Game::Render() {
 
 	RenderGameplayStatusHUD();
 	RenderDungeonPartyHUD();
+	RenderDungeonDeathHUD();
 	RenderPartyLobbyUI();
 	RenderBossPrototypeHUD();
 	RenderBossPrototypeCoreHealthPlates();
@@ -6771,6 +6844,7 @@ void Game::Render_RayTracing()
 
 	RenderGameplayStatusHUD();
 	RenderDungeonPartyHUD();
+	RenderDungeonDeathHUD();
 	RenderPartyLobbyUI();
 	RenderBossPrototypeHUD();
 	RenderBossPrototypeCoreHealthPlates();
@@ -7198,6 +7272,12 @@ void Game::RenderAutoLODInstancing(ID3D12GraphicsCommandList* cmd)
 // freezes the main thread. The local player's own object is built first (camera/controls need it
 // immediately); other objects pop in over a few frames. Built objects are then enabled and pushed.
 void Game::ProcessPendingSkinBoneInit() {
+	auto requiresBoneBuffers = [](DynamicGameObject* obj) {
+		if (obj == nullptr || !obj->tag[GameObjectTag::Tag_SkinMeshObject]) return false;
+		Model* model = obj->shape.GetModel();
+		return model != nullptr && model->mNumSkinMesh > 0;
+	};
+
 	// Stage 2: objects whose bone buffers were built last frame have now been skinned at least once
 	// by the per-frame Update loop, so they are safe to draw. Push them into the render list now.
 	for (size_t i = 0; i < m_pendingSkinRenderEnable.size(); ++i) {
@@ -7208,7 +7288,7 @@ void Game::ProcessPendingSkinBoneInit() {
 		if (obj->tag[GameObjectTag::Tag_Enable] == false) continue;   // disabled/cleaned meanwhile
 		// If this slot was deleted and reused by a not-yet-built skinmesh, its bone buffers are empty;
 		// don't push it (it will be pushed properly once its own queue entry builds it).
-		if (obj->tag[GameObjectTag::Tag_SkinMeshObject] && ((SkinMeshGameObject*)obj)->BoneToWorldMatrixCB.empty()) continue;
+		if (requiresBoneBuffers(obj) && ((SkinMeshGameObject*)obj)->BoneToWorldMatrixCB.empty()) continue;
 		int zid = obj->zoneId;
 		Zone* rz = (zid >= 0 && zid < (int)ZoneTable.size()) ? ZoneTable[zid] : Current_Zone;
 		if (rz && obj->chunkAllocIndexs == nullptr) rz->PushGameObject(obj);
@@ -7235,8 +7315,17 @@ void Game::ProcessPendingSkinBoneInit() {
 		if (netIdx < 0 || netIdx >= (int)DynmaicGameObjects.size()) continue;
 		DynamicGameObject* obj = DynmaicGameObjects[netIdx];
 		if (obj == nullptr) continue;
-		if (obj->tag[GameObjectTag::Tag_SkinMeshObject]) {
-			((SkinMeshGameObject*)obj)->InitRootBoneMatrixs();
+		if (requiresBoneBuffers(obj)) {
+			SkinMeshGameObject* skin = (SkinMeshGameObject*)obj;
+			skin->InitRootBoneMatrixs();
+			if (skin->BoneToWorldMatrixCB.empty()) {
+				// Allocation can fail transiently after a device-memory pressure spike. Keep the object
+				// disabled and retry next frame instead of rendering it with null bone resources.
+				obj->tag[GameObjectTag::Tag_Enable] = false;
+				m_pendingSkinBoneInit.push_back(netIdx);
+				OutputDebugStringA("[SkinBoneInit] GPU allocation failed; queued for retry\n");
+				break;
+			}
 		}
 		// Register the object in its real zone before enabling it. Otherwise this frame's
 		// Monster::Update sees chunkAllocIndexs==nullptr and used the old zoneid=-1.
@@ -7705,17 +7794,18 @@ READ_START:
 
 			DynmaicGameObjects[netObjIndex]->zoneId = header.zoneId;
 			DynmaicGameObjects[netObjIndex]->zoneid = header.zoneId;
+			const bool deferSkinInit = header.type == GameObjectType::_SkinMeshGameObject ||
+				header.type == GameObjectType::_Player || header.type == GameObjectType::_Monster ||
+				header.type == GameObjectType::_PeacefulNPC;
+			const bool previousDeferSkinInit = game.m_deferNetworkSkinBoneInit;
+			game.m_deferNetworkSkinBoneInit = deferSkinInit;
 			DynmaicGameObjects[netObjIndex]->RecvSTC_SyncObj(datapivot);
+			game.m_deferNetworkSkinBoneInit = previousDeferSkinInit;
 			game.ApplyZoneOffsetToDynamicObject(DynmaicGameObjects[netObjIndex]);
 			if (DynmaicGameObjects[netObjIndex]->tag[GameObjectTag::Tag_SkinMeshObject]) {
 				SkinMeshGameObject* smgo = (SkinMeshGameObject*)DynmaicGameObjects[netObjIndex];
-				// Players need their bone resources immediately after a server/zone transfer. The deferred
-				// path can leave the body without a valid skin draw while the separately rendered weapon
-				// remains visible. There are at most a few party players, so initialize them synchronously;
-				// keep the amortized queue for monsters/NPCs where the transfer burst is actually large.
-				if (header.type == GameObjectType::_Player && smgo->BoneToWorldMatrixCB.empty()) {
-					smgo->InitRootBoneMatrixs();
-				}
+				Model* skinModel = smgo->shape.GetModel();
+				const bool requiresBoneBuffers = skinModel != nullptr && skinModel->mNumSkinMesh > 0;
 				// [seamless-B] Building GPU bone buffers (InitRootBoneMatrixs) does several full GPU
 				// flushes. On a server transfer ~20 skinmesh objects arrive in ONE frame; building all
 				// at once freezes the main thread ~1s and starves the input pump. Instead, disable the
@@ -7725,7 +7815,7 @@ READ_START:
 				// Only defer objects that have NOT been built yet (empty bone buffers); an already-built
 				// object that re-syncs through this path is left enabled. Dedup the queue so the same
 				// object is never enqueued (and later render-pushed) twice.
-				if (header.type != GameObjectType::_Player && smgo->BoneToWorldMatrixCB.empty()) {
+				if (requiresBoneBuffers && smgo->BoneToWorldMatrixCB.empty()) {
 					smgo->tag[GameObjectTag::Tag_Enable] = false;
 					bool alreadyQueued = false;
 					for (size_t k = 0; k < game.m_pendingSkinBoneInit.size(); ++k) {
@@ -8110,18 +8200,44 @@ READ_START:
 	case STC_Protocol::DungeonQueueUpdate:
 	{
 		STC_DungeonQueueUpdate_Header& header = *(STC_DungeonQueueUpdate_Header*)currentPivot;
+		if (header.size != sizeof(STC_DungeonQueueUpdate_Header)) {
+			OutputDebugStringA("[ProtocolMismatch] DungeonQueueUpdate ignored\n");
+			currentPivot += header.size;
+			offset += header.size;
+			break;
+		}
 		game.m_dungeonQueue.count = header.count;
 		game.m_dungeonQueue.maxCount = header.maxCount;
 		game.m_dungeonQueue.active = (header.count > 0);
 		game.m_dungeonQueue.leaderClientIndex = header.leaderClientIndex;
 		game.m_dungeonQueue.partyId = header.partyId;
 		game.m_dungeonQueue.number = header.number;
+		game.m_dungeonQueue.dungeonDeathCount = header.dungeonDeathCount;
+		game.m_dungeonQueue.dungeonDeathLimit = header.dungeonDeathLimit;
 		for (int i = 0; i < 3; ++i) {
 			game.m_dungeonQueue.objindex[i] = header.objindex[i];
+			game.m_dungeonQueue.zoneId[i] = header.zoneId[i];
 			game.m_dungeonQueue.hp[i] = header.hp[i];
 			game.m_dungeonQueue.maxhp[i] = header.maxhp[i];
 			game.m_dungeonQueue.m_currentJob[i] = header.m_currentJob[i];
 		}
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case STC_Protocol::DungeonResult:
+	{
+		STC_DungeonResult_Header& header = *(STC_DungeonResult_Header*)currentPivot;
+		if (header.size != sizeof(STC_DungeonResult_Header)) {
+			OutputDebugStringA("[ProtocolMismatch] DungeonResult ignored\n");
+			currentPivot += header.size;
+			offset += header.size;
+			break;
+		}
+		game.m_dungeonResult = header.result;
+		game.m_dungeonResultDeaths = header.deathCount;
+		game.m_dungeonResultLimit = header.deathLimit;
+		game.m_dungeonResultFlash = 5.0f;
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -8207,7 +8323,7 @@ READ_START:
 		game.isPreparedClientIndex = false;
 		game.isMapInit = false;
 		game.isServerSyncComplete = false;
-		game.MoveZone(header.zoneId);
+		game.MoveZone(header.zoneId, false);
 		currentPivot += header.size;
 		offset += header.size;
 	}
@@ -8765,7 +8881,8 @@ void Game::RenderDungeonPartyHUD()
 		if (objectIndex < 0) continue;
 		bool duplicate = false;
 		for (int k = 0; k < memberCount; ++k) {
-			if (m_dungeonQueue.objindex[memberSlots[k]] == objectIndex) {
+			if (m_dungeonQueue.objindex[memberSlots[k]] == objectIndex &&
+				m_dungeonQueue.zoneId[memberSlots[k]] == m_dungeonQueue.zoneId[i]) {
 				duplicate = true;
 				break;
 			}
@@ -8849,6 +8966,52 @@ void Game::RenderDungeonPartyHUD()
 			slot.z - 6.0f * scale, slot.y + 37.0f * scale);
 		RenderSDFText(hpText, (int)wcslen(hpText), hpTextRt, 15.0f * scale,
 			vec4(0.96f, 0.98f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 7);
+	}
+}
+
+void Game::RenderDungeonDeathHUD()
+{
+	if (m_dungeonResultFlash > 0.0f) m_dungeonResultFlash = max(0.0f, m_dungeonResultFlash - DeltaTime);
+	const float screenWidth = (float)gd.ClientFrameWidth;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.72f, screenHeight / 960.0f);
+	const float depth = 0.019f;
+
+	if (currentZoneId >= 100 && currentZoneId < 106 && m_dungeonQueue.dungeonDeathCount >= 0) {
+		const float right = screenWidth * 0.5f - 34.0f * scale;
+		const float top = screenHeight * 0.5f - 78.0f * scale;
+		const float width = 250.0f * scale;
+		const float height = 82.0f * scale;
+		const vec4 panel(right - width, top - height, right, top);
+		const bool danger = m_dungeonQueue.dungeonDeathCount >= max(0, m_dungeonQueue.dungeonDeathLimit - 1);
+		UIDraw_SolidRect(panel, vec4(0.02f, 0.035f, 0.05f, 0.92f), depth);
+		const vec4 edgeColor = danger ? vec4(1.0f, 0.22f, 0.18f, 0.95f) : vec4(0.18f, 0.72f, 0.90f, 0.85f);
+		const float edge = 2.0f * scale;
+		UIDraw_SolidRect(vec4(panel.x, panel.y, panel.z, panel.y + edge), edgeColor, depth - ui_depth_epsilon);
+		UIDraw_SolidRect(vec4(panel.x, panel.w - edge, panel.z, panel.w), edgeColor, depth - ui_depth_epsilon);
+		UIDraw_SolidRect(vec4(panel.x, panel.y, panel.x + edge, panel.w), edgeColor, depth - ui_depth_epsilon);
+		UIDraw_SolidRect(vec4(panel.z - edge, panel.y, panel.z, panel.w), edgeColor, depth - ui_depth_epsilon);
+		wchar_t text[48] = {};
+		swprintf_s(text, L"DEATH  %d / %d", m_dungeonQueue.dungeonDeathCount, m_dungeonQueue.dungeonDeathLimit);
+		const vec4 textRect(panel.x + 18.0f * scale, panel.y + 18.0f * scale,
+			panel.z - 12.0f * scale, panel.w - 12.0f * scale);
+		RenderSDFText(text, (int)wcslen(text), textRect, 25.0f * scale,
+			danger ? vec4(1.0f, 0.35f, 0.30f, 1.0f) : vec4(0.65f, 0.92f, 1.0f, 1.0f),
+			nullptr, nullptr, depth - ui_depth_epsilon * 3);
+	}
+
+	if (m_dungeonResultFlash > 0.0f && m_dungeonResult != DungeonResultCode::None) {
+		const wchar_t* resultText = L"던전 실패";
+		vec4 color(1.0f, 0.25f, 0.20f, 1.0f);
+		if (m_dungeonResult == DungeonResultCode::Aborted) resultText = L"던전 종료";
+		else if (m_dungeonResult == DungeonResultCode::Success) {
+			resultText = L"던전 클리어";
+			color = vec4(0.35f, 1.0f, 0.55f, 1.0f);
+		}
+		const float halfWidth = 220.0f * scale;
+		const vec4 resultRect(-halfWidth, 80.0f * scale, halfWidth, 140.0f * scale);
+		RenderSDFText(resultText, (int)wcslen(resultText), resultRect, 34.0f * scale,
+			color, nullptr, nullptr, depth - ui_depth_epsilon * 8);
 	}
 }
 

@@ -92,6 +92,8 @@ union STC_Protocol {
 
 		// Server-authoritative confirmation that ChangeJob and its default weapon were applied.
 		JobChangeAck = 25,
+
+		DungeonResult = 26,
 	};
 
 	short n;
@@ -261,8 +263,11 @@ struct STC_DungeonQueueUpdate_Header {
 	int count = 0;
 	int maxCount = 3;
 	int objindex[3] = {};
+	int zoneId[3] = {};
 	float hp[3] = {};
 	float maxhp[3] = {};
+	int dungeonDeathCount = -1;
+	int dungeonDeathLimit = 3;
 	int m_currentJob[3] = {};   // [party] each member's job (PlayerJob int), -1 if empty slot
 	int leaderClientIndex = -1; // [party] clientIndex of the leader; client shows [start] if == own clientIndex
 	int partyId = -1;           // [party] which party this snapshot belongs to (-1 = not in a party)
@@ -270,6 +275,21 @@ struct STC_DungeonQueueUpdate_Header {
 };
 
 // [party] one row in the open-party list (the "join party" window renders one button per entry).
+enum class DungeonResultCode : int {
+	None = 0,
+	FailedDeaths = 1,
+	Aborted = 2,
+	Success = 3,
+};
+
+struct STC_DungeonResult_Header {
+	unsigned int size = sizeof(STC_DungeonResult_Header);
+	STC_Protocol st = STC_Protocol::DungeonResult;
+	DungeonResultCode result = DungeonResultCode::None;
+	int deathCount = 0;
+	int deathLimit = 3;
+};
+
 struct PartyListEntry {
 	int partyId = -1;
 	int number = 0;        // display number -> "파티N"
@@ -530,6 +550,7 @@ union CTS_Protocol {
 		PartyLeave = 17,        // leave current party
 		PartyListRequest = 18,  // ask the server for the current open-party list
 		PartyDisband = 19,      // [party] leader-only: disband the whole party (kick all members)
+		DungeonAbort = 20,
 	};
 	short n;
 	char two_byte[2];
@@ -545,6 +566,11 @@ struct CTS_DungeonStart_Header {
 };
 
 // [party] create a new party. The caller becomes its leader and first member.
+struct CTS_DungeonAbort_Header {
+	unsigned int size = sizeof(CTS_DungeonAbort_Header);
+	CTS_Protocol st = CTS_Protocol::DungeonAbort;
+};
+
 struct CTS_PartyCreate_Header {
 	unsigned int size = sizeof(CTS_PartyCreate_Header);
 	CTS_Protocol st = CTS_Protocol::PartyCreate;
@@ -640,14 +666,22 @@ struct PlayerTransferData {
 	float SkillCooldownFlow[(int)SkillSlot::Max] = {};
 	int m_currentWeaponType = 0;
 	bool m_weaponHolstered = false;
+	float ReloadRemain = 0.0f;
+	bool m_sniperDmrMode = false;
+	bool m_bomberHealAmmoMode = false;
 	ItemStack Inventory[36] = {};
 	Weapon weapon[3];
-	int SelectedWeapone;
+	int SelectedWeapone = 0;
+	int Gold = 0;
+	int Exp = 0;
+	int Level = 0;
 	// [party] which party this player belongs to, and the open-world zone they started from.
 	// The dungeon process uses partyId to group members into the same instance, and originZoneId
 	// to send them back if every instance is busy.
 	int partyId = -1;
 	int originZoneId = -1;
+	int dungeonReturnZoneId = -1;
+	vec4 dungeonReturnPosition = vec4(0, 0, 0, 1);
 };
 
 struct CTS_ServerPlayerTransfer_Header {

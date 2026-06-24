@@ -1,0 +1,4 @@
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\SyncFPSClient\x64\RenderRollbackVerify\dxcompiler.dll
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\SyncFPSClient\x64\RenderRollbackVerify\dxcompiler.pdb
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\SyncFPSClient\x64\RenderRollbackVerify\dxil.dll
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\SyncFPSClient\x64\RenderRollbackVerify\dxil.pdb

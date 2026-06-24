@@ -1128,6 +1128,9 @@ struct Player : public SkinMeshGameObject {
 	// Stable combat-team identity. Unlike clientIndex, this survives server/zone transfers.
 	// -1 means solo; solo players are enemies to one another, while self is always allied.
 	int partyId = -1;
+	// Open-world portal entrance used when this dungeon run ends.
+	int dungeonReturnZoneId = -1;
+	vec4 dungeonReturnPosition = vec4(0, 0, 0, 1);
 
 	// OBB.Center
 	float JumpVelocity = 5;
@@ -2338,7 +2341,8 @@ struct World {
 	// [party/dungeon] Write a party/queue roster snapshot (per-member objindex, HP, MaxHP, job) into a
 	// client's send buffer. Pass the member list to send: the waiting queue (count<=DungeonPartyMax).
 	__forceinline void Sending_DungeonQueueUpdate(SendDataSaver& sds, const int* members, int count,
-		int leaderClientIndex = -1, int partyId = -1, int number = 0) {
+		int leaderClientIndex = -1, int partyId = -1, int number = 0,
+		int dungeonDeathCount = -1, int dungeonDeathLimit = 3) {
 		sds.postpush_start();
 		constexpr int reqsiz = sizeof(STC_DungeonQueueUpdate_Header);
 		sds.postpush_reserve(reqsiz);
@@ -2350,20 +2354,38 @@ struct World {
 		header.leaderClientIndex = leaderClientIndex;
 		header.partyId = partyId;
 		header.number = number;
+		header.dungeonDeathCount = dungeonDeathCount;
+		header.dungeonDeathLimit = dungeonDeathLimit;
 		for (int i = 0; i < DungeonPartyMax; ++i) {
 			int ci = (members != nullptr && i < count) ? members[i] : -1;
 			if (ci >= 0 && ci < clients.size && clients.isnull(ci) == false && clients[ci].pObjData != nullptr) {
 				header.objindex[i] = clients[ci].objindex;
+				header.zoneId[i] = clients[ci].zoneId;
 				header.hp[i] = clients[ci].pObjData->HP;
 				header.maxhp[i] = clients[ci].pObjData->MaxHP;
 				header.m_currentJob[i] = clients[ci].pObjData->m_currentJob;
 			} else {
 				header.objindex[i] = -1;
+				header.zoneId[i] = -1;
 				header.hp[i] = 0;
 				header.maxhp[i] = 0;
 				header.m_currentJob[i] = -1;
 			}
 		}
+		sds.postpush_end();
+	}
+
+	__forceinline void Sending_DungeonResult(SendDataSaver& sds, DungeonResultCode result,
+		int deathCount, int deathLimit) {
+		sds.postpush_start();
+		constexpr int reqsiz = sizeof(STC_DungeonResult_Header);
+		sds.postpush_reserve(reqsiz);
+		STC_DungeonResult_Header& header = *(STC_DungeonResult_Header*)sds.ofbuff;
+		header.size = reqsiz;
+		header.st = STC_Protocol::DungeonResult;
+		header.result = result;
+		header.deathCount = deathCount;
+		header.deathLimit = deathLimit;
 		sds.postpush_end();
 	}
 
@@ -2488,6 +2510,11 @@ struct World {
 		bool busy = false;
 		int partyId = -1;       // which lobby party currently occupies this instance
 		int number = 0;         // that party's display number (logging only)
+		int deathCount = 0;
+		int deathLimit = 3;
+		DungeonResultCode result = DungeonResultCode::None;
+		bool exitPending = false;
+		float exitRetryTimer = 0.0f;
 	};
 	DungeonInstanceSlot dungeonInstances[DungeonInstanceCount];
 	int DungeonAllocInstanceForParty(int partyId, int number); // returns instance index, or -1 if all busy
@@ -2495,6 +2522,11 @@ struct World {
 	int CountPlayersInInstance(int instanceIndex);              // live players across that instance's floors
 	void DungeonUpdateInstances();                              // free + reset instances whose floors emptied
 	void ResetDungeonInstance(int instanceIndex);               // respawn monsters / clear drops on its floors
+	void RegisterDungeonDeath(int clientIndex);
+	void RequestDungeonAbort(int clientIndex);
+	void CompleteDungeonForZone(int zoneId);
+	void BeginDungeonExit(int instanceIndex, DungeonResultCode result);
+	void ProcessDungeonExits();
 
 	// legacy single-queue API kept for the in-dungeon HP/job share; portal no longer auto-queues.
 	void BroadcastDungeonParty();              // [party] in-dungeon: share in-dungeon players' HP/job with each other
@@ -2514,8 +2546,15 @@ struct World {
 	}
 
 	unsigned short GetZonePort(int zoneId) const { return (unsigned short)(9000 + zoneId); }
-	const char* GetZoneIP(int zoneId) const { return "192.168.35.73"; }
-	int IssueTransferToken() { return nextTransferToken++; }
+	string zoneServerIP = "192.168.35.73";
+	const char* GetZoneIP(int zoneId) const { return zoneServerIP.c_str(); }
+	int IssueTransferToken() {
+		// A transfer token crosses server boundaries, so a per-process sequence alone can collide.
+		// Keep the sign bit clear and reserve the upper 7 bits for the issuing server id.
+		const unsigned int issuer = (unsigned int)(serverId & 0x7f);
+		const unsigned int sequence = (unsigned int)(nextTransferToken++ & 0x00ffffff);
+		return (int)((issuer << 24) | (sequence == 0 ? 1u : sequence));
+	}
 	bool SendPlayerTransferToServer(const PlayerTransferData& data);
 	void AcceptClientHello(int clientIndex);
 	bool AcceptTransferConnect(int clientIndex, int transferToken);

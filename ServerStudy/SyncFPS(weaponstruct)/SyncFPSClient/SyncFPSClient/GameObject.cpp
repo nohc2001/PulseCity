@@ -1202,7 +1202,7 @@ void GameObject::Release()
 			game.MyRayTracingShader->TLASAlloter.Free(TLASindex);
 		}
 	}
-	else if (model) {
+	else if (model && RaytracingWorldMatInput_Model != nullptr) {
 		for (int i = 0; i < model->nodeCount; ++i) {
 			if (this->RaytracingWorldMatInput_Model[i] != nullptr) {
 				float* ptr = this->RaytracingWorldMatInput_Model[i];
@@ -1215,6 +1215,8 @@ void GameObject::Release()
 				}
 			}
 		}
+		delete[] RaytracingWorldMatInput_Model;
+		RaytracingWorldMatInput_Model = nullptr;
 	}
 
 	tag[GameObjectTag::Tag_Enable] = false;
@@ -2272,7 +2274,7 @@ SkinMeshGameObject::SkinMeshGameObject()
 	OutVertexUAV = nullptr;
 	modifyMeshes = nullptr;
 	for (int i = 0;i < 4;++i) {
-		AnimationFlowTime[4] = 0;
+		AnimationFlowTime[i] = 0;
 		DestAnimationFlowTime[i] = 0;
 		PlayingAnimationIndex[i] = 0;
 	}
@@ -2335,6 +2337,16 @@ void SkinMeshGameObject::InitRootBoneMatrixs()
 		UINT ncbElementBytes = (((sizeof(matrix) * 128) + 255) & ~255); //256의 배수
 		GPUResource res_upload = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1);
 		GPUResource res = gd.CreateCommitedGPUBuffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_DIMENSION_BUFFER, ncbElementBytes, 1, DXGI_FORMAT_UNKNOWN, 1, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+		if (res_upload.resource == nullptr || res.resource == nullptr) {
+			res_upload.Release();
+			res.Release();
+			for (GPUResource& created : BoneToWorldMatrixCB) created.Release();
+			for (GPUResource& created : BoneToWorldMatrixCB_Default) created.Release();
+			BoneToWorldMatrixCB.clear();
+			BoneToWorldMatrixCB_Default.clear();
+			RootBoneMatrixs_PerSkinMesh.clear();
+			return;
+		}
 
 		BoneToWorldMatrixCB.push_back(res_upload);
 		BoneToWorldMatrixCB_Default.push_back(res);
@@ -2733,7 +2745,9 @@ void SkinMeshGameObject::SetShape(Shape _shape, int ZoneID)
 			transforms_innerModel[i].transpose();
 		}
 
-		InitRootBoneMatrixs();
+		if (!game.m_deferNetworkSkinBoneInit) {
+			InitRootBoneMatrixs();
+		}
 
 		if (gd.isSupportRaytracing) {
 			modifyMeshes = new RayTracingMesh[model->mNumSkinMesh];
@@ -3321,6 +3335,13 @@ void SkinMeshGameObject::MoveChunck(const matrix& afterMat, const GameObjectIncl
 }
 
 void SkinMeshGameObject::Release() {
+	auto freeDynamicDesc = [](DescIndex& di) {
+		if (di.type == 'n' && di.isShaderVisible == false) {
+			gd.DynamicDescriptorAllotter.Free(di.index);
+		}
+		di = DescIndex();
+	};
+
 	RootBoneMatrixs_PerSkinMesh.clear();
 	for (int i = 0; i < BoneToWorldMatrixCB.size(); ++i) {
 		BoneToWorldMatrixCB[i].Release();
@@ -3353,18 +3374,34 @@ void SkinMeshGameObject::Release() {
 	}
 	NodeToBone_SRVDescIndex.clear();
 
+	NodeLocalMatrixs.Release();
+	NodeTposMatrixs.Release();
+	Node_ToParentRes.Release();
+	HumanoidToNodeIndexRes.Release();
+	if (AnimationBlendConstantUploadBuffer.resource != nullptr && AnimBlendingCB_Mapped != nullptr) {
+		AnimationBlendConstantUploadBuffer.resource->Unmap(0, nullptr);
+	}
+	AnimationBlendConstantUploadBuffer.Release();
+	AnimBlendingCB_Mapped = nullptr;
+	freeDynamicDesc(NodeLocalMatrixs_UAVDescIndex);
+	freeDynamicDesc(NodeLocalMatrixs_SRVDescIndex);
+	freeDynamicDesc(NodeTposMatrixs_SRVDescIndex);
+	freeDynamicDesc(NodeToParentSRVIndex);
+	freeDynamicDesc(HumanoidToNodeIndexSRVIndex);
+	freeDynamicDesc(AnimBlendingCBVDescIndex);
+
 	Mesh* mesh = nullptr;
 	Model* model = nullptr;
 	shape.GetRealShape(mesh, model);
 	if (model) {
-		for (int i = 0; i < model->mNumSkinMesh; ++i) {
+		for (int i = 0; OutVertexUAV != nullptr && i < model->mNumSkinMesh; ++i) {
 			DescIndex& di = OutVertexUAV[i];
 			if (di.type == 'n' && di.isShaderVisible == false) {
 				gd.DynamicDescriptorAllotter.Free(di.index);
 			}
 		}
 
-		for (int i = 0; i < model->mNumSkinMesh; ++i) {
+		for (int i = 0; modifyMeshes != nullptr && i < model->mNumSkinMesh; ++i) {
 			RayTracingMesh& rmesh = modifyMeshes[i];
 			rmesh.Release();
 		}

@@ -584,6 +584,7 @@ void GPUResource::Release()
 		dbglog2(L"GPUResource %llx released. dbgc0 = %d \n", resource->GetGPUVirtualAddress(), dbgc[0]);
 #endif
 		resource->Release();
+		resource = nullptr;
 	}
 	CurrentState_InCommandWriteLine = D3D12_RESOURCE_STATE_COMMON;
 	extraData = 0;
@@ -1798,12 +1799,26 @@ GPUResource GlobalDevice::CreateCommitedGPUBuffer(D3D12_HEAP_TYPE heapType, D3D1
 		hResult = gd.pDevice->CreateCommittedResource(&d3dHeapPropertiesDesc, heapFlags, &d3dResourceDesc, d3dResourceInitialStates, NULL, __uuidof(ID3D12Resource), (void**)&pBuffer);
 	}
 
-	dbgbreak(pBuffer == nullptr);
+	if (FAILED(hResult) || pBuffer == nullptr) {
+		const HRESULT removedReason = gd.pDevice ? gd.pDevice->GetDeviceRemovedReason() : E_POINTER;
+		char dbg[320] = {};
+		sprintf_s(dbg,
+			"[CreateCommittedResource] FAILED hr=0x%08X removed=0x%08X heap=%d dim=%d width=%d height=%d flags=0x%X\n",
+			(unsigned int)hResult, (unsigned int)removedReason, (int)heapType, (int)dimension,
+			Width, Height, (unsigned int)AdditionalFlag);
+		OutputDebugStringA(dbg);
+		printf("%s", dbg);
+		fflush(stdout);
+		GPUResource gr;
+		gr.resource = nullptr;
+		gr.extraData = 0;
+		return gr;
+	}
 
-	pBuffer->QueryInterface<ID3D12Resource2>(&pBuffer2);
+	hResult = pBuffer->QueryInterface<ID3D12Resource2>(&pBuffer2);
 	pBuffer->Release();
-
-	if (FAILED(hResult)) {
+	if (FAILED(hResult) || pBuffer2 == nullptr) {
+		OutputDebugStringA("[CreateCommittedResource] ID3D12Resource2 QueryInterface failed\n");
 		GPUResource gr;
 		gr.resource = nullptr;
 		gr.extraData = 0;

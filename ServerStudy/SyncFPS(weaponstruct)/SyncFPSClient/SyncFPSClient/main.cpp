@@ -157,9 +157,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	gd.Init();
 	game.Init();
 	GetKeyboardState(game.pKeyBuffer);
+	char e2eModeBuffer[8] = {};
+	const bool dungeonReturnE2E = GetEnvironmentVariableA("SYNCFPS_DUNGEON_RETURN_E2E",
+		e2eModeBuffer, (DWORD)sizeof(e2eModeBuffer)) > 0;
+	char zoneE2EBuffer[8] = {};
+	const bool openWorldZoneE2E = GetEnvironmentVariableA("SYNCFPS_OPEN_WORLD_ZONE_E2E",
+		zoneE2EBuffer, (DWORD)sizeof(zoneE2EBuffer)) > 0;
+	const bool automatedE2E = dungeonReturnE2E || openWorldZoneE2E;
 
 	// [start screen] show StartScreen.png at launch; begin loading only after any key/click is pressed.
-	{
+	if (!automatedE2E) {
 		MSG dm;
 		while (::PeekMessage(&dm, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {}
 		while (::PeekMessage(&dm, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {}
@@ -181,8 +188,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	// [jobselect] Job-selection screen: shown after the start screen, before connecting. Hover a card in
 	// the 3x3 grid, left-click to select, then click CONFIRM to lock it in (CANCEL clears). The chosen job
 	// is sent to the server with CTS_ChangeJob once the connection is confirmed (in the main loop below).
-	int chosenJob = -1;   // PlayerJob enum index, or -1 if none chosen
-	{
+	int chosenJob = automatedE2E ? 0 : -1;   // PlayerJob enum index, or -1 if none chosen
+	if (!automatedE2E) {
 		g_inJobSelect = true;
 		ShowCursor(TRUE);   // [jobselect] reveal the OS cursor for clicking (it was hidden at launch)
 		MSG dm;
@@ -231,7 +238,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	constexpr unsigned short InitServerPort = 9073;   // open world (zone 73 = the player's spawn zone). Use 9100 to test the dungeon directly.
 	const char* IP0 = "192.168.35.73";
 	const char* localhost = "127.0.0.1";
-	bool Connected = client.Init(IP0, InitServerPort);
+	char configuredServerIPBuffer[64] = {};
+	const DWORD configuredServerIPLength = GetEnvironmentVariableA("SYNCFPS_SERVER_IP",
+		configuredServerIPBuffer, (DWORD)sizeof(configuredServerIPBuffer));
+	const char* configuredServerIP = (configuredServerIPLength > 0 &&
+		configuredServerIPLength < sizeof(configuredServerIPBuffer)) ? configuredServerIPBuffer : IP0;
+	printf("[ClientConnect] initial server=%s:%u\n", configuredServerIP, (unsigned)InitServerPort);
+	bool Connected = client.Init(configuredServerIP, InitServerPort);
 
 	if (Connected == false) {
 		WSACleanup();
@@ -334,6 +347,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 	};
 	ui64 ft = GetTicks();
 	double loadingDiagnosticFlow = 0.0;
+	int dungeonReturnE2EStage = 0;
+	double dungeonReturnE2EFlow = 0.0;
+	int openWorldZoneE2EStage = 0;
+	double openWorldZoneE2EFlow = 0.0;
 	while (1) {
 		game.isPrepared = game.IsPresentationReady();
 
@@ -350,6 +367,90 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
 
 		ui64 et = GetTicks();
 		double f = (double)(et - ft) * InvHZ;
+		if (dungeonReturnE2E) {
+			dungeonReturnE2EFlow += f;
+			if (dungeonReturnE2EStage == 0 && game.isPrepared && game.currentZoneId < 100) {
+				CTS_PartyCreate_Header header;
+				client.send_all((char*)&header, sizeof(header), 0);
+				printf("[DungeonReturnE2E] initial-ready zone=%d; PartyCreate sent\n", game.currentZoneId);
+				fflush(stdout);
+				dungeonReturnE2EStage = 1;
+				dungeonReturnE2EFlow = 0.0;
+			}
+			else if (dungeonReturnE2EStage == 1 && dungeonReturnE2EFlow >= 1.0 &&
+				game.m_dungeonQueue.active && game.m_dungeonQueue.partyId >= 0) {
+				CTS_DungeonStart_Header header;
+				client.send_all((char*)&header, sizeof(header), 0);
+				printf("[DungeonReturnE2E] party-ready id=%d; DungeonStart sent\n", game.m_dungeonQueue.partyId);
+				fflush(stdout);
+				dungeonReturnE2EStage = 2;
+				dungeonReturnE2EFlow = 0.0;
+			}
+			else if (dungeonReturnE2EStage == 2 && game.isPrepared && game.currentZoneId >= 100) {
+				CTS_DungeonAbort_Header header;
+				client.send_all((char*)&header, sizeof(header), 0);
+				printf("[DungeonReturnE2E] dungeon-ready zone=%d; DungeonAbort sent\n", game.currentZoneId);
+				fflush(stdout);
+				dungeonReturnE2EStage = 3;
+				dungeonReturnE2EFlow = 0.0;
+			}
+			else if (dungeonReturnE2EStage == 3 && game.isPrepared && game.currentZoneId < 100) {
+				printf("[DungeonReturnE2E] PASS returned-ready zone=%d player=%d map=%d sync=%d\n",
+					game.currentZoneId, game.player != nullptr, game.isMapInit, game.isServerSyncComplete);
+				fflush(stdout);
+				dungeonReturnE2EStage = 4;
+				PostMessage(hWnd, WM_CLOSE, 0, 0);
+			}
+			else if (dungeonReturnE2EStage > 0 && dungeonReturnE2EStage < 4 && dungeonReturnE2EFlow >= 45.0) {
+				printf("[DungeonReturnE2E] TIMEOUT stage=%d zone=%d prepared=%d player=%d index=%d map=%d global=%d sync=%d jobAck=%d\n",
+					dungeonReturnE2EStage, game.currentZoneId, game.isPrepared, game.player != nullptr,
+					game.isPreparedClientIndex, game.isMapInit, game.isGlobalAssetInit,
+					game.isServerSyncComplete, game.isInitialJobConfirmed);
+				fflush(stdout);
+				dungeonReturnE2EStage = 4;
+				PostMessage(hWnd, WM_CLOSE, 0, 0);
+			}
+		}
+		if (openWorldZoneE2E) {
+			openWorldZoneE2EFlow += f;
+			if (openWorldZoneE2EStage == 1 && game.player != nullptr) {
+				game.player->m_yaw = 0.0f;
+				game.player->m_pitch = 0.0f;
+			}
+			if (openWorldZoneE2EStage == 0 && game.isPrepared && game.currentZoneId == 73) {
+				CTS_KeyInput_Header header;
+				header.Key = 'W';
+				header.isdown = true;
+				client.send_all((char*)&header, sizeof(header), 0);
+				printf("[OpenWorldZoneE2E] initial-ready zone=73; move +X started\n");
+				fflush(stdout);
+				openWorldZoneE2EStage = 1;
+				openWorldZoneE2EFlow = 0.0;
+			}
+			else if (openWorldZoneE2EStage == 1 && game.isPrepared && game.currentZoneId == 83) {
+				CTS_KeyInput_Header header;
+				header.Key = 'W';
+				header.isdown = false;
+				client.send_all((char*)&header, sizeof(header), 0);
+				printf("[OpenWorldZoneE2E] PASS zone=83 player=%d map=%d sync=%d\n",
+					game.player != nullptr, game.isMapInit, game.isServerSyncComplete);
+				fflush(stdout);
+				openWorldZoneE2EStage = 2;
+				openWorldZoneE2EFlow = 0.0;
+			}
+			else if (openWorldZoneE2EStage == 2 && openWorldZoneE2EFlow >= 10.0) {
+				openWorldZoneE2EStage = 3;
+				PostMessage(hWnd, WM_CLOSE, 0, 0);
+			}
+			else if (openWorldZoneE2EStage == 1 && openWorldZoneE2EFlow >= 45.0) {
+				printf("[OpenWorldZoneE2E] TIMEOUT zone=%d prepared=%d player=%d map=%d sync=%d\n",
+					game.currentZoneId, game.isPrepared, game.player != nullptr,
+					game.isMapInit, game.isServerSyncComplete);
+				fflush(stdout);
+				openWorldZoneE2EStage = 2;
+				PostMessage(hWnd, WM_CLOSE, 0, 0);
+			}
+		}
 		if (!game.isPrepared) {
 			loadingDiagnosticFlow += f;
 			if (loadingDiagnosticFlow >= 1.0) {
@@ -755,6 +856,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.size = sizeof(CTS_DungeonStart_Header);
 					header.st = CTS_Protocol::DungeonStart;
 					client.send_all((char*)&header, sizeof(CTS_DungeonStart_Header), 0);
+				}
+			}
+			break;
+			case 'T':
+			{
+				// Dungeon validation shortcut: one edge-triggered request ends the whole active run.
+				if (game.currentZoneId >= 100 && game.currentZoneId < 106 && !(lParam & (1 << 30))) {
+					CTS_DungeonAbort_Header header;
+					client.send_all((char*)&header, sizeof(header), 0);
 				}
 			}
 			break;

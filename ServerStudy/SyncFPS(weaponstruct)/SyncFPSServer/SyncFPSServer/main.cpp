@@ -75,6 +75,9 @@ int main() {
 	gameworld.serverId = serverId;
 	gameworld.listenPort = listenPort;
 	gameworld.ownedZoneId = ownedZoneId;
+	if (const char* configuredZoneIP = getenv("SYNCFPS_ZONE_IP")) {
+		if (configuredZoneIP[0] != '\0') gameworld.zoneServerIP = configuredZoneIP;
+	}
 	if (__argc >= 4) {
 		gameworld.singleProcessAllZones = false;
 	}
@@ -87,6 +90,7 @@ int main() {
 		<< " | serverId=" << serverId
 		<< " | port=" << listenPort
 		<< " | ownedZoneId=" << ownedZoneId
+		<< " | zoneIP=" << gameworld.zoneServerIP
 		<< endl;
 
 	vector<WSAPOLLFD> readFds;
@@ -314,6 +318,11 @@ READ_START:
 	break;
 	case CTS_Protocol::ServerPlayerTransfer:
 	{
+		if (size != sizeof(CTS_ServerPlayerTransfer_Header)) {
+			cout << "[ProtocolMismatch] ServerPlayerTransfer received=" << size
+				<< " expected=" << sizeof(CTS_ServerPlayerTransfer_Header) << endl;
+			return -1;
+		}
 		CTS_ServerPlayerTransfer_Header& header = *(CTS_ServerPlayerTransfer_Header*)currentPivot;
 		StoreIncomingPlayerTransfer(header.data);
 		currentPivot += header.size;
@@ -391,6 +400,14 @@ READ_START:
 		// [party] the party LEADER pressed the start button: route members into a free dungeon instance.
 		CTS_DungeonStart_Header& header = *(CTS_DungeonStart_Header*)currentPivot;
 		gameworld.PartyLeaderStart(clientIndex);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
+	case CTS_Protocol::DungeonAbort:
+	{
+		CTS_DungeonAbort_Header& header = *(CTS_DungeonAbort_Header*)currentPivot;
+		RequestDungeonAbort(clientIndex);
 		currentPivot += header.size;
 		offset += header.size;
 	}

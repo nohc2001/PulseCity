@@ -653,11 +653,7 @@ int Zone::AddPlayer(int clientIndex, Player* player, vec4 spawnPos, bool update_
     // Send player inventory data.
     // Load player data from database here when needed.
     for (int i = 0; i < player->maxItem; ++i) {
-        ItemStack is;
-        is.id = rand() % ItemTable.size();
-        is.ItemCount = rand() % 10;
-        player->Inventory[i] = is;
-        Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
+		Sending_InventoryItemSync(personalSDS, player->Inventory[i], i);
     }
 
 	// This must remain the final packet in the zone-entry personal snapshot. TCP ordering means
@@ -1196,32 +1192,21 @@ void Zone::SpawnObjects() {
         return;
     }
 
-    // [dungeon 1F] Walker / Dron(z-1) / Tower(z+1) spawned 2 units along +X from the player spawn (zone center).
+    // [dungeon 1F] three Walkers in a row (z-1 / z / z+1), 2 units along +X from the player spawn (zone center).
     // Keyed on floor index, so it applies identically to every instance's 1F (zones 100 and 103).
     if (World::DungeonFloorOf(zoneId) == 0) {
         float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
         float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
         float my = map.AABB[0].y + 2.0f;   // a bit above the floor; gravity settles it
-        Monster* walker = new Monster();
-        walker->zone = this;
-        walker->ApplyMonsterData(MonsterType::Walker);
-        walker->Init(XMMatrixTranslation(cx + 2.0f, my, cz));
-        NewObject(walker, GameObjectType::_Monster);
-        PushGameObject(walker);
-
-        Monster* dron = new Monster();          // z - 1, next to the walker
-        dron->zone = this;
-        dron->ApplyMonsterData(MonsterType::Dron);
-        dron->Init(XMMatrixTranslation(cx + 2.0f, my, cz - 1.0f));
-        NewObject(dron, GameObjectType::_Monster);
-        PushGameObject(dron);
-
-        Monster* tower = new Monster();         // z + 1, next to the walker
-        tower->zone = this;
-        tower->ApplyMonsterData(MonsterType::Tower);
-        tower->Init(XMMatrixTranslation(cx + 2.0f, my, cz + 1.0f));
-        NewObject(tower, GameObjectType::_Monster);
-        PushGameObject(tower);
+        const float dz[3] = { 0.0f, -1.0f, 1.0f };
+        for (int k = 0; k < 3; ++k) {
+            Monster* walker = new Monster();
+            walker->zone = this;
+            walker->ApplyMonsterData(MonsterType::Walker);
+            walker->Init(XMMatrixTranslation(cx + 2.0f, my, cz + dz[k]));
+            NewObject(walker, GameObjectType::_Monster);
+            PushGameObject(walker);
+        }
     }
 
     // 1F/2F (any instance) intentionally contain no random open-world monsters.
@@ -1398,6 +1383,7 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
     }
 
 	Player* shooterPlayer = dynamic_cast<Player*>(shooter);
+	Monster* shooterMonster = dynamic_cast<Monster*>(shooter);
 	if (ghostHitIndex >= 0) {
 		Player* ghostPlayer = dynamic_cast<Player*>(ghostHitObject);
 		if (shooterPlayer == nullptr || ghostPlayer == nullptr ||
@@ -1406,7 +1392,7 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
 				shooterPlayer != nullptr ? shooterPlayer->partyId : -1);
 		}
     }
-    else {
+    else if (shooterMonster == nullptr) {
         float coreHitDistance = closestDistance;
         hitBossCore = DamageBossCoreByRay(rayOrigin, rayDirection, closestDistance, damage, coreHitDistance);
         if (hitBossCore) {
@@ -1416,8 +1402,11 @@ void Zone::FireRaycast(GameObject* shooter, vec4 rayStart, vec4 rayDirection, fl
 
 	if (!hitBossCore && ghostHitIndex < 0 && hitObject != nullptr) {
 		Player* hitPlayer = dynamic_cast<Player*>(hitObject);
-		if (shooterPlayer == nullptr || hitPlayer == nullptr ||
-			!World::ArePlayersAllies(shooterPlayer, hitPlayer)) {
+		Monster* hitMonster = dynamic_cast<Monster*>(hitObject);
+		// A friendly monster still blocks the ray, but never receives damage from it.
+		const bool isMonsterFriendlyHit = shooterMonster != nullptr && hitMonster != nullptr;
+		if (!isMonsterFriendlyHit && (shooterPlayer == nullptr || hitPlayer == nullptr ||
+			!World::ArePlayersAllies(shooterPlayer, hitPlayer))) {
 			hitZone->currentIndex = hitObjectIndex;
 			hitObject->OnCollisionRayWithBullet(shooter, damage);
 		}
@@ -1639,6 +1628,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 	int hitCount = 0;
 	int lastCurrentIndex = currentIndex;
 	Player* casterPlayer = dynamic_cast<Player*>(caster);
+	Monster* casterMonster = dynamic_cast<Monster*>(caster);
 
     for (int zi = 0; zi < 9; ++zi) {
         /*if (gameworld.IsZoneOwned(zi) == false) continue;
@@ -1658,6 +1648,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 			Monster* monster = objectType == GameObjectType::_Monster ? (Monster*)object : nullptr;
 			Player* targetPlayer = objectType == GameObjectType::_Player ? (Player*)object : nullptr;
 			if (monster != nullptr && monster->isDead) continue;
+			if (casterMonster != nullptr && monster != nullptr) continue;
 			if (casterPlayer != nullptr && targetPlayer != nullptr &&
 				World::ArePlayersAllies(casterPlayer, targetPlayer)) continue;
 

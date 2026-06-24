@@ -284,6 +284,9 @@ public:
 	// Update skins them) but held out of the render list for one frame, then pushed here. This
 	// guarantees a skinmesh is skinned at least once before its first draw, preventing a black flash.
 	std::vector<int> m_pendingSkinRenderEnable;
+	// Network decoding only populates CPU object state. GPU bone resources are created afterward
+	// by ProcessPendingSkinBoneInit(), outside the receive-buffer mutation path.
+	bool m_deferNetworkSkinBoneInit = false;
 
 	void ProcessPendingSkinBoneInit();
 
@@ -329,9 +332,18 @@ public:
 	bool isInitialJobConfirmed = true;
 	int expectedInitialJob = -1;
 	bool IsPresentationReady() const {
-		return player != nullptr && isPreparedClientIndex && isMapInit && isGlobalAssetInit &&
-			isServerSyncComplete && isInitialJobConfirmed &&
-			m_pendingSkinBoneInit.empty() && m_pendingSkinRenderEnable.empty();
+		if (player == nullptr) return false;
+		bool localPlayerVisualReady = true;
+		if (player->tag[GameObjectTag::Tag_SkinMeshObject]) {
+			Model* model = player->shape.GetModel();
+			if (model != nullptr && model->mNumSkinMesh > 0) {
+				localPlayerVisualReady = !player->BoneToWorldMatrixCB.empty();
+			}
+		}
+		// InitialSyncComplete proves every server packet arrived. Only the local player's visual
+		// resources are presentation-critical; remote monsters/NPCs may finish streaming afterward.
+		return isPreparedClientIndex && isMapInit && isGlobalAssetInit && isServerSyncComplete &&
+			isInitialJobConfirmed && localPlayerVisualReady;
 	}
 
 	// [party/dungeon] latest party/queue snapshot received from STC_DungeonQueueUpdate.
@@ -341,13 +353,20 @@ public:
 		int   count = 0;
 		int   maxCount = 3;
 		int   objindex[3] = {};
+		int   zoneId[3] = {};
 		float hp[3] = {};
 		float maxhp[3] = {};
+		int   dungeonDeathCount = -1;
+		int   dungeonDeathLimit = 3;
 		int   m_currentJob[3] = {};
 		int   leaderClientIndex = -1; // [party] clientIndex of the leader; show [start] if == my clientIndex
 		int   partyId = -1;          // [party] which party this snapshot is for (-1 = not in a party)
 		int   number = 0;            // [party] display number -> "파티N" (0 = none)
 	} m_dungeonQueue;
+	DungeonResultCode m_dungeonResult = DungeonResultCode::None;
+	int m_dungeonResultDeaths = 0;
+	int m_dungeonResultLimit = 3;
+	float m_dungeonResultFlash = 0.0f;
 
 	// [party] open-party list (from STC_PartyList), shown in the "join party" window.
 	struct PartyListState {
@@ -386,6 +405,7 @@ public:
 
 	vector<Material*> MaterialTable;
 	int GlobalMaterialCount = 0;
+	bool GlobalMaterialDescriptorsInitialized = false;
 
 	vector<Mesh*> MeshTable;
 	int GlobalMeshCount = 0;
@@ -599,6 +619,7 @@ public:
 	void SpawnFloatingDamageText(vec4 worldPosition, float damage);
 	void RenderGameplayStatusHUD();
 	void RenderDungeonPartyHUD();
+	void RenderDungeonDeathHUD();
 	void RenderDamageFeedbackHUD();
 	void RenderBossPrototypeHUD();
 	void RenderBossPrototypeCoreHealthPlates();

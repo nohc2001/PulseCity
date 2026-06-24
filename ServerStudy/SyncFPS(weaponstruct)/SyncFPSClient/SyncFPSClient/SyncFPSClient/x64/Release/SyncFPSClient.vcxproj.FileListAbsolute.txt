@@ -2,3 +2,7 @@ C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\Sync
 C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxcompiler.pdb
 C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxil.dll
 C:\Users\dong0\Documents\GitHub\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxil.pdb
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxcompiler.dll
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxcompiler.pdb
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxil.dll
+C:\Users\진성준\Desktop\school\4-1\Pulse2\PulseCity\ServerStudy\SyncFPS(weaponstruct)\SyncFPSClient\SyncFPSClient\x64\Release\dxil.pdb

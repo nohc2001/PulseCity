@@ -3942,6 +3942,7 @@ void Player::TakeDamage(float damage)
 		// Dungeon respawning stays floor-local. Open-world deaths all go to the single configured
 		// main-map point, including a cross-server transfer when that point belongs to another zone.
 		if (World::IsDungeonZone(zoneId)) {
+			gameworld.RegisterDungeonDeath(clientIndex);
 			Respawn();
 		}
 		else {
@@ -4278,10 +4279,13 @@ void Monster::Update(float deltaTime)
 	}
 
 	if (isDead) {
-		respawntimer += deltaTime;
-		if (respawntimer > 1.0f) {
-			Respawn();
-			respawntimer = 0;
+		// [dungeon] dungeon monsters stay dead (no respawn). Open-world monsters respawn after 1s.
+		if (!World::IsDungeonZone(zoneId)) {
+			respawntimer += deltaTime;
+			if (respawntimer > 1.0f) {
+				Respawn();
+				respawntimer = 0;
+			}
 		}
 	}
 	else {
@@ -4767,6 +4771,9 @@ bool Monster::TryChaseGhost(float deltaTime, vec4 monsterPos)
 
 void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 {
+	if (shooter == nullptr) return;
+	if (dynamic_cast<Monster*>(shooter) != nullptr) return;
+
 	Zone* zone = gameworld.GetZone(zoneId);
 	bool isBossPrototype = zone != nullptr && zone->BossPrototypeEnabled && zone->BossPrototypeIndex == zone->currentIndex;
 	
@@ -4793,6 +4800,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 	if (HP <= 0 && isDead == false) {
 		isDead = true;
 		zone->Sending_ChangeGameObjectMember<bool>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &isDead);
+		if (isBossPrototype) gameworld.CompleteDungeonForZone(zoneId);
 
 		vec4 prevpos = worldMat.pos;
 
@@ -4830,6 +4838,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 void Monster::ApplyDamage(GameObject* source, float damage)
 {
 	if (isDead || damage <= 0.0f) return;
+	if (source != nullptr && dynamic_cast<Monster*>(source) != nullptr) return;
 
 	Zone* zone = gameworld.GetZone(zoneId);
 	if (zone == nullptr) return;
@@ -4852,6 +4861,7 @@ void Monster::ApplyDamage(GameObject* source, float damage)
 	if (HP <= 0 && isDead == false) {
 		isDead = true;
 		zone->Sending_ChangeGameObjectMember<bool>(zone->CommonSDS, zone->currentIndex, this, GameObjectType::_Monster, &isDead);
+		if (isBossPrototype) gameworld.CompleteDungeonForZone(zoneId);
 
 		vec4 prevpos = worldMat.pos;
 		if (source != nullptr) {
@@ -5850,6 +5860,10 @@ void World::Update() {
 		if (parties[p].active && !parties[p].started) BroadcastPartyRoom(p);
 	}
 
+	// Resolve queued dungeon results only after every owned zone finished its update. Moving the
+	// whole party from inside a raycast/death callback would invalidate objects still being iterated.
+	ProcessDungeonExits();
+
 	// [party] dungeon server: free + reset any instance whose floors have emptied out.
 	DungeonUpdateInstances();
 
@@ -6052,15 +6066,18 @@ void World::Sending_PartyList(SendDataSaver& sds) {
 // STC_DungeonQueueUpdate the client already renders. On servers that don't own dungeon zones this finds
 // no in-dungeon players and is a no-op. (Assumes one party per dungeon instance; caps at DungeonPartyMax.)
 void World::BroadcastDungeonParty() {
-	// Build a roster per exact dungeon floor. A reconnecting client can briefly remain on the previous
-	// floor; collecting the whole dungeon range made that stale connection appear as a duplicate member.
+	// Build one roster across all three floors of the same instance. partyId and the live clientIndex
+	// check prevent a stale reconnect from being counted as another member.
 	for (int recipient = 0; recipient < clients.size; ++recipient) {
 		if (clients.isnull(recipient)) continue;
 		ClientData& target = clients[recipient];
 		if (target.isServerPeer || target.socket == INVALID_SOCKET || target.pObjData == nullptr) continue;
 		const int targetZone = target.zoneId;
-		// per-exact-floor roster works for every instance, since each floor zone id is unique per instance.
 		if (!IsDungeonZone(targetZone)) continue;
+		const int instanceIndex = DungeonInstanceIndexOf(targetZone);
+		if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) continue;
+		DungeonInstanceSlot& instance = dungeonInstances[instanceIndex];
+		if (!instance.busy || target.pObjData->partyId != instance.partyId) continue;
 
 		int members[DungeonPartyMax] = { -1, -1, -1 };
 		int n = 0;
@@ -6068,11 +6085,13 @@ void World::BroadcastDungeonParty() {
 			if (clients.isnull(ci)) continue;
 			ClientData& candidate = clients[ci];
 			if (candidate.isServerPeer || candidate.socket == INVALID_SOCKET || candidate.pObjData == nullptr) continue;
-			if (candidate.zoneId != targetZone) continue;
+			if (!IsDungeonZone(candidate.zoneId) || DungeonInstanceIndexOf(candidate.zoneId) != instanceIndex) continue;
+			if (candidate.pObjData->partyId != instance.partyId) continue;
 			if (candidate.pObjData->clientIndex != ci) continue;
 			members[n++] = ci;
 		}
-		if (n > 0) Sending_DungeonQueueUpdate(target.PersonalSDS, members, n);
+		if (n > 0) Sending_DungeonQueueUpdate(target.PersonalSDS, members, n, -1,
+			instance.partyId, instance.number, instance.deathCount, instance.deathLimit);
 	}
 }
 
@@ -6110,6 +6129,35 @@ void World::PartyLeaderStart(int clientIndex) {
 	for (int i = 0; i < n; ++i) {
 		int ci = members[i];
 		if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
+		Player* member = clients[ci].pObjData;
+		Zone* returnZone = GetClientZone(ci);
+		if (member != nullptr && returnZone != nullptr) {
+			member->dungeonReturnZoneId = clients[ci].zoneId;
+			member->dungeonReturnPosition = member->worldMat.pos;
+			Portal* nearestPortal = nullptr;
+			float nearestDistance2 = FLT_MAX;
+			for (Portal* portal : returnZone->portals) {
+				if (portal == nullptr || portal->dstzoneId != DungeonZoneId) continue;
+				vec4 delta = portal->worldMat.pos - member->worldMat.pos;
+				float distance2 = delta.x * delta.x + delta.z * delta.z;
+				if (distance2 < nearestDistance2) {
+					nearestDistance2 = distance2;
+					nearestPortal = portal;
+				}
+			}
+			if (nearestPortal != nullptr) {
+				vec4 center(
+					0.5f * (returnZone->BasicAABB_onlyXZ.x + returnZone->BasicAABB_onlyXZ.z),
+					nearestPortal->worldMat.pos.y,
+					0.5f * (returnZone->BasicAABB_onlyXZ.y + returnZone->BasicAABB_onlyXZ.w), 1.0f);
+				vec4 away = center - nearestPortal->worldMat.pos;
+				away.y = 0.0f;
+				if (away.fast_square_of_len3 > 0.0001f) away.len3 = 1.0f;
+				else away = vec4(-1, 0, 0, 0);
+				member->dungeonReturnPosition = nearestPortal->worldMat.pos + away * (nearestPortal->radius + 2.0f);
+				member->dungeonReturnPosition.w = 1.0f;
+			}
+		}
 		Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0, -1, -1);  // close the lobby party UI
 		MovePlayerToZone(ci, DungeonZoneId, spawnPos, partyId, clients[ci].zoneId);
 	}
@@ -6137,6 +6185,11 @@ int World::DungeonAllocInstanceForParty(int partyId, int number) {
 		dungeonInstances[i].busy = true;
 		dungeonInstances[i].partyId = partyId;
 		dungeonInstances[i].number = number;
+		dungeonInstances[i].deathCount = 0;
+		dungeonInstances[i].deathLimit = 3;
+		dungeonInstances[i].result = DungeonResultCode::None;
+		dungeonInstances[i].exitPending = false;
+		dungeonInstances[i].exitRetryTimer = 0.0f;
 		cout << "[Dungeon] instance " << i << " (zones " << DungeonInstanceBase(i) << ".."
 			<< (DungeonInstanceBase(i) + DungeonFloorCount - 1) << ") -> party id=" << partyId << endl;
 		return i;
@@ -6165,9 +6218,7 @@ void World::DungeonUpdateInstances() {
 		cout << "[Dungeon] instance " << i << " emptied -> reset + free (party id was "
 			<< dungeonInstances[i].partyId << ")" << endl;
 		ResetDungeonInstance(i);
-		dungeonInstances[i].busy = false;
-		dungeonInstances[i].partyId = -1;
-		dungeonInstances[i].number = 0;
+		dungeonInstances[i] = DungeonInstanceSlot();
 	}
 }
 
@@ -6191,8 +6242,23 @@ void World::ResetDungeonInstance(int instanceIndex) {
 			mon->HP = mon->MaxHP;
 			mon->isDead = false;
 			mon->respawntimer = 0.0f;
-			z->Sending_ChangeGameObjectMember<float>(z->CommonSDS, z->currentIndex, mon, GameObjectType::_Monster, &mon->HP);
-			z->Sending_ChangeGameObjectMember<bool>(z->CommonSDS, z->currentIndex, mon, GameObjectType::_Monster, &mon->isDead);
+			z->Sending_ChangeGameObjectMember<float>(z->CommonSDS, oi, mon, GameObjectType::_Monster, &mon->HP);
+			z->Sending_ChangeGameObjectMember<bool>(z->CommonSDS, oi, mon, GameObjectType::_Monster, &mon->isDead);
+		}
+
+		if (z->BossPrototypeEnabled) {
+			z->BossPrototypeShieldActive = true;
+			z->BossPrototypePhaseState = Zone::BossPrototypePhase::FindBoss;
+			z->BossPrototypePhaseTime = 0.0f;
+			z->BossPrototypePatternCooldown = 0.0f;
+			z->BossPrototypeShieldDownTime = 0.0f;
+			z->BossPrototypeGroggyTime = 0.0f;
+			z->BossPrototypeWarnings.clear();
+			for (Zone::BossPrototypeCore& core : z->BossPrototypeCores) {
+				core.HP = core.MaxHP;
+				core.Active = true;
+			}
+			z->Sending_BossState(z->CommonSDS);
 		}
 
 		// clear any loot left on the floor.
@@ -6926,11 +6992,23 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	memcpy(p->SkillCooldown, data.SkillCooldown, sizeof(p->SkillCooldown));
 	memcpy(p->SkillCooldownFlow, data.SkillCooldownFlow, sizeof(p->SkillCooldownFlow));
 	p->m_currentWeaponType = data.m_currentWeaponType;
+	p->m_weaponHolstered = data.m_weaponHolstered;
+	p->ReloadRemain = data.ReloadRemain;
+	p->m_sniperDmrMode = data.m_sniperDmrMode;
+	p->m_bomberHealAmmoMode = data.m_bomberHealAmmoMode;
 	
 	p->weapon[0] = data.weapon[0];
 	p->weapon[1] = data.weapon[1];
 	p->weapon[2] = data.weapon[2];
-	p->SelectedWeapon = data.SelectedWeapone;
+	p->SelectedWeapon = (data.SelectedWeapone >= 0 && data.SelectedWeapone < 3) ? data.SelectedWeapone : 0;
+	if (data.m_currentWeaponType < 0 || data.m_currentWeaponType >= (int)WeaponType::Max) {
+		p->m_currentWeaponType = (int)p->weapon[p->SelectedWeapon].m_info.type;
+	}
+	p->Gold = data.Gold;
+	p->Exp = data.Exp;
+	p->Level = data.Level;
+	p->dungeonReturnZoneId = data.dungeonReturnZoneId;
+	p->dungeonReturnPosition = data.dungeonReturnPosition;
 
 	p->m_yaw = data.yaw;
 	p->m_pitch = data.pitch;
@@ -6942,7 +7020,9 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	clients[clientIndex].zoneId = data.dstZoneId;
 	// update_Map = dungeonZoneCorrected: only when we placed them in an instance other than the entry zone
 	// must the client be told its real zone (SyncPlayerMoveZone) so its net-index binding matches the server.
-	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, dungeonZoneCorrected, false);
+	// The client deletes every dynamic object during a server transfer, so the destination must
+	// resend monsters and NPCs instead of assuming the client retained them.
+	int objindex = gameworld.ZoneTable[data.dstZoneId]->AddPlayer(clientIndex, p, data.spawnPos, dungeonZoneCorrected, true);
 	clients[clientIndex].objindex = objindex;
 
 	// [party] every dungeon instance was busy: tell the player ("던전이 가득 찼습니다") and bounce them back
@@ -6951,8 +7031,23 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 		cout << "[Dungeon] all instances busy -> reject party id=" << data.partyId
 			<< " client=" << clientIndex << " (bounce to zone " << data.originZoneId << ")" << endl;
 		Sending_DungeonReject(clients[clientIndex].PersonalSDS, 0);
-		int back = (data.originZoneId >= 0 && data.originZoneId < (int)ZoneTable.size()) ? data.originZoneId : data.dstZoneId;
-		MovePlayerToZone(clientIndex, back, data.spawnPos);
+		int back = data.dungeonReturnZoneId;
+		vec4 backPosition = data.dungeonReturnPosition;
+		bool validBack = back >= 0 && back < (int)ZoneTable.size() && !IsDungeonZone(back) && ZoneTable[back] != nullptr;
+		if (validBack) {
+			const vec4& bounds = ZoneTable[back]->BasicAABB_onlyXZ;
+			validBack = backPosition.x >= bounds.x && backPosition.x <= bounds.z &&
+				backPosition.z >= bounds.y && backPosition.z <= bounds.w;
+		}
+		if (!validBack) {
+			back = (data.originZoneId >= 0 && data.originZoneId < (int)ZoneTable.size() &&
+				!IsDungeonZone(data.originZoneId)) ? data.originZoneId : ResolveMainMapRespawnZone(MainMapRespawnPosition);
+			backPosition = MainMapRespawnPosition;
+		}
+		// Never reuse data.spawnPos here: it is the dungeon floor spawn, not an open-world coordinate.
+		// This party never acquired an instance, so do not leave an orphaned party id on the main server.
+		p->partyId = -1;
+		if (back >= 0) MovePlayerToZone(clientIndex, back, backPosition);
 	}
 	return true;
 }
@@ -7167,6 +7262,109 @@ void World::RespawnPlayerAtMainMapPoint(int clientIndex) {
 	}
 }
 
+void World::RegisterDungeonDeath(int clientIndex) {
+	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return;
+	ClientData& client = clients[clientIndex];
+	if (client.pObjData == nullptr || !IsDungeonZone(client.zoneId)) return;
+	const int instanceIndex = DungeonInstanceIndexOf(client.zoneId);
+	if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) return;
+	DungeonInstanceSlot& instance = dungeonInstances[instanceIndex];
+	if (!instance.busy || instance.result != DungeonResultCode::None) return;
+	if (client.pObjData->partyId != instance.partyId) return;
+
+	instance.deathCount = min(instance.deathCount + 1, instance.deathLimit);
+	cout << "[Dungeon] instance " << instanceIndex << " deaths=" << instance.deathCount
+		<< "/" << instance.deathLimit << endl;
+	if (instance.deathCount >= instance.deathLimit) {
+		BeginDungeonExit(instanceIndex, DungeonResultCode::FailedDeaths);
+	}
+}
+
+void World::RequestDungeonAbort(int clientIndex) {
+	if (clientIndex < 0 || clientIndex >= clients.size || clients.isnull(clientIndex)) return;
+	ClientData& client = clients[clientIndex];
+	if (client.pObjData == nullptr || !IsDungeonZone(client.zoneId)) return;
+	const int instanceIndex = DungeonInstanceIndexOf(client.zoneId);
+	if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) return;
+	DungeonInstanceSlot& instance = dungeonInstances[instanceIndex];
+	if (!instance.busy || client.pObjData->partyId != instance.partyId) return;
+	BeginDungeonExit(instanceIndex, DungeonResultCode::Aborted);
+}
+
+void World::CompleteDungeonForZone(int zoneId) {
+	if (!IsDungeonZone(zoneId) || DungeonFloorOf(zoneId) != DungeonFloorCount - 1) return;
+	const int instanceIndex = DungeonInstanceIndexOf(zoneId);
+	if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) return;
+	BeginDungeonExit(instanceIndex, DungeonResultCode::Success);
+}
+
+void World::BeginDungeonExit(int instanceIndex, DungeonResultCode result) {
+	if (instanceIndex < 0 || instanceIndex >= DungeonInstanceCount) return;
+	DungeonInstanceSlot& instance = dungeonInstances[instanceIndex];
+	if (!instance.busy || instance.result != DungeonResultCode::None) return;
+	instance.result = result;
+	instance.exitPending = true;
+	instance.exitRetryTimer = 0.0f;
+	cout << "[Dungeon] instance " << instanceIndex << " result=" << (int)result
+		<< " deaths=" << instance.deathCount << endl;
+}
+
+void World::ProcessDungeonExits() {
+	if (!IsDungeonZone(ownedZoneId)) return;
+	for (int instanceIndex = 0; instanceIndex < DungeonInstanceCount; ++instanceIndex) {
+		DungeonInstanceSlot& instance = dungeonInstances[instanceIndex];
+		if (!instance.busy || !instance.exitPending || instance.result == DungeonResultCode::None) continue;
+		if (instance.exitRetryTimer > 0.0f) {
+			instance.exitRetryTimer -= DeltaTime;
+			continue;
+		}
+		instance.exitRetryTimer = 0.5f;
+
+		int members[DungeonPartyMax] = { -1, -1, -1 };
+		int memberCount = 0;
+		for (int ci = 0; ci < clients.size && memberCount < DungeonPartyMax; ++ci) {
+			if (clients.isnull(ci)) continue;
+			ClientData& candidate = clients[ci];
+			if (candidate.isServerPeer || candidate.socket == INVALID_SOCKET || candidate.pObjData == nullptr) continue;
+			if (!IsDungeonZone(candidate.zoneId) || DungeonInstanceIndexOf(candidate.zoneId) != instanceIndex) continue;
+			if (candidate.pObjData->partyId != instance.partyId) continue;
+			members[memberCount++] = ci;
+		}
+
+		for (int i = 0; i < memberCount; ++i) {
+			const int ci = members[i];
+			if (ci < 0 || ci >= clients.size || clients.isnull(ci)) continue;
+			Player* player = clients[ci].pObjData;
+			if (player == nullptr) continue;
+
+			int returnZoneId = player->dungeonReturnZoneId;
+			vec4 returnPosition = player->dungeonReturnPosition;
+			bool validReturn = returnZoneId >= 0 && returnZoneId < (int)ZoneTable.size() &&
+				!IsDungeonZone(returnZoneId) && ZoneTable[returnZoneId] != nullptr;
+			if (validReturn) {
+				const vec4& bounds = ZoneTable[returnZoneId]->BasicAABB_onlyXZ;
+				validReturn = returnPosition.x >= bounds.x && returnPosition.x <= bounds.z &&
+					returnPosition.z >= bounds.y && returnPosition.z <= bounds.w;
+			}
+			if (!validReturn) {
+				returnPosition = MainMapRespawnPosition;
+				returnZoneId = ResolveMainMapRespawnZone(returnPosition);
+			}
+			if (returnZoneId < 0) continue;
+
+			Sending_DungeonResult(clients[ci].PersonalSDS, instance.result,
+				instance.deathCount, instance.deathLimit);
+			Sending_DungeonQueueUpdate(clients[ci].PersonalSDS, nullptr, 0, -1, -1);
+
+			const int savedPartyId = player->partyId;
+			player->partyId = -1;
+			if (!MovePlayerToZone(ci, returnZoneId, returnPosition)) {
+				player->partyId = savedPartyId;
+			}
+		}
+	}
+}
+
 bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int partyId, int originZoneId) {
 	if (clientIndex < 0 || clientIndex >= clients.size) return false;
 	if (clients.isnull(clientIndex)) return false;
@@ -7214,6 +7412,9 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		memcpy(data.SkillCooldownFlow, player->SkillCooldownFlow, sizeof(data.SkillCooldownFlow));
 		data.m_currentWeaponType = player->m_currentWeaponType;
 		data.m_weaponHolstered = player->m_weaponHolstered;
+		data.ReloadRemain = player->ReloadRemain;
+		data.m_sniperDmrMode = player->m_sniperDmrMode;
+		data.m_bomberHealAmmoMode = player->m_bomberHealAmmoMode;
 		for (int i = 0; i < 36; ++i) {
 			data.Inventory[i] = player->Inventory[i];
 		}
@@ -7221,6 +7422,11 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		data.weapon[1] = player->weapon[1];
 		data.weapon[2] = player->weapon[2];
 		data.SelectedWeapone = player->SelectedWeapon;
+		data.Gold = player->Gold;
+		data.Exp = player->Exp;
+		data.Level = player->Level;
+		data.dungeonReturnZoneId = player->dungeonReturnZoneId;
+		data.dungeonReturnPosition = player->dungeonReturnPosition;
 
 		if (SendPlayerTransferToServer(data) == false) {
 			cout << "[ZoneMove] remote transfer send failed. dstZone=" << dstZoneId << endl;
@@ -7238,7 +7444,9 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 	gameworld.ZoneTable[srcZoneId]->RemovePlayer(clientIndex);
 	// [PERF/FIX ②] 심리스 로컬 이동: fullWorldSnapshot=false 로 동적객체 버스트 생략.
 	// 클라는 인접 존 객체를 이미 보유 중이며, 가시성 기반 cleanup 이 그걸 유지한다.
-	gameworld.ZoneTable[dstZoneId]->AddPlayer(clientIndex, player, spawnPos, true, false);
+	// SyncPlayerMoveZone uses the client's full reload path, so the destination snapshot must include
+	// monsters/NPCs too; otherwise the next floor can remain visually empty after old objects are cleared.
+	gameworld.ZoneTable[dstZoneId]->AddPlayer(clientIndex, player, spawnPos, true, true);
 	return true;
 }
 
@@ -7288,4 +7496,3 @@ void Player::EraseQuest(int index)
 	delete q;
 	QuestPrograss.erase(QuestPrograss.begin() + index);
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
