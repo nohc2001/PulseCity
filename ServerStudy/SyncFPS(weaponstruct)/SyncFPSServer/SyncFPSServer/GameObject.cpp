@@ -2144,6 +2144,13 @@ Player::Player() {
 	MaxHeatGauge = 200;
 	ShieldDurability = 0;
 	MaxShieldDurability = 100;
+	Level = 0;
+	Exp = 0;
+	StatPoint = 0;
+	StatHP = 0;
+	StatDefense = 0;
+	StatMoveSpeed = 0;
+	StatAttack = 0;
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
 		SkillCooldownFlow[i] = 0.0f;
 	}
@@ -2162,6 +2169,31 @@ Player::Player() {
 	m_pitch = 0;
 }
 
+void Player::RecalculateStatsFromJob(bool preserveHpRate)
+{
+	const JobData& jobData = GetJobData((PlayerJob)m_currentJob);
+	float previousMaxHP = max(MaxHP, 1.0f);
+	float hpRate = preserveHpRate ? max(0.0f, min(1.0f, HP / previousMaxHP)) : 1.0f;
+	float tempBonus = m_tempMaxHpBonus;
+
+	MaxHP = jobData.MaxHP * (1.0f + StatHP * StatHpPercentPerPoint) + tempBonus;
+	Attack = jobData.Attack * (1.0f + StatAttack * StatAttackPercentPerPoint);
+	Defense = jobData.Defense + StatDefense * StatDefensePerPoint;
+	if (MaxHP < 1.0f) MaxHP = 1.0f;
+	HP = preserveHpRate ? MaxHP * hpRate : MaxHP;
+	if (HP > MaxHP) HP = MaxHP;
+}
+
+float Player::GetAttackDamageMultiplier() const
+{
+	return 1.0f + StatAttack * StatAttackPercentPerPoint;
+}
+
+float Player::GetMoveSpeedMultiplier() const
+{
+	return 1.0f + StatMoveSpeed * StatMoveSpeedPercentPerPoint;
+}
+
 void Player::ApplyJob(PlayerJob job)
 {
 	const JobData& jobData = GetJobData(job);
@@ -2173,10 +2205,6 @@ void Player::ApplyJob(PlayerJob job)
 	MaxHP -= m_tempMaxHpBonus;
 	if (MaxHP <= 0.0f) MaxHP = 100.0f;
 	if (HP > MaxHP) HP = MaxHP;
-
-	MaxHP = jobData.MaxHP;
-	Attack = jobData.Attack;
-	Defense = jobData.Defense;
 
 	m_tempMaxHpBonus = 0.0f;
 	m_tempMaxHpTimer = 0.0f;
@@ -2261,6 +2289,7 @@ void Player::ApplyJob(PlayerJob job)
 	m_frostPassiveUsed = false;
 	MaxShieldDurability = ((PlayerJob)m_currentJob == PlayerJob::Aegis) ? 150.0f : 0.0f;
 	ShieldDurability = MaxShieldDurability;
+	RecalculateStatsFromJob(true);
 
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
 		SkillCooldown[i] = jobData.skills[i].cooldown;
@@ -2322,6 +2351,7 @@ void Player::SyncJobState(Zone* zones)
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldown);
 	zones->Sending_ChangeGameObjectMember<decltype(SkillCooldownFlow)>(ownerSDS,
 		gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, SkillCooldownFlow);
+	SyncStatState(zones);
 }
 
 void Player::UpdateSkillCooldowns(float deltaTime, Zone* zones)
@@ -3488,6 +3518,7 @@ void Player::Update(float deltaTime)
 
 	XMFLOAT3 xmf3Shift = XMFLOAT3(0, 0, 0);
 	float speed = 6.0f;
+	speed *= GetMoveSpeedMultiplier();
 	if (m_rifleStimTimer > 0.0f) speed *= 1.35f;
 	if (m_aegisRepairTimer > 0.0f) speed *= 1.30f;
 	if (m_dualAwakenTimer > 0.0f) speed *= 1.40f;
@@ -3952,7 +3983,32 @@ void Player::TakeDamage(float damage)
 
 void Player::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 {
+	ApplyDamage(shooter, damage);
+}
+
+void Player::ApplyDamage(GameObject* source, float damage)
+{
+	if (damage <= 0.0f) return;
+	bool wasAlive = HP > 0.0f && tag[GameObjectTag::Tag_Enable];
 	TakeDamage(damage);
+	if (!wasAlive || HP > 0.0f || source == nullptr) return;
+
+	void* vptr = *(void**)source;
+	if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
+		Player* killer = (Player*)source;
+		if (killer != this) {
+			killer->KillCount += 1;
+			killer->GrantLevel(1);
+			if (killer->zone != nullptr) {
+				killer->zone->Sending_ChangeGameObjectMember<int>(
+					gameworld.clients[killer->clientIndex].PersonalSDS,
+					gameworld.clients[killer->clientIndex].objindex,
+					killer,
+					GameObjectType::_Player,
+					&killer->KillCount);
+			}
+		}
+	}
 }
 
 bool Player::LootItem(ItemStack is)
@@ -4004,17 +4060,153 @@ void Player::AddExp(int delta)
 	if (IndexLevel > 99) IndexLevel = 99;
 	if (IndexLevel < 0) IndexLevel = 0;
 
-	bool isLevelChanged = false;
-	while (ExpLimit[IndexLevel] < Exp) {
+	int levelUpCount = 0;
+	while (IndexLevel < 99 && ExpLimit[IndexLevel] <= Exp) {
 		Exp -= ExpLimit[IndexLevel];
 		Level += 1;
-		isLevelChanged = true;
+		StatPoint += 1;
+		levelUpCount += 1;
+		IndexLevel = Level;
+		if (IndexLevel > 99) IndexLevel = 99;
 	}
 
-	if (isLevelChanged) {
+	if (levelUpCount > 0) {
 		zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Level);
+		zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &StatPoint);
 	}
 	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Exp);
+}
+
+void Player::GrantLevel(int count)
+{
+	if (count <= 0) return;
+	Level += count;
+	if (Level > 99) Level = 99;
+	Exp = 0;
+	StatPoint += count;
+	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Level);
+	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Exp);
+	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &StatPoint);
+}
+
+bool Player::TrySpendStatPoint(PlayerStatType stat)
+{
+	if (StatPoint <= 0 || stat < PlayerStatType::HP || stat >= PlayerStatType::Max) return false;
+
+	switch (stat) {
+	case PlayerStatType::HP: StatHP += 1; break;
+	case PlayerStatType::Defense: StatDefense += 1; break;
+	case PlayerStatType::MoveSpeed: StatMoveSpeed += 1; break;
+	case PlayerStatType::Attack: StatAttack += 1; break;
+	default: return false;
+	}
+
+	StatPoint -= 1;
+	RecalculateStatsFromJob(true);
+	SyncStatState(zone);
+	return true;
+}
+
+void Player::SyncStatState(Zone* zones)
+{
+	if (zones == nullptr || clientIndex < 0 || clientIndex >= gameworld.clients.size || gameworld.clients.isnull(clientIndex)) return;
+	SendDataSaver& ownerSDS = gameworld.clients[clientIndex].PersonalSDS;
+	int objindex = gameworld.clients[clientIndex].objindex;
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS, objindex, this, GameObjectType::_Player, &HP);
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS, objindex, this, GameObjectType::_Player, &MaxHP);
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS, objindex, this, GameObjectType::_Player, &Attack);
+	zones->Sending_ChangeGameObjectMember<float>(ownerSDS, objindex, this, GameObjectType::_Player, &Defense);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatPoint);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatHP);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatDefense);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatMoveSpeed);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatAttack);
+}
+
+namespace {
+	constexpr unsigned int PlayerSaveMagic = 0x50435346; // PCSF
+	constexpr unsigned int PlayerSaveVersion = 1;
+
+#pragma pack(push, 1)
+	struct PlayerSaveData {
+		unsigned int magic = PlayerSaveMagic;
+		unsigned int version = PlayerSaveVersion;
+		int Gold = 0;
+		int Exp = 0;
+		int Level = 0;
+		int StatPoint = 0;
+		int StatHP = 0;
+		int StatDefense = 0;
+		int StatMoveSpeed = 0;
+		int StatAttack = 0;
+		int KillCount = 0;
+		int DeathCount = 0;
+		int CurrentJob = (int)PlayerJob::Healer;
+		ItemStack Inventory[Player::maxItem] = {};
+	};
+#pragma pack(pop)
+
+	string MakePlayerSavePath(const char* key)
+	{
+		string safe = (key != nullptr && key[0] != '\0') ? key : "local";
+		for (char& c : safe) {
+			if (!isalnum((unsigned char)c)) c = '_';
+		}
+		return "PlayerDB/" + safe + ".bin";
+	}
+}
+
+bool Player::LoadPersistentData(const char* key)
+{
+	ifstream ifs(MakePlayerSavePath(key), ios::binary);
+	if (!ifs.is_open()) return false;
+
+	PlayerSaveData data = {};
+	ifs.read((char*)&data, sizeof(data));
+	if (!ifs || data.magic != PlayerSaveMagic || data.version != PlayerSaveVersion) return false;
+
+	Gold = data.Gold;
+	Exp = max(0, data.Exp);
+	Level = max(0, min(99, data.Level));
+	StatPoint = max(0, data.StatPoint);
+	StatHP = max(0, data.StatHP);
+	StatDefense = max(0, data.StatDefense);
+	StatMoveSpeed = max(0, data.StatMoveSpeed);
+	StatAttack = max(0, data.StatAttack);
+	KillCount = max(0, data.KillCount);
+	DeathCount = max(0, data.DeathCount);
+	PlayerJob savedJob = (data.CurrentJob >= 0 && data.CurrentJob < (int)PlayerJob::Max) ?
+		(PlayerJob)data.CurrentJob : PlayerJob::Healer;
+	ApplyJob(savedJob);
+	for (int i = 0; i < maxItem; ++i) {
+		Inventory[i] = data.Inventory[i];
+	}
+	RecalculateStatsFromJob(false);
+	return true;
+}
+
+void Player::SavePersistentData(const char* key) const
+{
+	CreateDirectoryA("PlayerDB", nullptr);
+	ofstream ofs(MakePlayerSavePath(key), ios::binary | ios::trunc);
+	if (!ofs.is_open()) return;
+
+	PlayerSaveData data = {};
+	data.Gold = Gold;
+	data.Exp = Exp;
+	data.Level = Level;
+	data.StatPoint = StatPoint;
+	data.StatHP = StatHP;
+	data.StatDefense = StatDefense;
+	data.StatMoveSpeed = StatMoveSpeed;
+	data.StatAttack = StatAttack;
+	data.KillCount = KillCount;
+	data.DeathCount = DeathCount;
+	data.CurrentJob = m_currentJob;
+	for (int i = 0; i < maxItem; ++i) {
+		data.Inventory[i] = Inventory[i];
+	}
+	ofs.write((const char*)&data, sizeof(data));
 }
 
 void Player::RewardQuest(Quest* completeQuest)
@@ -4032,8 +4224,7 @@ void Player::RewardQuest(Quest* completeQuest)
 			this->LootItem(is);
 		}
 		else if (reward.type == QuestRewardType::QRT_Exp) {
-			// 우리 게임에 경험치가 있었나?
-			this->AddGold(reward.count);
+			this->AddExp(reward.count);
 		}
 	}
 }
@@ -4077,6 +4268,8 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 
 	static_data.HP = HP;
 	static_data.MaxHP = MaxHP;
+	static_data.Attack = Attack;
+	static_data.Defense = Defense;
 	static_data.bullets = bullets;
 	static_data.KillCount = KillCount;
 	static_data.DeathCount = DeathCount;
@@ -4103,6 +4296,11 @@ void Player::SendGameObject(int objindex, SendDataSaver& sds) {
 	static_data.Gold = Gold;
 	static_data.Exp = Exp;
 	static_data.Level = Level;
+	static_data.StatPoint = StatPoint;
+	static_data.StatHP = StatHP;
+	static_data.StatDefense = StatDefense;
+	static_data.StatMoveSpeed = StatMoveSpeed;
+	static_data.StatAttack = StatAttack;
 	offset += sizeof(STC_SyncObjData);
 
 	//dynamic push
@@ -4814,6 +5012,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 		if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 			Player* p = (Player*)shooter;
 			p->KillCount += 1;
+			p->AddExp(50 + 10 * (int)m_monsterType);
 			zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
 
 			// monster kill quest prograss update
@@ -4873,6 +5072,7 @@ void Monster::ApplyDamage(GameObject* source, float damage)
 			if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 				Player* p = (Player*)source;
 				p->KillCount += 1;
+				p->AddExp(50 + 10 * (int)m_monsterType);
 				zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
 			}
 		}
@@ -6915,6 +7115,7 @@ void World::AcceptClientHello(int clientIndex) {
 		p->Inventory[i].id = 0;
 		p->Inventory[i].ItemCount = 0;
 	}
+	p->LoadPersistentData(clients[clientIndex].addr.IPString);
 
 	clients[clientIndex].pObjData = p;
 	clients[clientIndex].zoneId = StartzoneId;
@@ -7022,6 +7223,12 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 	p->Gold = data.Gold;
 	p->Exp = data.Exp;
 	p->Level = data.Level;
+	p->StatPoint = data.StatPoint;
+	p->StatHP = data.StatHP;
+	p->StatDefense = data.StatDefense;
+	p->StatMoveSpeed = data.StatMoveSpeed;
+	p->StatAttack = data.StatAttack;
+	p->RecalculateStatsFromJob(true);
 	p->dungeonReturnZoneId = data.dungeonReturnZoneId;
 	p->dungeonReturnPosition = data.dungeonReturnPosition;
 
@@ -7175,6 +7382,7 @@ void ClientData::DisconnectToServer(int index) {
 	}
 
 	if (player != nullptr) {
+		player->SavePersistentData(client.addr.IPString);
 		Zone* zone = gameworld.GetClientZone(index);
 		if (zone != nullptr && gameworld.IsZoneOwned(client.zoneId)) {
 			zone->RemovePlayer(index);
@@ -7440,6 +7648,11 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		data.Gold = player->Gold;
 		data.Exp = player->Exp;
 		data.Level = player->Level;
+		data.StatPoint = player->StatPoint;
+		data.StatHP = player->StatHP;
+		data.StatDefense = player->StatDefense;
+		data.StatMoveSpeed = player->StatMoveSpeed;
+		data.StatAttack = player->StatAttack;
 		data.dungeonReturnZoneId = player->dungeonReturnZoneId;
 		data.dungeonReturnPosition = player->dungeonReturnPosition;
 

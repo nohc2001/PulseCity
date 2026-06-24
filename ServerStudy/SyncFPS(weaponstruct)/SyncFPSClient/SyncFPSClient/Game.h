@@ -618,6 +618,8 @@ public:
 	void NotifyPlayerDamaged(float damage);
 	void SpawnFloatingDamageText(vec4 worldPosition, float damage);
 	void RenderGameplayStatusHUD();
+	void RenderStatWindowHUD();
+	bool HandleStatWindowClick(vec4 cursorPos);
 	void RenderDungeonPartyHUD();
 	void RenderDungeonDeathHUD();
 	void RenderDamageFeedbackHUD();
@@ -633,6 +635,9 @@ public:
 	int AmmoHUDBulletTextureIndex = -1;
 	int AmmoHUDReloadTextureIndex = -1;
 	int AmmoHUDWeaponTextureIndices[(int)WeaponType::Max] = { -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+	int StatIconTextureIndices[4] = { -1, -1, -1, -1 };
+	bool StatWindowOpen = false;
+	vec4 StatButtonRects[4] = {};
 	float UltimateChargePercent = 0.0f;
 	float UltimateChargePassiveFlow = 0.0f;
 	float LastUltimateCooldownFlow = 0.0f;

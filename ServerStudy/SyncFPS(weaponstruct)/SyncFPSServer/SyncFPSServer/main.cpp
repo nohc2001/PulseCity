@@ -464,6 +464,14 @@ READ_START:
 		offset += header.size;
 	}
 	break;
+	case CTS_Protocol::StatUp:
+	{
+		CTS_StatUp_Header& header = *(CTS_StatUp_Header*)currentPivot;
+		p->TrySpendStatPoint(header.stat);
+		currentPivot += header.size;
+		offset += header.size;
+	}
+	break;
 	case CTS_Protocol::ChangeInventoryItemSlot:
 	{
 		CTS_ChangeInventoryItemSlot_Header& header = *(CTS_ChangeInventoryItemSlot_Header*)currentPivot;

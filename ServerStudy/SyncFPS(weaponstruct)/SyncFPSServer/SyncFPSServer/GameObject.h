@@ -1103,9 +1103,20 @@ struct Player : public SkinMeshGameObject {
 	//STC �÷��̾��� ����
 	STCDef(int, Level);
 
+	STCDef(int, StatPoint);
+	STCDef(int, StatHP);
+	STCDef(int, StatDefense);
+	STCDef(int, StatMoveSpeed);
+	STCDef(int, StatAttack);
+
 	static constexpr int ExpLimit[100] = {
 		100, 105, 110, 116, 122, 128, 134, 141, 148, 155, 163, 171, 180, 189, 198, 208, 218, 229, 241, 253, 265, 279, 293, 307, 323, 339, 356, 373, 392, 412, 432, 454, 476, 500, 525, 552, 579, 608, 639, 670, 704, 739, 776, 815, 856, 899, 943, 991, 1040, 1092, 1147, 1204, 1264, 1327, 1394, 1464, 1537, 1614, 1694, 1779, 1868, 1961, 2059, 2162, 2270, 2384, 2503, 2628, 2760, 2898, 3043, 3195, 3355, 3522, 3698, 3883, 4077, 4281, 4495, 4720, 4956, 5204, 5464, 5737, 6024, 6325, 6642, 6974, 7322, 7689, 8073, 8477, 8901, 9346, 9813, 10303, 10819, 11360, 11928, 12524
 	};
+
+	static constexpr float StatHpPercentPerPoint = 0.05f;
+	static constexpr float StatDefensePerPoint = 5.0f;
+	static constexpr float StatMoveSpeedPercentPerPoint = 0.001f;
+	static constexpr float StatAttackPercentPerPoint = 0.05f;
 
 	//STC �÷��̾ Ư�� ����Ʈ�� �ϼ��ߴ��� ��Ÿ���� ��Ʈ�迭 (�ִ� 4096���� ����Ʈ ���밡��.)
 	BitBoolArr<64> CompleteQuestBitArr;
@@ -1206,6 +1217,14 @@ struct Player : public SkinMeshGameObject {
 	bool AddGold(int delta);
 
 	void AddExp(int delta);
+	void GrantLevel(int count = 1);
+	bool TrySpendStatPoint(PlayerStatType stat);
+	void RecalculateStatsFromJob(bool preserveHpRate = true);
+	float GetAttackDamageMultiplier() const;
+	float GetMoveSpeedMultiplier() const;
+	void SyncStatState(Zone* zones);
+	bool LoadPersistentData(const char* key);
+	void SavePersistentData(const char* key) const;
 
 	void RewardQuest(Quest* completeQuest);
 
@@ -1262,6 +1281,11 @@ struct Player : public SkinMeshGameObject {
 		int Gold = 0;
 		int Exp = 0;
 		int Level = 0;
+		int StatPoint = 0;
+		int StatHP = 0;
+		int StatDefense = 0;
+		int StatMoveSpeed = 0;
+		int StatAttack = 0;
 
 		int clientIndex = 0;
 	};

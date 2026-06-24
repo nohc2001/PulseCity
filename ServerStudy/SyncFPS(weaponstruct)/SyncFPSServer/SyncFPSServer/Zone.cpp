@@ -1639,6 +1639,9 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 	int lastCurrentIndex = currentIndex;
 	Player* casterPlayer = dynamic_cast<Player*>(caster);
 	Monster* casterMonster = dynamic_cast<Monster*>(caster);
+	if (casterPlayer != nullptr) {
+		damage *= casterPlayer->GetAttackDamageMultiplier();
+	}
 
     for (int zi = 0; zi < 9; ++zi) {
         /*if (gameworld.IsZoneOwned(zi) == false) continue;
@@ -1678,7 +1681,7 @@ int Zone::ApplySkillDamage(GameObject* caster, SkillEffectType effectType, vec4 
 				}
 			}
 			else {
-				targetPlayer->TakeDamage(damage);
+				targetPlayer->ApplyDamage(caster, damage);
 			}
 			++hitCount;
 		}

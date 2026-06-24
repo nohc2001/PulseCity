@@ -551,6 +551,7 @@ union CTS_Protocol {
 		PartyListRequest = 18,  // ask the server for the current open-party list
 		PartyDisband = 19,      // [party] leader-only: disband the whole party (kick all members)
 		DungeonAbort = 20,
+		StatUp = 21,
 	};
 	short n;
 	char two_byte[2];
@@ -628,6 +629,20 @@ struct CTS_ChangeJob_Header {
 	PlayerJob job = PlayerJob::Healer;
 };
 
+enum class PlayerStatType : int {
+	HP = 0,
+	Defense = 1,
+	MoveSpeed = 2,
+	Attack = 3,
+	Max = 4,
+};
+
+struct CTS_StatUp_Header {
+	unsigned int size = sizeof(CTS_StatUp_Header);
+	CTS_Protocol st = CTS_Protocol::StatUp;
+	PlayerStatType stat = PlayerStatType::HP;
+};
+
 struct CTS_ClientHello_Header {
 	unsigned int size = 6;
 	CTS_Protocol st = CTS_Protocol::ClientHello;
@@ -675,6 +690,11 @@ struct PlayerTransferData {
 	int Gold = 0;
 	int Exp = 0;
 	int Level = 0;
+	int StatPoint = 0;
+	int StatHP = 0;
+	int StatDefense = 0;
+	int StatMoveSpeed = 0;
+	int StatAttack = 0;
 	// [party] which party this player belongs to, and the open-world zone they started from.
 	// The dungeon process uses partyId to group members into the same instance, and originZoneId
 	// to send them back if every instance is busy.

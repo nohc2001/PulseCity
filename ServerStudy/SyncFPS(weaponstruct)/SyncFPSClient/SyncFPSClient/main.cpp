@@ -709,7 +709,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		break;
 	case WM_LBUTTONDOWN:
 		game.LBtnDown = true;
-		game.HandlePartyClick(); // [party] hit-test the lobby party buttons (menu / join list / room)
+		if (game.StatWindowOpen == false) {
+			game.HandlePartyClick(); // [party] hit-test the lobby party buttons (menu / join list / room)
+		}
 		break;
 	case WM_LBUTTONUP:
 		game.LBtnDown = false;
@@ -739,7 +741,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	}
 
 	//Game Mode input Event
-	if (game.mainPageStack.size() == 0 && !g_inJobSelect) {   // [jobselect] don't route input to in-game path during job select
+	if (game.mainPageStack.size() == 0 && !g_inJobSelect && !game.StatWindowOpen) {   // [jobselect] don't route input to in-game path during job select
 		switch (uMsg) {
 			//(14 line) outer code start : microsoft copilot. - FPS Camera Movement
 		case WM_INPUT:
@@ -855,6 +857,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					header.size = sizeof(CTS_DungeonStart_Header);
 					header.st = CTS_Protocol::DungeonStart;
 					client.send_all((char*)&header, sizeof(CTS_DungeonStart_Header), 0);
+				}
+			}
+			break;
+			case 'C':
+			{
+				if (!(lParam & (1 << 30))) {
+					game.StatWindowOpen = !game.StatWindowOpen;
 				}
 			}
 			break;
@@ -1145,9 +1154,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		case WM_KEYDOWN:
 		{
 			switch (wParam) {
+			case 'C':
+			{
+				if (game.StatWindowOpen && !(lParam & (1 << 30))) {
+					game.StatWindowOpen = false;
+				}
+			}
+			break;
 			case VK_ESCAPE:
 			{
-				if (game.mainPageStack.size() >= 1 && game.mainPageStack[0] == game.UIPageTable[0]) {
+				if (game.StatWindowOpen) {
+					game.StatWindowOpen = false;
+				}
+				else if (game.mainPageStack.size() >= 1 && game.mainPageStack[0] == game.UIPageTable[0]) {
 					game.mainPageStack.pop_back();
 				}
 			}
@@ -1158,6 +1177,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		}
 		case WM_KEYUP:
 			GetKeyboardState(game.pKeyBuffer);
+			break;
+		case WM_LBUTTONDOWN:
+			if (game.StatWindowOpen) {
+				game.HandleStatWindowClick(game.CurrentCursorPos);
+			}
 			break;
 		}
 

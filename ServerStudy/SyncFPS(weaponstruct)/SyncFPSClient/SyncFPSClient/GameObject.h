@@ -1270,6 +1270,12 @@ public:
 
 	//STC �÷��̾��� ����
 	STCDef(int, Level);
+
+	STCDef(int, StatPoint);
+	STCDef(int, StatHP);
+	STCDef(int, StatDefense);
+	STCDef(int, StatMoveSpeed);
+	STCDef(int, StatAttack);
 	
 	//ClientOnly ���콺�� �󸶳� ������������ ��Ÿ����.
 	vec4 DeltaMousePos;
@@ -1406,6 +1412,11 @@ public:
 		int Gold = 0;
 		int Exp = 0;
 		int Level = 0;
+		int StatPoint = 0;
+		int StatHP = 0;
+		int StatDefense = 0;
+		int StatMoveSpeed = 0;
+		int StatAttack = 0;
 	};
 #pragma pack(pop)
 

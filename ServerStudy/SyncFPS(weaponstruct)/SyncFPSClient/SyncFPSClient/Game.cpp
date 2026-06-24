@@ -8880,6 +8880,21 @@ static vec4 GetUltimateHUDColor(int job)
 	}
 }
 
+static int GetClientExpLimitForLevel(int level)
+{
+	static constexpr int ExpLimit[100] = {
+		100, 105, 110, 116, 122, 128, 134, 141, 148, 155, 163, 171, 180, 189, 198, 208,
+		218, 229, 241, 253, 265, 279, 293, 307, 323, 339, 356, 373, 392, 412, 432, 454,
+		476, 500, 525, 552, 579, 608, 639, 670, 704, 739, 776, 815, 856, 899, 943, 991,
+		1040, 1092, 1147, 1204, 1264, 1327, 1394, 1464, 1537, 1614, 1694, 1779, 1868,
+		1961, 2059, 2162, 2270, 2384, 2503, 2628, 2760, 2898, 3043, 3195, 3355, 3522,
+		3698, 3883, 4077, 4281, 4495, 4720, 4956, 5204, 5464, 5737, 6024, 6325, 6642,
+		6974, 7322, 7689, 8073, 8477, 8901, 9346, 9813, 10303, 10819, 11360, 11928, 12524
+	};
+	level = max(0, min(99, level));
+	return ExpLimit[level];
+}
+
 void Game::RenderGameplayStatusHUD()
 {
 	if (player == nullptr || UITextureTable.empty()) return;
@@ -8917,6 +8932,18 @@ void Game::RenderGameplayStatusHUD()
 	vec4 labelRt = vec4(panel.x + 18.0f * scale, panel.y + 5.0f * scale, panel.x + 120.0f * scale, panel.y + 30.0f * scale);
 	RenderSDFText(L"HP", 2, labelRt, 18.0f * scale, vec4(1.0f, 0.24f, 0.32f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
 
+	int requiredExp = max(1, GetClientExpLimitForLevel(player->Level));
+	float expRate = min(1.0f, max(0.0f, (float)player->Exp / (float)requiredExp));
+	vec4 expBack = vec4(hpBack.x, hpBack.y - 14.0f * scale, hpBack.z, hpBack.y - 7.0f * scale);
+	vec4 expFill = expBack;
+	expFill.z = expFill.x + (expBack.z - expBack.x) * expRate;
+	UIDraw_SolidRect(expBack, vec4(0.02f, 0.05f, 0.08f, 0.94f), depth - ui_depth_epsilon);
+	UIDraw_SolidRect(expFill, vec4(0.14f, 0.68f, 1.0f, 0.98f), depth - ui_depth_epsilon * 2);
+	wchar_t levelText[32] = {};
+	swprintf_s(levelText, L"LV %d", player->Level);
+	vec4 levelRt = vec4(hpBack.z - 72.0f * scale, panel.y + 5.0f * scale, hpBack.z, panel.y + 30.0f * scale);
+	RenderSDFText(levelText, (int)wcslen(levelText), levelRt, 17.0f * scale, vec4(0.45f, 0.88f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+
 	constexpr int AegisJobIndex = 2;
 	const float gaugeWidth = 176.0f * scale;
 	const float gaugeHeight = 9.0f * scale;
@@ -8941,6 +8968,62 @@ void Game::RenderGameplayStatusHUD()
 		UIDraw_SolidRect(vec4(gaugeBack.x, gaugeBack.w - 2.0f * scale, gaugeFill.z, gaugeBack.w),
 			vec4(0.68f, 0.92f, 1.0f, 0.72f), depth - ui_depth_epsilon * 3);
 	}
+
+	if (StatWindowOpen) RenderStatWindowHUD();
+}
+
+void Game::RenderStatWindowHUD()
+{
+	if (player == nullptr) return;
+	const float screenHeight = (float)gd.ClientFrameHeight;
+	const float scale = max(0.75f, screenHeight / 960.0f);
+	const float depth = 0.012f;
+	vec4 panel = vec4(-265.0f, -180.0f, 265.0f, 215.0f) * scale;
+	UIDraw_SolidRect(panel + vec4(5.0f, -5.0f, 5.0f, -5.0f) * scale, vec4(0, 0, 0, 0.45f), depth + ui_depth_epsilon);
+	UIDraw_SolidRect(panel, vec4(0.018f, 0.030f, 0.040f, 0.94f), depth);
+	UIDraw_SolidRect(vec4(panel.x, panel.w - 3.0f * scale, panel.z, panel.w), vec4(1.0f, 0.48f, 0.08f, 0.90f), depth - ui_depth_epsilon);
+
+	wchar_t title[64] = {};
+	swprintf_s(title, L"STATUS POINT %d", player->StatPoint);
+	RenderSDFText(title, (int)wcslen(title), vec4(panel.x + 24.0f * scale, panel.w - 48.0f * scale, panel.z - 24.0f * scale, panel.w - 12.0f * scale),
+		24.0f * scale, vec4(0.96f, 0.98f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+
+	const wchar_t* names[4] = { L"HP", L"DEF", L"MOVE", L"ATK" };
+	int values[4] = { player->StatHP, player->StatDefense, player->StatMoveSpeed, player->StatAttack };
+	const wchar_t* effects[4] = { L"+5% Max HP", L"+5 DEF", L"+0.1% Speed", L"+5% Damage" };
+	for (int i = 0; i < 4; ++i) {
+		float top = panel.w - (82.0f + i * 78.0f) * scale;
+		vec4 row = vec4(panel.x + 22.0f * scale, top - 56.0f * scale, panel.z - 22.0f * scale, top);
+		UIDraw_SolidRect(row, vec4(0.04f, 0.065f, 0.078f, 0.88f), depth - ui_depth_epsilon);
+		vec4 icon = vec4(row.x + 10.0f * scale, row.y + 6.0f * scale, row.x + 58.0f * scale, row.w - 6.0f * scale);
+		if (StatIconTextureIndices[i] >= 0) UIDraw_TextureRect(icon, vec4(1, 1, 1, 0.95f), depth - ui_depth_epsilon * 2, StatIconTextureIndices[i]);
+		RenderSDFText(names[i], (int)wcslen(names[i]), vec4(row.x + 72.0f * scale, row.y + 23.0f * scale, row.x + 150.0f * scale, row.w - 6.0f * scale),
+			20.0f * scale, vec4(1.0f, 0.66f, 0.20f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+		wchar_t valueText[32] = {};
+		swprintf_s(valueText, L"%d", values[i]);
+		RenderSDFText(valueText, (int)wcslen(valueText), vec4(row.x + 158.0f * scale, row.y + 20.0f * scale, row.x + 215.0f * scale, row.w - 6.0f * scale),
+			22.0f * scale, vec4(0.92f, 0.98f, 1.0f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+		RenderSDFText(effects[i], (int)wcslen(effects[i]), vec4(row.x + 220.0f * scale, row.y + 18.0f * scale, row.z - 70.0f * scale, row.w - 7.0f * scale),
+			17.0f * scale, vec4(0.72f, 0.86f, 0.92f, 1.0f), nullptr, nullptr, depth - ui_depth_epsilon * 3);
+		vec4 plus = vec4(row.z - 50.0f * scale, row.y + 10.0f * scale, row.z - 10.0f * scale, row.w - 10.0f * scale);
+		StatButtonRects[i] = plus;
+		vec4 btnColor = player->StatPoint > 0 ? vec4(0.10f, 0.54f, 0.72f, 0.94f) : vec4(0.12f, 0.16f, 0.18f, 0.72f);
+		UIDraw_SolidRect(plus, btnColor, depth - ui_depth_epsilon * 2);
+		RenderSDFText(L"+", 1, plus, 27.0f * scale, vec4(1, 1, 1, 1), nullptr, nullptr, depth - ui_depth_epsilon * 4);
+	}
+}
+
+bool Game::HandleStatWindowClick(vec4 cursorPos)
+{
+	if (!StatWindowOpen || player == nullptr || player->StatPoint <= 0) return false;
+	for (int i = 0; i < 4; ++i) {
+		if (!RectContainPos(StatButtonRects[i], cursorPos)) continue;
+		CTS_StatUp_Header header;
+		header.stat = (PlayerStatType)i;
+		client.send_all((char*)&header, sizeof(header), 0);
+		return true;
+	}
+	return false;
 }
 
 static const wchar_t* GetPartyJobName(int job)
@@ -12226,6 +12309,10 @@ void Game::UI_Init()
 	AmmoHUDWeaponTextureIndices[(int)WeaponType::GrenadeGun] = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_GrenadeGun.png");
 	AmmoHUDBulletTextureIndex = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Bullet.png");
 	AmmoHUDReloadTextureIndex = LoadAmmoHUDTexture(L"Resources/UI/AmmoHUD/AmmoHUD_Reload.png");
+	StatIconTextureIndices[(int)PlayerStatType::HP] = LoadAmmoHUDTexture(L"Resources/UI/Stat_HP.png");
+	StatIconTextureIndices[(int)PlayerStatType::Defense] = LoadAmmoHUDTexture(L"Resources/UI/Stat_DEF.png");
+	StatIconTextureIndices[(int)PlayerStatType::MoveSpeed] = LoadAmmoHUDTexture(L"Resources/UI/Stat_MOVE.png");
+	StatIconTextureIndices[(int)PlayerStatType::Attack] = LoadAmmoHUDTexture(L"Resources/UI/Stat_ATK.png");
 
 	mainPageStack.reserve(32);
 	UIPageTable.reserve(32);

@@ -3744,6 +3744,13 @@ Player::Player() : HP{ 100 } {
 	ShieldDurability = 0;
 	MaxShieldDurability = 0;
 	m_currentJob = (int)PlayerJob::Healer;
+	Level = 0;
+	Exp = 0;
+	StatPoint = 0;
+	StatHP = 0;
+	StatDefense = 0;
+	StatMoveSpeed = 0;
+	StatAttack = 0;
 	for (int i = 0; i < (int)SkillSlot::Max; ++i) {
 		SkillCooldown[i] = 0.0f;
 		SkillCooldownFlow[i] = 0.0f;
@@ -5380,6 +5387,11 @@ void Player::RecvSTC_SyncObj(char* data) {
 	Gold = stcsod.Gold;
 	Exp = stcsod.Exp;
 	Level = stcsod.Level;
+	StatPoint = stcsod.StatPoint;
+	StatHP = stcsod.StatHP;
+	StatDefense = stcsod.StatDefense;
+	StatMoveSpeed = stcsod.StatMoveSpeed;
+	StatAttack = stcsod.StatAttack;
 	//memcpy(Inventory, stcsod.Inventory, maxItem * sizeof(ItemStack));
 	offset += sizeof(STC_SyncObjData);
 
