@@ -1180,6 +1180,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			break;
 		case WM_LBUTTONDOWN:
 			if (game.StatWindowOpen) {
+				game.CurrentCursorPos.x = (float)LOWORD(lParam) - 0.5f * (float)gd.ClientFrameWidth;
+				game.CurrentCursorPos.y = -1.0f * ((float)HIWORD(lParam) - 0.5f * (float)gd.ClientFrameHeight);
 				game.HandleStatWindowClick(game.CurrentCursorPos);
 			}
 			break;

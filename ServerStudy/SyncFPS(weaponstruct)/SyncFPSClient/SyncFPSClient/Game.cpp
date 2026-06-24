@@ -7487,7 +7487,7 @@ void Game::Update()
 	// [party] free the cursor while the party menu / join list is open so its buttons can be clicked.
 	const bool partyUIOpen = (m_partyMenuOpen || m_partyJoinListOpen ||
 		(m_dungeonQueue.active && m_dungeonQueue.partyId >= 0 && currentZoneId < 100));
-	if ((isPrepared && !isInventoryOpen && !partyUIOpen) && (GetActiveWindow() == hWnd && mainPageStack.size() == 0)) {
+	if ((isPrepared && !isInventoryOpen && !partyUIOpen && !StatWindowOpen) && (GetActiveWindow() == hWnd && mainPageStack.size() == 0)) {
 		while (ShowCursor(FALSE) >= 0);
 
 		POINT center = { (LONG)gd.ClientFrameWidth / 2, (LONG)gd.ClientFrameHeight / 2 };
@@ -8513,7 +8513,7 @@ void Game::AddMouseInput(int deltaX, int deltaY)
 	// [party] suppress camera look while the party menu / join list / room is open (cursor is free then).
 	const bool partyUIOpen = (m_partyMenuOpen || m_partyJoinListOpen ||
 		(m_dungeonQueue.active && m_dungeonQueue.partyId >= 0 && currentZoneId < 100));
-	if (player != nullptr && mainPageStack.size() == 0 && !partyUIOpen)
+	if (player != nullptr && mainPageStack.size() == 0 && !partyUIOpen && !StatWindowOpen)
 	{
 		m_stackMouseX += deltaX;
 		m_stackMouseY += deltaY;
@@ -9020,8 +9020,18 @@ bool Game::HandleStatWindowClick(vec4 cursorPos)
 		if (!RectContainPos(StatButtonRects[i], cursorPos)) continue;
 		CTS_StatUp_Header header;
 		header.stat = (PlayerStatType)i;
-		client.send_all((char*)&header, sizeof(header), 0);
-		return true;
+		if (client.send_all((char*)&header, sizeof(header), 0) == sizeof(header)) {
+			player->StatPoint -= 1;
+			switch ((PlayerStatType)i) {
+			case PlayerStatType::HP: player->StatHP += 1; break;
+			case PlayerStatType::Defense: player->StatDefense += 1; break;
+			case PlayerStatType::MoveSpeed: player->StatMoveSpeed += 1; break;
+			case PlayerStatType::Attack: player->StatAttack += 1; break;
+			default: break;
+			}
+			return true;
+		}
+		return false;
 	}
 	return false;
 }

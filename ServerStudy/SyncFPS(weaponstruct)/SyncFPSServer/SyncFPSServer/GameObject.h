@@ -1342,12 +1342,13 @@ struct MonsterData {
 	float MoveSpeed;
 	float FireDelay;
 	float ChaseRange;
+	int ExpReward;
 };
 
 static MonsterData GMonsterTable[] = {
-	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f, 8.0f },
-	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f, 14.0f },
-	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f, 22.0f },
+	{ MonsterType::Walker, "Walker", "Monster001", 40.0f, 10.0f, 5.0f, 2.0f, 1.0f, 8.0f, 50 },
+	{ MonsterType::Dron, "Dron", "MonsterDrone", 25.0f, 8.0f, 0.0f, 3.5f, 0.8f, 14.0f, 70 },
+	{ MonsterType::Tower, "Tower", "MonsterTurret", 90.0f, 18.0f, 25.0f, 0.0f, 1.6f, 22.0f, 100 },
 };
 
 inline const MonsterData& GetMonsterData(MonsterType type) {

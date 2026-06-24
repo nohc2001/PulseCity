@@ -65,10 +65,8 @@ int main() {
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 		return 1;
 
-	if (serverId == 0) {
-		gameworld.PrintOffset();
-		cout << "PrintOffset" << endl;
-	}
+	gameworld.PrintOffset();
+	cout << "PrintOffset" << endl;
 
 	//gameworld.CommonSDS.Init(4096);
 

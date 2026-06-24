@@ -4055,38 +4055,46 @@ bool Player::AddGold(int delta)
 void Player::AddExp(int delta)
 {
 	if (delta < 0) return;
+	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (zones == nullptr) zones = zone;
+	if (zones == nullptr || clientIndex < 0 || clientIndex >= gameworld.clients.size || gameworld.clients.isnull(clientIndex)) return;
+	SendDataSaver& ownerSDS = gameworld.clients[clientIndex].PersonalSDS;
+	int objindex = gameworld.clients[clientIndex].objindex;
+
 	Exp += delta;
 	int IndexLevel = Level;
 	if (IndexLevel > 99) IndexLevel = 99;
 	if (IndexLevel < 0) IndexLevel = 0;
 
-	int levelUpCount = 0;
 	while (IndexLevel < 99 && ExpLimit[IndexLevel] <= Exp) {
 		Exp -= ExpLimit[IndexLevel];
 		Level += 1;
 		StatPoint += 1;
-		levelUpCount += 1;
 		IndexLevel = Level;
 		if (IndexLevel > 99) IndexLevel = 99;
 	}
 
-	if (levelUpCount > 0) {
-		zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Level);
-		zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &StatPoint);
-	}
-	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Exp);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &Level);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatPoint);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &Exp);
 }
 
 void Player::GrantLevel(int count)
 {
 	if (count <= 0) return;
+	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (zones == nullptr) zones = zone;
+	if (zones == nullptr || clientIndex < 0 || clientIndex >= gameworld.clients.size || gameworld.clients.isnull(clientIndex)) return;
+	SendDataSaver& ownerSDS = gameworld.clients[clientIndex].PersonalSDS;
+	int objindex = gameworld.clients[clientIndex].objindex;
+
 	Level += count;
 	if (Level > 99) Level = 99;
 	Exp = 0;
 	StatPoint += count;
-	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Level);
-	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &Exp);
-	zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[clientIndex].PersonalSDS, gameworld.clients[clientIndex].objindex, this, GameObjectType::_Player, &StatPoint);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &Level);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &Exp);
+	zones->Sending_ChangeGameObjectMember<int>(ownerSDS, objindex, this, GameObjectType::_Player, &StatPoint);
 }
 
 bool Player::TrySpendStatPoint(PlayerStatType stat)
@@ -4103,7 +4111,9 @@ bool Player::TrySpendStatPoint(PlayerStatType stat)
 
 	StatPoint -= 1;
 	RecalculateStatsFromJob(true);
-	SyncStatState(zone);
+	Zone* zones = gameworld.GetClientZone(clientIndex);
+	if (zones == nullptr) zones = zone;
+	SyncStatState(zones);
 	return true;
 }
 
@@ -4146,24 +4156,100 @@ namespace {
 	};
 #pragma pack(pop)
 
-	string MakePlayerSavePath(const char* key)
+	string MakePlayerSaveBaseName(const char* key)
 	{
 		string safe = (key != nullptr && key[0] != '\0') ? key : "local";
 		for (char& c : safe) {
 			if (!isalnum((unsigned char)c)) c = '_';
 		}
-		return "PlayerDB/" + safe + ".bin";
+		return "PlayerDB/" + safe;
+	}
+
+	string MakePlayerSaveTextPath(const char* key)
+	{
+		return MakePlayerSaveBaseName(key) + ".txt";
+	}
+
+	string MakePlayerSaveBinaryPath(const char* key)
+	{
+		return MakePlayerSaveBaseName(key) + ".bin";
+	}
+
+	bool LoadPlayerSaveText(const char* key, PlayerSaveData& data)
+	{
+		ifstream ifs(MakePlayerSaveTextPath(key));
+		if (!ifs.is_open()) return false;
+
+		data = PlayerSaveData{};
+		string name;
+		while (ifs >> name) {
+			if (name == "Version") {
+				ifs >> data.version;
+			}
+			else if (name == "Gold") {
+				ifs >> data.Gold;
+			}
+			else if (name == "Exp") {
+				ifs >> data.Exp;
+			}
+			else if (name == "Level") {
+				ifs >> data.Level;
+			}
+			else if (name == "StatPoint") {
+				ifs >> data.StatPoint;
+			}
+			else if (name == "StatHP") {
+				ifs >> data.StatHP;
+			}
+			else if (name == "StatDefense") {
+				ifs >> data.StatDefense;
+			}
+			else if (name == "StatMoveSpeed") {
+				ifs >> data.StatMoveSpeed;
+			}
+			else if (name == "StatAttack") {
+				ifs >> data.StatAttack;
+			}
+			else if (name == "KillCount") {
+				ifs >> data.KillCount;
+			}
+			else if (name == "DeathCount") {
+				ifs >> data.DeathCount;
+			}
+			else if (name == "CurrentJob") {
+				ifs >> data.CurrentJob;
+			}
+			else if (name == "Inventory") {
+				int slot = -1;
+				ItemStack item = {};
+				ifs >> slot >> item.id >> item.ItemCount;
+				if (slot >= 0 && slot < Player::maxItem) data.Inventory[slot] = item;
+			}
+			else {
+				string rest;
+				getline(ifs, rest);
+			}
+		}
+
+		return ifs.eof() || ifs.good();
+	}
+
+	bool LoadPlayerSaveBinary(const char* key, PlayerSaveData& data)
+	{
+		ifstream ifs(MakePlayerSaveBinaryPath(key), ios::binary);
+		if (!ifs.is_open()) return false;
+
+		data = PlayerSaveData{};
+		ifs.read((char*)&data, sizeof(data));
+		return ifs && data.magic == PlayerSaveMagic && data.version == PlayerSaveVersion;
 	}
 }
 
 bool Player::LoadPersistentData(const char* key)
 {
-	ifstream ifs(MakePlayerSavePath(key), ios::binary);
-	if (!ifs.is_open()) return false;
-
 	PlayerSaveData data = {};
-	ifs.read((char*)&data, sizeof(data));
-	if (!ifs || data.magic != PlayerSaveMagic || data.version != PlayerSaveVersion) return false;
+	bool loadedFromText = LoadPlayerSaveText(key, data);
+	if (!loadedFromText && !LoadPlayerSaveBinary(key, data)) return false;
 
 	Gold = data.Gold;
 	Exp = max(0, data.Exp);
@@ -4182,31 +4268,31 @@ bool Player::LoadPersistentData(const char* key)
 		Inventory[i] = data.Inventory[i];
 	}
 	RecalculateStatsFromJob(false);
+	if (!loadedFromText) SavePersistentData(key);
 	return true;
 }
 
 void Player::SavePersistentData(const char* key) const
 {
 	CreateDirectoryA("PlayerDB", nullptr);
-	ofstream ofs(MakePlayerSavePath(key), ios::binary | ios::trunc);
+	ofstream ofs(MakePlayerSaveTextPath(key), ios::trunc);
 	if (!ofs.is_open()) return;
 
-	PlayerSaveData data = {};
-	data.Gold = Gold;
-	data.Exp = Exp;
-	data.Level = Level;
-	data.StatPoint = StatPoint;
-	data.StatHP = StatHP;
-	data.StatDefense = StatDefense;
-	data.StatMoveSpeed = StatMoveSpeed;
-	data.StatAttack = StatAttack;
-	data.KillCount = KillCount;
-	data.DeathCount = DeathCount;
-	data.CurrentJob = m_currentJob;
+	ofs << "Version " << PlayerSaveVersion << "\n";
+	ofs << "Gold " << Gold << "\n";
+	ofs << "Exp " << Exp << "\n";
+	ofs << "Level " << Level << "\n";
+	ofs << "StatPoint " << StatPoint << "\n";
+	ofs << "StatHP " << StatHP << "\n";
+	ofs << "StatDefense " << StatDefense << "\n";
+	ofs << "StatMoveSpeed " << StatMoveSpeed << "\n";
+	ofs << "StatAttack " << StatAttack << "\n";
+	ofs << "KillCount " << KillCount << "\n";
+	ofs << "DeathCount " << DeathCount << "\n";
+	ofs << "CurrentJob " << m_currentJob << "\n";
 	for (int i = 0; i < maxItem; ++i) {
-		data.Inventory[i] = Inventory[i];
+		ofs << "Inventory " << i << " " << Inventory[i].id << " " << Inventory[i].ItemCount << "\n";
 	}
-	ofs.write((const char*)&data, sizeof(data));
 }
 
 void Player::RewardQuest(Quest* completeQuest)
@@ -5012,7 +5098,7 @@ void Monster::OnCollisionRayWithBullet(GameObject* shooter, float damage)
 		if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 			Player* p = (Player*)shooter;
 			p->KillCount += 1;
-			p->AddExp(50 + 10 * (int)m_monsterType);
+			p->AddExp(GetMonsterData(m_monsterType).ExpReward);
 			zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
 
 			// monster kill quest prograss update
@@ -5072,7 +5158,7 @@ void Monster::ApplyDamage(GameObject* source, float damage)
 			if (GameObjectType::VptrToTypeTable[vptr] == GameObjectType::_Player) {
 				Player* p = (Player*)source;
 				p->KillCount += 1;
-				p->AddExp(50 + 10 * (int)m_monsterType);
+				p->AddExp(GetMonsterData(m_monsterType).ExpReward);
 				zone->Sending_ChangeGameObjectMember<int>(gameworld.clients[p->clientIndex].PersonalSDS, gameworld.clients[p->clientIndex].objindex, p, GameObjectType::_Player, &p->KillCount);
 			}
 		}
