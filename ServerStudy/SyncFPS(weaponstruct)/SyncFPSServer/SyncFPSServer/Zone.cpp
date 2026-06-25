@@ -697,6 +697,7 @@ void Zone::SpawnPortal(bool notifyClients) {
         isEntry = true;
     }
 
+	if (!portals.empty()) return;
     Portal* portal = new Portal();
     auto it = Shape::StrToShapeIndex.find("Portal");
     if (it != Shape::StrToShapeIndex.end()) {

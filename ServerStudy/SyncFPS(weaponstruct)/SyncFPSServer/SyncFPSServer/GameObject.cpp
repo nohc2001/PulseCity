@@ -3435,18 +3435,29 @@ void Player::Update(float deltaTime)
 		collideCount = 0;
 	}
 
-	// [debug] print this player's exact position to the server console every 10s in ANY zone (placement aid).
+	// [debug] print this player's exact position to the server console every 10s (placement aid).
 	m_dungeonPositionLogFlow += deltaTime;
 	if (m_dungeonPositionLogFlow >= 10.0f) {
 		m_dungeonPositionLogFlow -= 10.0f;
-		printf("[PlayerPosition] zone=%d floor=%d client=%d object=%d pos=(%.6f, %.6f, %.6f)\n",
-			zoneId,
-			World::DungeonFloorOf(zoneId) + 1,
-			clientIndex,
-			gameworld.clients[clientIndex].objindex,
-			worldMat.pos.x,
-			worldMat.pos.y,
-			worldMat.pos.z);
+		if (World::IsDungeonZone(zoneId)) {
+			printf("[DungeonPlayerPosition] zone=%d floor=%d client=%d object=%d pos=(%.6f, %.6f, %.6f)\n",
+				zoneId,
+				World::DungeonFloorOf(zoneId) + 1,
+				clientIndex,
+				gameworld.clients[clientIndex].objindex,
+				worldMat.pos.x,
+				worldMat.pos.y,
+				worldMat.pos.z);
+		}
+		else {
+			printf("[OpenWorldPlayerPosition] zone=%d client=%d object=%d pos=(%.6f, %.6f, %.6f)\n",
+				zoneId,
+				clientIndex,
+				gameworld.clients[clientIndex].objindex,
+				worldMat.pos.x,
+				worldMat.pos.y,
+				worldMat.pos.z);
+		}
 	}
 
 	m_currentWeaponType = (int)weapon[SelectedWeapon].m_info.type;
@@ -5858,11 +5869,6 @@ void PeacefulNPC::Update(float deltaTime) {
 
 					bool PressE = pgo->InputBuffer[InputID::KeyboardTab];
 					if ((PressE && distance.len3 < TalkRange) && pgo->PresentTalkID == -1) {
-						// [silas] Spawn the dungeon-entry portal the moment the player starts talking to Silas (NPCID 1).
-						if (this->NPCID == 1 && zone != nullptr) {
-							zone->SpawnPortal(true);
-						}
-
 						// 만약 NPC와의 대화가 퀘스트의 요구사항이면 완료시킨다.
 						for (int pi = 0; pi < pgo->QuestPrograss.size(); ++pi) {
 							for (int ri = 0; ri < pgo->QuestPrograss[pi]->requp; ++ri) {
@@ -5899,10 +5905,6 @@ void PeacefulNPC::Update(float deltaTime) {
 										pgo->EraseQuest(selectedQI);
 										pgo->CompleteQuestBitArr[questId] = true;
 										// [silas] Spawn the dungeon-entry portal as soon as quest 2 (사일러스와 접신) is completed,
-										// so the player doesn't need a second conversation to accept quest 3 first.
-										if (questId == 2 && zone != nullptr) {
-											zone->SpawnPortal(true);
-										}
 										break;
 									}
 								}
@@ -6385,7 +6387,9 @@ void World::Init() {
 		z->GridCollisionCheck();
 		z->SpawnObjects();
 		z->Spawnboundary();
-		z->SpawnPortal(true);   // [TEST] unconditionally spawn the dungeon-entry portal at startup (no Silas/quest condition)
+		if (z->zoneId == 83) {
+			z->SpawnPortal(true);
+		}
 	}
 }
 
@@ -6690,10 +6694,12 @@ void World::PartyLeaderStart(int clientIndex) {
 					0.5f * (returnZone->BasicAABB_onlyXZ.x + returnZone->BasicAABB_onlyXZ.z),
 					nearestPortal->worldMat.pos.y,
 					0.5f * (returnZone->BasicAABB_onlyXZ.y + returnZone->BasicAABB_onlyXZ.w), 1.0f);
-				vec4 away = center - nearestPortal->worldMat.pos;
+				// Return players to the front side of the dungeon-entry portal. The old direction
+				// pushed them toward the zone/building center, which could place them inside the building.
+				vec4 away = nearestPortal->worldMat.pos - center;
 				away.y = 0.0f;
 				if (away.fast_square_of_len3 > 0.0001f) away.len3 = 1.0f;
-				else away = vec4(-1, 0, 0, 0);
+				else away = vec4(1, 0, 0, 0);
 				member->dungeonReturnPosition = nearestPortal->worldMat.pos + away * (nearestPortal->radius + 2.0f);
 				member->dungeonReturnPosition.w = 1.0f;
 			}
