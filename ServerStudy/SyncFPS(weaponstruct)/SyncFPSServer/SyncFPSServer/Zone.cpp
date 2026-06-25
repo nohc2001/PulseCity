@@ -129,6 +129,7 @@ void Zone::Update(float deltaTime) {
     }
 
     UpdateBossPrototype(deltaTime);
+	UpdateDungeonPortalUnlock();
 
     // �浹 ó�� (Dynamic ������Ʈ ��)
     {
@@ -689,6 +690,15 @@ void Zone::SpawnPortal(bool notifyClients) {
         return; // Boss floor: no next-floor portal
     }
     else if (dungeonFloor >= 0) {
+		// Dungeon floor portals are created only after every monster on this floor is dead.
+		// The regular startup call therefore leaves the floor locked.
+		for (int i = 0; i < Dynamic_gameObjects.size; ++i) {
+			if (Dynamic_gameObjects.isnull(i)) continue;
+			DynamicGameObject* object = Dynamic_gameObjects[i];
+			if (object == nullptr) continue;
+			if (GameObjectType::VptrToTypeTable[*(void**)object] != GameObjectType::_Monster) continue;
+			if (!((Monster*)object)->isDead) return;
+		}
         dstZone = zoneId + 1;   // dungeon floor -> next floor (same instance, consecutive zone ids)
         isEntry = false;
     }
@@ -696,6 +706,12 @@ void Zone::SpawnPortal(bool notifyClients) {
         dstZone = World::DungeonZoneId;   // open world -> dungeon entry marker (client opens the party menu)
         isEntry = true;
     }
+
+	// [silas] The open-world dungeon-entry portal is NOT created at startup; it is unlocked only when a
+	// player accepts Silas's quest, via an explicit SpawnPortal(true) call.
+	if (isEntry && !notifyClients) return;
+
+	if (!portals.empty()) return;
 
     Portal* portal = new Portal();
     auto it = Shape::StrToShapeIndex.find("Portal");
@@ -749,8 +765,19 @@ void Zone::SpawnPortal(bool notifyClients) {
 
     portal->tag[Tag_Enable] = true;
     portals.push_back(portal);
+	if (notifyClients) {
+		portal->SendGameObject((int)portals.size() - 1, CommonSDS);
+		cout << "[DungeonPortal] zone=" << zoneId << " unlocked" << endl;
+	}
     //cout << "[Zone " << zoneId << "] Portal -> zone " << dstZone << (isEntry ? " (entry/queue)" : " (floor)")
         //<< " at (" << cx << ", " << gy << ", " << (cz + forward) << ")" << endl;
+}
+
+void Zone::UpdateDungeonPortalUnlock() {
+	const int dungeonFloor = World::DungeonFloorOf(zoneId);
+	if (dungeonFloor < 0 || dungeonFloor >= World::DungeonFloorCount - 1) return;
+	if (!portals.empty()) return;
+	SpawnPortal(true);
 }
 
 void Zone::Spawnboundary()
@@ -1193,7 +1220,7 @@ void Zone::SpawnObjects() {
     if (World::DungeonFloorOf(zoneId) == World::DungeonFloorCount - 1) {
         const float cx = 0.5f * (BasicAABB_onlyXZ.x + BasicAABB_onlyXZ.z);
         const float cz = 0.5f * (BasicAABB_onlyXZ.y + BasicAABB_onlyXZ.w);
-        const vec4 bossSpawn(cx + 20.0f, map.AABB[0].y, cz - 80.0f, 1.0f);
+        const vec4 bossSpawn(cx + 20.0f, map.AABB[0].y - 1.0f, cz - 70.0f, 1.0f);
 
         Monster* boss = new Monster();
         boss->zone = this;
@@ -2789,3 +2816,4 @@ void Zone::UpdateBossPrototype(float deltaTime)
     updateShieldState();
     Sending_BossState(CommonSDS);
 }
+                    

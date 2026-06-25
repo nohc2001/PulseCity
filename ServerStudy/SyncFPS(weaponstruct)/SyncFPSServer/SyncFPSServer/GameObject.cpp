@@ -7540,7 +7540,6 @@ bool World::AcceptTransferConnect(int clientIndex, int transferToken) {
 
 	Player* p = new Player();
 	p->clientIndex = clientIndex;
-	//p->LoadPersistentData(gameworld.clients[p->clientIndex].addr.IPString);
 	p->worldMat.Id();
 	p->SetShape(Shape::StrToShapeIndex["Player"]);
 	p->HP = data.HP;
@@ -7999,8 +7998,6 @@ bool World::MovePlayerToZone(int clientIndex, int dstZoneId, vec4 spawnPos, int 
 		<< " to=" << dstZoneId << endl;
 
 	if (IsZoneOwned(dstZoneId) == false) {
-		//player->SavePersistentData(gameworld.clients[player->clientIndex].addr.IPString);
-
 		PlayerTransferData data = {};
 		strcpy_s(data.playerId, sizeof(data.playerId), GetClientSaveKey(clients[clientIndex]));
 		data.transferToken = IssueTransferToken();

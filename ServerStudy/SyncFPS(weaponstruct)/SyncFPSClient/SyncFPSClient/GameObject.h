@@ -1663,7 +1663,7 @@ struct DXBtnParam {
 	float flow;
 	float maxtime;
 	int Base_UITextureIndex = 0;
-	wchar_t text[512] = {};
+	wchar_t text[256] = {};
 
 	union {
 		float addtionalParams[16];
