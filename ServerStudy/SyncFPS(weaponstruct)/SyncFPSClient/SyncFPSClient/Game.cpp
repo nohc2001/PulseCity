@@ -842,6 +842,7 @@ void Zone::ZoneAssetRelease()
 	bReqireBakeLight_Raytracing = false;
 
 	RayTracingMesh::ReleaseZone_FromAssetOffset(Asset_OffsetMul);
+	RayTracingMesh::UAV_VertexBufferByteSize = 0;
 
 	// Static GameObject Release
 	ZeroMemory(&game.StaticGameObjects[MaxStaticObjectCount * Asset_OffsetMul], sizeof(StaticGameObject*) * MaxStaticObjectCount);
@@ -8975,7 +8976,7 @@ void Game::RenderSDFText(const wchar_t* wstr, int length, vec4 Rect, float fonts
 		if (pos.x > Rect.z) {
 			pos.x = Rect.x;
 			pos.y -= lineheight;
-			if (pos.y < Rect.w) {
+			if (pos.y < Rect.y) {
 				return;
 			}
 		}
@@ -11964,6 +11965,18 @@ void UIInitShopWindow(DXUI* ui) {
 
 #pragma region UIDesign_Quest
 
+void UIRender_QuestDescObject(DXUI* ui) {
+	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
+	vec4 color = vec4(1, 1, 1, 1);
+	float depth = ui->depth - game.ui_depth_epsilon;
+	vec4 renderLoc = ui->location + game.CurrentUICenter;
+	game.UIDraw_TextureRect(renderLoc, color, depth, pbtn->Base_UITextureIndex);
+	renderLoc.x += 10;
+	renderLoc.w -= 5;
+	renderLoc.z -= 10;
+	game.RenderSDFText(pbtn->text, wcslen(pbtn->text), renderLoc, 15, vec4(1, 1, 1, 1), nullptr, nullptr, -0.01f + depth);
+}
+
 void UIRender_QuestItemObject(DXUI* ui) {
 	DXBtnParam* pbtn = (DXBtnParam*)ui->pParamterData;
 	vec4& slotShowRt = *(vec4*)pbtn->addtionalPtr[2];
@@ -12026,7 +12039,7 @@ void UIUpdate_QuestDescObject(DXUI* ui, float deltaTime) {
 		if (0 <= pbtn->addtionalParams_int[0] && pbtn->addtionalParams_int[0] < game.QuestArr.size()) {
 			int questindex = game.QuestArr[pbtn->addtionalParams_int[0]];
 			Quest* q = game.QuestTable[questindex];
-			wcscpy_s(pbtn->text, 256, q->QuestDesc);
+			wcsncpy_s(pbtn->text, 512, q->QuestDesc, _TRUNCATE);
 		}
 	}
 }
@@ -12106,7 +12119,7 @@ void UIInitQuestWindow(DXUI* ui) {
 		DXBtnParam* pbtn_DescDumyBtn = (DXBtnParam*)DescDumyBtn->pParamterData;
 		pbtn_DescDumyBtn->Set(0, 1, 25, L"");
 		pbtn_DescDumyBtn->addtionalParams_int[0] = 0; // â�� �������� ���⿡ ���õ� �������� �ε����� �����ؾ� ��.
-		DescDumyBtn->SetFunctions(UIRender_CyberBtn001, UIUpdate_QuestDescObject, nullptr);
+		DescDumyBtn->SetFunctions(UIRender_QuestDescObject, UIUpdate_QuestDescObject, nullptr);
 		DescPage->uiArr.push_back(DescDumyBtn);
 	}
 

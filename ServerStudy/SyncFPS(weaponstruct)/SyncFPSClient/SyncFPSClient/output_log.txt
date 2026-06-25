@@ -1,9 +1,5 @@
 Microsoft (R) DirectX Texture Converter [DirectXTex] Version 208 (library)
 Copyright (C) Microsoft Corp.
 
-reading Resources\UI\Stat_ATK.png (1254x1254 B8G8R8A8_UNORM 2D) as
-WARNING: Image is not using premultipled alpha
- (1254x1254,11 BC3_UNORM 2D ес:Opaque)
-writing Stat_ATK.dds
-
-WARNING: Direct3D requires BC image to be multiple of 4 in width & height
+reading Resources\Map\Zone_5_6\Texture\Concrete048_2K-JPG_Roughness.bmp (2048x2048 B8G8R8X8_UNORM 2D) as (2048x2048,12 BC3_UNORM 2D ес:Opaque)
+writing Concrete048_2K-JPG_Roughness.dds
