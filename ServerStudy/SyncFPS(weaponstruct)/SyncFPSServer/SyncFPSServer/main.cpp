@@ -557,6 +557,7 @@ READ_START:
 				p->PresentTalkID = -1;
 			}
 			else if (ts.mod == 'q') {
+				bool questAccepted = false;
 				if (0 <= ts.AddQuest && ts.AddQuest < (int)gameworld.QuestTable.size()
 					&& gameworld.QuestTable[ts.AddQuest] != nullptr
 					&& !p->PrograssQuestBitArr[ts.AddQuest]
@@ -568,8 +569,13 @@ READ_START:
 					gameworld.QuestTable[ts.AddQuest]->Copy(prograss);
 					p->QuestPrograss.push_back(prograss);
 					zone->Sending_SyncQuestPrograss(gameworld.clients[p->clientIndex].PersonalSDS, ts.AddQuest, prograss);
+					questAccepted = true;
 				}
 				p->PresentTalkID = -1;
+				// [silas] Accepting Silas's quest (id 3) unlocks the dungeon-entry portal in this open-world zone.
+				if (questAccepted && ts.AddQuest == 3 && zone != nullptr) {
+					zone->SpawnPortal(true);
+				}
 			}
 		}
 
