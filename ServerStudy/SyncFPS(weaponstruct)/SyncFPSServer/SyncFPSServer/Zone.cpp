@@ -707,10 +707,6 @@ void Zone::SpawnPortal(bool notifyClients) {
         isEntry = true;
     }
 
-	// [silas] The open-world dungeon-entry portal is NOT created at startup; it is unlocked only when a
-	// player accepts Silas's quest, via an explicit SpawnPortal(true) call.
-	if (isEntry && !notifyClients) return;
-
 	if (!portals.empty()) return;
 
     Portal* portal = new Portal();
