@@ -2256,7 +2256,7 @@ struct World {
 	void SpawnHandoffMonster(int monsterType, vec4 pos, float hp, float maxhp);
 
 	// 서버에서 돌아갈 Zone의 포함영역. singleProcessAllZones == true 일때 만 적용됨.
-	static constexpr int minx = 3, miny = 6;
+	static constexpr int minx = 3, miny = 7;
 	static constexpr int maxx = 4, maxy = 8;
 	// 존이 서버에서 돌아가고 있는지 체크
 	bool IsZoneOwned(int zoneId) const {
