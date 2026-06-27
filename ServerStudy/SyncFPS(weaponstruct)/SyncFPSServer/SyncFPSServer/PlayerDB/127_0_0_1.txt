@@ -1,0 +1,61 @@
+Version 1
+Gold 2000
+Exp 377
+Level 53
+StatPoint 1
+StatHP 30
+StatDefense 1
+StatMoveSpeed 1
+StatAttack 20
+KillCount 395
+DeathCount 41
+CurrentJob 5
+Inventory 0 1 11
+Inventory 1 6 21
+Inventory 2 7 7
+Inventory 3 3 6
+Inventory 4 4 5
+Inventory 5 2 5
+Inventory 6 0 0
+Inventory 7 0 0
+Inventory 8 0 0
+Inventory 9 0 0
+Inventory 10 0 0
+Inventory 11 0 0
+Inventory 12 0 0
+Inventory 13 0 0
+Inventory 14 0 0
+Inventory 15 0 0
+Inventory 16 0 0
+Inventory 17 0 0
+Inventory 18 0 0
+Inventory 19 0 0
+Inventory 20 0 0
+Inventory 21 0 0
+Inventory 22 0 0
+Inventory 23 0 0
+Inventory 24 0 0
+Inventory 25 0 0
+Inventory 26 0 0
+Inventory 27 0 0
+Inventory 28 0 0
+Inventory 29 0 0
+Inventory 30 0 0
+Inventory 31 0 0
+Inventory 32 0 0
+Inventory 33 0 0
+Inventory 34 0 0
+Inventory 35 0 0
+Inventory 36 0 0
+Inventory 37 0 0
+Inventory 38 0 0
+Inventory 39 0 0
+Inventory 40 0 0
+Inventory 41 0 0
+Inventory 42 0 0
+Inventory 43 0 0
+Inventory 44 0 0
+Inventory 45 0 0
+Inventory 46 0 0
+Inventory 47 0 0
+Inventory 48 0 0
