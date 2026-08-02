@@ -1,0 +1,63 @@
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=281136
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282585
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=277749
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=283386
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282685
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=280458
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=280739
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=280630
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282105
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=280614
+
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=280619
+
+C++, 그래픽스 엔진 프로그래머 신입
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282064
+>> UnrealEngine이 우대사항임.
+
+//DirectX 보는 곳. 직무만 보면 나에게 가장 적합하다 생각됨.
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=283238
+
+UnrealEngine
+/////////////
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282016
+>> Unreal Engine이 가능해야 함.
+
+
+Sound
+////////
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282481
+
+유니티인데 추가역량 필요
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282103
+: Android/IOS 통합빌드 경험, Unity 내부동작, C# API 경험
+: 메모리 프로파일러, 프레임 디버거 사용경험
+: addressables AssetBundle 의존성 관리 경험.
+우대사항 :
+: Jenkins 등 빌드 파이프라인 운영 개선 CI/CD 경험
+: 네이티브 (JAVA Kotlin ObjectiveC/Swift) 브릿지 개발 경험 - 네이티브는 C++ 아님?
+: 드로우콜-배칭 최적화 등 렌더링 성능 개선 경험 - 이건 있다.
+
+서버인데 추가역량이 필요
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=283141
+
+
+AI 자동화 엔지니어?
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=280577
+> 시간나면 보셈 재미는 있겄다.
+
+라이팅? 아티스트?
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282321
+
+나날이 스튜디오
+https://gamejob.co.kr/Recruit/GI_Read/View?GI_No=282670
++ python, objectiveC, 모바일, JAVA, IOS, Android, HTML, Node.js, Redis
