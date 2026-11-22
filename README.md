@@ -2,7 +2,7 @@
 
 ## 📥 다운로드 및 참고 영상
 * **게임 다운로드:** [게임 플레이 Release 빌드.zip](https://1drv.ms/u/c/44e385af96afd433/IQCfGpR5V-4dT7VpBipfwDqBAX_kLAPkQbZqNEVqubllV6c?e=wUrcMC)
-* **던전 위치 안내:** [PulseCity 플레이 영상 보기](https://www.youtube.com/watch?v=kb8ucLNXPk4&list=PLHj7FX3lCAZg)
+* **던전 위치 안내:** [PulseCity 플레이 영상 보기](https://youtu.be/Tp3jkX-5jC8?si=yDMAJxAX0IQDiHYX)
 
 ---
 
